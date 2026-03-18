@@ -2037,6 +2037,10 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 	// on any click outside menu bar items or dropdown items.
 	if node.State != nil && node.State.OpenIndex >= 0 && hitMap != nil {
 		state := node.State
+		// Consume a hover index to keep hover counter aligned with hit targets.
+		if hover != nil {
+			hover.nextButtonHoverOpacity()
+		}
 		hitMap.Add(draw.R(0, 0, 9999, 9999), func() {
 			state.OpenIndex = -1
 		})
