@@ -533,6 +533,62 @@ func TestKeyModifiersPassedThrough(t *testing.T) {
 	}
 }
 
+func TestScrollViewReactsToScrollWheel(t *testing.T) {
+	// End-to-end test: inject a scroll event and verify the ScrollState offset changes.
+	scroll := &ui.ScrollState{}
+	view := func(m testModel) ui.Element {
+		// Tall content that exceeds viewport.
+		return ui.ScrollView(ui.Column(
+			ui.Text("A"), ui.Text("B"), ui.Text("C"), ui.Text("D"),
+			ui.Text("E"), ui.Text("F"), ui.Text("G"), ui.Text("H"),
+			ui.Text("I"), ui.Text("J"), ui.Text("K"), ui.Text("L"),
+		), 40, scroll)
+	}
+
+	// Frame 0: build initial scene (registers scroll target).
+	// Scroll event on frame 1: dispatched to the scroll target.
+	// Frame 2: view rebuilt with new offset.
+	err := Run(testModel{}, testUpdate, view,
+		WithTitle("scroll-wheel test"),
+		WithSize(800, 600),
+		WithHeadlessFrames(3),
+		WithHeadlessMouseMove(0, 30, 30), // position cursor over scroll view
+		WithHeadlessScroll(1, 0, -1.0),   // scroll down
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if scroll.Offset <= 0 {
+		t.Errorf("ScrollState.Offset = %f, want > 0 after scroll-down event", scroll.Offset)
+	}
+}
+
+func TestScrollViewTrackClick(t *testing.T) {
+	scroll := &ui.ScrollState{}
+	view := func(m testModel) ui.Element {
+		return ui.ScrollView(ui.Column(
+			ui.Text("A"), ui.Text("B"), ui.Text("C"), ui.Text("D"),
+			ui.Text("E"), ui.Text("F"), ui.Text("G"), ui.Text("H"),
+			ui.Text("I"), ui.Text("J"), ui.Text("K"), ui.Text("L"),
+		), 40, scroll)
+	}
+
+	// The scrollbar track should be to the right of the content.
+	// Click on it at the bottom half → offset should increase.
+	err := Run(testModel{}, testUpdate, view,
+		WithTitle("track-click test"),
+		WithSize(800, 600),
+		WithHeadlessFrames(3),
+		WithHeadlessClick(1, 780, float32(24+35)), // click near bottom of scrollbar track
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if scroll.Offset <= 0 {
+		t.Errorf("ScrollState.Offset = %f, want > 0 after track click", scroll.Offset)
+	}
+}
+
 // ── Widget Reconciliation Tests ─────────────────────────────────
 
 // tickWidget is a stateful widget that tracks render calls.

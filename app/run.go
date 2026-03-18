@@ -201,6 +201,10 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 		OnScroll: func(deltaX, deltaY float32) {
 			Send(input.ScrollMsg{DeltaX: deltaX, DeltaY: deltaY})
+			// Route scroll events directly to the ScrollView under the cursor.
+			if target := hitMap.HitTestScroll(mouseX, mouseY); target != nil {
+				target.OnScroll(deltaY * 30) // 30dp per scroll unit
+			}
 		},
 
 		OnKey: func(key string, action int, mods int) {

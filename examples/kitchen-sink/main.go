@@ -72,12 +72,6 @@ func update(m Model, msg app.Msg) Model {
 	case SetTextMsg:
 		m.TextValue = msg.Value
 
-	// ── Scroll handling ──────────────────────────────────
-	case input.ScrollMsg:
-		// ScrollBy expects negative delta for "scroll down" (content moves up).
-		// Platform sends positive deltaY for scroll-up, negative for scroll-down.
-		m.Scroll.ScrollBy(msg.DeltaY*30, 1200, 500)
-
 	// ── Keyboard handling for focused TextField ──────────
 	case input.KeyMsg:
 		if msg.Action == input.KeyPress || msg.Action == input.KeyRepeat {

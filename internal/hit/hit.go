@@ -10,9 +10,18 @@ type Target struct {
 	OnClickAt func(x, y float32) // positional click (e.g. Slider)
 }
 
+// ScrollTarget is a scrollable region linked to a ScrollState.
+type ScrollTarget struct {
+	Bounds        draw.Rect
+	ContentHeight float32
+	ViewportHeight float32
+	OnScroll      func(deltaY float32) // called with scroll delta
+}
+
 // Map collects hit targets during layout and resolves pointer hits.
 type Map struct {
-	targets []Target
+	targets       []Target
+	scrollTargets []ScrollTarget
 }
 
 // Add registers a clickable region. Ignored if onClick is nil.
@@ -36,6 +45,30 @@ func (m *Map) HitTest(x, y float32) *Target {
 // Reset clears all targets for the next frame.
 func (m *Map) Reset() {
 	m.targets = m.targets[:0]
+	m.scrollTargets = m.scrollTargets[:0]
+}
+
+// AddScroll registers a scrollable viewport region.
+func (m *Map) AddScroll(bounds draw.Rect, contentH, viewportH float32, onScroll func(deltaY float32)) {
+	if onScroll == nil {
+		return
+	}
+	m.scrollTargets = append(m.scrollTargets, ScrollTarget{
+		Bounds:         bounds,
+		ContentHeight:  contentH,
+		ViewportHeight: viewportH,
+		OnScroll:       onScroll,
+	})
+}
+
+// HitTestScroll returns the scroll target containing (x, y), or nil.
+func (m *Map) HitTestScroll(x, y float32) *ScrollTarget {
+	for i := len(m.scrollTargets) - 1; i >= 0; i-- {
+		if m.scrollTargets[i].Bounds.Contains(draw.Pt(x, y)) {
+			return &m.scrollTargets[i]
+		}
+	}
+	return nil
 }
 
 // HitTestIndex returns the index of the top-most target containing (x, y), or -1.
