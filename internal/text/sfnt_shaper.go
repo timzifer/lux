@@ -2,9 +2,11 @@ package text
 
 import (
 	"image"
+	"image/color"
 	"math"
 	"sync"
 
+	msdf "github.com/pierrec/msdf/pkg"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
 	"golang.org/x/image/font"
@@ -18,8 +20,9 @@ type SfntShaper struct {
 	fallback *fonts.FontFamily
 	families map[string]*fonts.FontFamily // keyed by family name
 
-	mu    sync.Mutex
-	faces map[faceCacheKey]font.Face
+	mu       sync.Mutex
+	faces    map[faceCacheKey]font.Face
+	msdfGens map[msdfCacheKey]*msdf.Msdf
 }
 
 type faceCacheKey struct {
@@ -267,6 +270,86 @@ func (s *SfntShaper) RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedGly
 		BearingY: float32(-minY), // negate: minY is negative for ascenders
 		Advance:  fixedToFloat(adv),
 	}
+}
+
+// MSDFRasterizedGlyph holds the MSDF-rendered image and metrics.
+type MSDFRasterizedGlyph struct {
+	Image    *image.NRGBA
+	BearingX float32
+	BearingY float32
+	Advance  float32
+	PxRange  float32
+}
+
+// RasterizeMSDFGlyph renders a single glyph as an MSDF image using pierrec/msdf.
+// atlasSize is the ppem size (typically 32), pxRange is the SDF distance range.
+func (s *SfntShaper) RasterizeMSDFGlyph(r rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph {
+	sf := f.SfntFont()
+	if sf == nil {
+		return nil
+	}
+
+	// Get or create the MSDF generator for this font+size combination.
+	s.mu.Lock()
+	cacheKey := msdfCacheKey{fontID: f.ID(), size: atlasSize}
+	gen, ok := s.msdfGens[cacheKey]
+	if !ok {
+		gen = msdf.NewFromFont(sf, &msdf.Config{
+			Size:          float64(atlasSize),
+			DistanceField: float64(pxRange),
+		})
+		if s.msdfGens == nil {
+			s.msdfGens = make(map[msdfCacheKey]*msdf.Msdf)
+		}
+		s.msdfGens[cacheKey] = gen
+	}
+	s.mu.Unlock()
+
+	glyph, err := gen.Get(r)
+	if err != nil || glyph == nil || glyph.Canvas == nil {
+		return nil
+	}
+
+	rgba := glyph.Canvas.Image()
+	if rgba == nil {
+		return nil
+	}
+	bounds := rgba.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	if w <= 0 || h <= 0 {
+		return nil
+	}
+
+	// Convert *image.RGBA to *image.NRGBA.
+	nrgba := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			c := rgba.RGBAAt(bounds.Min.X+x, bounds.Min.Y+y)
+			nrgba.SetNRGBA(x, y, color.NRGBA{R: c.R, G: c.G, B: c.B, A: 255})
+		}
+	}
+
+	// PlaneBounds and Advance are already in pixel units at the given ppem
+	// (Config.Size). BearingX = left edge offset from cursor.
+	// BearingY = distance from baseline to top of glyph (negate Min.Y/Top
+	// since Min.Y is negative for glyphs above baseline in sfnt coords).
+	opts := glyph.Options
+	bearingX := float32(opts.PlaneBounds.Left)
+	bearingY := float32(-opts.PlaneBounds.Top)
+	advance := float32(opts.Advance)
+
+	return &MSDFRasterizedGlyph{
+		Image:    nrgba,
+		BearingX: bearingX,
+		BearingY: bearingY,
+		Advance:  advance,
+		PxRange:  pxRange,
+	}
+}
+
+type msdfCacheKey struct {
+	fontID uint64
+	size   int
 }
 
 // ── Helpers ──────────────────────────────────────────────────────

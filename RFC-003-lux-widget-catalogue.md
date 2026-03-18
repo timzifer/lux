@@ -706,7 +706,7 @@ lux/layout     — Constraints, Flexbox, Stack, Grid (eingebaute Layouts)
 `Card`, `Tabs`, `Accordion`, `Tooltip`, `Badge`, `Chip`, `MenuBar`, `ContextMenu`
 
 **Tier 4 — Erweitert** *(post-v1.0)*
-`DatePicker`, `ColorPicker`, `DataTable`, `SplitView`, `Toolbar`, `RichTextEditor`, `FilePicker` (Open/Save)
+`DatePicker`, `ColorPicker`, `DataTable`, `SplitView`, `Toolbar`, `RichTextEditor`, `FilePicker` (Open/Save), `TextArea`
 
 ### 4.2 Widget-Spezifikations-Template
 

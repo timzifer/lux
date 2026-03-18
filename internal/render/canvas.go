@@ -199,18 +199,24 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 	}
 }
 
-// drawTextTextured shapes text and emits TexturedGlyphs from the atlas.
+// drawTextTextured shapes text and emits TexturedGlyphs (or MSDFGlyphs) from the atlas.
 // origin.Y is the top-left of the text bounding box (not the baseline).
 func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw.TextStyle, color draw.Color, shaper *text.SfntShaper) {
 	shaped := shaper.Shape(txt, style)
 	cursorX := origin.X
-	sizePx := uint16(text.DpToPixels(style.Size))
 
 	f := shaper.ResolveFont(style)
 	if f == nil {
 		return
 	}
 	fontID := f.ID()
+
+	sizePx := uint16(text.DpToPixels(style.Size))
+
+	// Use MSDF only for large sizes where the scalable SDF sharpness
+	// advantage outweighs the lack of hinting. Below the threshold,
+	// the hinted bitmap rasterizer produces crisper results.
+	useMSDF := f.SfntFont() != nil && sizePx >= text.MSDFMinSize
 
 	// Compute the font ascent so we can convert the top-left origin to
 	// a baseline for glyph placement: baseline = origin.Y + ascent.
@@ -219,30 +225,53 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 	metrics := shaper.Measure(txt, style)
 	baseline := float32(math.Round(float64(origin.Y + metrics.Ascent)))
 
+	// Scale factor for MSDF glyphs: atlas is rendered at MSDFAtlasSize,
+	// we scale to the requested size.
+	msdfScale := float32(sizePx) / float32(text.MSDFAtlasSize)
+
 	for _, sg := range shaped {
 		if sg.Rune == ' ' {
 			cursorX += sg.Advance
 			continue
 		}
 
-		key := text.GlyphKey{FontID: fontID, Rune: sg.Rune, SizePx: sizePx}
-		entry, ok := c.atlas.LookupOrInsert(key, shaper, style)
+		var entry text.AtlasEntry
+		var ok bool
+
+		if useMSDF {
+			key := text.GlyphKey{FontID: fontID, Rune: sg.Rune, SizePx: uint16(text.MSDFAtlasSize), MSDF: true}
+			entry, ok = c.atlas.LookupOrInsertMSDF(key, shaper, f)
+		} else {
+			key := text.GlyphKey{FontID: fontID, Rune: sg.Rune, SizePx: sizePx}
+			entry, ok = c.atlas.LookupOrInsert(key, shaper, style)
+		}
 		if !ok {
 			cursorX += sg.Advance
 			continue
 		}
 
-		dstX := float32(math.Round(float64(cursorX + entry.BearingX)))
-		dstY := float32(math.Round(float64(baseline - entry.BearingY)))
-		if c.isClipped(dstX, dstY, float32(entry.W), float32(entry.H)) {
+		var dstX, dstY, dstW, dstH float32
+		if useMSDF {
+			dstW = float32(entry.W) * msdfScale
+			dstH = float32(entry.H) * msdfScale
+			dstX = float32(math.Round(float64(cursorX + entry.BearingX*msdfScale)))
+			dstY = float32(math.Round(float64(baseline - entry.BearingY*msdfScale)))
+		} else {
+			dstW = float32(entry.W)
+			dstH = float32(entry.H)
+			dstX = float32(math.Round(float64(cursorX + entry.BearingX)))
+			dstY = float32(math.Round(float64(baseline - entry.BearingY)))
+		}
+
+		if c.isClipped(dstX, dstY, dstW, dstH) {
 			cursorX += sg.Advance
 			continue
 		}
 		tg := draw.TexturedGlyph{
 			DstX: dstX,
 			DstY: dstY,
-			DstW: float32(entry.W),
-			DstH: float32(entry.H),
+			DstW: dstW,
+			DstH: dstH,
 			SrcX: entry.X, SrcY: entry.Y,
 			SrcW: entry.W, SrcH: entry.H,
 			Color: color,
@@ -253,35 +282,63 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			clip := c.clips[len(c.clips)-1]
 			if tg.DstX < clip.X {
 				d := clip.X - tg.DstX
-				tg.SrcX += int(d)
-				tg.SrcW -= int(d)
+				if useMSDF {
+					srcD := d / msdfScale
+					tg.SrcX += int(srcD)
+					tg.SrcW -= int(srcD)
+				} else {
+					tg.SrcX += int(d)
+					tg.SrcW -= int(d)
+				}
 				tg.DstW -= d
 				tg.DstX = clip.X
 			}
 			if tg.DstY < clip.Y {
 				d := clip.Y - tg.DstY
-				tg.SrcY += int(d)
-				tg.SrcH -= int(d)
+				if useMSDF {
+					srcD := d / msdfScale
+					tg.SrcY += int(srcD)
+					tg.SrcH -= int(srcD)
+				} else {
+					tg.SrcY += int(d)
+					tg.SrcH -= int(d)
+				}
 				tg.DstH -= d
 				tg.DstY = clip.Y
 			}
 			if tg.DstX+tg.DstW > clip.X+clip.W {
 				tg.DstW = clip.X + clip.W - tg.DstX
-				tg.SrcW = int(tg.DstW)
+				if !useMSDF {
+					tg.SrcW = int(tg.DstW)
+				} else {
+					tg.SrcW = int(tg.DstW / msdfScale)
+				}
 			}
 			if tg.DstY+tg.DstH > clip.Y+clip.H {
 				tg.DstH = clip.Y + clip.H - tg.DstY
-				tg.SrcH = int(tg.DstH)
+				if !useMSDF {
+					tg.SrcH = int(tg.DstH)
+				} else {
+					tg.SrcH = int(tg.DstH / msdfScale)
+				}
 			}
 			if tg.DstW <= 0 || tg.DstH <= 0 {
 				cursorX += sg.Advance
 				continue
 			}
 		}
-		if c.overlayMode {
-			c.scene.OverlayTexturedGlyphs = append(c.scene.OverlayTexturedGlyphs, tg)
+		if useMSDF {
+			if c.overlayMode {
+				c.scene.OverlayMSDFGlyphs = append(c.scene.OverlayMSDFGlyphs, tg)
+			} else {
+				c.scene.MSDFGlyphs = append(c.scene.MSDFGlyphs, tg)
+			}
 		} else {
-			c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, tg)
+			if c.overlayMode {
+				c.scene.OverlayTexturedGlyphs = append(c.scene.OverlayTexturedGlyphs, tg)
+			} else {
+				c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, tg)
+			}
 		}
 
 		cursorX += sg.Advance

@@ -32,6 +32,39 @@ void main() {
 }
 ` + "\x00"
 
+// GLSL 330 core shaders for MSDF text rendering.
+
+const msdfFragmentShader = `#version 330 core
+in vec2 vUV;
+
+uniform sampler2D uAtlas;
+uniform vec4 uColor;
+uniform float uPxRange;
+
+out vec4 fragColor;
+
+float median(float r, float g, float b) {
+    return max(min(r, g), min(max(r, g), b));
+}
+
+void main() {
+    vec3 s = texture(uAtlas, vUV).rgb;
+    float d = median(s.r, s.g, s.b);
+
+    // Compute screen-pixel distance using UV derivatives (Chlumsky method).
+    // unitRange = fraction of the atlas that the SDF range covers.
+    // screenTexSize = screen pixels per UV unit.
+    // screenPxRange = SDF range expressed in screen pixels.
+    vec2 unitRange = vec2(uPxRange) / vec2(textureSize(uAtlas, 0));
+    vec2 screenTexSize = vec2(1.0) / fwidth(vUV);
+    float screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
+
+    float screenPxDist = screenPxRange * (d - 0.5);
+    float alpha = clamp(screenPxDist + 0.5, 0.0, 1.0);
+    fragColor = vec4(uColor.rgb, uColor.a * alpha);
+}
+` + "\x00"
+
 // GLSL 330 core shaders for rounded rectangle rendering.
 
 const rectVertexShader = `#version 330 core

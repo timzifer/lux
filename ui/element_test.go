@@ -720,14 +720,15 @@ func TestBuildSceneTextStyled(t *testing.T) {
 
 func TestSfntBuildSceneText(t *testing.T) {
 	scene := buildTestSceneSfnt(Text("HELLO WORLD"), 800, 600)
-	// With sfnt shaper, text goes through TexturedGlyphs instead of Glyphs.
-	if len(scene.TexturedGlyphs) == 0 {
-		t.Fatal("Sfnt Text element should produce TexturedGlyphs")
+	// With sfnt shaper + MSDF, text goes through MSDFGlyphs (or TexturedGlyphs for bitmap fallback).
+	total := len(scene.TexturedGlyphs) + len(scene.MSDFGlyphs)
+	if total == 0 {
+		t.Fatal("Sfnt Text element should produce TexturedGlyphs or MSDFGlyphs")
 	}
-	// Each non-space character should produce a textured glyph.
+	// Each non-space character should produce a glyph.
 	// "HELLO WORLD" has 10 non-space characters.
-	if len(scene.TexturedGlyphs) != 10 {
-		t.Errorf("expected 10 TexturedGlyphs for 'HELLO WORLD', got %d", len(scene.TexturedGlyphs))
+	if total != 10 {
+		t.Errorf("expected 10 glyphs for 'HELLO WORLD', got %d", total)
 	}
 	// No legacy bitmap glyphs should be used.
 	if len(scene.Glyphs) != 0 {
@@ -737,12 +738,13 @@ func TestSfntBuildSceneText(t *testing.T) {
 
 func TestSfntBuildSceneButton(t *testing.T) {
 	scene := buildTestSceneSfnt(Button("OK", nil), 800, 600)
-	// Button: 2 rects (edge + fill) + textured glyphs for "OK" (2 chars).
+	// Button: 2 rects (edge + fill) + glyphs for "OK" (2 chars).
 	if len(scene.Rects) != 2 {
 		t.Fatalf("Button should produce 2 rects, got %d", len(scene.Rects))
 	}
-	if len(scene.TexturedGlyphs) != 2 {
-		t.Errorf("Button label 'OK' should produce 2 TexturedGlyphs, got %d", len(scene.TexturedGlyphs))
+	total := len(scene.TexturedGlyphs) + len(scene.MSDFGlyphs)
+	if total != 2 {
+		t.Errorf("Button label 'OK' should produce 2 glyphs, got %d", total)
 	}
 }
 
@@ -752,9 +754,10 @@ func TestSfntBuildSceneColumnTextAndButton(t *testing.T) {
 		Button("GO", nil),
 	), 800, 600)
 
-	// HELLO (5 glyphs) + GO (2 glyphs) = 7 textured glyphs.
-	if len(scene.TexturedGlyphs) != 7 {
-		t.Errorf("expected 7 TexturedGlyphs, got %d", len(scene.TexturedGlyphs))
+	// HELLO (5 glyphs) + GO (2 glyphs) = 7 glyphs.
+	total := len(scene.TexturedGlyphs) + len(scene.MSDFGlyphs)
+	if total != 7 {
+		t.Errorf("expected 7 glyphs, got %d", total)
 	}
 	// Button produces 2 rects.
 	if len(scene.Rects) != 2 {
@@ -764,10 +767,12 @@ func TestSfntBuildSceneColumnTextAndButton(t *testing.T) {
 
 func TestSfntTexturedGlyphsHaveValidBounds(t *testing.T) {
 	scene := buildTestSceneSfnt(Text("A"), 800, 600)
-	if len(scene.TexturedGlyphs) != 1 {
-		t.Fatalf("expected 1 TexturedGlyph, got %d", len(scene.TexturedGlyphs))
+	// Glyphs may be in TexturedGlyphs or MSDFGlyphs depending on font.
+	allGlyphs := append(scene.TexturedGlyphs, scene.MSDFGlyphs...)
+	if len(allGlyphs) != 1 {
+		t.Fatalf("expected 1 glyph, got %d", len(allGlyphs))
 	}
-	g := scene.TexturedGlyphs[0]
+	g := allGlyphs[0]
 	if g.DstW <= 0 || g.DstH <= 0 {
 		t.Errorf("glyph size = %fx%f, want > 0", g.DstW, g.DstH)
 	}
@@ -778,9 +783,10 @@ func TestSfntTexturedGlyphsHaveValidBounds(t *testing.T) {
 
 func TestSfntTexturedGlyphsInsideViewport(t *testing.T) {
 	scene := buildTestSceneSfnt(Text("Test"), 800, 600)
-	for i, g := range scene.TexturedGlyphs {
+	allGlyphs := append(scene.TexturedGlyphs, scene.MSDFGlyphs...)
+	for i, g := range allGlyphs {
 		if g.DstX < 0 || g.DstY < -100 || g.DstX > 800 || g.DstY > 600 {
-			t.Errorf("TexturedGlyph[%d] at (%f,%f) outside reasonable bounds", i, g.DstX, g.DstY)
+			t.Errorf("Glyph[%d] at (%f,%f) outside reasonable bounds", i, g.DstX, g.DstY)
 		}
 	}
 }
@@ -791,7 +797,8 @@ func TestSfntTextMeasureConsistentWithLayout(t *testing.T) {
 	sceneSfnt := buildTestSceneSfnt(Column(Text("A"), Text("B")), 800, 600)
 
 	// In bitmap mode, glyph[1].Y should differ from sfnt mode since metrics differ.
-	if len(sceneBitmap.Glyphs) < 2 || len(sceneSfnt.TexturedGlyphs) < 2 {
+	allSfntGlyphs := append(sceneSfnt.TexturedGlyphs, sceneSfnt.MSDFGlyphs...)
+	if len(sceneBitmap.Glyphs) < 2 || len(allSfntGlyphs) < 2 {
 		t.Skip("need at least 2 glyphs for comparison")
 	}
 
@@ -799,8 +806,8 @@ func TestSfntTextMeasureConsistentWithLayout(t *testing.T) {
 	// because font metrics are different.
 	bitmapBY := sceneBitmap.Glyphs[1].Y
 	// Find the second text element's first glyph (B).
-	// In sfnt mode, A produces 1 TexturedGlyph, B produces 1 = index 1.
-	sfntBY := sceneSfnt.TexturedGlyphs[1].DstY
+	// In sfnt mode, A produces 1 glyph, B produces 1 = index 1.
+	sfntBY := allSfntGlyphs[1].DstY
 
 	// They should be different because bitmap and sfnt have different ascents.
 	if float32(bitmapBY) == sfntBY {
@@ -810,9 +817,10 @@ func TestSfntTextMeasureConsistentWithLayout(t *testing.T) {
 
 func TestSfntCheckboxWithLabel(t *testing.T) {
 	scene := buildTestSceneSfnt(Checkbox("Enable", true, nil), 800, 600)
-	// Should have TexturedGlyphs for both the checkmark and label.
-	if len(scene.TexturedGlyphs) == 0 {
-		t.Fatal("Sfnt Checkbox should produce TexturedGlyphs")
+	// Should have glyphs for both the checkmark and label.
+	total := len(scene.TexturedGlyphs) + len(scene.MSDFGlyphs)
+	if total == 0 {
+		t.Fatal("Sfnt Checkbox should produce TexturedGlyphs or MSDFGlyphs")
 	}
 }
 

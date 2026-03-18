@@ -125,10 +125,12 @@ type Scene struct {
 	Rects          []DrawRect
 	Glyphs         []DrawGlyph      // legacy bitmap glyphs
 	TexturedGlyphs []TexturedGlyph  // atlas-based glyphs
+	MSDFGlyphs     []TexturedGlyph  // MSDF atlas-based glyphs
 
 	// Overlay draw lists — rendered after main content so overlays
 	// (tooltips, dropdowns, context menus) fully cover underlying text.
 	OverlayRects          []DrawRect
 	OverlayGlyphs         []DrawGlyph
 	OverlayTexturedGlyphs []TexturedGlyph
+	OverlayMSDFGlyphs     []TexturedGlyph
 }

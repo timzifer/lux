@@ -4,13 +4,16 @@ import (
 	"image"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/fonts"
 )
 
 // GlyphKey uniquely identifies a rasterized glyph in the atlas.
+// When MSDF is true, SizePx is fixed at MSDFAtlasSize.
 type GlyphKey struct {
 	FontID uint64
 	Rune   rune
 	SizePx uint16
+	MSDF   bool
 }
 
 // AtlasEntry describes the location and metrics of a glyph in the atlas.
@@ -18,11 +21,24 @@ type AtlasEntry struct {
 	X, Y, W, H          int     // position and size in the atlas image
 	BearingX, BearingY   float32 // glyph bearing (offset from cursor)
 	Advance              float32 // horizontal advance
+	PxRange              float32 // MSDF pixel range (0 for bitmap glyphs)
 }
+
+// MSDFAtlasSize is the fixed pixel size at which MSDF glyphs are rasterized.
+const MSDFAtlasSize = 32
+
+// MSDFPxRange is the SDF distance field range in pixels.
+const MSDFPxRange = 4.0
+
+// MSDFMinSize is the minimum requested text size (in px) for using MSDF.
+// Below this threshold the hinted bitmap rasterizer is used instead,
+// which produces sharper results at small sizes thanks to pixel-grid hinting.
+const MSDFMinSize = 24
 
 // GlyphAtlas caches rasterized glyphs in a grayscale texture atlas.
 // The atlas uses simple row-based packing: glyphs are placed left to right,
 // wrapping to the next row when the current row is full.
+// A secondary NRGBA atlas is used for MSDF glyphs.
 type GlyphAtlas struct {
 	Image   *image.Gray
 	Entries map[GlyphKey]AtlasEntry
@@ -33,15 +49,27 @@ type GlyphAtlas struct {
 	cursorX   int
 	cursorY   int
 	rowHeight int
+
+	// MSDF atlas (RGB channels encode signed distance fields).
+	MSDFImage     *image.NRGBA
+	MSDFWidth     int
+	MSDFHeight    int
+	MSDFDirty     bool
+	msdfCursorX   int
+	msdfCursorY   int
+	msdfRowHeight int
 }
 
 // NewGlyphAtlas creates an atlas with the given initial dimensions.
 func NewGlyphAtlas(w, h int) *GlyphAtlas {
 	return &GlyphAtlas{
-		Image:   image.NewGray(image.Rect(0, 0, w, h)),
-		Entries: make(map[GlyphKey]AtlasEntry),
-		Width:   w,
-		Height:  h,
+		Image:     image.NewGray(image.Rect(0, 0, w, h)),
+		Entries:   make(map[GlyphKey]AtlasEntry),
+		Width:     w,
+		Height:    h,
+		MSDFImage:  image.NewNRGBA(image.Rect(0, 0, 512, 512)),
+		MSDFWidth:  512,
+		MSDFHeight: 512,
 	}
 }
 
@@ -131,5 +159,82 @@ func (a *GlyphAtlas) LookupOrInsert(key GlyphKey, shaper *SfntShaper, style draw
 
 	bearing := draw.Pt(rg.BearingX, rg.BearingY)
 	entry := a.Insert(key, rg.Image, bearing, rg.Advance)
+	return entry, true
+}
+
+// InsertMSDF inserts an MSDF glyph into the NRGBA atlas.
+func (a *GlyphAtlas) InsertMSDF(key GlyphKey, glyphImg *image.NRGBA, bearing draw.Point, advance, pxRange float32) AtlasEntry {
+	bounds := glyphImg.Bounds()
+	w := bounds.Dx()
+	h := bounds.Dy()
+
+	if a.msdfCursorX+w > a.MSDFWidth {
+		a.msdfCursorY += a.msdfRowHeight + 1
+		a.msdfCursorX = 0
+		a.msdfRowHeight = 0
+	}
+
+	if a.msdfCursorY+h > a.MSDFHeight {
+		a.growMSDF()
+	}
+
+	// Copy glyph pixels into the MSDF atlas.
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			a.MSDFImage.SetNRGBA(a.msdfCursorX+x, a.msdfCursorY+y,
+				glyphImg.NRGBAAt(bounds.Min.X+x, bounds.Min.Y+y))
+		}
+	}
+
+	entry := AtlasEntry{
+		X: a.msdfCursorX, Y: a.msdfCursorY,
+		W: w, H: h,
+		BearingX: bearing.X,
+		BearingY: bearing.Y,
+		Advance:  advance,
+		PxRange:  pxRange,
+	}
+	a.Entries[key] = entry
+
+	a.msdfCursorX += w + 1
+	if h > a.msdfRowHeight {
+		a.msdfRowHeight = h
+	}
+	a.MSDFDirty = true
+
+	return entry
+}
+
+// growMSDF doubles the MSDF atlas height and copies existing data.
+func (a *GlyphAtlas) growMSDF() {
+	newH := a.MSDFHeight * 2
+	if newH < 512 {
+		newH = 512
+	}
+	newImg := image.NewNRGBA(image.Rect(0, 0, a.MSDFWidth, newH))
+
+	for y := 0; y < a.MSDFHeight; y++ {
+		srcOff := y * a.MSDFImage.Stride
+		dstOff := y * newImg.Stride
+		copy(newImg.Pix[dstOff:dstOff+a.MSDFWidth*4], a.MSDFImage.Pix[srcOff:srcOff+a.MSDFWidth*4])
+	}
+
+	a.MSDFImage = newImg
+	a.MSDFHeight = newH
+}
+
+// LookupOrInsertMSDF looks up an MSDF glyph, rasterizing it via the shaper if missing.
+func (a *GlyphAtlas) LookupOrInsertMSDF(key GlyphKey, shaper *SfntShaper, f *fonts.Font) (AtlasEntry, bool) {
+	if entry, ok := a.Lookup(key); ok {
+		return entry, true
+	}
+
+	rg := shaper.RasterizeMSDFGlyph(key.Rune, f, MSDFAtlasSize, MSDFPxRange)
+	if rg == nil {
+		return AtlasEntry{}, false
+	}
+
+	bearing := draw.Pt(rg.BearingX, rg.BearingY)
+	entry := a.InsertMSDF(key, rg.Image, bearing, rg.Advance, rg.PxRange)
 	return entry, true
 }

@@ -30,6 +30,17 @@ type OpenGLRenderer struct {
 	atlas        *text.GlyphAtlas
 	textInited   bool
 
+	// MSDF text rendering resources.
+	msdfProgram      uint32
+	msdfVAO          uint32
+	msdfVBO          uint32
+	msdfAtlasTexture uint32
+	msdfProjUniform  int32
+	msdfColorUniform int32
+	msdfAtlasUniform   int32
+	msdfPxRangeUniform int32
+	msdfInited         bool
+
 	// Rounded rect rendering resources.
 	rectProgram     uint32
 	rectVAO         uint32
@@ -111,6 +122,9 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	if len(scene.TexturedGlyphs) > 0 {
 		r.drawTexturedGlyphs(scene.TexturedGlyphs)
 	}
+	if len(scene.MSDFGlyphs) > 0 {
+		r.drawMSDFGlyphs(scene.MSDFGlyphs)
+	}
 
 	// Overlay pass — rendered after all main content so overlays
 	// (dropdowns, tooltips, context menus) fully cover underlying text.
@@ -137,6 +151,9 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	if len(scene.OverlayTexturedGlyphs) > 0 {
 		r.drawTexturedGlyphs(scene.OverlayTexturedGlyphs)
 	}
+	if len(scene.OverlayMSDFGlyphs) > 0 {
+		r.drawMSDFGlyphs(scene.OverlayMSDFGlyphs)
+	}
 }
 
 // EndFrame is a no-op for OpenGL (swap is handled by GLFW).
@@ -150,6 +167,14 @@ func (r *OpenGLRenderer) Destroy() {
 		gl.DeleteBuffers(1, &r.textVBO)
 		if r.atlasTexture != 0 {
 			gl.DeleteTextures(1, &r.atlasTexture)
+		}
+	}
+	if r.msdfInited {
+		gl.DeleteProgram(r.msdfProgram)
+		gl.DeleteVertexArrays(1, &r.msdfVAO)
+		gl.DeleteBuffers(1, &r.msdfVBO)
+		if r.msdfAtlasTexture != 0 {
+			gl.DeleteTextures(1, &r.msdfAtlasTexture)
 		}
 	}
 	if r.rectInited {
@@ -422,6 +447,145 @@ func (r *OpenGLRenderer) drawTexturedGlyphs(glyphs []draw.TexturedGlyph) {
 
 func (r *OpenGLRenderer) flushTextBatch(vertices []float32, color draw.Color) {
 	gl.Uniform4f(r.colorUniform, color.R, color.G, color.B, color.A)
+	gl.BufferData(gl.ARRAY_BUFFER,
+		len(vertices)*4,
+		gl.Ptr(vertices),
+		gl.DYNAMIC_DRAW)
+	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(vertices)/4))
+}
+
+// ── MSDF glyph rendering ────────────────────────────────────────
+
+func (r *OpenGLRenderer) initMSDFRendering() {
+	if r.msdfInited {
+		return
+	}
+
+	program, err := compileProgram(textVertexShader, msdfFragmentShader)
+	if err != nil {
+		return
+	}
+
+	r.msdfProgram = program
+	r.msdfProjUniform = gl.GetUniformLocation(program, gl.Str("uProj\x00"))
+	r.msdfColorUniform = gl.GetUniformLocation(program, gl.Str("uColor\x00"))
+	r.msdfAtlasUniform = gl.GetUniformLocation(program, gl.Str("uAtlas\x00"))
+	r.msdfPxRangeUniform = gl.GetUniformLocation(program, gl.Str("uPxRange\x00"))
+
+	gl.GenVertexArrays(1, &r.msdfVAO)
+	gl.GenBuffers(1, &r.msdfVBO)
+
+	gl.BindVertexArray(r.msdfVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.msdfVBO)
+
+	stride := int32(4 * 4)
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointerWithOffset(0, 2, gl.FLOAT, false, stride, 0)
+	gl.EnableVertexAttribArray(1)
+	gl.VertexAttribPointerWithOffset(1, 2, gl.FLOAT, false, stride, uintptr(2*4))
+
+	gl.BindVertexArray(0)
+
+	// Create MSDF atlas texture (RGBA, no swizzle).
+	gl.GenTextures(1, &r.msdfAtlasTexture)
+	gl.BindTexture(gl.TEXTURE_2D, r.msdfAtlasTexture)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	gl.BindTexture(gl.TEXTURE_2D, 0)
+
+	r.msdfInited = true
+}
+
+func (r *OpenGLRenderer) uploadMSDFAtlas() {
+	if r.atlas == nil || !r.atlas.MSDFDirty {
+		return
+	}
+	gl.BindTexture(gl.TEXTURE_2D, r.msdfAtlasTexture)
+	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 4)
+	gl.TexImage2D(
+		gl.TEXTURE_2D, 0, gl.RGBA,
+		int32(r.atlas.MSDFWidth), int32(r.atlas.MSDFHeight),
+		0, gl.RGBA, gl.UNSIGNED_BYTE,
+		gl.Ptr(r.atlas.MSDFImage.Pix),
+	)
+	r.atlas.MSDFDirty = false
+}
+
+func (r *OpenGLRenderer) drawMSDFGlyphs(glyphs []draw.TexturedGlyph) {
+	r.initMSDFRendering()
+	if !r.msdfInited || r.atlas == nil {
+		return
+	}
+
+	r.uploadMSDFAtlas()
+
+	gl.Disable(gl.SCISSOR_TEST)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+	gl.UseProgram(r.msdfProgram)
+
+	proj := orthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
+	gl.UniformMatrix4fv(r.msdfProjUniform, 1, false, &proj[0])
+
+	gl.ActiveTexture(gl.TEXTURE0)
+	gl.BindTexture(gl.TEXTURE_2D, r.msdfAtlasTexture)
+	gl.Uniform1i(r.msdfAtlasUniform, 0)
+	gl.Uniform1f(r.msdfPxRangeUniform, float32(text.MSDFPxRange))
+
+	gl.BindVertexArray(r.msdfVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.msdfVBO)
+
+	atlasW := float32(r.atlas.MSDFWidth)
+	atlasH := float32(r.atlas.MSDFHeight)
+
+	vertices := make([]float32, 0, len(glyphs)*6*4)
+	var prevColor draw.Color
+	firstGlyph := true
+
+	for _, g := range glyphs {
+		if !firstGlyph && g.Color != prevColor {
+			r.flushMSDFBatch(vertices, prevColor)
+			vertices = vertices[:0]
+		}
+		prevColor = g.Color
+		firstGlyph = false
+
+		x0 := g.DstX
+		y0 := g.DstY
+		x1 := g.DstX + g.DstW
+		y1 := g.DstY + g.DstH
+
+		u0 := float32(g.SrcX) / atlasW
+		v0 := float32(g.SrcY) / atlasH
+		u1 := float32(g.SrcX+g.SrcW) / atlasW
+		v1 := float32(g.SrcY+g.SrcH) / atlasH
+
+		vertices = append(vertices,
+			x0, y0, u0, v0,
+			x1, y0, u1, v0,
+			x0, y1, u0, v1,
+
+			x1, y0, u1, v0,
+			x1, y1, u1, v1,
+			x0, y1, u0, v1,
+		)
+	}
+
+	if len(vertices) > 0 {
+		r.flushMSDFBatch(vertices, prevColor)
+	}
+
+	gl.BindVertexArray(0)
+	gl.UseProgram(0)
+	gl.Disable(gl.BLEND)
+	gl.Enable(gl.SCISSOR_TEST)
+}
+
+func (r *OpenGLRenderer) flushMSDFBatch(vertices []float32, color draw.Color) {
+	gl.Uniform4f(r.msdfColorUniform, color.R, color.G, color.B, color.A)
 	gl.BufferData(gl.ARRAY_BUFFER,
 		len(vertices)*4,
 		gl.Ptr(vertices),
