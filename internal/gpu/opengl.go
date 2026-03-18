@@ -88,16 +88,22 @@ func (r *OpenGLRenderer) BeginFrame() {
 // shader-based SDF for rounded rects, bitmap glyphs via per-pixel scissor,
 // and textured quads for atlas glyphs.
 func (r *OpenGLRenderer) Draw(scene draw.Scene) {
-	var roundedRects []draw.DrawRect
+	// Render rects preserving scene order: batch consecutive rounded rects,
+	// flush before each sharp rect to maintain correct z-ordering.
+	var roundedBatch []draw.DrawRect
 	for _, rect := range scene.Rects {
 		if rect.Radius > 0 {
-			roundedRects = append(roundedRects, rect)
+			roundedBatch = append(roundedBatch, rect)
 		} else {
+			if len(roundedBatch) > 0 {
+				r.drawRoundedRects(roundedBatch)
+				roundedBatch = roundedBatch[:0]
+			}
 			r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
 		}
 	}
-	if len(roundedRects) > 0 {
-		r.drawRoundedRects(roundedRects)
+	if len(roundedBatch) > 0 {
+		r.drawRoundedRects(roundedBatch)
 	}
 	for _, glyph := range scene.Glyphs {
 		r.drawGlyph(glyph)

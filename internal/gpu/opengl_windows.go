@@ -188,9 +188,10 @@ func (r *OpenGLRenderer) fillRoundRect(x, y, w, h int, radius float32, color dra
 				continue
 			}
 
-			// Check corner distance for rounded corners.
-			fx := float32(col)
-			fy := float32(row)
+			// Check corner distance using pixel-center coordinates
+			// (col+0.5, row+0.5) for symmetric top/bottom rounding.
+			fx := float32(col) + 0.5
+			fy := float32(row) + 0.5
 			fw := float32(w)
 			fh := float32(h)
 

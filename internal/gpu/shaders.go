@@ -50,12 +50,17 @@ flat out float vRadius;
 void main() {
     // aRect = (x, y, w, h) in screen coords.
     // aPos = (0,0), (1,0), (0,1), (1,1) — unit quad corner.
-    vec2 pos = aRect.xy + aPos * aRect.zw;
+    // Expand the quad by 0.5px on each side so the SDF anti-aliasing
+    // transition has room on both sides of the mathematical boundary.
+    vec2 expand = vec2(0.5);
+    vec2 expandedSize = aRect.zw + expand * 2.0;
+    vec2 pos = aRect.xy - expand + aPos * expandedSize;
     gl_Position = uProj * vec4(pos, 0.0, 1.0);
 
-    // Local position relative to rect center.
+    // vHalfSize = original rect half-extents (for SDF computation).
     vHalfSize = aRect.zw * 0.5;
-    vLocalPos = (aPos - 0.5) * aRect.zw;
+    // vLocalPos maps the expanded quad so center = (0,0).
+    vLocalPos = (aPos - 0.5) * expandedSize;
     vColor = aColor;
     vRadius = aRadius;
 }
