@@ -428,13 +428,11 @@ func TestScrollEventBecomesScrollMsg(t *testing.T) {
 	}
 }
 
-func TestKeyEventBecomesKeyMsg(t *testing.T) {
+func TestKeyMsgNotForwardedToUserland(t *testing.T) {
 	var receivedKey bool
-	var keyName string
 	update := func(m testModel, msg Msg) testModel {
-		if km, ok := msg.(input.KeyMsg); ok {
+		if _, ok := msg.(input.KeyMsg); ok {
 			receivedKey = true
-			keyName = km.Key
 		}
 		return m
 	}
@@ -447,21 +445,16 @@ func TestKeyEventBecomesKeyMsg(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if !receivedKey {
-		t.Error("update should have received input.KeyMsg")
-	}
-	if keyName != "A" {
-		t.Errorf("key name = %q, want %q", keyName, "A")
+	if receivedKey {
+		t.Error("KeyMsg should not reach userland update")
 	}
 }
 
-func TestCharEventBecomesCharMsg(t *testing.T) {
+func TestCharMsgNotForwardedToUserland(t *testing.T) {
 	var receivedChar bool
-	var ch rune
 	update := func(m testModel, msg Msg) testModel {
-		if cm, ok := msg.(input.CharMsg); ok {
+		if _, ok := msg.(input.CharMsg); ok {
 			receivedChar = true
-			ch = cm.Char
 		}
 		return m
 	}
@@ -474,11 +467,8 @@ func TestCharEventBecomesCharMsg(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if !receivedChar {
-		t.Error("update should have received input.CharMsg")
-	}
-	if ch != 'Z' {
-		t.Errorf("char = %c, want Z", ch)
+	if receivedChar {
+		t.Error("CharMsg should not reach userland update")
 	}
 }
 
@@ -504,11 +494,11 @@ func TestMouseButtonEventBecomesMouseMsg(t *testing.T) {
 	}
 }
 
-func TestKeyModifiersPassedThrough(t *testing.T) {
-	var mods input.KeyModifiers
+func TestKeyModifiersNotPassedToUserland(t *testing.T) {
+	var receivedKey bool
 	update := func(m testModel, msg Msg) testModel {
-		if km, ok := msg.(input.KeyMsg); ok {
-			mods = km.Modifiers
+		if _, ok := msg.(input.KeyMsg); ok {
+			receivedKey = true
 		}
 		return m
 	}
@@ -522,14 +512,8 @@ func TestKeyModifiersPassedThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if !mods.Shift {
-		t.Error("Shift should be true")
-	}
-	if !mods.Ctrl {
-		t.Error("Ctrl should be true")
-	}
-	if mods.Alt {
-		t.Error("Alt should be false")
+	if receivedKey {
+		t.Error("KeyMsg with modifiers should not reach userland update")
 	}
 }
 

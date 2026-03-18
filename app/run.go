@@ -102,6 +102,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			// 1. Drain messages — intercept theme switches before user update (RFC §5.5).
 			modelDirty := false
 			appLoop.DrainMessages(func(msg any) bool {
+				// Handle framework-internal messages.
 				switch m := msg.(type) {
 				case SetThemeMsg:
 					activeTheme = m.Theme
@@ -113,6 +114,32 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 						activeTheme = theme.SlateLight
 					}
 					updateBgColor()
+				case input.KeyMsg:
+					// Internalize keyboard input — never forward to userland.
+					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
+						if is := globalFocus.Input; is != nil {
+							switch m.Key {
+							case "Backspace":
+								if len(is.Value) > 0 {
+									runes := []rune(is.Value)
+									v := string(runes[:len(runes)-1])
+									is.Value = v
+									is.OnChange(v)
+								}
+							case "Escape":
+								globalFocus.Blur()
+							}
+						}
+					}
+					return true
+				case input.CharMsg:
+					// Internalize character input — never forward to userland.
+					if is := globalFocus.Input; is != nil && m.Char >= 32 {
+						v := is.Value + string(m.Char)
+						is.Value = v
+						is.OnChange(v)
+					}
+					return true
 				}
 				currentModel = update(currentModel, msg)
 				modelDirty = true
