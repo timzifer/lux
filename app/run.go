@@ -232,12 +232,17 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			// is still running, force a repaint.
 			animDirty := reconciler.TickAnimators(dt)
 
+			// 2c. DirtyTracker pass — check WidgetStates that explicitly
+			// marked themselves dirty (RFC-001 §6.4), e.g. video surfaces
+			// or external data feeds that change independently of the model.
+			stateDirty := reconciler.CheckDirtyTrackers()
+
 			// Deliver TickMsg directly — always call update, but only
 			// force a rebuild if the model is modified.
 			tickModel := update(currentModel, TickMsg{DeltaTime: dt})
 			tickDirty := modelChanged(any(tickModel), any(currentModel))
 			currentModel = tickModel
-			modelDirty = modelDirty || tickDirty || animDirty
+			modelDirty = modelDirty || tickDirty || animDirty || stateDirty
 
 			// Re-run view and reconcile only when the model changed.
 			if modelDirty {

@@ -26,6 +26,44 @@ type Animator interface {
 	Tick(dt time.Duration) (stillRunning bool)
 }
 
+// Equatable is an optional interface on Widget (RFC-001 §6.4).
+// When implemented, the reconciler calls Equal() to check whether a
+// widget's props have changed before calling Render(). If Equal returns
+// true, the previous render output and state are reused — skipping
+// Render() entirely.
+//
+// Widgets that do NOT implement Equatable are always re-rendered (safe
+// but potentially suboptimal). "Re-render" means calling Widget.Render(),
+// not repainting — the cost is a function call, not a GPU pass.
+type Equatable interface {
+	Widget
+	// Equal returns true if this widget and other would produce identical
+	// Render output. other is guaranteed to be the same concrete type.
+	Equal(other Widget) bool
+}
+
+// DirtyTracker is an optional interface on WidgetState (RFC-001 §6.4).
+// Widgets whose internal state can change independently of their props
+// (e.g. video surfaces, external data feeds) implement DirtyTracker to
+// request a repaint without waiting for a model change.
+//
+// The framework checks IsDirty() on every state that implements this
+// interface after the animation tick pass. If any returns true, the
+// widget tree is rebuilt. ClearDirty() is called after the dirty state
+// has been consumed.
+//
+// Coupling with LayerOptions.CacheHint: a layer with CacheHint=true
+// is only re-recorded when DirtyTracker.IsDirty() returns true. If the
+// widget does not implement DirtyTracker, CacheHint is ignored and the
+// layer is always re-recorded (safe fallback).
+type DirtyTracker interface {
+	// IsDirty returns true if the widget must be redrawn even though
+	// its props haven't changed.
+	IsDirty() bool
+	// ClearDirty resets the dirty flag after the framework has consumed it.
+	ClearDirty()
+}
+
 // UID identifies a widget instance across frames.
 type UID uint64
 

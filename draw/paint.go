@@ -76,5 +76,15 @@ const (
 type LayerOptions struct {
 	BlendMode BlendMode
 	Opacity   float32
+
+	// CacheHint is a promise from the widget author to the framework:
+	// "This layer's content changes only when DirtyTracker.IsDirty()
+	// returns true for the owning widget's state." (RFC-001 §6.2.3)
+	//
+	// When true, the framework may reuse the recorded GPU command buffer
+	// between frames without re-invoking the DrawFunc.
+	//
+	// If the widget does NOT implement DirtyTracker, CacheHint is ignored
+	// and the layer is always re-recorded (safe fallback).
 	CacheHint bool
 }

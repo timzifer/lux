@@ -147,10 +147,10 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] Schärfere Kurven bei kleinen Schriftgrößen (Dual-Path: MSDF ≥24px, hinted Bitmap <24px)
 - **Abhängig von:** nichts
 
-### 3.4 VTree-Optimierungen (RFC-001 §6.4)
-- [ ] `Equatable`-Interface für Widget-Equality
-- [ ] `DirtyTracker`-Interface für explizites Dirty-Marking
-- [ ] `CacheHint`-Unterstützung in `LayerOptions`
+### 3.4 VTree-Optimierungen (RFC-001 §6.4) ✅
+- [x] `Equatable`-Interface für Widget-Equality
+- [x] `DirtyTracker`-Interface für explizites Dirty-Marking
+- [x] `CacheHint`-Unterstützung in `LayerOptions`
 - **Abhängig von:** nichts
 
 ### 3.5 Theme-Lookup-Cache (RFC-001 §5.4, RFC-003 §1.4)

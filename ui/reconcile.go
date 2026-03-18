@@ -16,13 +16,19 @@ import (
 
 // Reconciler manages persistent widget state across frames.
 type Reconciler struct {
-	states   map[UID]WidgetState
-	prevTree Element
+	states      map[UID]WidgetState
+	widgets     map[UID]Widget  // previous widget instance per UID (for Equatable)
+	resolvedSub map[UID]Element // previous resolved subtree per UID (for Equatable skip)
+	prevTree    Element
 }
 
 // NewReconciler creates a ready-to-use Reconciler.
 func NewReconciler() *Reconciler {
-	return &Reconciler{states: make(map[UID]WidgetState)}
+	return &Reconciler{
+		states:      make(map[UID]WidgetState),
+		widgets:     make(map[UID]Widget),
+		resolvedSub: make(map[UID]Element),
+	}
 }
 
 // Reconcile processes a new element tree: expands widgetElement nodes by
@@ -43,6 +49,8 @@ func (r *Reconciler) Reconcile(newTree Element, th theme.Theme, send func(any), 
 	for uid := range r.states {
 		if !seen[uid] {
 			delete(r.states, uid)
+			delete(r.widgets, uid)
+			delete(r.resolvedSub, uid)
 		}
 	}
 	return resolved, changed
@@ -74,6 +82,23 @@ func (r *Reconciler) TickAnimators(dt time.Duration) bool {
 	return anyRunning
 }
 
+// CheckDirtyTrackers iterates all persisted WidgetState values and returns
+// true if any implements DirtyTracker and reports IsDirty() == true
+// (RFC-001 §6.4). Dirty flags are cleared after being consumed so that
+// the next frame starts clean.
+func (r *Reconciler) CheckDirtyTrackers() bool {
+	anyDirty := false
+	for _, state := range r.states {
+		if dt, ok := state.(DirtyTracker); ok {
+			if dt.IsDirty() {
+				anyDirty = true
+				dt.ClearDirty()
+			}
+		}
+	}
+	return anyDirty
+}
+
 // MakeUID computes a deterministic UID from parent, key, and child index.
 // Exported so tests and widgets can predict UIDs.
 func MakeUID(parent UID, key string, index int) UID {
@@ -100,6 +125,20 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		}
 		uid := MakeUID(parentUID, key, index)
 		seen[uid] = true
+
+		// Equatable short-circuit (RFC-001 §6.4): if the widget implements
+		// Equatable and reports equal props, reuse previous output.
+		if eq, ok := node.W.(Equatable); ok {
+			if prev, hasPrev := r.widgets[uid]; hasPrev {
+				if eq.Equal(prev) {
+					if sub, hasSub := r.resolvedSub[uid]; hasSub {
+						r.widgets[uid] = node.W
+						return widgetBoundsElement{WidgetUID: uid, Child: sub}
+					}
+				}
+			}
+		}
+
 		state := r.states[uid]
 
 		// Build RenderCtx with dispatched events.
@@ -117,9 +156,11 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 
 		child, newState := node.W.Render(ctx, state)
 		r.states[uid] = newState
+		r.widgets[uid] = node.W
 
 		// Recursively resolve the widget's output (it may contain more widgets).
 		resolved := r.resolveTree(child, uid, 0, seen, th, send, dispatcher, fm)
+		r.resolvedSub[uid] = resolved
 
 		// Wrap in widgetBoundsElement so layout can track screen bounds.
 		return widgetBoundsElement{WidgetUID: uid, Child: resolved}

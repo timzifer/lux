@@ -391,6 +391,112 @@ func TestReconcileRegistersFocusableWidgets(t *testing.T) {
 	}
 }
 
+// ── Equatable short-circuit ───────────────────────────────────────
+
+// eqWidget implements Equatable — Equal compares the Label field.
+type eqWidget struct{ Label string }
+
+func (w eqWidget) Render(_ RenderCtx, raw WidgetState) (Element, WidgetState) {
+	s := AdoptState[counterState](raw)
+	s.RenderCount++
+	return Text(w.Label), s
+}
+
+func (w eqWidget) Equal(other Widget) bool {
+	o := other.(eqWidget)
+	return w.Label == o.Label
+}
+
+func TestEquatableSkipsRenderWhenEqual(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+
+	tree := ComponentWithKey("eq", eqWidget{Label: "hello"})
+
+	// First reconcile — always renders.
+	r.Reconcile(tree, th, noopSend, nil, nil)
+	uid := MakeUID(0, "eq", 0)
+	s := r.StateFor(uid).(*counterState)
+	if s.RenderCount != 1 {
+		t.Fatalf("RenderCount after 1st reconcile = %d, want 1", s.RenderCount)
+	}
+
+	// Second reconcile with same Label — Equatable should skip Render.
+	r.Reconcile(tree, th, noopSend, nil, nil)
+	s = r.StateFor(uid).(*counterState)
+	if s.RenderCount != 1 {
+		t.Errorf("RenderCount after equal reconcile = %d, want 1 (should skip)", s.RenderCount)
+	}
+}
+
+func TestEquatableReRendersWhenNotEqual(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+
+	r.Reconcile(ComponentWithKey("eq", eqWidget{Label: "v1"}), th, noopSend, nil, nil)
+	uid := MakeUID(0, "eq", 0)
+
+	// Change label — Equatable.Equal should return false, Render called again.
+	r.Reconcile(ComponentWithKey("eq", eqWidget{Label: "v2"}), th, noopSend, nil, nil)
+	s := r.StateFor(uid).(*counterState)
+	if s.RenderCount != 2 {
+		t.Errorf("RenderCount after changed props = %d, want 2", s.RenderCount)
+	}
+}
+
+// ── DirtyTracker ─────────────────────────────────────────────────
+
+type dirtyState struct {
+	dirty bool
+}
+
+func (d *dirtyState) IsDirty() bool  { return d.dirty }
+func (d *dirtyState) ClearDirty()    { d.dirty = false }
+
+// dirtyWidget produces a state that implements DirtyTracker.
+type dirtyWidget struct{}
+
+func (dirtyWidget) Render(_ RenderCtx, raw WidgetState) (Element, WidgetState) {
+	s := AdoptState[dirtyState](raw)
+	return Text("dirty"), s
+}
+
+func TestCheckDirtyTrackersReturnsTrueAndClears(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+
+	tree := ComponentWithKey("d", dirtyWidget{})
+	r.Reconcile(tree, th, noopSend, nil, nil)
+
+	uid := MakeUID(0, "d", 0)
+	s := r.StateFor(uid).(*dirtyState)
+	s.dirty = true
+
+	if !r.CheckDirtyTrackers() {
+		t.Error("CheckDirtyTrackers should return true when a state is dirty")
+	}
+	if s.dirty {
+		t.Error("ClearDirty should have been called")
+	}
+
+	// Second call — already cleared.
+	if r.CheckDirtyTrackers() {
+		t.Error("CheckDirtyTrackers should return false after clearing")
+	}
+}
+
+func TestCheckDirtyTrackersReturnsFalseWhenClean(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+
+	tree := ComponentWithKey("d", dirtyWidget{})
+	r.Reconcile(tree, th, noopSend, nil, nil)
+
+	if r.CheckDirtyTrackers() {
+		t.Error("CheckDirtyTrackers should return false when no state is dirty")
+	}
+}
+
 func TestTreeEqualWidgetBoundsElement(t *testing.T) {
 	a := widgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
 	b := widgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
