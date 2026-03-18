@@ -35,7 +35,7 @@ func view(m Model) ui.Element {
 	return ui.Column(
 		ui.Text(fmt.Sprintf("Count: %d", m.Count)),
 		ui.Row(
-			ui.Button("−", func() { app.Send(DecrMsg{}) }),
+			ui.Button("-", func() { app.Send(DecrMsg{}) }),
 			ui.Button("+", func() { app.Send(IncrMsg{}) }),
 		),
 	)
