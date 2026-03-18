@@ -87,7 +87,7 @@ func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
 			return
 		}
 	}
-	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.Color}
+	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.FallbackColor()}
 	if c.overlayMode {
 		c.scene.OverlayRects = append(c.scene.OverlayRects, rect)
 	} else {
@@ -120,7 +120,7 @@ func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Pain
 			return
 		}
 	}
-	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.Color, Radius: radius}
+	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.FallbackColor(), Radius: radius}
 	if c.overlayMode {
 		c.scene.OverlayRects = append(c.scene.OverlayRects, rect)
 	} else {
@@ -349,9 +349,18 @@ func (c *SceneCanvas) MeasureText(txt string, style draw.TextStyle) draw.TextMet
 	return c.shaper.Measure(txt, style)
 }
 
+// ── Text Layout ─────────────────────────────────────────────────
+
+func (c *SceneCanvas) DrawTextLayout(layout draw.TextLayout, origin draw.Point, color draw.Color) {
+	// Fallback: delegate to DrawText (no line breaking or alignment yet).
+	c.DrawText(layout.Text, origin, layout.Style, color)
+}
+
 // ── Images ───────────────────────────────────────────────────────
 
-func (c *SceneCanvas) DrawImage(_ draw.ImageID, _ draw.Rect, _ draw.ImageOptions) {}
+func (c *SceneCanvas) DrawImage(_ draw.ImageID, _ draw.Rect, _ draw.ImageOptions)       {}
+func (c *SceneCanvas) DrawImageSlice(_ draw.ImageSlice, _ draw.Rect, _ draw.ImageOptions) {}
+func (c *SceneCanvas) DrawTexture(_ draw.TextureID, _ draw.Rect)                          {}
 
 // ── Shadows ──────────────────────────────────────────────────────
 
@@ -386,14 +395,27 @@ func (c *SceneCanvas) isClipped(x, y, w, h float32) bool {
 	return x+w <= clip.X || x >= clip.X+clip.W ||
 		y+h <= clip.Y || y >= clip.Y+clip.H
 }
+// PushClipRoundRect pushes a rounded-rect clip (bounding-box approximation).
+func (c *SceneCanvas) PushClipRoundRect(r draw.Rect, _ float32) {
+	c.PushClip(r) // approximate as axis-aligned rect
+}
+
+// PushClipPath is a no-op stub (requires GPU path clipping support).
+func (c *SceneCanvas) PushClipPath(_ draw.Path) {}
+
 func (c *SceneCanvas) PushTransform(_ draw.Transform) {}
 func (c *SceneCanvas) PopTransform()                  {}
 func (c *SceneCanvas) PushOffset(_, _ float32)        {}
+func (c *SceneCanvas) PushScale(_, _ float32)         {}
 
 // ── Effects ──────────────────────────────────────────────────────
 
-func (c *SceneCanvas) PushOpacity(_ float32) {}
-func (c *SceneCanvas) PopOpacity()           {}
+func (c *SceneCanvas) PushOpacity(_ float32)         {}
+func (c *SceneCanvas) PopOpacity()                   {}
+func (c *SceneCanvas) PushBlur(_ float32)            {}
+func (c *SceneCanvas) PopBlur()                      {}
+func (c *SceneCanvas) PushLayer(_ draw.LayerOptions) {}
+func (c *SceneCanvas) PopLayer()                     {}
 
 // ── State ────────────────────────────────────────────────────────
 
