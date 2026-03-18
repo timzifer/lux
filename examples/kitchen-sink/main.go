@@ -10,9 +10,11 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -29,6 +31,9 @@ type Model struct {
 	SliderVal   float32
 	Progress    float32
 	SelectVal   string
+	TextValue   string
+	Scroll      *ui.ScrollState
+	AnimTime    float64 // seconds, drives indeterminate progress + auto-progress
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -41,6 +46,7 @@ type SetCheckBMsg struct{ Value bool }
 type SetRadioMsg struct{ Choice string }
 type SetToggleMsg struct{ Value bool }
 type SetSliderMsg struct{ Value float32 }
+type SetTextMsg struct{ Value string }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -63,6 +69,39 @@ func update(m Model, msg app.Msg) Model {
 		m.ToggleOn = msg.Value
 	case SetSliderMsg:
 		m.SliderVal = msg.Value
+	case SetTextMsg:
+		m.TextValue = msg.Value
+
+	// ── Scroll handling ──────────────────────────────────
+	case input.ScrollMsg:
+		// ScrollBy expects negative delta for "scroll down" (content moves up).
+		// Platform sends positive deltaY for scroll-up, negative for scroll-down.
+		m.Scroll.ScrollBy(msg.DeltaY*30, 1200, 500)
+
+	// ── Keyboard handling for focused TextField ──────────
+	case input.KeyMsg:
+		if msg.Action == input.KeyPress || msg.Action == input.KeyRepeat {
+			focus := app.Focus()
+			if focus.FocusedID > 0 {
+				ui.HandleKeyMsg(focus, msg.Key, m.TextValue, func(v string) {
+					m.TextValue = v
+				})
+			}
+		}
+	case input.CharMsg:
+		focus := app.Focus()
+		if focus.FocusedID > 0 {
+			ui.HandleCharInput(msg.Char, m.TextValue, func(v string) {
+				m.TextValue = v
+			})
+		}
+
+	// ── Animation tick ───────────────────────────────────
+	case app.TickMsg:
+		dt := msg.DeltaTime.Seconds()
+		m.AnimTime += dt
+		// Auto-cycle the determinate progress bar.
+		m.Progress = float32(math.Mod(m.AnimTime*0.15, 1.0))
 	}
 	return m
 }
@@ -101,7 +140,10 @@ func view(m Model) ui.Element {
 
 		// ── Form Controls ───────────────────────────────────
 		sectionHeader("Form Controls"),
-		ui.TextField("Sample text", "Enter text..."),
+		ui.TextField(m.TextValue, "Enter text...",
+			ui.WithOnChange(func(v string) { app.Send(SetTextMsg{v}) }),
+			ui.WithFocusState(app.Focus()),
+		),
 		ui.Spacer(8),
 		ui.Checkbox("Enable notifications", m.CheckA, func(v bool) { app.Send(SetCheckAMsg{v}) }),
 		ui.Checkbox("Auto-save", m.CheckB, func(v bool) { app.Send(SetCheckBMsg{v}) }),
@@ -149,7 +191,7 @@ func view(m Model) ui.Element {
 		ui.Spacer(8),
 		ui.Button(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
 		ui.Spacer(16),
-	), 500)
+	), 500, m.Scroll)
 }
 
 // sectionHeader renders a section title using H2 typography.
@@ -171,8 +213,9 @@ func main() {
 		Dark:        true,
 		RadioChoice: "alpha",
 		SliderVal:   0.5,
-		Progress:    0.65,
+		Progress:    0.0,
 		SelectVal:   "Option 1",
+		Scroll:      &ui.ScrollState{},
 	}
 
 	if err := app.Run(initial, update, view,
