@@ -797,6 +797,8 @@ type overlayEntry struct {
 // overlayStack collects overlay entries during layout.
 type overlayStack struct {
 	entries []overlayEntry
+	windowW int
+	windowH int
 }
 
 func (s *overlayStack) push(entry overlayEntry) {
@@ -850,6 +852,8 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	tokens := th.Tokens()
 	area := bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
 	var overlays overlayStack
+	overlays.windowW = width
+	overlays.windowH = height
 	layoutElement(root, area, canvas, th, tokens, hitMap, hover, &overlays, focus)
 
 	// Switch canvas to overlay mode so overlay draw commands go to
@@ -1049,6 +1053,8 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		return layoutMenuBar(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case contextMenuElement:
 		return layoutContextMenu(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
+	case Overlay:
+		return layoutOverlay(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	default:
 		return bounds{X: area.X, Y: area.Y}
@@ -2348,5 +2354,47 @@ func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas,
 		},
 	})
 
+	return bounds{X: area.X, Y: area.Y}
+}
+
+func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
+	if node.Content == nil || overlays == nil {
+		return bounds{X: area.X, Y: area.Y}
+	}
+
+	content := node.Content
+	anchor := node.Anchor
+	placement := node.Placement
+	winW, winH := overlays.windowW, overlays.windowH
+
+	overlays.push(overlayEntry{
+		Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
+			// Measure content with null canvas.
+			nc := nullCanvas{delegate: canvas}
+			cb := layoutElement(content, bounds{X: 0, Y: 0, W: 400, H: 300}, nc, th, tokens, nil, nil, nil)
+
+			pad := 8
+			contentSize := draw.Size{W: float32(cb.W + pad*2), H: float32(cb.H + pad*2)}
+
+			// Compute position using the overlay placement logic.
+			pos := ComputeOverlayPosition(anchor, placement, contentSize, winW, winH)
+
+			// Draw border.
+			overlayRect := draw.R(pos.X, pos.Y, contentSize.W, contentSize.H)
+			canvas.FillRoundRect(overlayRect, tokens.Radii.Card, draw.SolidPaint(tokens.Colors.Stroke.Border))
+
+			// Draw elevated surface fill.
+			inner := draw.R(pos.X+1, pos.Y+1, contentSize.W-2, contentSize.H-2)
+			canvas.FillRoundRect(inner, maxf(tokens.Radii.Card-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+
+			// Layout content inside the overlay.
+			layoutElement(content, bounds{
+				X: int(pos.X) + pad, Y: int(pos.Y) + pad,
+				W: max(int(contentSize.W)-pad*2, 0), H: max(int(contentSize.H)-pad*2, 0),
+			}, canvas, th, tokens, hitMap, hover, nil, focus)
+		},
+	})
+
+	// Overlays take no space in normal layout flow.
 	return bounds{X: area.X, Y: area.Y}
 }
