@@ -822,9 +822,18 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	var overlays overlayStack
 	layoutElement(root, area, canvas, tokens, hitMap, hover, &overlays, focus)
 
+	// Switch canvas to overlay mode so overlay draw commands go to
+	// separate scene lists, rendered after all main content.
+	type overlayModeSetter interface{ SetOverlayMode(bool) }
+	if oms, ok := canvas.(overlayModeSetter); ok {
+		oms.SetOverlayMode(true)
+	}
 	// Render overlay entries (Tooltip, ContextMenu, etc.) on top of main tree.
 	for _, entry := range overlays.entries {
 		entry.Render(canvas, tokens, hitMap, hover)
+	}
+	if oms, ok := canvas.(overlayModeSetter); ok {
+		oms.SetOverlayMode(false)
 	}
 
 	// The canvas is a SceneCanvas — retrieve its scene.
@@ -1991,15 +2000,9 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, tokens theme.
 			textColor = tokens.Colors.Text.OnAccent
 		}
 		canvas.DrawText("×", draw.Pt(float32(dismissX), float32(dismissY)), dismissStyle, textColor)
-
-		if hitMap != nil {
-			onDismiss := node.OnDismiss
-			hitMap.Add(draw.R(float32(dismissX), float32(area.Y), float32(chipDismissW), float32(h)),
-				onDismiss)
-		}
 	}
 
-	// Hit target for chip click
+	// Hit targets: click first, then dismiss (last = highest priority in HitTest).
 	if hitMap != nil && node.OnClick != nil {
 		onClick := node.OnClick
 		clickW := w
@@ -2008,6 +2011,16 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, tokens theme.
 		}
 		hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(clickW), float32(h)),
 			onClick)
+	}
+	if hitMap != nil && node.OnDismiss != nil {
+		// Consume a hover index for the dismiss button to keep hover counter aligned.
+		if hover != nil {
+			hover.nextButtonHoverOpacity()
+		}
+		dismissX := area.X + chipPadX + labelW + 4
+		onDismiss := node.OnDismiss
+		hitMap.Add(draw.R(float32(dismissX), float32(area.Y), float32(chipDismissW), float32(h)),
+			onDismiss)
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
