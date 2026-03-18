@@ -41,7 +41,7 @@ type gridElement struct {
 
 func (gridElement) isElement() {}
 
-func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
+func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	n := len(node.Children)
 	if n == 0 || node.Columns < 1 {
 		return bounds{X: area.X, Y: area.Y}
@@ -69,7 +69,7 @@ func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, tokens theme.
 		col := i % cols
 		cellX := area.X + col*(cellW+colGap)
 		cellY := 0 // doesn't matter for measurement
-		cb := layoutElement(child, bounds{X: cellX, Y: cellY, W: cellW, H: area.H}, nc, tokens, nil, nil)
+		cb := layoutElement(child, bounds{X: cellX, Y: cellY, W: cellW, H: area.H}, nc, tokens, nil, nil, nil)
 		if cb.H > rowHeights[row] {
 			rowHeights[row] = cb.H
 		}
@@ -86,7 +86,7 @@ func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, tokens theme.
 			}
 			cellX := area.X + col*(cellW+colGap)
 			childArea := bounds{X: cellX, Y: cursorY, W: cellW, H: rowHeights[row]}
-			layoutElement(node.Children[idx], childArea, canvas, tokens, hitMap, hover, focus)
+			layoutElement(node.Children[idx], childArea, canvas, tokens, hitMap, hover, overlays, focus)
 		}
 		rowW := cols*cellW + totalColGaps
 		if rowW > maxW {

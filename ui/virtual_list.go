@@ -39,7 +39,7 @@ func (virtualListElement) isElement() {}
 
 const virtualListOverscan = 3
 
-func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
+func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	if node.ItemCount <= 0 || node.BuildItem == nil {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -85,7 +85,7 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 		itemY := area.Y + i*itemH - int(offset)
 		child := node.BuildItem(i)
 		childArea := bounds{X: area.X, Y: itemY, W: area.W, H: itemH}
-		layoutElement(child, childArea, canvas, tokens, hitMap, hover, focus)
+		layoutElement(child, childArea, canvas, tokens, hitMap, hover, overlays, focus)
 	}
 
 	canvas.PopClip()
