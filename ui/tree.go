@@ -4,6 +4,7 @@ import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
+	"github.com/timzifer/lux/ui/icons"
 )
 
 // TreeState tracks expand/collapse and selection state for a Tree widget.
@@ -145,8 +146,9 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(viewportH)))
 
 	indicatorStyle := draw.TextStyle{
-		Size:   float32(nodeH - 8),
-		Weight: draw.FontWeightRegular,
+		FontFamily: "Phosphor",
+		Size:       float32(nodeH - 8),
+		Weight:     draw.FontWeightRegular,
 	}
 
 	for i := firstVisible; i <= lastVisible; i++ {
@@ -165,9 +167,9 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		// Expand/collapse indicator.
 		indicatorW := 16
 		if fn.HasKids {
-			indicator := "▶"
+			indicator := icons.CaretRight
 			if fn.Expanded {
-				indicator = "▼"
+				indicator = icons.CaretDown
 			}
 			canvas.DrawText(indicator,
 				draw.Pt(float32(area.X+indent), float32(rowY+4)),

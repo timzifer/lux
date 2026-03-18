@@ -15,6 +15,7 @@ import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/icons"
 )
 
 // ── Section Registry ──────────────────────────────────────────────
@@ -68,6 +69,7 @@ type Model struct {
 	AnimTime      float64
 	NavTree       *ui.TreeState
 	ActiveSection string
+	ToggleAnim    *ui.ToggleState
 	VListScroll   *ui.ScrollState
 	DemoTree      *ui.TreeState
 }
@@ -115,6 +117,7 @@ func update(m Model, msg app.Msg) Model {
 		dt := msg.DeltaTime.Seconds()
 		m.AnimTime += dt
 		m.Progress = float32(math.Mod(m.AnimTime*0.15, 1.0))
+		m.ToggleAnim.Tick(msg.DeltaTime)
 	}
 	return m
 }
@@ -219,11 +222,15 @@ func buttonsSection(m Model) ui.Element {
 			ui.Button("+", func() { app.Send(IncrMsg{}) }),
 		),
 		ui.Spacer(8),
-		ui.Text("Icons:"),
+		ui.Text("Icons (Phosphor):"),
 		ui.Row(
-			ui.Icon("★"),
-			ui.IconSize("→", 24),
-			ui.Icon("♦"),
+			ui.Icon(icons.Star),
+			ui.IconSize(icons.ArrowRight, 24),
+			ui.Icon(icons.Heart),
+			ui.Icon(icons.Gear),
+			ui.Icon(icons.Eye),
+			ui.Icon(icons.Sun),
+			ui.Icon(icons.Moon),
 		),
 	)
 }
@@ -245,7 +252,7 @@ func formControlsSection(m Model) ui.Element {
 		ui.Spacer(8),
 		ui.Row(
 			ui.Text("Dark mode:"),
-			ui.Toggle(m.ToggleOn, func(v bool) { app.Send(SetToggleMsg{v}) }),
+			ui.Toggle(m.ToggleOn, func(v bool) { app.Send(SetToggleMsg{v}) }, m.ToggleAnim),
 		),
 	)
 }
@@ -393,8 +400,16 @@ func treeSection(m Model) ui.Element {
 		ui.Tree(ui.TreeConfig{
 			RootIDs:  demoTreeRoots,
 			Children: demoTreeChildren,
-			BuildNode: func(id string, _ int, _, _ bool) ui.Element {
-				return ui.Text(id)
+			BuildNode: func(id string, _ int, expanded, _ bool) ui.Element {
+				kids := demoTreeChildren(id)
+				if len(kids) > 0 {
+					icon := icons.Folder
+					if expanded {
+						icon = icons.FolderOpen
+					}
+					return ui.Row(ui.Icon(icon), ui.Text(id))
+				}
+				return ui.Row(ui.Icon(icons.FileText), ui.Text(id))
 			},
 			NodeHeight: 24,
 			MaxHeight:  200,
@@ -413,6 +428,7 @@ func main() {
 		Progress:      0.0,
 		SelectVal:     "Option 1",
 		Scroll:        &ui.ScrollState{},
+		ToggleAnim:    ui.NewToggleState(),
 		NavTree:       ui.NewTreeState(),
 		ActiveSection: "typography",
 		VListScroll:   &ui.ScrollState{},

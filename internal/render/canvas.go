@@ -198,7 +198,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 	cursorX := origin.X
 	sizePx := uint16(text.DpToPixels(style.Size))
 
-	f := fonts.DefaultFont()
+	f := shaper.ResolveFont(style)
 	if f == nil {
 		return
 	}

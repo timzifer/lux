@@ -69,6 +69,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	// Initialize the font rendering pipeline (RFC-003 §3).
 	atlas := text.NewGlyphAtlas(512, 512)
 	shaper := text.NewSfntShaper(fonts.Fallback)
+	shaper.RegisterFamily(fonts.PhosphorFamily)
 
 	// If the renderer supports atlas-based text, wire it up.
 	type atlasSetter interface{ SetAtlas(*text.GlyphAtlas) }

@@ -185,4 +185,7 @@ func init() {
 
 	// Load the embedded Noto Sans font into the Fallback family.
 	initDefaultFont()
+
+	// Load the embedded Phosphor icon font.
+	initPhosphorFont()
 }

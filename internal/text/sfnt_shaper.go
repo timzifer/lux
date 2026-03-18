@@ -16,6 +16,7 @@ import (
 // It caches font.Face instances keyed by (font ID, pixel size).
 type SfntShaper struct {
 	fallback *fonts.FontFamily
+	families map[string]*fonts.FontFamily // keyed by family name
 
 	mu    sync.Mutex
 	faces map[faceCacheKey]font.Face
@@ -30,27 +31,43 @@ type faceCacheKey struct {
 func NewSfntShaper(fallback *fonts.FontFamily) *SfntShaper {
 	return &SfntShaper{
 		fallback: fallback,
+		families: make(map[string]*fonts.FontFamily),
 		faces:    make(map[faceCacheKey]font.Face),
 	}
 }
 
-// resolveFont picks the best font for the given style from the fallback family.
+// RegisterFamily adds a named font family to the shaper's registry.
+func (s *SfntShaper) RegisterFamily(family *fonts.FontFamily) {
+	if family != nil && family.Name != "" {
+		s.families[family.Name] = family
+	}
+}
+
+// resolveFont picks the best font for the given style.
+// If style.FontFamily matches a registered family, that family is used;
+// otherwise the default fallback family is used.
 func (s *SfntShaper) resolveFont(style draw.TextStyle) *fonts.Font {
-	if s.fallback == nil {
+	family := s.fallback
+	if style.FontFamily != "" {
+		if fam, ok := s.families[style.FontFamily]; ok {
+			family = fam
+		}
+	}
+	if family == nil {
 		return nil
 	}
 	// Try exact weight match.
 	key := fonts.FontFaceKey{Weight: int(style.Weight), Style: fonts.StyleNormal}
-	if f, ok := s.fallback.Faces[key]; ok && !f.IsBitmap() {
+	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
 		return f
 	}
 	// Fall back to Regular.
 	key.Weight = 400
-	if f, ok := s.fallback.Faces[key]; ok && !f.IsBitmap() {
+	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
 		return f
 	}
 	// Try any sfnt face.
-	for _, f := range s.fallback.Faces {
+	for _, f := range family.Faces {
 		if !f.IsBitmap() {
 			return f
 		}
@@ -89,6 +106,12 @@ func (s *SfntShaper) getFace(f *fonts.Font, sizePx int) font.Face {
 
 	s.faces[key] = face
 	return face
+}
+
+// ResolveFont returns the font that would be used for the given style.
+// Exported for use by the rendering pipeline (atlas font ID lookup).
+func (s *SfntShaper) ResolveFont(style draw.TextStyle) *fonts.Font {
+	return s.resolveFont(style)
 }
 
 // Measure returns text metrics using the sfnt font face.

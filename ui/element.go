@@ -135,9 +135,14 @@ func Radio(label string, selected bool, onSelect func()) Element {
 	return radioElement{Label: label, Selected: selected, OnSelect: onSelect}
 }
 
-// Toggle creates a switch widget.
-func Toggle(on bool, onToggle func(bool)) Element {
-	return toggleElement{On: on, OnToggle: onToggle}
+// Toggle creates a switch widget. An optional ToggleState pointer enables
+// smooth thumb animation; pass nil for instant snap.
+func Toggle(on bool, onToggle func(bool), state ...*ToggleState) Element {
+	var s *ToggleState
+	if len(state) > 0 {
+		s = state[0]
+	}
+	return toggleElement{On: on, OnToggle: onToggle, State: s}
 }
 
 // Slider creates a continuous value selector (0.0–1.0).
@@ -330,6 +335,7 @@ func (radioElement) isElement() {}
 type toggleElement struct {
 	On       bool
 	OnToggle func(bool)
+	State    *ToggleState
 }
 
 func (toggleElement) isElement() {}
@@ -475,6 +481,47 @@ func handleCharInput(ch rune, value string, onChange func(string)) {
 	}
 	if ch >= 32 { // printable characters only
 		onChange(value + string(ch))
+	}
+}
+
+// ── Toggle State ─────────────────────────────────────────────────
+
+// ToggleState tracks the toggle thumb animation.
+type ToggleState struct {
+	thumbPos anim.Anim[float32] // 0.0 = off, 1.0 = on
+	lastOn   bool
+	inited   bool
+}
+
+// NewToggleState creates a ready-to-use ToggleState.
+func NewToggleState() *ToggleState { return &ToggleState{} }
+
+// update returns the current animation progress [0,1] and starts a
+// new transition if the on state has changed.
+func (ts *ToggleState) update(on bool, dur time.Duration) float32 {
+	if !ts.inited {
+		if on {
+			ts.thumbPos.SetImmediate(1.0)
+		}
+		ts.lastOn = on
+		ts.inited = true
+		return ts.thumbPos.Value()
+	}
+	if on != ts.lastOn {
+		target := float32(0)
+		if on {
+			target = 1
+		}
+		ts.thumbPos.SetTarget(target, dur, anim.OutCubic)
+		ts.lastOn = on
+	}
+	return ts.thumbPos.Value()
+}
+
+// Tick advances the toggle animation by dt.
+func (ts *ToggleState) Tick(dt time.Duration) {
+	if ts != nil {
+		ts.thumbPos.Tick(dt)
 	}
 }
 
@@ -672,10 +719,11 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		if size == 0 {
 			size = tokens.Typography.Label.Size
 		}
+		// Use the Phosphor icon font for icon elements.
 		style := draw.TextStyle{
-			FontFamily: tokens.Typography.Label.FontFamily,
+			FontFamily: "Phosphor",
 			Size:       size,
-			Weight:     tokens.Typography.Label.Weight,
+			Weight:     draw.FontWeightRegular,
 			LineHeight: 1.0,
 		}
 		metrics := canvas.MeasureText(node.Name, style)
@@ -1031,10 +1079,28 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, tokens th
 		hoverOpacity = hover.nextButtonHoverOpacity()
 	}
 
-	// Track
-	trackColor := tokens.Colors.Surface.Pressed
-	if node.On {
-		trackColor = tokens.Colors.Accent.Primary
+	// Animation progress: 0 = off, 1 = on.
+	var t float32
+	if node.State != nil {
+		t = node.State.update(node.On, 150*time.Millisecond)
+	} else {
+		if node.On {
+			t = 1
+		}
+	}
+
+	// Track — lerp between off and on colors.
+	// Use exact colors at t=0/1 to avoid float rounding artifacts.
+	offTrackColor := tokens.Colors.Surface.Pressed
+	onTrackColor := tokens.Colors.Accent.Primary
+	var trackColor draw.Color
+	switch {
+	case t <= 0:
+		trackColor = offTrackColor
+	case t >= 1:
+		trackColor = onTrackColor
+	default:
+		trackColor = lerpColor(offTrackColor, onTrackColor, t)
 	}
 	if hoverOpacity > 0 {
 		trackColor = lerpColor(trackColor, hoverHighlight(trackColor), hoverOpacity)
@@ -1043,18 +1109,24 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, tokens th
 		draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH)),
 		float32(toggleTrackH)/2, draw.SolidPaint(trackColor))
 
-	// Thumb
-	thumbX := area.X + toggleThumbPad
-	if node.On {
-		thumbX = area.X + toggleTrackW - toggleThumbD - toggleThumbPad
-	}
-	thumbY := area.Y + (toggleTrackH-toggleThumbD)/2
-	thumbColor := tokens.Colors.Text.OnAccent
-	if !node.On {
-		thumbColor = tokens.Colors.Text.Secondary
+	// Thumb — lerp position and color.
+	offX := float32(area.X + toggleThumbPad)
+	onX := float32(area.X + toggleTrackW - toggleThumbD - toggleThumbPad)
+	thumbX := offX + (onX-offX)*t
+	thumbY := float32(area.Y + (toggleTrackH-toggleThumbD)/2)
+	offThumbColor := tokens.Colors.Text.Secondary
+	onThumbColor := tokens.Colors.Text.OnAccent
+	var thumbColor draw.Color
+	switch {
+	case t <= 0:
+		thumbColor = offThumbColor
+	case t >= 1:
+		thumbColor = onThumbColor
+	default:
+		thumbColor = lerpColor(offThumbColor, onThumbColor, t)
 	}
 	canvas.FillEllipse(
-		draw.R(float32(thumbX), float32(thumbY), float32(toggleThumbD), float32(toggleThumbD)),
+		draw.R(thumbX, thumbY, float32(toggleThumbD), float32(toggleThumbD)),
 		draw.SolidPaint(thumbColor))
 
 	// Hit target
