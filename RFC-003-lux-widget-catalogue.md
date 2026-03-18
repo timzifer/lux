@@ -1,10 +1,43 @@
 # RFC-003 — lux: Widget Catalogue & Theme
 
 **Repository:** `github.com/timzifer/lux`
-**Status:** Draft
+**Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
+**Zuletzt abgeglichen:** 2026-03-18
 **Abhängig von:** RFC-001, RFC-002
+
+---
+
+### Implementierungsstatus
+
+| Abschnitt | Status | Anmerkung |
+|-----------|--------|-----------|
+| §1 Theming-System — Token-Werte | ✅ Integriert | `theme/theme.go` — vollständiger `TokenSet`, `ColorScheme`, `TypographyScale`, alle Scales |
+| §1.1 Theme-Interface | ✅ Integriert | `Tokens()`, `DrawFunc()`, `Parent()` |
+| §1.2 TokenSet | ✅ Integriert | Alle Token-Gruppen vorhanden |
+| §1.3 DrawFunc & Custom Rendering | ✅ Integriert | `DrawFunc`, `DrawCtx` |
+| §1.4 Theme-Lookup-Cache | ⏳ Wartend | Kein Resolved-Cache |
+| §1.5 Theme-Wechsel (`SetThemeMsg`) | ✅ Integriert | `app.SetThemeMsg`, `app.SetDarkModeMsg` |
+| §1.6 `theme.Override` | ✅ Integriert | `OverrideSpec` mit Pointer-Feldern |
+| §2 theme.Slate Dark + Light | ✅ Integriert | Alle Token-Werte wie spezifiziert |
+| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | |
+| §3.1 CGo-Strategie | 🔶 Teilweise | Aktuell: OpenGL+GLFW (CGo); wgpu/gogpu noch nicht integriert |
+| §3.2 go-text/typesetting | ⏳ Wartend | Aktuell: eigener `sfnt_shaper`; kein vollständiges OpenType-Shaping |
+| §3.3 Shaper-Interface | ⏳ Wartend | |
+| §3.4 Font-Loading & Fallback-Chain | 🔶 Teilweise | `fonts` Package mit Embedded-Fonts; kein vollständiges FontFamily/Fallback |
+| §3.5 BiDi | ⏳ Wartend | |
+| §3.6 Package-Name | ✅ Integriert | `github.com/timzifer/lux` |
+| §4 Widget-Katalog | | |
+| §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |
+| §4.1 Tier 2 — Formulare | ✅ Integriert | TextField, Checkbox, Radio, Toggle, Slider, ProgressBar, Select |
+| §4.1 Tier 3 — Struktur | ✅ Integriert | Card, Tabs, Accordion, Tooltip, Badge, Chip, MenuBar, ContextMenu |
+| §4.1 Tier 4 — Erweitert | ⏳ Wartend | DatePicker, ColorPicker, DataTable, SplitView, etc. |
+| §4.2 Widget-Spezifikations-Template | ⏳ Wartend | Detailspezifikationen pro Widget fehlen |
+| §5 Rich Text & Texteditierung | 🔶 Teilweise | |
+| §5.2–5.4 RichText (Ebene 2) | ✅ Integriert | `ui/rich_text.go` mit Spans |
+| §5.5 Inline-Widgets | ⏳ Wartend | |
+| §5.6 RichTextEditor (Ebene 3) | ⏳ Wartend | |
 
 ---
 

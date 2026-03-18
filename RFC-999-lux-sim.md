@@ -2,10 +2,19 @@
 
 **Repository:** `github.com/timzifer/lux`
 
-**Status:** Draft
+**Status:** Theoretical — nicht zur Umsetzung vorgesehen
 **Version:** 0.1.0
 **Datum:** 2026-03-17
-**Abhängigkeit:** RFC-999-lux-sim.md v0.2.0
+**Zuletzt abgeglichen:** 2026-03-18
+**Abhängigkeit:** RFC-001 (Core Architecture vollständig integriert)
+
+> **Hinweis:** Dieses RFC ist als theoretisches Konzept eingestuft. Es beschreibt einen möglichen Onboarding-Layer für Entwickler die aus callback-basierten Frameworks kommen. Eine Implementierung ist derzeit nicht geplant — der Fokus liegt auf dem Ausbau der Kern-Architektur (RFC-001, RFC-002, RFC-003).
+
+### Implementierungsstatus
+
+| Abschnitt | Status |
+|-----------|--------|
+| Alle Abschnitte | ⏸ Theoretical — keine Umsetzung geplant |
 
 ---
 
