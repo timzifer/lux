@@ -9,6 +9,7 @@ package ui
 import (
 	"encoding/binary"
 	"hash/fnv"
+	"time"
 
 	"github.com/timzifer/lux/theme"
 )
@@ -51,6 +52,22 @@ func (r *Reconciler) StateFor(uid UID) WidgetState {
 // StateCount returns the number of tracked widget states.
 func (r *Reconciler) StateCount() int {
 	return len(r.states)
+}
+
+// TickAnimators calls Tick(dt) on every WidgetState that implements
+// the Animator interface (RFC-002 §1.3). Returns true if any animation
+// is still running (i.e. at least one Tick returned true), signalling
+// that the widget tree should be repainted.
+func (r *Reconciler) TickAnimators(dt time.Duration) bool {
+	anyRunning := false
+	for _, state := range r.states {
+		if a, ok := state.(Animator); ok {
+			if a.Tick(dt) {
+				anyRunning = true
+			}
+		}
+	}
+	return anyRunning
 }
 
 // MakeUID computes a deterministic UID from parent, key, and child index.

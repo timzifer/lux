@@ -121,14 +121,14 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
 						if is := globalFocus.Input; is != nil {
 							switch m.Key {
-							case "Backspace":
+							case input.KeyBackspace:
 								if len(is.Value) > 0 {
 									runes := []rune(is.Value)
 									v := string(runes[:len(runes)-1])
 									is.Value = v
 									is.OnChange(v)
 								}
-							case "Escape":
+							case input.KeyEscape:
 								globalFocus.Blur()
 							}
 						}
@@ -154,6 +154,11 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			dt := appLoop.ClampDt(rawDt)
 			lastFrame = now
 
+			// 2b. Animation pass — tick all WidgetStates that implement
+			// Animator before reconcile (RFC-002 §1.3). If any animation
+			// is still running, force a repaint.
+			animDirty := reconciler.TickAnimators(dt)
+
 			// Deliver TickMsg directly — always call update, but only
 			// force a rebuild if the model is modified. We use the
 			// tickDirty flag to track this separately so that apps
@@ -161,7 +166,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			tickModel := update(currentModel, TickMsg{DeltaTime: dt})
 			tickDirty := any(tickModel) != any(currentModel)
 			currentModel = tickModel
-			modelDirty = modelDirty || tickDirty
+			modelDirty = modelDirty || tickDirty || animDirty
 
 			// Re-run view and reconcile only when the model changed.
 			if modelDirty {
@@ -241,7 +246,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 		},
 
 		OnScroll: func(deltaX, deltaY float32) {
-			Send(input.ScrollMsg{DeltaX: deltaX, DeltaY: deltaY})
+			Send(input.ScrollMsg{X: mouseX, Y: mouseY, DeltaX: deltaX, DeltaY: deltaY})
 			// Route scroll events directly to the ScrollView under the cursor.
 			if target := hitMap.HitTestScroll(mouseX, mouseY); target != nil {
 				target.OnScroll(deltaY * 30) // 30dp per scroll unit
@@ -257,14 +262,9 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 				a = input.KeyRepeat
 			}
 			Send(input.KeyMsg{
-				Key: key,
-				Modifiers: input.KeyModifiers{
-					Shift: mods&1 != 0,
-					Ctrl:  mods&2 != 0,
-					Alt:   mods&4 != 0,
-					Super: mods&8 != 0,
-				},
-				Action: a,
+				Key:       input.KeyNameToKey[key],
+				Modifiers: input.ModsFromBits(mods),
+				Action:    a,
 			})
 		},
 

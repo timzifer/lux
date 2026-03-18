@@ -17,6 +17,15 @@ import (
 // WidgetState is an open interface — any type qualifies (RFC §4.1).
 type WidgetState interface{}
 
+// Animator is an optional interface for WidgetState types that contain
+// running animations (RFC-002 §1.3). The framework calls Tick(dt) on
+// every WidgetState that implements Animator before each paint pass.
+// Returning true means the animation is still running and the widget
+// should be repainted; the framework marks it dirty automatically.
+type Animator interface {
+	Tick(dt time.Duration) (stillRunning bool)
+}
+
 // UID identifies a widget instance across frames.
 type UID uint64
 
@@ -32,7 +41,8 @@ type Widget interface {
 type RenderCtx struct {
 	UID    UID
 	Theme  theme.Theme
-	Send   func(any) // local Send bound to this UID
+	Send   func(any)      // local Send bound to this UID
+	Events []InputEvent   // input events dispatched to this widget (RFC-002 §2.6)
 }
 
 // AdoptState is a generic helper that type-asserts the raw state or

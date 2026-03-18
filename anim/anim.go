@@ -117,3 +117,78 @@ func (a *Anim[T]) Tick(dt time.Duration) bool {
 func lerp[T Interpolatable](a, b T, t float32) T {
 	return a + T(float32(b-a)*t)
 }
+
+// ── LerpFunc & LerpAnim[T] (RFC-002 §1.4) ────────────────────────
+//
+// LerpAnim animates arbitrary types via a caller-supplied LerpFunc.
+// This avoids a cyclic dependency between anim/ and draw/ — the
+// concrete lerpers for Color, Point, etc. live in draw/anim (or the
+// caller's package).
+
+// LerpFunc interpolates between a and b by t ∈ [0,1].
+type LerpFunc[T any] func(a, b T, t float32) T
+
+// LerpAnim is a deterministic, interpolated animation for any type T.
+// The caller must supply a LerpFunc when calling SetTarget.
+type LerpAnim[T any] struct {
+	from     T
+	current  T
+	to       T
+	elapsed  time.Duration
+	duration time.Duration
+	easing   EasingFunc
+	lerpFn   LerpFunc[T]
+	running  bool
+}
+
+// Value returns the current interpolated value.
+func (a *LerpAnim[T]) Value() T { return a.current }
+
+// SetTarget starts a new animation from the current value to `to`.
+func (a *LerpAnim[T]) SetTarget(to T, dur time.Duration, easing EasingFunc, lerpFn LerpFunc[T]) {
+	if easing == nil {
+		easing = Linear
+	}
+	a.from = a.current
+	a.to = to
+	a.elapsed = 0
+	a.duration = dur
+	a.easing = easing
+	a.lerpFn = lerpFn
+	a.running = true
+}
+
+// SetImmediate snaps the value without animation.
+func (a *LerpAnim[T]) SetImmediate(v T) {
+	a.from = v
+	a.current = v
+	a.to = v
+	a.elapsed = 0
+	a.duration = 0
+	a.easing = nil
+	a.running = false
+}
+
+// IsDone reports whether the animation has completed or was never started.
+func (a *LerpAnim[T]) IsDone() bool { return !a.running }
+
+// Tick advances the animation by dt. Returns true if still running.
+func (a *LerpAnim[T]) Tick(dt time.Duration) bool {
+	if !a.running {
+		return false
+	}
+	a.elapsed += dt
+	if a.elapsed >= a.duration {
+		a.current = a.to
+		a.running = false
+		return false
+	}
+	t := float32(a.elapsed) / float32(a.duration)
+	if a.easing != nil {
+		t = a.easing(t)
+	}
+	if a.lerpFn != nil {
+		a.current = a.lerpFn(a.from, a.to, t)
+	}
+	return true
+}
