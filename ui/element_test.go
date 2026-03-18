@@ -1304,7 +1304,7 @@ func TestBuildSceneMenuBar(t *testing.T) {
 		{Label: Text("File"), OnClick: func() {}},
 		{Label: Text("Edit"), OnClick: func() {}},
 	}
-	scene := buildTestScene(MenuBar(items), 800, 600)
+	scene := buildTestScene(MenuBar(items, NewMenuBarState()), 800, 600)
 	// Should produce: 2 rects (bg + border) + 2 glyphs (labels)
 	if len(scene.Rects) < 2 {
 		t.Errorf("MenuBar should produce at least 2 rects, got %d", len(scene.Rects))
@@ -1321,14 +1321,14 @@ func TestBuildSceneMenuBarHitTarget(t *testing.T) {
 		{Label: Text("File"), OnClick: func() {}},
 		{Label: Text("Edit"), OnClick: func() {}},
 	}
-	BuildScene(MenuBar(items), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(MenuBar(items, NewMenuBarState()), canvas, theme.Default, 800, 600, &hitMap, nil)
 	if hitMap.Len() != 2 {
 		t.Errorf("MenuBar with 2 items should register 2 hit targets, got %d", hitMap.Len())
 	}
 }
 
 func TestBuildSceneMenuBarEmpty(t *testing.T) {
-	scene := buildTestScene(MenuBar(nil), 800, 600)
+	scene := buildTestScene(MenuBar(nil, nil), 800, 600)
 	if len(scene.Rects) != 0 {
 		t.Errorf("Empty MenuBar should produce 0 rects, got %d", len(scene.Rects))
 	}
