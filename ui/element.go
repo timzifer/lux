@@ -161,6 +161,18 @@ func Select(value string, options []string) Element {
 	return selectElement{Value: value, Options: options}
 }
 
+// Component creates an element that wraps a Widget. The Reconciler
+// expands it by calling Widget.Render with persisted state.
+func Component(w Widget) Element {
+	return widgetElement{W: w}
+}
+
+// ComponentWithKey creates a keyed widget element. The key stabilises the
+// widget's UID across re-ordering within the same parent.
+func ComponentWithKey(key string, w Widget) Element {
+	return widgetElement{W: w, Key: key}
+}
+
 // ── Concrete element structs ─────────────────────────────────────
 
 type emptyElement struct{}
@@ -273,6 +285,15 @@ type selectElement struct {
 }
 
 func (selectElement) isElement() {}
+
+// widgetElement wraps a Widget for embedding in element trees.
+// It is expanded by the Reconciler before layout.
+type widgetElement struct {
+	W   Widget
+	Key string
+}
+
+func (widgetElement) isElement() {}
 
 // ScrollState tracks scroll offset for ScrollView elements.
 type ScrollState struct {
@@ -402,7 +423,8 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 
 func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	switch node := el.(type) {
-	case nil, emptyElement:
+	case nil, emptyElement, widgetElement:
+		// widgetElement should be resolved by the Reconciler before layout.
 		return bounds{X: area.X, Y: area.Y}
 
 	case keyedElement:

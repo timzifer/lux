@@ -87,8 +87,9 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	}
 	updateBgColor()
 
+	reconciler := ui.NewReconciler()
 	currentModel := model
-	currentTree := view(currentModel)
+	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
@@ -98,6 +99,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
 			// 1. Drain messages — intercept theme switches before user update (RFC §5.5).
+			modelDirty := false
 			appLoop.DrainMessages(func(msg any) bool {
 				switch m := msg.(type) {
 				case SetThemeMsg:
@@ -111,14 +113,15 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 					}
 					updateBgColor()
 				}
-				newModel := update(currentModel, msg)
-				if anyChanged(currentModel, newModel) {
-					currentModel = newModel
-					currentTree = view(currentModel)
-					return true
-				}
-				return false
+				currentModel = update(currentModel, msg)
+				modelDirty = true
+				return true
 			})
+			// Re-run view and reconcile only when the model changed.
+			if modelDirty {
+				newTree := view(currentModel)
+				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send)
+			}
 
 			// 2. Compute clamped dt.
 			now := time.Now()
@@ -165,12 +168,6 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			mouseY = y
 		},
 	})
-}
-
-// anyChanged does a shallow pointer-based check. For M1 this is always true
-// since Go structs are value types. M2+ will use VTree diffing.
-func anyChanged[M any](_, _ M) bool {
-	return true
 }
 
 // Ensure ViewFunc constraint is satisfied at compile time.
