@@ -2033,6 +2033,15 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 
 	nc := nullCanvas{delegate: canvas}
 
+	// Backdrop: when a dropdown is open, a full-screen hit target closes it
+	// on any click outside menu bar items or dropdown items.
+	if node.State != nil && node.State.OpenIndex >= 0 && hitMap != nil {
+		state := node.State
+		hitMap.Add(draw.R(0, 0, 9999, 9999), func() {
+			state.OpenIndex = -1
+		})
+	}
+
 	// Background strip
 	canvas.FillRect(
 		draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(menuBarHeight)),
