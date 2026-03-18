@@ -611,6 +611,37 @@ func TestNoRebuildWithoutModelChange(t *testing.T) {
 	}
 }
 
+func TestTickMsgDrivesAnimation(t *testing.T) {
+	type animModel struct {
+		Time float64
+	}
+	viewCalls := 0
+	update := func(m animModel, msg Msg) animModel {
+		switch msg := msg.(type) {
+		case TickMsg:
+			m.Time += msg.DeltaTime.Seconds()
+		}
+		return m
+	}
+	view := func(m animModel) ui.Element {
+		viewCalls++
+		return ui.Text(fmt.Sprintf("t=%.2f", m.Time))
+	}
+
+	err := Run(animModel{}, update, view,
+		WithTitle("tick-anim test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	// TickMsg modifies Time each frame → view should be rebuilt each frame.
+	// Initial + 2 rebuilds from TickMsg (frame 0 tick is dt=0 but still changes via float).
+	if viewCalls < 2 {
+		t.Errorf("view called %d times, want >= 2 (TickMsg should trigger rebuild)", viewCalls)
+	}
+}
+
 func TestWidgetRenderedInRunLoop(t *testing.T) {
 	// Verify that Component() widgets are expanded during Run via the reconciler.
 	var finalTicks int

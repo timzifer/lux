@@ -118,17 +118,27 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 				modelDirty = true
 				return true
 			})
-			// Re-run view and reconcile only when the model changed.
-			if modelDirty {
-				newTree := view(currentModel)
-				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send)
-			}
 
 			// 2. Compute clamped dt.
 			now := time.Now()
 			rawDt := now.Sub(lastFrame)
 			dt := appLoop.ClampDt(rawDt)
 			lastFrame = now
+
+			// Deliver TickMsg directly — always call update, but only
+			// force a rebuild if the model is modified. We use the
+			// tickDirty flag to track this separately so that apps
+			// without animation don't pay for unnecessary rebuilds.
+			tickModel := update(currentModel, TickMsg{DeltaTime: dt})
+			tickDirty := any(tickModel) != any(currentModel)
+			currentModel = tickModel
+			modelDirty = modelDirty || tickDirty
+
+			// Re-run view and reconcile only when the model changed.
+			if modelDirty {
+				newTree := view(currentModel)
+				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send)
+			}
 
 			// 3. Update hover target from previous frame's hitMap.
 			hoveredIdx := hitMap.HitTestIndex(mouseX, mouseY)
@@ -141,7 +151,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			w, h := plat.FramebufferSize()
 			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 			hitMap.Reset()
-			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap, &hoverState)
+			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap, &hoverState, globalFocus)
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)

@@ -28,6 +28,10 @@ type SetThemeMsg struct{ Theme theme.Theme }
 // SetDarkModeMsg toggles between the built-in dark and light themes (RFC §5.5).
 type SetDarkModeMsg struct{ Dark bool }
 
+// TickMsg is sent every frame with the elapsed delta time.
+// Use this to drive animations, timers, or physics.
+type TickMsg struct{ DeltaTime time.Duration }
+
 // UpdateFunc is the signature for the update function (RFC §3.1).
 type UpdateFunc[M any] func(M, Msg) M
 
@@ -36,6 +40,13 @@ type ViewFunc[M any] func(M) ui.Element
 
 // globalLoop holds the active loop instance for package-level Send/TrySend.
 var globalLoop *loop.Loop
+
+// globalFocus holds the app-level focus state for keyboard input routing.
+var globalFocus = &ui.FocusState{}
+
+// Focus returns the app-level FocusState for keyboard input routing.
+// Pass this to ui.WithFocusState when creating TextFields.
+func Focus() *ui.FocusState { return globalFocus }
 
 // Send enqueues a message into the app loop. Thread-safe, never blocks (RFC §3.2).
 func Send(msg Msg) {
