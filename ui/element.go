@@ -445,15 +445,26 @@ type MenuItem struct {
 	Items   []MenuItem // sub-items (nested menus)
 }
 
+// MenuBarState tracks which top-level menu is open (-1 = all closed).
+type MenuBarState struct {
+	OpenIndex int
+}
+
+// NewMenuBarState creates a MenuBarState with all menus closed.
+func NewMenuBarState() *MenuBarState {
+	return &MenuBarState{OpenIndex: -1}
+}
+
 type menuBarElement struct {
 	Items []MenuItem
+	State *MenuBarState
 }
 
 func (menuBarElement) isElement() {}
 
-// MenuBar creates a horizontal menu bar.
-func MenuBar(items []MenuItem) Element {
-	return menuBarElement{Items: items}
+// MenuBar creates a horizontal menu bar with dropdown submenus.
+func MenuBar(items []MenuItem, state *MenuBarState) Element {
+	return menuBarElement{Items: items, State: state}
 }
 
 type contextMenuElement struct {
@@ -1847,8 +1858,20 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, tokens 
 	// Layout trigger normally.
 	triggerBounds := layoutElement(node.Trigger, area, canvas, tokens, hitMap, hover, overlays, focus)
 
-	// If visible, push overlay for the tooltip popup.
-	if node.Visible {
+	// Determine visibility: explicit or hover-based.
+	visible := node.Visible
+	if !visible && hitMap != nil {
+		// Register trigger as hover target so the hover system tracks it.
+		var hoverOpacity float32
+		if hover != nil {
+			hoverOpacity = hover.nextButtonHoverOpacity()
+		}
+		hitMap.Add(draw.R(float32(triggerBounds.X), float32(triggerBounds.Y),
+			float32(triggerBounds.W), float32(triggerBounds.H)), func() {})
+		visible = hoverOpacity > 0.1
+	}
+
+	if visible {
 		tB := triggerBounds
 		content := node.Content
 		overlays.push(overlayEntry{
@@ -2009,20 +2032,29 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 
 	cursorX := area.X
 
-	for _, item := range node.Items {
+	for i, item := range node.Items {
 		// Measure label
 		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: area.W, H: menuBarHeight}, nc, tokens, nil, nil, nil)
 		itemW := cb.W + menuBarItemPadX*2
 
+		hasAction := item.OnClick != nil || len(item.Items) > 0
+
 		// Hover highlight (must be drawn before label for correct painter's order)
 		var hoverOpacity float32
-		if hover != nil && item.OnClick != nil {
+		if hover != nil && hasAction {
 			hoverOpacity = hover.nextButtonHoverOpacity()
 		}
-		if hoverOpacity > 0 {
+
+		// Active highlight for open menu
+		isOpen := node.State != nil && node.State.OpenIndex == i
+		if isOpen || hoverOpacity > 0 {
+			op := hoverOpacity
+			if isOpen {
+				op = 1.0
+			}
 			canvas.FillRect(
 				draw.R(float32(cursorX), float32(area.Y), float32(itemW), float32(menuBarHeight)),
-				draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity)))
+				draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, op)))
 		}
 
 		// Draw label
@@ -2030,16 +2062,105 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 		layoutElement(item.Label, labelArea, canvas, tokens, hitMap, hover, overlays, focus)
 
 		// Hit target
-		if hitMap != nil && item.OnClick != nil {
+		if hitMap != nil && hasAction {
+			idx := i
+			state := node.State
+			subItems := item.Items
 			onClick := item.OnClick
 			hitMap.Add(draw.R(float32(cursorX), float32(area.Y), float32(itemW), float32(menuBarHeight)),
-				onClick)
+				func() {
+					if len(subItems) > 0 && state != nil {
+						// Toggle dropdown
+						if state.OpenIndex == idx {
+							state.OpenIndex = -1
+						} else {
+							state.OpenIndex = idx
+						}
+					}
+					if onClick != nil {
+						onClick()
+					}
+				})
+		}
+
+		// Dropdown overlay for open submenu
+		if isOpen && len(item.Items) > 0 {
+			dropdownX := cursorX
+			dropdownY := area.Y + menuBarHeight
+			subItems := item.Items
+			overlays.push(overlayEntry{
+				Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
+					layoutMenuDropdown(subItems, dropdownX, dropdownY, nc, canvas, tokens, hitMap, hover)
+				},
+			})
 		}
 
 		cursorX += itemW
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: area.W, H: menuBarHeight}
+}
+
+// layoutMenuDropdown renders a dropdown menu at the given position.
+// Shared by MenuBar dropdowns and potentially nested menus.
+func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
+	// Measure all items.
+	maxItemW := 0
+	for _, item := range items {
+		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, tokens, nil, nil, nil)
+		w := cb.W + menuItemPadX*2
+		if w > maxItemW {
+			maxItemW = w
+		}
+	}
+	if maxItemW < 120 {
+		maxItemW = 120
+	}
+
+	totalH := len(items) * menuItemHeight
+	menuW := maxItemW
+	menuH := totalH
+
+	// Border
+	canvas.FillRoundRect(
+		draw.R(float32(posX), float32(posY), float32(menuW), float32(menuH)),
+		tokens.Radii.Card, draw.SolidPaint(tokens.Colors.Stroke.Border))
+
+	// Fill
+	canvas.FillRoundRect(
+		draw.R(float32(posX+1), float32(posY+1), float32(max(menuW-2, 0)), float32(max(menuH-2, 0))),
+		maxf(tokens.Radii.Card-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+
+	// Items
+	cursorY := posY
+	cornerR := maxf(tokens.Radii.Card-1, 0)
+	for itemIdx, item := range items {
+		// Hover highlight
+		var hoverOpacity float32
+		if hover != nil && item.OnClick != nil {
+			hoverOpacity = hover.nextButtonHoverOpacity()
+		}
+		if hoverOpacity > 0 {
+			hoverColor := draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity))
+			hoverRect := draw.R(float32(posX+1), float32(cursorY), float32(max(menuW-2, 0)), float32(menuItemHeight))
+			if itemIdx == 0 || itemIdx == len(items)-1 {
+				canvas.FillRoundRect(hoverRect, cornerR, hoverColor)
+			} else {
+				canvas.FillRect(hoverRect, hoverColor)
+			}
+		}
+
+		labelArea := bounds{X: posX + menuItemPadX, Y: cursorY + (menuItemHeight-16)/2, W: max(menuW-menuItemPadX*2, 0), H: 16}
+		layoutElement(item.Label, labelArea, canvas, tokens, hitMap, nil, nil)
+
+		if hitMap != nil && item.OnClick != nil {
+			onClick := item.OnClick
+			hitMap.Add(draw.R(float32(posX), float32(cursorY), float32(menuW), float32(menuItemHeight)),
+				onClick)
+		}
+
+		cursorY += menuItemHeight
+	}
 }
 
 func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
@@ -2055,58 +2176,7 @@ func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas,
 	// Push overlay for context menu rendering.
 	overlays.push(overlayEntry{
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
-			// Measure all items.
-			maxItemW := 0
-			for _, item := range items {
-				cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, tokens, nil, nil, nil)
-				w := cb.W + menuItemPadX*2
-				if w > maxItemW {
-					maxItemW = w
-				}
-			}
-			if maxItemW < 120 {
-				maxItemW = 120
-			}
-
-			totalH := len(items) * menuItemHeight
-			menuW := maxItemW
-			menuH := totalH
-
-			// Border
-			canvas.FillRoundRect(
-				draw.R(float32(posX), float32(posY), float32(menuW), float32(menuH)),
-				tokens.Radii.Card, draw.SolidPaint(tokens.Colors.Stroke.Border))
-
-			// Fill
-			canvas.FillRoundRect(
-				draw.R(float32(posX+1), float32(posY+1), float32(max(menuW-2, 0)), float32(max(menuH-2, 0))),
-				maxf(tokens.Radii.Card-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
-
-			// Items
-			cursorY := posY
-			for _, item := range items {
-				// Hover highlight
-				var hoverOpacity float32
-				if hover != nil && item.OnClick != nil {
-					hoverOpacity = hover.nextButtonHoverOpacity()
-				}
-				if hoverOpacity > 0 {
-					canvas.FillRect(
-						draw.R(float32(posX+1), float32(cursorY), float32(max(menuW-2, 0)), float32(menuItemHeight)),
-						draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity)))
-				}
-
-				labelArea := bounds{X: posX + menuItemPadX, Y: cursorY + (menuItemHeight-16)/2, W: max(menuW-menuItemPadX*2, 0), H: 16}
-				layoutElement(item.Label, labelArea, canvas, tokens, hitMap, nil, nil)
-
-				if hitMap != nil && item.OnClick != nil {
-					onClick := item.OnClick
-					hitMap.Add(draw.R(float32(posX), float32(cursorY), float32(menuW), float32(menuItemHeight)),
-						onClick)
-				}
-
-				cursorY += menuItemHeight
-			}
+			layoutMenuDropdown(items, posX, posY, nc, canvas, tokens, hitMap, hover)
 		},
 	})
 

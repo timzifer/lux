@@ -87,9 +87,10 @@ type Model struct {
 	AccordionState *ui.AccordionState
 	ChipASelected  bool
 	ChipBSelected  bool
-	ShowTooltip    bool
+	ChipCSelected  bool
 	ChipDismissed  bool
 	LastMenuAction string
+	MenuBarState   *ui.MenuBarState
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -107,7 +108,7 @@ type SelectSectionMsg struct{ Section string }
 type SetTabMsg struct{ Index int }
 type ToggleChipAMsg struct{}
 type ToggleChipBMsg struct{}
-type ToggleTooltipMsg struct{}
+type ToggleChipCMsg struct{}
 type DismissChipMsg struct{}
 type MenuActionMsg struct{ Action string }
 
@@ -142,8 +143,8 @@ func update(m Model, msg app.Msg) Model {
 		m.ChipASelected = !m.ChipASelected
 	case ToggleChipBMsg:
 		m.ChipBSelected = !m.ChipBSelected
-	case ToggleTooltipMsg:
-		m.ShowTooltip = !m.ShowTooltip
+	case ToggleChipCMsg:
+		m.ChipCSelected = !m.ChipCSelected
 	case DismissChipMsg:
 		m.ChipDismissed = true
 	case MenuActionMsg:
@@ -553,7 +554,7 @@ func badgesChipsSection(m Model) ui.Element {
 		ui.Row(
 			ui.Chip(ui.Text("Go"), m.ChipASelected, func() { app.Send(ToggleChipAMsg{}) }),
 			ui.Chip(ui.Text("Rust"), m.ChipBSelected, func() { app.Send(ToggleChipBMsg{}) }),
-			ui.Chip(ui.Text("Python"), false, nil),
+			ui.Chip(ui.Text("Python"), m.ChipCSelected, func() { app.Send(ToggleChipCMsg{}) }),
 		),
 	}
 
@@ -578,14 +579,12 @@ func badgesChipsSection(m Model) ui.Element {
 
 	children = append(children,
 		ui.Spacer(12),
-		ui.Text("Tooltip (click button to toggle):"),
+		ui.Text("Tooltip (hover to show):"),
 		ui.Spacer(4),
 		ui.Row(
-			ui.Button("Toggle Tooltip", func() { app.Send(ToggleTooltipMsg{}) }),
-			ui.TooltipVisible(
-				ui.Text("← Hover target"),
+			ui.Tooltip(
+				ui.Text("← Hover me for tooltip"),
 				ui.Text("This is a tooltip with arbitrary content!"),
-				m.ShowTooltip,
 			),
 		),
 	)
@@ -601,14 +600,27 @@ func menusSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Menus"),
 
-		ui.Text("MenuBar (click items):"),
+		ui.Text("MenuBar (click to open dropdown):"),
 		ui.Spacer(4),
 		ui.MenuBar([]ui.MenuItem{
-			{Label: ui.Text("File"), OnClick: menuAction("File")},
-			{Label: ui.Text("Edit"), OnClick: menuAction("Edit")},
-			{Label: ui.Text("View"), OnClick: menuAction("View")},
+			{Label: ui.Text("File"), Items: []ui.MenuItem{
+				{Label: ui.Text("New"), OnClick: menuAction("File > New")},
+				{Label: ui.Text("Open"), OnClick: menuAction("File > Open")},
+				{Label: ui.Text("Save"), OnClick: menuAction("File > Save")},
+			}},
+			{Label: ui.Text("Edit"), Items: []ui.MenuItem{
+				{Label: ui.Text("Undo"), OnClick: menuAction("Edit > Undo")},
+				{Label: ui.Text("Redo"), OnClick: menuAction("Edit > Redo")},
+				{Label: ui.Text("Cut"), OnClick: menuAction("Edit > Cut")},
+				{Label: ui.Text("Copy"), OnClick: menuAction("Edit > Copy")},
+				{Label: ui.Text("Paste"), OnClick: menuAction("Edit > Paste")},
+			}},
+			{Label: ui.Text("View"), Items: []ui.MenuItem{
+				{Label: ui.Text("Zoom In"), OnClick: menuAction("View > Zoom In")},
+				{Label: ui.Text("Zoom Out"), OnClick: menuAction("View > Zoom Out")},
+			}},
 			{Label: ui.Text("Help"), OnClick: menuAction("Help")},
-		}),
+		}, m.MenuBarState),
 	}
 
 	if m.LastMenuAction != "" {
@@ -649,6 +661,7 @@ func main() {
 		VListScroll:    &ui.ScrollState{},
 		DemoTree:       ui.NewTreeState(),
 		AccordionState: ui.NewAccordionState(),
+		MenuBarState:   ui.NewMenuBarState(),
 	}
 
 	if err := app.Run(initial, update, view,
