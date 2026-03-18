@@ -1,7 +1,7 @@
 // Package gpu provides the GPU rendering abstraction for the framework.
 package gpu
 
-import "github.com/timzifer/lux/ui"
+import "github.com/timzifer/lux/draw"
 
 // Renderer abstracts GPU operations.
 type Renderer interface {
@@ -15,7 +15,7 @@ type Renderer interface {
 	BeginFrame()
 
 	// Draw renders the current scene.
-	Draw(scene ui.Scene)
+	Draw(scene draw.Scene)
 
 	// EndFrame presents the rendered frame.
 	EndFrame()
@@ -26,6 +26,7 @@ type Renderer interface {
 
 // Config holds GPU initialization parameters.
 type Config struct {
-	Width  int
-	Height int
+	Width        int
+	Height       int
+	NativeHandle uintptr // Platform-specific window handle (HWND on Windows, 0 otherwise).
 }

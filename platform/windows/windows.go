@@ -213,6 +213,11 @@ func (p *Platform) ShouldClose() bool {
 	return p.shouldClose
 }
 
+// NativeHandle returns the Win32 HWND for the renderer.
+func (p *Platform) NativeHandle() uintptr {
+	return p.hwnd
+}
+
 func ensureWindowClass() error {
 	registerClassOnce.Do(func() {
 		hInstance, _, err := procGetModuleHandleW.Call(0)
