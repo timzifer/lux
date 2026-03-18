@@ -1,11 +1,11 @@
-# RFC-002 — lux/sim: Callback-Compatibility Layer
+# RFC-999 — lux/sim: Callback-Compatibility Layer
 
 **Repository:** `github.com/timzifer/lux`
 
 **Status:** Draft
 **Version:** 0.1.0
 **Datum:** 2026-03-17
-**Abhängigkeit:** RFC-001-lux.md v0.2.0
+**Abhängigkeit:** RFC-999-lux-sim.md v0.2.0
 
 ---
 
