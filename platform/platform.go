@@ -1,6 +1,8 @@
 // Package platform defines the Platform interface for windowing backends (RFC §7.1).
 package platform
 
+import "github.com/timzifer/lux/input"
+
 // Platform abstracts the native windowing system.
 // Implementations exist for GLFW (M1), with native Cocoa/Wayland/X11/DRM planned.
 type Platform interface {
@@ -26,6 +28,9 @@ type Platform interface {
 
 	// ShouldClose returns true if the user has requested window close.
 	ShouldClose() bool
+
+	// SetCursor changes the system cursor shape (RFC-002 §2.7).
+	SetCursor(kind input.CursorKind)
 }
 
 // Config holds platform initialization parameters.

@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/platform"
 )
 
@@ -19,8 +20,10 @@ func init() {
 
 // Platform implements platform.Platform using GLFW.
 type Platform struct {
-	window *glfw.Window
-	config platform.Config
+	window      *glfw.Window
+	config      platform.Config
+	cursors     map[input.CursorKind]*glfw.Cursor
+	cursorKind  input.CursorKind
 }
 
 // New creates a new GLFW platform instance.
@@ -62,7 +65,39 @@ func (p *Platform) Init(cfg platform.Config) error {
 
 	p.window = win
 	p.config = cfg
+	p.initCursors()
 	return nil
+}
+
+// initCursors creates standard GLFW cursors for each CursorKind.
+func (p *Platform) initCursors() {
+	p.cursors = map[input.CursorKind]*glfw.Cursor{
+		input.CursorDefault:    glfw.CreateStandardCursor(glfw.ArrowCursor),
+		input.CursorText:       glfw.CreateStandardCursor(glfw.IBeamCursor),
+		input.CursorPointer:    glfw.CreateStandardCursor(glfw.HandCursor),
+		input.CursorCrosshair:  glfw.CreateStandardCursor(glfw.CrosshairCursor),
+		input.CursorResizeEW:   glfw.CreateStandardCursor(glfw.HResizeCursor),
+		input.CursorResizeNS:   glfw.CreateStandardCursor(glfw.VResizeCursor),
+	}
+}
+
+// SetCursor changes the system cursor shape (RFC-002 §2.7).
+func (p *Platform) SetCursor(kind input.CursorKind) {
+	if p.window == nil || kind == p.cursorKind {
+		return
+	}
+	p.cursorKind = kind
+	if kind == input.CursorNone {
+		p.window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
+		return
+	}
+	p.window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
+	if c, ok := p.cursors[kind]; ok {
+		p.window.SetCursor(c)
+	} else {
+		// Fallback to default arrow for unsupported cursor types.
+		p.window.SetCursor(p.cursors[input.CursorDefault])
+	}
 }
 
 // Run enters the GLFW event loop.

@@ -84,12 +84,15 @@ type ElevationScale struct {
 	High draw.Shadow
 }
 
-// ScrollSpec defines scroll physics parameters (RFC §14.4).
+// ScrollSpec defines scroll physics parameters (RFC §14.4, RFC-002 §3.4).
 type ScrollSpec struct {
-	Friction    float32
-	Overscroll  float32
-	TrackWidth  float32
-	ThumbRadius float32
+	Friction          float32 // Deceleration factor per frame at 60fps (0.95 = smooth, 0.80 = fast stop)
+	Overscroll        float32 // Maximum rubber-band displacement in dp
+	TrackWidth        float32 // Scrollbar track width
+	ThumbRadius       float32 // Scrollbar thumb corner radius
+	SettlingThreshold float32 // Velocity below which scroll stops (dp/frame)
+	StepSize          float32 // Scroll amount per mouse wheel click (dp)
+	MultiplierPrecise float32 // Multiplier for trackpad deltas
 }
 
 // TokenSet holds all design tokens for a theme (RFC-003 §1.2).
@@ -256,10 +259,13 @@ var slateTokens = TokenSet{
 		Quick:      100 * time.Millisecond,
 	},
 	Scroll: ScrollSpec{
-		Friction:    0.95,
-		Overscroll:  40,
-		TrackWidth:  8,
-		ThumbRadius: 4,
+		Friction:          0.95,
+		Overscroll:        40,
+		TrackWidth:        8,
+		ThumbRadius:       4,
+		SettlingThreshold: 0.5,
+		StepSize:          48,
+		MultiplierPrecise: 1.5,
 	},
 }
 

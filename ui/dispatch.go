@@ -44,6 +44,17 @@ type EventDispatcher struct {
 	// Focus transitions queued during this frame.
 	focusGained map[UID]FocusGainedMsg
 	focusLost   map[UID]FocusLostMsg
+
+	// Overlay tracking for input priority (RFC-002 §5.3).
+	overlays       []dispatchOverlayEntry
+	dismissHandler func(id OverlayID) // callback to send DismissOverlayMsg
+}
+
+// dispatchOverlayEntry tracks an active overlay's bounds and properties.
+type dispatchOverlayEntry struct {
+	id          OverlayID
+	bounds      draw.Rect
+	dismissable bool
 }
 
 // NewEventDispatcher creates a dispatcher bound to the given FocusManager.
@@ -111,15 +122,18 @@ func (d *EventDispatcher) Dispatch() {
 		}
 	}
 
-	// Route mouse events → hit-tested widget.
+	// Route mouse events → overlay (priority) or hit-tested widget.
 	for i := range d.mouseEvents {
 		m := d.mouseEvents[i]
+		if d.routeToOverlayOrDismiss(m.X, m.Y, m.Action == input.MousePress) {
+			continue // consumed by overlay logic
+		}
 		if uid := d.hitTestWidget(m.X, m.Y); uid != 0 {
 			d.appendEvent(uid, MouseEvent(m))
 		}
 	}
 
-	// Route scroll events → hit-tested widget.
+	// Route scroll events → hit-tested widget (overlays don't consume scrolls by default).
 	for i := range d.scrollEvents {
 		m := d.scrollEvents[i]
 		if uid := d.hitTestWidget(m.X, m.Y); uid != 0 {
@@ -181,6 +195,63 @@ func (d *EventDispatcher) ResetEvents() {
 	}
 }
 
+// RegisterOverlay tracks an active overlay for input priority (RFC-002 §5.3).
+func (d *EventDispatcher) RegisterOverlay(id OverlayID, bounds draw.Rect, dismissable bool) {
+	d.overlays = append(d.overlays, dispatchOverlayEntry{id: id, bounds: bounds, dismissable: dismissable})
+}
+
+// ClearOverlays removes all registered overlays (called each frame before re-registration).
+func (d *EventDispatcher) ClearOverlays() {
+	d.overlays = d.overlays[:0]
+}
+
+// SetDismissHandler sets the callback invoked when a dismissable overlay
+// should be closed (click outside).
+func (d *EventDispatcher) SetDismissHandler(fn func(id OverlayID)) {
+	d.dismissHandler = fn
+}
+
+// HasOverlays reports whether any overlays are currently registered.
+func (d *EventDispatcher) HasOverlays() bool {
+	return len(d.overlays) > 0
+}
+
+// FilterCollectedEvents runs handler against all collected raw events.
+// Events for which handler returns true are removed from the buffers
+// (consumed). This implements the Global Handler Layer (RFC-002 §2.8).
+func (d *EventDispatcher) FilterCollectedEvents(handler func(InputEvent) bool) {
+	d.keyEvents = filterSlice(d.keyEvents, func(m input.KeyMsg) bool {
+		return handler(KeyEvent(m))
+	})
+	d.charEvents = filterSlice(d.charEvents, func(m input.CharMsg) bool {
+		return handler(CharEvent(m))
+	})
+	d.textEvents = filterSlice(d.textEvents, func(m input.TextInputMsg) bool {
+		return handler(TextInputEvent(m))
+	})
+	d.mouseEvents = filterSlice(d.mouseEvents, func(m input.MouseMsg) bool {
+		return handler(MouseEvent(m))
+	})
+	d.scrollEvents = filterSlice(d.scrollEvents, func(m input.ScrollMsg) bool {
+		return handler(ScrollEvent(m))
+	})
+	d.touchEvents = filterSlice(d.touchEvents, func(m input.TouchMsg) bool {
+		return handler(TouchEvent(m))
+	})
+}
+
+// filterSlice removes elements for which consumed returns true (in-place).
+func filterSlice[T any](s []T, consumed func(T) bool) []T {
+	n := 0
+	for _, v := range s {
+		if !consumed(v) {
+			s[n] = v
+			n++
+		}
+	}
+	return s[:n]
+}
+
 // hitTestWidget returns the UID of the top-most widget whose bounds
 // contain point (x, y), or 0 if none match. Widgets registered later
 // (higher Z-order) are tested first.
@@ -207,6 +278,34 @@ func (d *EventDispatcher) hitTestWidget(x, y float32) UID {
 		}
 	}
 	return match
+}
+
+// routeToOverlayOrDismiss checks if a click hits an overlay or should dismiss one.
+// Returns true if the event was consumed by overlay logic.
+func (d *EventDispatcher) routeToOverlayOrDismiss(x, y float32, isPress bool) bool {
+	if len(d.overlays) == 0 {
+		return false
+	}
+	pt := draw.Pt(x, y)
+
+	// Check overlays in reverse order (newest = highest Z).
+	for i := len(d.overlays) - 1; i >= 0; i-- {
+		if d.overlays[i].bounds.Contains(pt) {
+			return false // click inside overlay → let normal dispatch handle it
+		}
+	}
+
+	// Click outside all overlays → dismiss the top-most dismissable overlay.
+	if isPress && d.dismissHandler != nil {
+		for i := len(d.overlays) - 1; i >= 0; i-- {
+			if d.overlays[i].dismissable {
+				d.dismissHandler(d.overlays[i].id)
+				return true // consumed
+			}
+		}
+	}
+
+	return false
 }
 
 func (d *EventDispatcher) appendEvent(uid UID, ev InputEvent) {

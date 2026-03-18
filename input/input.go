@@ -234,6 +234,84 @@ type ResizeMsg struct {
 // CloseMsg is sent when the user requests window close.
 type CloseMsg struct{}
 
+// ── Keyboard Shortcuts (RFC-002 §2.5) ────────────────────────────
+
+// ShortcutID is a user-assigned identifier for a shortcut (analogous to AnimationID).
+type ShortcutID string
+
+// Shortcut describes a key combination (RFC-002 §2.5).
+type Shortcut struct {
+	Key       Key
+	Modifiers ModifierSet
+}
+
+// ShortcutMsg is sent into the user loop when a registered shortcut fires.
+type ShortcutMsg struct {
+	Shortcut Shortcut
+	ID       ShortcutID
+}
+
+// PlatformAction identifies common cross-platform shortcut actions.
+type PlatformAction uint8
+
+const (
+	PlatformActionCopy      PlatformAction = iota
+	PlatformActionPaste
+	PlatformActionCut
+	PlatformActionUndo
+	PlatformActionRedo
+	PlatformActionSelectAll
+	PlatformActionSave
+)
+
+// PlatformShortcut resolves to the platform-correct key combination.
+// On macOS → ModSuper, on Windows/Linux → ModCtrl.
+func PlatformShortcut(action PlatformAction) Shortcut {
+	mod := platformModifier()
+	switch action {
+	case PlatformActionCopy:
+		return Shortcut{Key: KeyC, Modifiers: mod}
+	case PlatformActionPaste:
+		return Shortcut{Key: KeyV, Modifiers: mod}
+	case PlatformActionCut:
+		return Shortcut{Key: KeyX, Modifiers: mod}
+	case PlatformActionUndo:
+		return Shortcut{Key: KeyZ, Modifiers: mod}
+	case PlatformActionRedo:
+		return Shortcut{Key: KeyZ, Modifiers: mod | ModShift}
+	case PlatformActionSelectAll:
+		return Shortcut{Key: KeyA, Modifiers: mod}
+	case PlatformActionSave:
+		return Shortcut{Key: KeyS, Modifiers: mod}
+	default:
+		return Shortcut{}
+	}
+}
+
+// ── CursorKind (RFC-002 §2.7) ────────────────────────────────────
+
+// CursorKind declares the desired system cursor shape.
+// The framework sets the cursor when the widget under the pointer changes.
+type CursorKind uint8
+
+const (
+	CursorDefault    CursorKind = iota
+	CursorText                  // I-beam for text input
+	CursorPointer               // Hand for links/buttons
+	CursorMove                  // Four-way arrow for drag
+	CursorResizeNS              // Vertical resize
+	CursorResizeEW              // Horizontal resize
+	CursorResizeNESW            // Diagonal NE-SW resize
+	CursorResizeNWSE            // Diagonal NW-SE resize
+	CursorNotAllowed            // Prohibition sign
+	CursorCrosshair             // Crosshair
+	CursorGrab                  // Open hand
+	CursorGrabbing              // Closed hand
+	CursorWait                  // Busy spinner
+	CursorProgress              // Arrow + spinner
+	CursorNone                  // Hidden cursor
+)
+
 // ── Legacy Compatibility ──────────────────────────────────────────
 
 // KeyModifiers is the legacy modifier type. Prefer ModifierSet.

@@ -234,3 +234,112 @@ func TestEventDispatcherSmallestBoundsWins(t *testing.T) {
 		t.Errorf("larger widget should get 0 events, got %d", len(ev1))
 	}
 }
+
+// ── Global Handler Layer Tests (RFC-002 §2.8) ──────────────────
+
+func TestFilterCollectedEvents_ConsumesMatching(t *testing.T) {
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+	fm.SetFocusedUID(UID(1))
+
+	d.Collect(input.KeyMsg{Key: input.KeyA, Action: input.KeyPress})
+	d.Collect(input.KeyMsg{Key: input.KeyB, Action: input.KeyPress})
+
+	// Filter that consumes KeyA events.
+	d.FilterCollectedEvents(func(ev InputEvent) bool {
+		return ev.Kind == EventKey && ev.Key != nil && ev.Key.Key == input.KeyA
+	})
+
+	d.Dispatch()
+
+	ev := d.EventsFor(UID(1))
+	if len(ev) != 1 {
+		t.Fatalf("expected 1 event after filter, got %d", len(ev))
+	}
+	if ev[0].Key.Key != input.KeyB {
+		t.Errorf("remaining event key = %d, want KeyB", ev[0].Key.Key)
+	}
+}
+
+func TestFilterCollectedEvents_NoConsume(t *testing.T) {
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+	fm.SetFocusedUID(UID(1))
+
+	d.Collect(input.KeyMsg{Key: input.KeyA})
+	d.Collect(input.KeyMsg{Key: input.KeyB})
+
+	// Filter that consumes nothing.
+	d.FilterCollectedEvents(func(ev InputEvent) bool {
+		return false
+	})
+
+	d.Dispatch()
+
+	ev := d.EventsFor(UID(1))
+	if len(ev) != 2 {
+		t.Errorf("expected 2 events when nothing consumed, got %d", len(ev))
+	}
+}
+
+// ── Overlay Dispatch Tests (RFC-002 §5.3) ──────────────────────
+
+func TestOverlayDismissOnClickOutside(t *testing.T) {
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+
+	var dismissed OverlayID
+	d.SetDismissHandler(func(id OverlayID) {
+		dismissed = id
+	})
+
+	d.RegisterOverlay("menu", draw.R(100, 100, 200, 200), true)
+
+	// Click outside the overlay.
+	d.Collect(input.MouseMsg{X: 50, Y: 50, Action: input.MousePress})
+	d.Dispatch()
+
+	if dismissed != "menu" {
+		t.Errorf("dismissed = %q, want 'menu'", dismissed)
+	}
+}
+
+func TestOverlayNoDissmissClickInside(t *testing.T) {
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+
+	var dismissed OverlayID
+	d.SetDismissHandler(func(id OverlayID) {
+		dismissed = id
+	})
+
+	d.RegisterOverlay("menu", draw.R(100, 100, 200, 200), true)
+
+	// Click inside the overlay.
+	d.Collect(input.MouseMsg{X: 150, Y: 150, Action: input.MousePress})
+	d.Dispatch()
+
+	if dismissed != "" {
+		t.Errorf("should not have dismissed, but got %q", dismissed)
+	}
+}
+
+func TestOverlayNonDismissable(t *testing.T) {
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+
+	var dismissed OverlayID
+	d.SetDismissHandler(func(id OverlayID) {
+		dismissed = id
+	})
+
+	d.RegisterOverlay("modal", draw.R(100, 100, 200, 200), false)
+
+	// Click outside — should not dismiss because Dismissable=false.
+	d.Collect(input.MouseMsg{X: 50, Y: 50, Action: input.MousePress})
+	d.Dispatch()
+
+	if dismissed != "" {
+		t.Errorf("non-dismissable overlay should not be dismissed, got %q", dismissed)
+	}
+}

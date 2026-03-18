@@ -1,7 +1,10 @@
 // Package hit provides hit-testing for interactive elements (RFC §13, Stufe 3).
 package hit
 
-import "github.com/timzifer/lux/draw"
+import (
+	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/input"
+)
 
 // Target is a clickable region with an associated callback.
 type Target struct {
@@ -9,6 +12,7 @@ type Target struct {
 	OnClick   func()
 	OnClickAt func(x, y float32) // positional click (e.g. Slider)
 	Draggable bool               // if true, OnClickAt fires continuously during drag
+	Cursor    input.CursorKind   // cursor to show when hovering (RFC-002 §2.7)
 }
 
 // ScrollTarget is a scrollable region linked to a ScrollState.
