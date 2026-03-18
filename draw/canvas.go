@@ -94,11 +94,12 @@ type ImageOptions struct {
 
 // DrawRect is a filled rectangle in framebuffer coordinates.
 type DrawRect struct {
-	X     int
-	Y     int
-	W     int
-	H     int
-	Color Color
+	X      int
+	Y      int
+	W      int
+	H      int
+	Color  Color
+	Radius float32 // corner radius in dp; 0 = sharp corners
 }
 
 // DrawGlyph is a single text glyph in framebuffer coordinates.

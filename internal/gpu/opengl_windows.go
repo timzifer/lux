@@ -92,7 +92,11 @@ func (r *OpenGLRenderer) BeginFrame() {
 
 func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	for _, rect := range scene.Rects {
-		r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
+		if rect.Radius > 0 {
+			r.fillRoundRect(rect.X, rect.Y, rect.W, rect.H, rect.Radius, rect.Color)
+		} else {
+			r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
+		}
 	}
 	for _, glyph := range scene.Glyphs {
 		r.drawGlyph(glyph)
@@ -147,6 +151,69 @@ func (r *OpenGLRenderer) fillRect(x, y, w, h int, color draw.Color) {
 			if px < 0 || px >= r.width {
 				continue
 			}
+			off := (flippedY*r.width + px) * 4
+			r.pixels[off] = bgra[0]
+			r.pixels[off+1] = bgra[1]
+			r.pixels[off+2] = bgra[2]
+			r.pixels[off+3] = bgra[3]
+		}
+	}
+}
+
+func (r *OpenGLRenderer) fillRoundRect(x, y, w, h int, radius float32, color draw.Color) {
+	if w <= 0 || h <= 0 {
+		return
+	}
+	bgra := toBGRA(color)
+	rad := radius
+	// Clamp radius to half of the smaller dimension.
+	halfW := float32(w) / 2
+	halfH := float32(h) / 2
+	if rad > halfW {
+		rad = halfW
+	}
+	if rad > halfH {
+		rad = halfH
+	}
+
+	for row := 0; row < h; row++ {
+		py := y + row
+		if py < 0 || py >= r.height {
+			continue
+		}
+		flippedY := r.height - 1 - py
+		for col := 0; col < w; col++ {
+			px := x + col
+			if px < 0 || px >= r.width {
+				continue
+			}
+
+			// Check corner distance for rounded corners.
+			fx := float32(col)
+			fy := float32(row)
+			fw := float32(w)
+			fh := float32(h)
+
+			// Distance from the nearest corner circle center.
+			var dx, dy float32
+			if fx < rad {
+				dx = rad - fx
+			} else if fx > fw-rad {
+				dx = fx - (fw - rad)
+			}
+			if fy < rad {
+				dy = rad - fy
+			} else if fy > fh-rad {
+				dy = fy - (fh - rad)
+			}
+
+			// If in a corner region, check if outside the rounded corner.
+			if dx > 0 && dy > 0 {
+				if dx*dx+dy*dy > rad*rad {
+					continue
+				}
+			}
+
 			off := (flippedY*r.width + px) * 4
 			r.pixels[off] = bgra[0]
 			r.pixels[off+1] = bgra[1]
