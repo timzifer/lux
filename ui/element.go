@@ -399,6 +399,7 @@ func TooltipVisible(trigger, content Element, visible bool) Element {
 
 type badgeElement struct {
 	Content Element
+	Color   draw.Color // optional custom color; zero = Accent.Primary
 }
 
 func (badgeElement) isElement() {}
@@ -411,6 +412,11 @@ func Badge(content Element) Element {
 // BadgeText is a convenience for text-only badges.
 func BadgeText(label string) Element {
 	return badgeElement{Content: Text(label)}
+}
+
+// BadgeColor creates a badge with a custom background color.
+func BadgeColor(content Element, color draw.Color) Element {
+	return badgeElement{Content: content, Color: color}
 }
 
 type chipElement struct {
@@ -741,7 +747,7 @@ func (h *HoverState) ensureSize(n int) {
 // overlayEntry is a deferred render operation drawn after the main tree.
 // Used by Tooltip, ContextMenu, and MenuBar for correct Z-order.
 type overlayEntry struct {
-	Render func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map)
+	Render func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState)
 }
 
 // overlayStack collects overlay entries during layout.
@@ -807,7 +813,7 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 
 	// Render overlay entries (Tooltip, ContextMenu, etc.) on top of main tree.
 	for _, entry := range overlays.entries {
-		entry.Render(canvas, tokens, hitMap)
+		entry.Render(canvas, tokens, hitMap, hover)
 	}
 
 	// The canvas is a SceneCanvas — retrieve its scene.
@@ -1603,6 +1609,13 @@ func maxf(a, b float32) float32 {
 	return b
 }
 
+func minf(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -1695,11 +1708,21 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, tokens theme.
 	for i, item := range node.Items {
 		tw := measures[i].w
 
-		// Tab background — selected tab gets subtle highlight.
+		// Hover highlight (drawn before content for correct painter's order)
+		var hoverOpacity float32
+		if hover != nil && node.OnSelect != nil {
+			hoverOpacity = hover.nextButtonHoverOpacity()
+		}
+
+		// Tab background — selected tab gets subtle highlight; hover blends on top.
 		if i == selected {
 			canvas.FillRect(
 				draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH)),
 				draw.SolidPaint(tokens.Colors.Surface.Hovered))
+		} else if hoverOpacity > 0 {
+			canvas.FillRect(
+				draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH)),
+				draw.SolidPaint(lerpColor(draw.Color{}, tokens.Colors.Surface.Hovered, hoverOpacity)))
 		}
 
 		// Tab header content
@@ -1717,9 +1740,6 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, tokens theme.
 		if hitMap != nil && node.OnSelect != nil {
 			idx := i
 			onSelect := node.OnSelect
-			if hover != nil {
-				hover.nextButtonHoverOpacity()
-			}
 			hitMap.Add(draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH)),
 				func() { onSelect(idx) })
 		}
@@ -1768,10 +1788,20 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, tok
 			cursorY++
 		}
 
-		// Header background
+		// Hover highlight (computed before header background)
+		var hoverOpacity float32
+		if hover != nil && node.State != nil {
+			hoverOpacity = hover.nextButtonHoverOpacity()
+		}
+
+		// Header background (with hover blend)
+		hdrColor := tokens.Colors.Surface.Elevated
+		if hoverOpacity > 0 {
+			hdrColor = lerpColor(hdrColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+		}
 		canvas.FillRect(
 			draw.R(float32(area.X), float32(cursorY), float32(area.W), float32(accordionHeaderH)),
-			draw.SolidPaint(tokens.Colors.Surface.Elevated))
+			draw.SolidPaint(hdrColor))
 
 		// Chevron indicator
 		chevron := "▶"
@@ -1791,9 +1821,6 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, tok
 		if hitMap != nil && node.State != nil {
 			idx := i
 			state := node.State
-			if hover != nil {
-				hover.nextButtonHoverOpacity()
-			}
 			hitMap.Add(draw.R(float32(area.X), float32(cursorY), float32(area.W), float32(accordionHeaderH)),
 				func() {
 					state.Expanded[idx] = !state.Expanded[idx]
@@ -1825,7 +1852,7 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, tokens 
 		tB := triggerBounds
 		content := node.Content
 		overlays.push(overlayEntry{
-			Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map) {
+			Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, _ *HoverState) {
 				// Measure content
 				nc := nullCanvas{delegate: canvas}
 				cb := layoutElement(content, bounds{X: 0, Y: 0, W: 300, H: 200}, nc, tokens, nil, nil, nil)
@@ -1870,9 +1897,14 @@ func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, tokens them
 	}
 
 	// Pill background
+	bgColor := tokens.Colors.Accent.Primary
+	if node.Color.A > 0 {
+		bgColor = node.Color
+	}
+	radius := minf(tokens.Radii.Pill, float32(min(w, h))/2)
 	canvas.FillRoundRect(
 		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-		tokens.Radii.Pill, draw.SolidPaint(tokens.Colors.Accent.Primary))
+		radius, draw.SolidPaint(bgColor))
 
 	// Content (centered)
 	contentX := area.X + (w-cb.W)/2
@@ -1907,19 +1939,20 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, tokens theme.
 		bgColor = tokens.Colors.Accent.Primary
 		borderColor = tokens.Colors.Accent.Primary
 	} else {
-		bgColor = tokens.Colors.Surface.Elevated
-		borderColor = tokens.Colors.Stroke.Border
+		bgColor = tokens.Colors.Surface.Hovered
+		borderColor = draw.Color{R: 1, G: 1, B: 1, A: 0.20} // 20% white — visible border
 	}
 	if hoverOpacity > 0 {
 		bgColor = lerpColor(bgColor, hoverHighlight(bgColor), hoverOpacity)
 	}
 
+	radius := minf(tokens.Radii.Pill, float32(min(w, h))/2)
 	canvas.FillRoundRect(
 		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-		tokens.Radii.Pill, draw.SolidPaint(borderColor))
+		radius, draw.SolidPaint(borderColor))
 	canvas.FillRoundRect(
 		draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
-		maxf(tokens.Radii.Pill-1, 0), draw.SolidPaint(bgColor))
+		maxf(radius-1, 0), draw.SolidPaint(bgColor))
 
 	// Label content
 	labelArea := bounds{X: area.X + chipPadX, Y: area.Y + chipPadY, W: labelW, H: cb.H}
@@ -1981,6 +2014,17 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: area.W, H: menuBarHeight}, nc, tokens, nil, nil, nil)
 		itemW := cb.W + menuBarItemPadX*2
 
+		// Hover highlight (must be drawn before label for correct painter's order)
+		var hoverOpacity float32
+		if hover != nil && item.OnClick != nil {
+			hoverOpacity = hover.nextButtonHoverOpacity()
+		}
+		if hoverOpacity > 0 {
+			canvas.FillRect(
+				draw.R(float32(cursorX), float32(area.Y), float32(itemW), float32(menuBarHeight)),
+				draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity)))
+		}
+
 		// Draw label
 		labelArea := bounds{X: cursorX + menuBarItemPadX, Y: area.Y + (menuBarHeight-cb.H)/2, W: cb.W, H: cb.H}
 		layoutElement(item.Label, labelArea, canvas, tokens, hitMap, hover, overlays, focus)
@@ -1988,9 +2032,6 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 		// Hit target
 		if hitMap != nil && item.OnClick != nil {
 			onClick := item.OnClick
-			if hover != nil {
-				hover.nextButtonHoverOpacity()
-			}
 			hitMap.Add(draw.R(float32(cursorX), float32(area.Y), float32(itemW), float32(menuBarHeight)),
 				onClick)
 		}
@@ -2013,7 +2054,7 @@ func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas,
 
 	// Push overlay for context menu rendering.
 	overlays.push(overlayEntry{
-		Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map) {
+		Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
 			// Measure all items.
 			maxItemW := 0
 			for _, item := range items {
@@ -2044,6 +2085,17 @@ func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas,
 			// Items
 			cursorY := posY
 			for _, item := range items {
+				// Hover highlight
+				var hoverOpacity float32
+				if hover != nil && item.OnClick != nil {
+					hoverOpacity = hover.nextButtonHoverOpacity()
+				}
+				if hoverOpacity > 0 {
+					canvas.FillRect(
+						draw.R(float32(posX+1), float32(cursorY), float32(max(menuW-2, 0)), float32(menuItemHeight)),
+						draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity)))
+				}
+
 				labelArea := bounds{X: posX + menuItemPadX, Y: cursorY + (menuItemHeight-16)/2, W: max(menuW-menuItemPadX*2, 0), H: 16}
 				layoutElement(item.Label, labelArea, canvas, tokens, hitMap, nil, nil)
 
