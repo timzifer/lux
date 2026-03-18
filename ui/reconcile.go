@@ -109,7 +109,37 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
 		return scrollViewElement{Child: child, MaxHeight: node.MaxHeight, State: node.State}
 
+	case paddingElement:
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
+		return paddingElement{Insets: node.Insets, Child: child}
+
+	case sizedBoxElement:
+		if node.Child != nil {
+			child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
+			return sizedBoxElement{Width: node.Width, Height: node.Height, Child: child}
+		}
+		return el
+
+	case expandedElement:
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
+		return expandedElement{Child: child, Grow: node.Grow}
+
+	case flexElement:
+		children := make([]Element, len(node.Children))
+		for i, c := range node.Children {
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send)
+		}
+		return flexElement{Direction: node.Direction, Justify: node.Justify, Align: node.Align, Gap: node.Gap, Children: children}
+
+	case gridElement:
+		children := make([]Element, len(node.Children))
+		for i, c := range node.Children {
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send)
+		}
+		return gridElement{Columns: node.Columns, RowGap: node.RowGap, ColGap: node.ColGap, Children: children}
+
 	default:
+		// Leaf elements (text, button, divider, virtualList, tree, richText, etc.) pass through unchanged.
 		// Leaf elements (text, button, divider, etc.) pass through unchanged.
 		return el
 	}
@@ -197,6 +227,61 @@ func treeEqual(a, b Element) bool {
 		for i := range na.Options {
 			if na.Options[i] != nb.Options[i] {
 				return false
+			}
+		}
+		return true
+	case paddingElement:
+		nb, ok := b.(paddingElement)
+		return ok && na.Insets == nb.Insets && treeEqual(na.Child, nb.Child)
+	case sizedBoxElement:
+		nb, ok := b.(sizedBoxElement)
+		return ok && na.Width == nb.Width && na.Height == nb.Height && treeEqual(na.Child, nb.Child)
+	case expandedElement:
+		nb, ok := b.(expandedElement)
+		return ok && na.Grow == nb.Grow && treeEqual(na.Child, nb.Child)
+	case flexElement:
+		nb, ok := b.(flexElement)
+		if !ok || na.Direction != nb.Direction || na.Justify != nb.Justify || na.Align != nb.Align || na.Gap != nb.Gap || len(na.Children) != len(nb.Children) {
+			return false
+		}
+		for i := range na.Children {
+			if !treeEqual(na.Children[i], nb.Children[i]) {
+				return false
+			}
+		}
+		return true
+	case gridElement:
+		nb, ok := b.(gridElement)
+		if !ok || na.Columns != nb.Columns || na.RowGap != nb.RowGap || na.ColGap != nb.ColGap || len(na.Children) != len(nb.Children) {
+			return false
+		}
+		for i := range na.Children {
+			if !treeEqual(na.Children[i], nb.Children[i]) {
+				return false
+			}
+		}
+		return true
+	case virtualListElement:
+		nb, ok := b.(virtualListElement)
+		return ok && na.ItemCount == nb.ItemCount && na.ItemHeight == nb.ItemHeight && na.MaxHeight == nb.MaxHeight
+	case treeElement:
+		// Tree content is dynamic — always re-render.
+		_, ok := b.(treeElement)
+		return ok && false
+	case richTextElement:
+		nb, ok := b.(richTextElement)
+		if !ok || len(na.Paragraphs) != len(nb.Paragraphs) {
+			return false
+		}
+		for i := range na.Paragraphs {
+			pa, pb := na.Paragraphs[i], nb.Paragraphs[i]
+			if len(pa.Spans) != len(pb.Spans) {
+				return false
+			}
+			for j := range pa.Spans {
+				if pa.Spans[j].Text != pb.Spans[j].Text || pa.Spans[j].Style != pb.Spans[j].Style {
+					return false
+				}
 			}
 		}
 		return true
