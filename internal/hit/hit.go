@@ -8,6 +8,7 @@ type Target struct {
 	Bounds    draw.Rect
 	OnClick   func()
 	OnClickAt func(x, y float32) // positional click (e.g. Slider)
+	Draggable bool               // if true, OnClickAt fires continuously during drag
 }
 
 // ScrollTarget is a scrollable region linked to a ScrollState.
@@ -87,6 +88,15 @@ func (m *Map) AddAt(bounds draw.Rect, onClick func(x, y float32)) {
 		return
 	}
 	m.targets = append(m.targets, Target{Bounds: bounds, OnClickAt: onClick})
+}
+
+// AddDrag registers a draggable region. OnClickAt fires on initial click and
+// continuously while the mouse is held and moved.
+func (m *Map) AddDrag(bounds draw.Rect, onClick func(x, y float32)) {
+	if onClick == nil {
+		return
+	}
+	m.targets = append(m.targets, Target{Bounds: bounds, OnClickAt: onClick, Draggable: true})
 }
 
 // Len returns the number of registered targets.
