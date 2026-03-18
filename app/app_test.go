@@ -76,7 +76,7 @@ func TestRunWithMessages(t *testing.T) {
 
 func TestM2HelloWorldScene(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := ui.BuildScene(m2HelloView(testModel{}), canvas, theme.Default, 800, 600, nil)
+	scene := ui.BuildScene(m2HelloView(testModel{}), canvas, theme.Default, 800, 600, nil, nil)
 
 	if len(scene.Rects) < 2 {
 		t.Errorf("M2 scene should have at least 2 rects (button edge+fill), got %d", len(scene.Rects))
@@ -176,7 +176,7 @@ func m3CounterView(m testModel) ui.Element {
 
 func TestM3CounterViewRendersCorrectly(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := ui.BuildScene(m3CounterView(testModel{Count: 42}), canvas, theme.Default, 800, 600, nil)
+	scene := ui.BuildScene(m3CounterView(testModel{Count: 42}), canvas, theme.Default, 800, 600, nil, nil)
 
 	foundCount := false
 	for _, g := range scene.Glyphs {
@@ -200,7 +200,7 @@ func TestM3CounterViewRendersCorrectly(t *testing.T) {
 func TestM3CounterHitTargets(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, &hitMap)
+	ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	if hitMap.Len() != 2 {
 		t.Fatalf("counter view should register 2 hit targets (− and +), got %d", hitMap.Len())
@@ -287,5 +287,118 @@ func TestM3HeadlessMultipleFrames(t *testing.T) {
 	}
 	if updateCount < 3 {
 		t.Errorf("expected at least 3 updates across frames, got %d", updateCount)
+	}
+}
+
+// ── M4 Theme & Hover Tests ──────────────────────────────────────
+
+func TestM4SetThemeMsgSwitchesColors(t *testing.T) {
+	var receivedThemeMsg bool
+	var sentOnce bool
+	update := func(m testModel, msg Msg) testModel {
+		if _, ok := msg.(SetThemeMsg); ok {
+			receivedThemeMsg = true
+		}
+		return m
+	}
+	view := func(m testModel) ui.Element {
+		if !sentOnce {
+			sentOnce = true
+			Send(SetThemeMsg{Theme: theme.Light})
+		}
+		return ui.Empty()
+	}
+
+	err := Run(testModel{}, update, view,
+		WithTitle("M4 theme test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !receivedThemeMsg {
+		t.Error("update should have received SetThemeMsg")
+	}
+}
+
+func TestM4DarkModeToggle(t *testing.T) {
+	var receivedDarkMode bool
+	var sentOnce bool
+	update := func(m testModel, msg Msg) testModel {
+		if _, ok := msg.(SetDarkModeMsg); ok {
+			receivedDarkMode = true
+		}
+		return m
+	}
+	view := func(m testModel) ui.Element {
+		if !sentOnce {
+			sentOnce = true
+			Send(SetDarkModeMsg{Dark: false})
+		}
+		return ui.Empty()
+	}
+
+	err := Run(testModel{}, update, view,
+		WithTitle("M4 dark mode test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !receivedDarkMode {
+		t.Error("update should have received SetDarkModeMsg")
+	}
+}
+
+func TestM4LightThemeTokens(t *testing.T) {
+	lightTokens := theme.Light.Tokens()
+	darkTokens := theme.Default.Tokens()
+
+	if lightTokens.Colors.Background == darkTokens.Colors.Background {
+		t.Error("light and dark backgrounds should differ")
+	}
+	if lightTokens.Colors.OnSurface == darkTokens.Colors.OnSurface {
+		t.Error("light and dark OnSurface should differ")
+	}
+}
+
+func TestM4MouseMoveInjection(t *testing.T) {
+	// Verify that WithHeadlessMouseMove doesn't crash and the app runs.
+	err := Run(testModel{}, testUpdate, m3CounterView,
+		WithTitle("M4 hover test"),
+		WithSize(800, 600),
+		WithHeadlessFrames(3),
+		WithHeadlessMouseMove(0, 30, 70), // move over button area
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+}
+
+func TestM4HoverChangesButtonColor(t *testing.T) {
+	// Build a scene with hover on button 0 at full opacity.
+	var hover ui.HoverState
+	hover.SetHovered(0, 0) // instant hover
+	hover.Tick(0)           // snap to target
+
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, nil, &hover)
+
+	darkTokens := theme.Default.Tokens()
+
+	// The first button's fill rect should differ from raw Primary.
+	// Rects: [0]=button1 edge, [1]=button1 fill, [2]=button2 edge, [3]=button2 fill
+	if len(scene.Rects) < 4 {
+		t.Fatalf("expected at least 4 rects, got %d", len(scene.Rects))
+	}
+	hoveredFill := scene.Rects[1]
+	if hoveredFill.Color == darkTokens.Colors.Primary {
+		t.Error("hovered button fill should differ from raw Primary")
+	}
+
+	// Second button should still be raw Primary (not hovered).
+	normalFill := scene.Rects[3]
+	if normalFill.Color != darkTokens.Colors.Primary {
+		t.Errorf("non-hovered button fill = %v, want Primary %v", normalFill.Color, darkTokens.Colors.Primary)
 	}
 }

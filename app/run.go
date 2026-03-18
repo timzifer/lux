@@ -10,6 +10,7 @@ import (
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
 
@@ -66,19 +67,38 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	bgColor := activeTheme.Tokens().Colors.Background
 
 	// Tell the renderer about the background color if it supports it.
-	if bgs, ok := renderer.(interface{ SetBackgroundColor(draw.Color) }); ok {
-		bgs.SetBackgroundColor(bgColor)
+	updateBgColor := func() {
+		bgColor = activeTheme.Tokens().Colors.Background
+		if bgs, ok := renderer.(interface{ SetBackgroundColor(draw.Color) }); ok {
+			bgs.SetBackgroundColor(bgColor)
+		}
 	}
+	updateBgColor()
 
 	currentModel := model
 	currentTree := view(currentModel)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
+	var hoverState ui.HoverState
+	var mouseX, mouseY float32
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
+			// 1. Drain messages — intercept theme switches before user update (RFC §5.5).
 			appLoop.DrainMessages(func(msg any) bool {
+				switch m := msg.(type) {
+				case SetThemeMsg:
+					activeTheme = m.Theme
+					updateBgColor()
+				case SetDarkModeMsg:
+					if m.Dark {
+						activeTheme = theme.Default
+					} else {
+						activeTheme = theme.Light
+					}
+					updateBgColor()
+				}
 				newModel := update(currentModel, msg)
 				if anyChanged(currentModel, newModel) {
 					currentModel = newModel
@@ -88,15 +108,24 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 				return false
 			})
 
+			// 2. Compute clamped dt.
 			now := time.Now()
 			rawDt := now.Sub(lastFrame)
-			_ = appLoop.ClampDt(rawDt)
+			dt := appLoop.ClampDt(rawDt)
 			lastFrame = now
 
+			// 3. Update hover target from previous frame's hitMap.
+			hoveredIdx := hitMap.HitTestIndex(mouseX, mouseY)
+			hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick)
+
+			// 4. Tick hover animations (RFC §12.2: AnimationTick before paint).
+			hoverState.Tick(dt)
+
+			// 5. Build scene with hover state.
 			w, h := plat.FramebufferSize()
 			canvas := render.NewSceneCanvas(w, h)
 			hitMap.Reset()
-			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap)
+			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap, &hoverState)
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)
@@ -113,6 +142,11 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 					target.OnClick()
 				}
 			}
+		},
+
+		OnMouseMove: func(x, y float32) {
+			mouseX = x
+			mouseY = y
 		},
 	})
 }

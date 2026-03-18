@@ -3,6 +3,9 @@
 package ui
 
 import (
+	"time"
+
+	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
@@ -113,6 +116,67 @@ type keyedElement struct {
 
 func (keyedElement) isElement() {}
 
+// ── Hover State (M4) ────────────────────────────────────────────
+
+// HoverState tracks hover animations for interactive elements.
+// It uses the previous frame's hit targets to determine hover,
+// introducing at most one frame of latency (imperceptible at 60fps).
+type HoverState struct {
+	hoveredIdx int                  // currently hovered button index, -1 = none
+	anims      []anim.Anim[float32] // per-button hover opacity [0,1]
+	buttonIdx  int                  // counter during BuildScene
+	inited     bool                 // tracks whether hoveredIdx has been set
+}
+
+// SetHovered updates which button (by index) is hovered and sets animation targets.
+// idx == -1 means no button is hovered. dur is the animation duration.
+func (h *HoverState) SetHovered(idx int, dur time.Duration) {
+	if !h.inited {
+		h.hoveredIdx = -1
+		h.inited = true
+	}
+	prev := h.hoveredIdx
+	h.hoveredIdx = idx
+
+	// Animate previous button out.
+	if prev >= 0 && prev < len(h.anims) && prev != idx {
+		h.anims[prev].SetTarget(0.0, dur, anim.OutCubic)
+	}
+
+	// Animate new button in.
+	if idx >= 0 {
+		h.ensureSize(idx + 1)
+		if h.anims[idx].Value() < 1.0 {
+			h.anims[idx].SetTarget(1.0, dur, anim.OutCubic)
+		}
+	}
+}
+
+// Tick advances all hover animations by dt.
+func (h *HoverState) Tick(dt time.Duration) {
+	for i := range h.anims {
+		h.anims[i].Tick(dt)
+	}
+}
+
+// resetCounter prepares for a new BuildScene pass.
+func (h *HoverState) resetCounter() { h.buttonIdx = 0 }
+
+// nextButtonHoverOpacity returns the hover opacity for the current button
+// and advances the internal counter.
+func (h *HoverState) nextButtonHoverOpacity() float32 {
+	idx := h.buttonIdx
+	h.buttonIdx++
+	h.ensureSize(h.buttonIdx)
+	return h.anims[idx].Value()
+}
+
+func (h *HoverState) ensureSize(n int) {
+	for len(h.anims) < n {
+		h.anims = append(h.anims, anim.Anim[float32]{})
+	}
+}
+
 // ── Layout & Scene Building ──────────────────────────────────────
 // BuildScene converts an Element tree into draw commands via the
 // Canvas interface (RFC §6).
@@ -132,7 +196,8 @@ const (
 // BuildScene lays out the element tree and paints it to the canvas.
 // It returns the accumulated Scene. If hitMap is non-nil, clickable
 // element bounds are registered for hit-testing (M3+).
-func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height int, hitMap *hit.Map) draw.Scene {
+// If hover is non-nil, hover animations are applied to buttons (M4).
+func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height int, hitMap *hit.Map, hover *HoverState) draw.Scene {
 	if width <= 0 {
 		width = 800
 	}
@@ -140,9 +205,13 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 		height = 600
 	}
 
+	if hover != nil {
+		hover.resetCounter()
+	}
+
 	tokens := th.Tokens()
 	area := bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
-	layoutElement(root, area, canvas, tokens, hitMap)
+	layoutElement(root, area, canvas, tokens, hitMap, hover)
 
 	// The canvas is a SceneCanvas — retrieve its scene.
 	type scener interface{ Scene() draw.Scene }
@@ -152,13 +221,13 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	return draw.Scene{}
 }
 
-func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map) bounds {
+func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	switch node := el.(type) {
 	case nil, emptyElement:
 		return bounds{X: area.X, Y: area.Y}
 
 	case keyedElement:
-		return layoutElement(node.Child, area, canvas, tokens, hitMap)
+		return layoutElement(node.Child, area, canvas, tokens, hitMap, hover)
 
 	case textElement:
 		style := tokens.Typography.BodyMedium
@@ -179,10 +248,20 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		// Edge (border)
 		canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
 			draw.SolidPaint(tokens.Colors.Outline))
-		// Fill
+
+		// Fill — blend with hover overlay (M4).
+		fillColor := tokens.Colors.Primary
+		var hoverOpacity float32
+		if hover != nil {
+			hoverOpacity = hover.nextButtonHoverOpacity()
+		}
+		if hoverOpacity > 0 {
+			fillColor = lerpColor(fillColor, hoverHighlight(fillColor), hoverOpacity)
+		}
 		canvas.FillRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
 			float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
-			draw.SolidPaint(tokens.Colors.Primary))
+			draw.SolidPaint(fillColor))
+
 		// Label, centered
 		canvas.DrawText(node.Label,
 			draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
@@ -196,14 +275,34 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		return bounds{X: area.X, Y: area.Y, W: w, H: h}
 
 	case boxElement:
-		return layoutBox(node, area, canvas, tokens, hitMap)
+		return layoutBox(node, area, canvas, tokens, hitMap, hover)
 
 	default:
 		return bounds{X: area.X, Y: area.Y}
 	}
 }
 
-func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map) bounds {
+// hoverHighlight returns a lightened version of c for hover feedback.
+func hoverHighlight(c draw.Color) draw.Color {
+	return draw.Color{
+		R: c.R + (1-c.R)*0.2,
+		G: c.G + (1-c.G)*0.2,
+		B: c.B + (1-c.B)*0.2,
+		A: c.A,
+	}
+}
+
+// lerpColor linearly interpolates between two colors.
+func lerpColor(a, b draw.Color, t float32) draw.Color {
+	return draw.Color{
+		R: a.R + (b.R-a.R)*t,
+		G: a.G + (b.G-a.G)*t,
+		B: a.B + (b.B-a.B)*t,
+		A: a.A + (b.A-a.A)*t,
+	}
+}
+
+func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	cursorX := area.X
 	cursorY := area.Y
 	maxW := 0
@@ -211,7 +310,7 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.To
 	count := 0
 
 	for _, child := range node.Children {
-		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: area.W, H: area.H}, canvas, tokens, hitMap)
+		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: area.W, H: area.H}, canvas, tokens, hitMap, hover)
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
