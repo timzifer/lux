@@ -52,4 +52,17 @@ type Callbacks struct {
 
 	// OnMouseMove is called when the mouse cursor moves within the window (M4).
 	OnMouseMove func(x, y float32)
+
+	// OnScroll is called when the mouse wheel or trackpad is scrolled.
+	// deltaX and deltaY are in scroll units (positive = right/down).
+	OnScroll func(deltaX, deltaY float32)
+
+	// OnKey is called when a key is pressed, released, or repeated.
+	// key is the key name (e.g. "A", "Enter", "Escape").
+	// action: 0=press, 1=release, 2=repeat.
+	// mods encodes modifier state: bit 0=Shift, 1=Ctrl, 2=Alt, 3=Super.
+	OnKey func(key string, action int, mods int)
+
+	// OnChar is called when a Unicode character is input (for text entry).
+	OnChar func(ch rune)
 }

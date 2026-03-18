@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/theme"
@@ -400,6 +401,135 @@ func TestM4HoverChangesButtonColor(t *testing.T) {
 	normalFill := scene.Rects[3]
 	if normalFill.Color != darkTokens.Colors.Accent.Primary {
 		t.Errorf("non-hovered button fill = %v, want Accent.Primary %v", normalFill.Color, darkTokens.Colors.Accent.Primary)
+	}
+}
+
+// ── Input Event Tests ────────────────────────────────────────────
+
+func TestScrollEventBecomesScrollMsg(t *testing.T) {
+	var receivedScroll bool
+	update := func(m testModel, msg Msg) testModel {
+		if _, ok := msg.(input.ScrollMsg); ok {
+			receivedScroll = true
+		}
+		return m
+	}
+
+	err := Run(testModel{}, update, testView,
+		WithTitle("scroll-event test"),
+		WithHeadlessFrames(3),
+		WithHeadlessScroll(0, 0, -3.0),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !receivedScroll {
+		t.Error("update should have received input.ScrollMsg")
+	}
+}
+
+func TestKeyEventBecomesKeyMsg(t *testing.T) {
+	var receivedKey bool
+	var keyName string
+	update := func(m testModel, msg Msg) testModel {
+		if km, ok := msg.(input.KeyMsg); ok {
+			receivedKey = true
+			keyName = km.Key
+		}
+		return m
+	}
+
+	err := Run(testModel{}, update, testView,
+		WithTitle("key-event test"),
+		WithHeadlessFrames(3),
+		WithHeadlessKey(0, "A", 0, 0), // press A
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !receivedKey {
+		t.Error("update should have received input.KeyMsg")
+	}
+	if keyName != "A" {
+		t.Errorf("key name = %q, want %q", keyName, "A")
+	}
+}
+
+func TestCharEventBecomesCharMsg(t *testing.T) {
+	var receivedChar bool
+	var ch rune
+	update := func(m testModel, msg Msg) testModel {
+		if cm, ok := msg.(input.CharMsg); ok {
+			receivedChar = true
+			ch = cm.Char
+		}
+		return m
+	}
+
+	err := Run(testModel{}, update, testView,
+		WithTitle("char-event test"),
+		WithHeadlessFrames(3),
+		WithHeadlessChar(0, 'Z'),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !receivedChar {
+		t.Error("update should have received input.CharMsg")
+	}
+	if ch != 'Z' {
+		t.Errorf("char = %c, want Z", ch)
+	}
+}
+
+func TestMouseButtonEventBecomesMouseMsg(t *testing.T) {
+	var receivedMouse bool
+	update := func(m testModel, msg Msg) testModel {
+		if _, ok := msg.(input.MouseMsg); ok {
+			receivedMouse = true
+		}
+		return m
+	}
+
+	err := Run(testModel{}, update, testView,
+		WithTitle("mouse-event test"),
+		WithHeadlessFrames(3),
+		WithHeadlessClick(0, 100, 100),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !receivedMouse {
+		t.Error("update should have received input.MouseMsg")
+	}
+}
+
+func TestKeyModifiersPassedThrough(t *testing.T) {
+	var mods input.KeyModifiers
+	update := func(m testModel, msg Msg) testModel {
+		if km, ok := msg.(input.KeyMsg); ok {
+			mods = km.Modifiers
+		}
+		return m
+	}
+
+	// mods=3 means Shift(1) + Ctrl(2)
+	err := Run(testModel{}, update, testView,
+		WithTitle("key-mods test"),
+		WithHeadlessFrames(3),
+		WithHeadlessKey(0, "A", 0, 3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !mods.Shift {
+		t.Error("Shift should be true")
+	}
+	if !mods.Ctrl {
+		t.Error("Ctrl should be true")
+	}
+	if mods.Alt {
+		t.Error("Alt should be false")
 	}
 }
 

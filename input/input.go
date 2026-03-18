@@ -64,3 +64,8 @@ type ResizeMsg struct {
 
 // CloseMsg is sent when the user requests window close.
 type CloseMsg struct{}
+
+// CharMsg is sent when a Unicode character is input (text entry).
+type CharMsg struct {
+	Char rune
+}

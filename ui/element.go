@@ -112,8 +112,13 @@ func Stack(children ...Element) Element {
 
 // ScrollView constrains a child to a maximum height, clipping overflow
 // and rendering a scrollbar when content exceeds the viewport (RFC-003 §4.1).
-func ScrollView(child Element, maxHeight float32) Element {
-	return scrollViewElement{Child: child, MaxHeight: maxHeight}
+// An optional ScrollState pointer drives the vertical offset; pass nil for static views.
+func ScrollView(child Element, maxHeight float32, state ...*ScrollState) Element {
+	var s *ScrollState
+	if len(state) > 0 {
+		s = state[0]
+	}
+	return scrollViewElement{Child: child, MaxHeight: maxHeight, State: s}
 }
 
 // ── Tier 2 Constructors (RFC-003 §4.1) ──────────────────────────
@@ -149,10 +154,27 @@ func ProgressBarIndeterminate() Element {
 	return progressBarElement{Indeterminate: true}
 }
 
-// TextField creates a text input field (visual only — keyboard input
-// requires a future focus/input system).
-func TextField(value string, placeholder string) Element {
-	return textFieldElement{Value: value, Placeholder: placeholder}
+// TextField creates a text input field. If onChange is non-nil and the
+// field is focused, keyboard input will call onChange with the updated value.
+func TextField(value string, placeholder string, opts ...TextFieldOption) Element {
+	el := textFieldElement{Value: value, Placeholder: placeholder}
+	for _, opt := range opts {
+		opt(&el)
+	}
+	return el
+}
+
+// TextFieldOption configures a TextField.
+type TextFieldOption func(*textFieldElement)
+
+// WithOnChange sets the callback invoked when the text value changes.
+func WithOnChange(fn func(string)) TextFieldOption {
+	return func(e *textFieldElement) { e.OnChange = fn }
+}
+
+// WithFocusState links the TextField to a FocusState for keyboard input.
+func WithFocusState(fs *FocusState) TextFieldOption {
+	return func(e *textFieldElement) { e.Focus = fs }
 }
 
 // Select creates a dropdown selector (visual only — dropdown overlay
@@ -229,6 +251,7 @@ func (stackElement) isElement() {}
 type scrollViewElement struct {
 	Child     Element
 	MaxHeight float32
+	State     *ScrollState // optional; drives vertical offset
 }
 
 func (scrollViewElement) isElement() {}
@@ -275,6 +298,9 @@ func (progressBarElement) isElement() {}
 type textFieldElement struct {
 	Value       string
 	Placeholder string
+	OnChange    func(string)
+	Focus       *FocusState
+	FocusID     int // assigned during layout
 }
 
 func (textFieldElement) isElement() {}
@@ -313,6 +339,78 @@ func (s *ScrollState) ScrollBy(delta float32, contentHeight, viewportHeight floa
 	}
 	if s.Offset > maxScroll {
 		s.Offset = maxScroll
+	}
+}
+
+// ── Focus State ──────────────────────────────────────────────────
+
+// FocusState tracks which element has keyboard focus.
+// It is shared between the element tree and the app loop.
+type FocusState struct {
+	FocusedID int  // ID of focused element, 0 = none
+	nextID    int  // counter for assigning IDs during layout
+}
+
+// IsFocused returns true if the element with the given ID has focus.
+func (f *FocusState) IsFocused(id int) bool {
+	return f != nil && f.FocusedID == id
+}
+
+// SetFocused sets the focused element.
+func (f *FocusState) SetFocused(id int) {
+	if f != nil {
+		f.FocusedID = id
+	}
+}
+
+// Blur removes focus from all elements.
+func (f *FocusState) Blur() {
+	if f != nil {
+		f.FocusedID = 0
+	}
+}
+
+// nextFocusID assigns and returns the next focus ID during layout.
+func (f *FocusState) nextFocusID() int {
+	if f == nil {
+		return 0
+	}
+	f.nextID++
+	return f.nextID
+}
+
+// resetCounter resets the ID counter for a new layout pass.
+func (f *FocusState) resetCounter() {
+	if f != nil {
+		f.nextID = 0
+	}
+}
+
+// HandleKeyMsg processes a key event for the focused TextField.
+// Returns the new value if the field was modified, or the original value unchanged.
+func HandleKeyMsg(focus *FocusState, key string, value string, onChange func(string)) {
+	if focus == nil || onChange == nil {
+		return
+	}
+	switch key {
+	case "Backspace":
+		if len(value) > 0 {
+			// Remove last rune.
+			runes := []rune(value)
+			onChange(string(runes[:len(runes)-1]))
+		}
+	case "Escape":
+		focus.Blur()
+	}
+}
+
+// HandleCharInput appends a character to the value of a focused TextField.
+func HandleCharInput(ch rune, value string, onChange func(string)) {
+	if onChange == nil {
+		return
+	}
+	if ch >= 32 { // printable characters only
+		onChange(value + string(ch))
 	}
 }
 
@@ -397,7 +495,12 @@ const (
 // It returns the accumulated Scene. If hitMap is non-nil, clickable
 // element bounds are registered for hit-testing (M3+).
 // If hover is non-nil, hover animations are applied to buttons (M4).
-func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height int, hitMap *hit.Map, hover *HoverState) draw.Scene {
+// BuildScene lays out the element tree and paints it to the canvas.
+// It returns the accumulated Scene. If hitMap is non-nil, clickable
+// element bounds are registered for hit-testing (M3+).
+// If hover is non-nil, hover animations are applied to buttons (M4).
+// If focus is non-nil, text fields use it for keyboard focus tracking.
+func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height int, hitMap *hit.Map, hover *HoverState, focusOpt ...*FocusState) draw.Scene {
 	if width <= 0 {
 		width = 800
 	}
@@ -409,9 +512,17 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 		hover.resetCounter()
 	}
 
+	var focus *FocusState
+	if len(focusOpt) > 0 {
+		focus = focusOpt[0]
+	}
+	if focus != nil {
+		focus.resetCounter()
+	}
+
 	tokens := th.Tokens()
 	area := bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
-	layoutElement(root, area, canvas, tokens, hitMap, hover)
+	layoutElement(root, area, canvas, tokens, hitMap, hover, focus)
 
 	// The canvas is a SceneCanvas — retrieve its scene.
 	type scener interface{ Scene() draw.Scene }
@@ -421,14 +532,18 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	return draw.Scene{}
 }
 
-func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus ...*FocusState) bounds {
+	var fs *FocusState
+	if len(focus) > 0 {
+		fs = focus[0]
+	}
 	switch node := el.(type) {
 	case nil, emptyElement, widgetElement:
 		// widgetElement should be resolved by the Reconciler before layout.
 		return bounds{X: area.X, Y: area.Y}
 
 	case keyedElement:
-		return layoutElement(node.Child, area, canvas, tokens, hitMap, hover)
+		return layoutElement(node.Child, area, canvas, tokens, hitMap, hover, fs)
 
 	case textElement:
 		style := tokens.Typography.Body
@@ -512,13 +627,13 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		return bounds{X: area.X, Y: area.Y, W: w, H: h}
 
 	case stackElement:
-		return layoutStack(node, area, canvas, tokens, hitMap, hover)
+		return layoutStack(node, area, canvas, tokens, hitMap, hover, fs)
 
 	case scrollViewElement:
-		return layoutScrollView(node, area, canvas, tokens, hitMap, hover)
+		return layoutScrollView(node, area, canvas, tokens, hitMap, hover, fs)
 
 	case boxElement:
-		return layoutBox(node, area, canvas, tokens, hitMap, hover)
+		return layoutBox(node, area, canvas, tokens, hitMap, hover, fs)
 
 	// Tier 2 widgets
 	case checkboxElement:
@@ -532,7 +647,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 	case progressBarElement:
 		return layoutProgressBar(node, area, canvas, tokens)
 	case textFieldElement:
-		return layoutTextField(node, area, canvas, tokens)
+		return layoutTextField(node, area, canvas, tokens, hitMap, fs)
 	case selectElement:
 		return layoutSelect(node, area, canvas, tokens)
 
@@ -561,7 +676,11 @@ func lerpColor(a, b draw.Color, t float32) draw.Color {
 	}
 }
 
-func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus ...*FocusState) bounds {
+	var fs *FocusState
+	if len(focus) > 0 {
+		fs = focus[0]
+	}
 	cursorX := area.X
 	cursorY := area.Y
 	maxW := 0
@@ -569,7 +688,7 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.To
 	count := 0
 
 	for _, child := range node.Children {
-		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: area.W, H: area.H}, canvas, tokens, hitMap, hover)
+		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: area.W, H: area.H}, canvas, tokens, hitMap, hover, fs)
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
@@ -591,11 +710,15 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.To
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
 }
 
-func layoutStack(node stackElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutStack(node stackElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus ...*FocusState) bounds {
+	var fs *FocusState
+	if len(focus) > 0 {
+		fs = focus[0]
+	}
 	maxW := 0
 	maxH := 0
 	for _, child := range node.Children {
-		childBounds := layoutElement(child, area, canvas, tokens, hitMap, hover)
+		childBounds := layoutElement(child, area, canvas, tokens, hitMap, hover, fs)
 		maxW = max(maxW, childBounds.W)
 		maxH = max(maxH, childBounds.H)
 	}
@@ -605,25 +728,49 @@ func layoutStack(node stackElement, area bounds, canvas draw.Canvas, tokens them
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
 }
 
-func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus ...*FocusState) bounds {
+	var fs *FocusState
+	if len(focus) > 0 {
+		fs = focus[0]
+	}
 	viewportH := int(node.MaxHeight)
 	if viewportH <= 0 || viewportH > area.H {
 		viewportH = area.H
 	}
 
-	// Clip to viewport
+	// Determine scroll offset from state.
+	var offset float32
+	if node.State != nil {
+		offset = node.State.Offset
+	}
+
+	// Clip to viewport.
 	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(viewportH)))
 
-	// Render child (full height, no offset for now — scroll state is external)
-	childArea := bounds{X: area.X, Y: area.Y, W: area.W, H: area.H}
-	childBounds := layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover)
+	// Render child offset by -offset in Y so content scrolls upward.
+	childArea := bounds{X: area.X, Y: area.Y - int(offset), W: area.W, H: area.H + int(offset)}
+	childBounds := layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover, fs)
 
 	canvas.PopClip()
 
 	contentH := childBounds.H
 	w := max(childBounds.W, area.W)
 
-	// Draw scrollbar if content exceeds viewport
+	// Clamp state if provided (ensures offset stays valid after content changes).
+	if node.State != nil {
+		maxScroll := float32(contentH) - float32(viewportH)
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		if node.State.Offset > maxScroll {
+			node.State.Offset = maxScroll
+		}
+		if node.State.Offset < 0 {
+			node.State.Offset = 0
+		}
+	}
+
+	// Draw scrollbar if content exceeds viewport.
 	if contentH > viewportH {
 		trackW := int(tokens.Scroll.TrackWidth)
 		if trackW <= 0 {
@@ -643,14 +790,25 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 			draw.R(float32(trackX), float32(area.Y), float32(trackW), float32(viewportH)),
 			thumbR, draw.SolidPaint(trackColor))
 
-		// Thumb — proportional to visible/content ratio
+		// Thumb — proportional to visible/content ratio, positioned by offset.
 		ratio := float32(viewportH) / float32(contentH)
 		thumbH := int(float32(viewportH) * ratio)
 		if thumbH < 20 {
 			thumbH = 20
 		}
+
+		// Thumb position: offset fraction * available track space.
+		maxScroll := float32(contentH - viewportH)
+		thumbTravel := float32(viewportH - thumbH)
+		var thumbY float32
+		if maxScroll > 0 {
+			thumbY = float32(area.Y) + (offset/maxScroll)*thumbTravel
+		} else {
+			thumbY = float32(area.Y)
+		}
+
 		canvas.FillRoundRect(
-			draw.R(float32(trackX), float32(area.Y), float32(trackW), float32(thumbH)),
+			draw.R(float32(trackX), thumbY, float32(trackW), float32(thumbH)),
 			thumbR, draw.SolidPaint(thumbColor))
 
 		w += trackW
@@ -952,7 +1110,7 @@ func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas,
 	return bounds{X: area.X, Y: area.Y, W: trackW, H: progressBarH}
 }
 
-func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
+func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, focus *FocusState) bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -961,10 +1119,21 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tok
 		w = area.W
 	}
 
-	// Border
+	// Assign a focus ID if focus state is provided.
+	focusID := 0
+	if focus != nil {
+		focusID = focus.nextFocusID()
+	}
+	focused := focus.IsFocused(focusID)
+
+	// Border — highlight when focused.
+	borderColor := tokens.Colors.Stroke.Border
+	if focused {
+		borderColor = tokens.Colors.Accent.Primary
+	}
 	canvas.FillRoundRect(
 		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-		tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
+		tokens.Radii.Input, draw.SolidPaint(borderColor))
 
 	// Fill
 	canvas.FillRoundRect(
@@ -978,6 +1147,22 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tok
 		canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
 	} else if node.Placeholder != "" {
 		canvas.DrawText(node.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
+	}
+
+	// Cursor when focused
+	if focused {
+		metrics := canvas.MeasureText(node.Value, style)
+		cursorX := float32(textX) + metrics.Width
+		canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
+			draw.SolidPaint(tokens.Colors.Text.Primary))
+	}
+
+	// Hit target for focus acquisition.
+	if hitMap != nil && node.OnChange != nil && focus != nil {
+		fid := focusID
+		fs := focus
+		hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			func() { fs.SetFocused(fid) })
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
