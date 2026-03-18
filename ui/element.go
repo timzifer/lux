@@ -150,8 +150,14 @@ func ProgressBar(value float32) Element {
 }
 
 // ProgressBarIndeterminate creates an indeterminate progress indicator.
-func ProgressBarIndeterminate() Element {
-	return progressBarElement{Indeterminate: true}
+// An optional phase (0.0–1.0) controls the animation position; pass
+// a value derived from app.TickMsg to animate the bar.
+func ProgressBarIndeterminate(phase ...float32) Element {
+	var p float32
+	if len(phase) > 0 {
+		p = phase[0]
+	}
+	return progressBarElement{Indeterminate: true, Phase: p}
 }
 
 // TextField creates a text input field. If onChange is non-nil and the
@@ -291,6 +297,7 @@ func (sliderElement) isElement() {}
 type progressBarElement struct {
 	Value         float32
 	Indeterminate bool
+	Phase         float32 // 0.0–1.0, drives indeterminate animation position
 }
 
 func (progressBarElement) isElement() {}
@@ -647,7 +654,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 	case progressBarElement:
 		return layoutProgressBar(node, area, canvas, tokens)
 	case textFieldElement:
-		return layoutTextField(node, area, canvas, tokens, hitMap, fs)
+		return layoutTextField(node, area, canvas, tokens, hitMap, hover, fs)
 	case selectElement:
 		return layoutSelect(node, area, canvas, tokens)
 
@@ -1084,9 +1091,18 @@ func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas,
 		float32(progressBarH)/2, draw.SolidPaint(tokens.Colors.Surface.Pressed))
 
 	if node.Indeterminate {
-		// Static 30% bar at center
+		// Animated 30% bar that slides across the track.
 		barW := int(float32(trackW) * 0.3)
-		barX := area.X + (trackW-barW)/2
+		// Phase 0→1 maps to the bar sliding from left to right.
+		phase := node.Phase
+		if phase < 0 {
+			phase = 0
+		}
+		if phase > 1 {
+			phase -= float32(int(phase)) // wrap
+		}
+		travel := trackW - barW
+		barX := area.X + int(float32(travel)*phase)
 		canvas.FillRoundRect(
 			draw.R(float32(barX), float32(area.Y), float32(barW), float32(progressBarH)),
 			float32(progressBarH)/2, draw.SolidPaint(tokens.Colors.Accent.Primary))
@@ -1110,7 +1126,7 @@ func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas,
 	return bounds{X: area.X, Y: area.Y, W: trackW, H: progressBarH}
 }
 
-func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, focus *FocusState) bounds {
+func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -1158,11 +1174,17 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tok
 	}
 
 	// Hit target for focus acquisition.
-	if hitMap != nil && node.OnChange != nil && focus != nil {
-		fid := focusID
-		fs := focus
-		hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			func() { fs.SetFocused(fid) })
+	// Consume a hover slot to keep hit-target indices aligned with hover indices.
+	if node.OnChange != nil && focus != nil {
+		if hover != nil {
+			hover.nextButtonHoverOpacity()
+		}
+		if hitMap != nil {
+			fid := focusID
+			fs := focus
+			hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+				func() { fs.SetFocused(fid) })
+		}
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
