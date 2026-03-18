@@ -86,3 +86,36 @@ func TestHitTestEdge(t *testing.T) {
 		t.Error("bottom-right edge should miss")
 	}
 }
+
+func TestAddAtPositionalClick(t *testing.T) {
+	var m Map
+	var gotX, gotY float32
+	m.AddAt(draw.R(10, 10, 100, 50), func(x, y float32) { gotX, gotY = x, y })
+
+	if m.Len() != 1 {
+		t.Fatalf("expected 1 target, got %d", m.Len())
+	}
+
+	target := m.HitTest(50, 30)
+	if target == nil {
+		t.Fatal("expected target, got nil")
+	}
+	if target.OnClickAt == nil {
+		t.Fatal("expected OnClickAt to be set")
+	}
+	if target.OnClick != nil {
+		t.Error("OnClick should be nil for AddAt targets")
+	}
+	target.OnClickAt(50, 30)
+	if gotX != 50 || gotY != 30 {
+		t.Errorf("OnClickAt coords = (%v, %v), want (50, 30)", gotX, gotY)
+	}
+}
+
+func TestAddAtNilIgnored(t *testing.T) {
+	var m Map
+	m.AddAt(draw.R(0, 0, 100, 100), nil)
+	if m.Len() != 0 {
+		t.Errorf("nil OnClickAt should be ignored, got len=%d", m.Len())
+	}
+}

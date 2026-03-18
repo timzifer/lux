@@ -139,7 +139,11 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 		OnMouseButton: func(x, y float32, button int, pressed bool) {
 			if button == 0 && pressed {
 				if target := hitMap.HitTest(x, y); target != nil {
-					target.OnClick()
+					if target.OnClickAt != nil {
+						target.OnClickAt(x, y)
+					} else if target.OnClick != nil {
+						target.OnClick()
+					}
 				}
 			}
 		},

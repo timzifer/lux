@@ -458,3 +458,250 @@ func TestScrollStateClamp(t *testing.T) {
 		t.Errorf("Offset = %f, want 0 (clamped)", s.Offset)
 	}
 }
+
+// ── Tier 2 Widget Tests ──────────────────────────────────────────
+
+func TestBuildSceneCheckboxUnchecked(t *testing.T) {
+	scene := buildTestScene(Checkbox("Enable", false, nil), 800, 600)
+	// Unchecked: 2 rects (border + fill) + 1 glyph (label)
+	if len(scene.Rects) < 2 {
+		t.Errorf("Unchecked Checkbox should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("Checkbox should produce at least 1 glyph (label), got %d", len(scene.Glyphs))
+	}
+	if scene.Glyphs[0].Text != "Enable" {
+		t.Errorf("label text = %q, want %q", scene.Glyphs[0].Text, "Enable")
+	}
+}
+
+func TestBuildSceneCheckboxChecked(t *testing.T) {
+	scene := buildTestScene(Checkbox("On", true, nil), 800, 600)
+	// Checked: 2 rects (border + fill) + 2 glyphs (checkmark + label)
+	if len(scene.Rects) < 2 {
+		t.Errorf("Checked Checkbox should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("Checked Checkbox should produce at least 2 glyphs (check + label), got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneCheckboxHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+
+	// With callback
+	BuildScene(Checkbox("A", false, func(bool) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 1 {
+		t.Errorf("Checkbox with onToggle should register 1 hit target, got %d", hitMap.Len())
+	}
+
+	// Without callback
+	hitMap.Reset()
+	canvas = render.NewSceneCanvas(800, 600)
+	BuildScene(Checkbox("B", false, nil), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 0 {
+		t.Errorf("Checkbox with nil onToggle should register 0 targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneCheckboxToggle(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	var received bool
+	BuildScene(Checkbox("X", false, func(v bool) { received = v }), canvas, theme.Default, 800, 600, &hitMap, nil)
+
+	target := hitMap.HitTest(float32(framePadding+5), float32(framePadding+5))
+	if target == nil {
+		t.Fatal("expected hit target at checkbox position")
+	}
+	target.OnClick()
+	if !received {
+		t.Error("onToggle should receive true when toggling from unchecked")
+	}
+}
+
+func TestBuildSceneRadio(t *testing.T) {
+	scene := buildTestScene(Radio("Option", false, nil), 800, 600)
+	if len(scene.Rects) < 2 {
+		t.Errorf("Radio should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("Radio should produce at least 1 glyph (label), got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneRadioSelected(t *testing.T) {
+	scene := buildTestScene(Radio("Option", true, nil), 800, 600)
+	// Selected: 3 rects (outer + inner + dot)
+	if len(scene.Rects) < 3 {
+		t.Errorf("Selected Radio should produce at least 3 rects, got %d", len(scene.Rects))
+	}
+}
+
+func TestBuildSceneRadioHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Radio("A", false, func() {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 1 {
+		t.Errorf("Radio with onSelect should register 1 hit target, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneToggle(t *testing.T) {
+	// Off state
+	sceneOff := buildTestScene(Toggle(false, nil), 800, 600)
+	if len(sceneOff.Rects) < 2 {
+		t.Errorf("Toggle should produce at least 2 rects (track + thumb), got %d", len(sceneOff.Rects))
+	}
+
+	// On state — track color should differ
+	sceneOn := buildTestScene(Toggle(true, nil), 800, 600)
+	if len(sceneOn.Rects) < 2 {
+		t.Fatalf("Toggle should produce at least 2 rects, got %d", len(sceneOn.Rects))
+	}
+	tokens := theme.Default.Tokens()
+	trackOff := sceneOff.Rects[0]
+	trackOn := sceneOn.Rects[0]
+	if trackOff.Color == tokens.Colors.Accent.Primary {
+		t.Error("Off toggle track should not use Accent.Primary")
+	}
+	if trackOn.Color != tokens.Colors.Accent.Primary {
+		t.Errorf("On toggle track = %v, want Accent.Primary %v", trackOn.Color, tokens.Colors.Accent.Primary)
+	}
+}
+
+func TestBuildSceneToggleHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Toggle(false, func(bool) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 1 {
+		t.Errorf("Toggle with onToggle should register 1 hit target, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneSlider(t *testing.T) {
+	scene := buildTestScene(Slider(0.5, nil), 800, 600)
+	// Track + filled portion + thumb = 3 rects minimum
+	if len(scene.Rects) < 3 {
+		t.Errorf("Slider should produce at least 3 rects, got %d", len(scene.Rects))
+	}
+}
+
+func TestBuildSceneSliderHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Slider(0.5, func(float32) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 1 {
+		t.Errorf("Slider with onChange should register 1 hit target, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneProgressBar(t *testing.T) {
+	// Determinate with value > 0: 2 rects (track + fill)
+	scene := buildTestScene(ProgressBar(0.5), 800, 600)
+	if len(scene.Rects) < 2 {
+		t.Errorf("ProgressBar(0.5) should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+
+	// Value = 0: only track (1 rect)
+	scene0 := buildTestScene(ProgressBar(0), 800, 600)
+	if len(scene0.Rects) < 1 {
+		t.Errorf("ProgressBar(0) should produce at least 1 rect, got %d", len(scene0.Rects))
+	}
+}
+
+func TestBuildSceneProgressBarIndeterminate(t *testing.T) {
+	scene := buildTestScene(ProgressBarIndeterminate(), 800, 600)
+	if len(scene.Rects) < 2 {
+		t.Errorf("Indeterminate ProgressBar should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+}
+
+func TestBuildSceneTextField(t *testing.T) {
+	scene := buildTestScene(TextField("hello", ""), 800, 600)
+	if len(scene.Rects) < 2 {
+		t.Errorf("TextField should produce at least 2 rects (border + fill), got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("TextField with value should produce at least 1 glyph, got %d", len(scene.Glyphs))
+	}
+	if scene.Glyphs[0].Text != "hello" {
+		t.Errorf("TextField glyph text = %q, want %q", scene.Glyphs[0].Text, "hello")
+	}
+}
+
+func TestBuildSceneTextFieldPlaceholder(t *testing.T) {
+	scene := buildTestScene(TextField("", "Enter..."), 800, 600)
+	tokens := theme.Default.Tokens()
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("TextField with placeholder should produce 1 glyph, got %d", len(scene.Glyphs))
+	}
+	if scene.Glyphs[0].Text != "Enter..." {
+		t.Errorf("placeholder text = %q, want %q", scene.Glyphs[0].Text, "Enter...")
+	}
+	if scene.Glyphs[0].Color != tokens.Colors.Text.Disabled {
+		t.Errorf("placeholder color = %v, want Text.Disabled %v", scene.Glyphs[0].Color, tokens.Colors.Text.Disabled)
+	}
+}
+
+func TestBuildSceneTextFieldNoHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(TextField("x", ""), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 0 {
+		t.Errorf("TextField should not register hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneSelect(t *testing.T) {
+	scene := buildTestScene(Select("Option 1", []string{"Option 1", "Option 2"}), 800, 600)
+	if len(scene.Rects) < 2 {
+		t.Errorf("Select should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+	// Value text + arrow indicator = 2 glyphs
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("Select should produce at least 2 glyphs (value + arrow), got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneSelectNoHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Select("x", nil), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 0 {
+		t.Errorf("Select should not register hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneColumnWithTier2(t *testing.T) {
+	// Mix of Tier 1 and Tier 2 widgets — should not panic and Y should increase.
+	scene := buildTestScene(Column(
+		Text("Title"),
+		Checkbox("Check", true, nil),
+		Radio("Radio", false, nil),
+		Toggle(true, nil),
+		Slider(0.5, nil),
+		ProgressBar(0.7),
+		TextField("val", ""),
+		Select("opt", nil),
+	), 800, 600)
+
+	if len(scene.Rects) == 0 {
+		t.Fatal("Mixed column should produce rects")
+	}
+	if len(scene.Glyphs) == 0 {
+		t.Fatal("Mixed column should produce glyphs")
+	}
+}
+
+func TestBuildSceneTextStyled(t *testing.T) {
+	style := draw.TextStyle{Size: 20, Weight: draw.FontWeightSemiBold}
+	scene := buildTestScene(TextStyled("Big", style), 800, 600)
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("TextStyled should produce 1 glyph, got %d", len(scene.Glyphs))
+	}
+	if scene.Glyphs[0].Text != "Big" {
+		t.Errorf("glyph text = %q, want %q", scene.Glyphs[0].Text, "Big")
+	}
+}
