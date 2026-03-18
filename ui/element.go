@@ -720,23 +720,20 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 			size = tokens.Typography.Label.Size
 		}
 		// Use the Phosphor icon font for icon elements.
+		// Render into a fixed square cell so all icons have uniform size
+		// regardless of individual glyph bounding boxes.
 		style := draw.TextStyle{
 			FontFamily: "Phosphor",
 			Size:       size,
 			Weight:     draw.FontWeightRegular,
 			LineHeight: 1.0,
 		}
+		cellSize := int(math.Ceil(float64(size)))
 		metrics := canvas.MeasureText(node.Name, style)
-		w := int(math.Ceil(float64(metrics.Width)))
-		h := int(math.Ceil(float64(metrics.Ascent)))
-		if w == 0 {
-			w = int(size)
-		}
-		if h == 0 {
-			h = int(size)
-		}
-		canvas.DrawText(node.Name, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.Text.Primary)
-		return bounds{X: area.X, Y: area.Y, W: w, H: h}
+		offsetX := (float32(cellSize) - metrics.Width) / 2
+		offsetY := (float32(cellSize) - metrics.Ascent) / 2
+		canvas.DrawText(node.Name, draw.Pt(float32(area.X)+offsetX, float32(area.Y)+offsetY), style, tokens.Colors.Text.Primary)
+		return bounds{X: area.X, Y: area.Y, W: cellSize, H: cellSize}
 
 	case stackElement:
 		return layoutStack(node, area, canvas, tokens, hitMap, hover, fs)

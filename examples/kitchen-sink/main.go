@@ -225,7 +225,7 @@ func buttonsSection(m Model) ui.Element {
 		ui.Text("Icons (Phosphor):"),
 		ui.Row(
 			ui.Icon(icons.Star),
-			ui.IconSize(icons.ArrowRight, 24),
+			ui.Icon(icons.ArrowRight),
 			ui.Icon(icons.Heart),
 			ui.Icon(icons.Gear),
 			ui.Icon(icons.Eye),

@@ -174,6 +174,11 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		Weight:     draw.FontWeightRegular,
 	}
 
+	// Compute vertical centering offset for node content.
+	bodyMetrics := canvas.MeasureText("Ag", tokens.Typography.Body)
+	textH := int(bodyMetrics.Ascent + 0.5)
+	centerY := (nodeH - textH) / 2
+
 	for i := firstVisible; i <= lastVisible; i++ {
 		fn := flat[i]
 		rowY := area.Y + i*nodeH - int(offset)
@@ -212,9 +217,9 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 			}
 		}
 
-		// Node content.
+		// Node content — vertically centered within the row.
 		nodeX := area.X + indent + indicatorW + 4
-		nodeArea := bounds{X: nodeX, Y: rowY, W: contentW - indent - indicatorW - 4, H: nodeH}
+		nodeArea := bounds{X: nodeX, Y: rowY + centerY, W: contentW - indent - indicatorW - 4, H: nodeH}
 		layoutElement(node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected), nodeArea, canvas, tokens, hitMap, hover, focus)
 
 		// Row hit target for selection.
