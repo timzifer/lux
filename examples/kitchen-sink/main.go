@@ -72,21 +72,21 @@ func sectionChildren(_ string) []string { return nil }
 // ── Model ────────────────────────────────────────────────────────
 
 type Model struct {
-	Dark          bool
-	Count         int
-	CheckA        bool
-	CheckB        bool
-	RadioChoice   string
-	ToggleOn      bool
-	SliderVal     float32
-	Progress      float32
-	SelectVal     string
-	TextValue     string
-	Scroll        *ui.ScrollState
-	AnimTime      float64
-	NavTree       *ui.TreeState
-	ActiveSection string
-	ToggleAnim    *ui.ToggleState
+	Dark           bool
+	Count          int
+	CheckA         bool
+	CheckB         bool
+	RadioChoice    string
+	ToggleOn       bool
+	SliderVal      float32
+	Progress       float32
+	SelectVal      string
+	TextValue      string
+	Scroll         *ui.ScrollState
+	AnimTime       float64
+	NavTree        *ui.TreeState
+	ActiveSection  string
+	ToggleAnim     *ui.ToggleState
 	VListScroll    *ui.ScrollState
 	DemoTree       *ui.TreeState
 	TabIndex       int
@@ -98,10 +98,10 @@ type Model struct {
 	LastMenuAction string
 	MenuBarState   *ui.MenuBarState
 	// Phase 1 features
-	ShortcutLog    string
-	OverlayOpen    bool
-	HandlerLog     string
-	KineticScroll  *ui.KineticScroll
+	ShortcutLog   string
+	OverlayOpen   bool
+	HandlerLog    string
+	KineticScroll *ui.KineticScroll
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -722,7 +722,7 @@ func overlaysSection(m Model) ui.Element {
 		sectionHeader("Overlay System"),
 		ui.Text("Click the button to toggle a dismissable overlay:"),
 		ui.Spacer(4),
-		ui.Button("Toggle Overlay", func() { app.Send(ToggleOverlayMsg{}) }),
+		ui.ButtonText("Toggle Overlay", func() { app.Send(ToggleOverlayMsg{}) }),
 	}
 
 	if m.OverlayOpen {
@@ -741,7 +741,7 @@ func overlaysSection(m Model) ui.Element {
 					ui.Spacer(4),
 					ui.Text("It renders above normal content."),
 					ui.Spacer(8),
-					ui.Button("Close", func() { app.Send(DismissOverlayMsg{}) }),
+					ui.ButtonText("Close", func() { app.Send(DismissOverlayMsg{}) }),
 				)),
 			},
 		)
@@ -766,15 +766,15 @@ func overlaysSection(m Model) ui.Element {
 
 func main() {
 	initial := Model{
-		Dark:          true,
-		RadioChoice:   "alpha",
-		SliderVal:     0.5,
-		Progress:      0.0,
-		SelectVal:     "Option 1",
-		Scroll:        &ui.ScrollState{},
-		ToggleAnim:    ui.NewToggleState(),
-		NavTree:       ui.NewTreeState(),
-		ActiveSection: "typography",
+		Dark:           true,
+		RadioChoice:    "alpha",
+		SliderVal:      0.5,
+		Progress:       0.0,
+		SelectVal:      "Option 1",
+		Scroll:         &ui.ScrollState{},
+		ToggleAnim:     ui.NewToggleState(),
+		NavTree:        ui.NewTreeState(),
+		ActiveSection:  "typography",
 		VListScroll:    &ui.ScrollState{},
 		DemoTree:       ui.NewTreeState(),
 		AccordionState: ui.NewAccordionState(),

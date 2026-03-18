@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"time"
 
 	"github.com/timzifer/lux/anim"
@@ -246,16 +247,16 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 	// Clip to the viewport (including scrollbar space).
 	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(actualH)))
 
+	indicatorSize := float32(nodeH) * 0.5
 	indicatorStyle := draw.TextStyle{
 		FontFamily: "Phosphor",
-		Size:       float32(nodeH - 8),
+		Size:       indicatorSize,
 		Weight:     draw.FontWeightRegular,
 	}
+	indicatorCellSize := int(math.Ceil(float64(indicatorSize)))
+	indicatorOffsetY := (nodeH - indicatorCellSize) / 2
 
-	// Compute vertical centering offset for node content.
-	bodyMetrics := canvas.MeasureText("Ag", tokens.Typography.Body)
-	textH := int(bodyMetrics.Ascent + 0.5)
-	centerY := (nodeH - textH) / 2
+	nc := nullCanvas{delegate: canvas}
 
 	// Compute cumulative y-positions for each row, considering animation.
 	rowYPositions := make([]float32, len(flat))
@@ -310,7 +311,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 				indicator = icons.CaretDown
 			}
 			canvas.DrawText(indicator,
-				draw.Pt(float32(area.X+indent), rowY+4),
+				draw.Pt(float32(area.X+indent), rowY+float32(indicatorOffsetY)),
 				indicatorStyle, tokens.Colors.Text.Secondary)
 
 			// Hit target for expand/collapse toggle.
@@ -329,8 +330,11 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 
 		// Node content — vertically centered within the row.
 		nodeX := area.X + indent + indicatorW + 4
-		nodeArea := bounds{X: nodeX, Y: int(rowY) + centerY, W: contentW - indent - indicatorW - 4, H: nodeH}
-		layoutElement(node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected), nodeArea, canvas, th, tokens, hitMap, hover, overlays, focus)
+		nodeW := contentW - indent - indicatorW - 4
+		nodeContent := node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected)
+		cb := layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY), W: nodeW, H: nodeH}, nc, th, tokens, nil, nil, nil)
+		nodeOffsetY := (nodeH - cb.H) / 2
+		layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY) + nodeOffsetY, W: nodeW, H: nodeH}, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 		// Row hit target for selection.
 		if hitMap != nil && node.OnSelect != nil {

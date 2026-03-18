@@ -1134,9 +1134,9 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme,
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
 }
 
-// layoutBoxRow performs a two-pass row layout with baseline alignment.
-// Pass 1 measures all children via nullCanvas; Pass 2 renders them
-// with vertical offsets so that baselines align.
+// layoutBoxRow performs a two-pass row layout with center alignment.
+// Pass 1 measures all children via nullCanvas to determine maxH;
+// Pass 2 renders each child vertically centered within maxH.
 func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	n := len(node.Children)
 	if n == 0 {
@@ -1150,7 +1150,7 @@ func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.The
 	infos := make([]childInfo, n)
 	nc := nullCanvas{delegate: canvas}
 	cursorX := area.X
-	maxBaseline := 0
+	maxH := 0
 	hasContent := false
 
 	for i, child := range node.Children {
@@ -1162,12 +1162,8 @@ func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.The
 		if cb.W == 0 && cb.H == 0 {
 			continue
 		}
-		bl := cb.Baseline
-		if bl == 0 {
-			bl = cb.H // bottom fallback
-		}
-		infos[i] = childInfo{w: cb.W, h: cb.H, baseline: bl}
-		maxBaseline = max(maxBaseline, bl)
+		infos[i] = childInfo{w: cb.W, h: cb.H, baseline: cb.Baseline}
+		maxH = max(maxH, cb.H)
 		cursorX += cb.W + rowGap
 		hasContent = true
 	}
@@ -1176,30 +1172,37 @@ func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.The
 		return bounds{X: area.X, Y: area.Y}
 	}
 
-	// Pass 2: render with baseline offsets.
+	// Pass 2: render with vertical centering.
 	cursorX = area.X
 	maxW := 0
-	maxH := 0
-	count := 0
 
 	for i, child := range node.Children {
 		info := infos[i]
 		if info.w == 0 && info.h == 0 {
 			continue
 		}
-		yOffset := maxBaseline - info.baseline
+		yOffset := (maxH - info.h) / 2
 		childW := area.X + area.W - cursorX
 		if childW < 0 {
 			childW = 0
 		}
 		layoutElement(child, bounds{X: cursorX, Y: area.Y + yOffset, W: childW, H: area.H}, canvas, th, tokens, hitMap, hover, overlays, focus)
-		count++
 		cursorX += info.w + rowGap
 		maxW = max(maxW, cursorX-area.X-rowGap)
-		maxH = max(maxH, info.h+yOffset)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: maxBaseline}
+	// Baseline: use the tallest child's baseline + its centering offset.
+	baseline := maxH
+	for _, info := range infos {
+		if info.h > 0 && info.baseline > 0 {
+			bl := (maxH-info.h)/2 + info.baseline
+			if bl > 0 {
+				baseline = bl
+				break
+			}
+		}
+	}
+	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: baseline}
 }
 
 func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
