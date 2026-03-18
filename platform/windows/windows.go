@@ -23,10 +23,13 @@ const (
 	wsOverlappedWindow = 0x00CF0000
 	wsVisible          = 0x10000000
 
-	wmDestroy = 0x0002
-	wmSize    = 0x0005
-	wmClose   = 0x0010
-	wmQuit    = 0x0012
+	wmDestroy      = 0x0002
+	wmSize         = 0x0005
+	wmClose        = 0x0010
+	wmQuit         = 0x0012
+	wmLButtonDown  = 0x0201
+	wmRButtonDown  = 0x0204
+	wmMButtonDown  = 0x0207
 
 	pmRemove      = 0x0001
 	swShowDefault = 10
@@ -254,6 +257,19 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 				width := int(uint32(lParam & 0xFFFF))
 				height := int(uint32((lParam >> 16) & 0xFFFF))
 				p.callbacks.OnResize(width, height)
+			}
+			return 0
+		case wmLButtonDown, wmRButtonDown, wmMButtonDown:
+			if p.callbacks.OnMouseButton != nil {
+				x := float32(int16(lParam & 0xFFFF))
+				y := float32(int16((lParam >> 16) & 0xFFFF))
+				button := 0
+				if msg == wmRButtonDown {
+					button = 1
+				} else if msg == wmMButtonDown {
+					button = 2
+				}
+				p.callbacks.OnMouseButton(x, y, button, true)
 			}
 			return 0
 		case wmClose:

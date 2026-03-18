@@ -6,6 +6,7 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/gpu"
+	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/platform"
@@ -73,6 +74,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	currentTree := view(currentModel)
 
 	lastFrame := time.Now()
+	var hitMap hit.Map
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
@@ -93,7 +95,8 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 			w, h := plat.FramebufferSize()
 			canvas := render.NewSceneCanvas(w, h)
-			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h)
+			hitMap.Reset()
+			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap)
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)
@@ -102,6 +105,14 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 		OnResize: func(width, height int) {
 			renderer.Resize(width, height)
+		},
+
+		OnMouseButton: func(x, y float32, button int, pressed bool) {
+			if button == 0 && pressed {
+				if target := hitMap.HitTest(x, y); target != nil {
+					target.OnClick()
+				}
+			}
 		},
 	})
 }

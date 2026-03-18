@@ -45,4 +45,8 @@ type Callbacks struct {
 
 	// OnClose is called when the user requests window close.
 	OnClose func()
+
+	// OnMouseButton is called when a mouse button is pressed or released (M3).
+	// button: 0=left, 1=right, 2=middle. pressed: true=down, false=up.
+	OnMouseButton func(x, y float32, button int, pressed bool)
 }
