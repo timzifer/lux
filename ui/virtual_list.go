@@ -56,6 +56,29 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 
 	contentH := float32(node.ItemCount * itemH)
 
+	// The list grows to fit its content, capped at viewportH.
+	// Only scroll when content exceeds the viewport.
+	needsScroll := contentH > float32(viewportH)
+	actualH := viewportH
+	if !needsScroll {
+		actualH = int(contentH)
+		if actualH <= 0 {
+			actualH = itemH
+		}
+	}
+
+	// Determine scrollbar width so we can reserve space inside the clip.
+	scrollbarW := 0
+	if needsScroll {
+		scrollbarW = int(tokens.Scroll.TrackWidth)
+		if scrollbarW <= 0 {
+			scrollbarW = 8
+		}
+	}
+
+	// Content width excluding the scrollbar.
+	contentW := area.W - scrollbarW
+
 	var offset float32
 	if node.State != nil {
 		offset = node.State.Offset
@@ -71,28 +94,33 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 		firstVisible = 0
 	}
 
-	lastVisible := (int(offset) + viewportH) / itemH
+	lastVisible := (int(offset) + actualH) / itemH
 	lastVisible += virtualListOverscan
 	if lastVisible >= node.ItemCount {
 		lastVisible = node.ItemCount - 1
 	}
 
-	// Clip to viewport.
-	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(viewportH)))
+	// Clip to viewport (including scrollbar space).
+	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(actualH)))
 
 	// Render visible items.
 	for i := firstVisible; i <= lastVisible; i++ {
 		itemY := area.Y + i*itemH - int(offset)
 		child := node.BuildItem(i)
-		childArea := bounds{X: area.X, Y: itemY, W: area.W, H: itemH}
+		childArea := bounds{X: area.X, Y: itemY, W: contentW, H: itemH}
 		layoutElement(child, childArea, canvas, tokens, hitMap, hover, focus)
+	}
+
+	// Draw scrollbar INSIDE the clip so it's visible even within a parent ScrollView.
+	if needsScroll && node.State != nil {
+		drawScrollbar(canvas, tokens, hitMap, node.State, area.X+contentW, area.Y, actualH, contentH, offset)
 	}
 
 	canvas.PopClip()
 
 	// Clamp scroll state.
 	if node.State != nil {
-		maxScroll := contentH - float32(viewportH)
+		maxScroll := contentH - float32(actualH)
 		if maxScroll < 0 {
 			maxScroll = 0
 		}
@@ -104,26 +132,19 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 		}
 	}
 
-	w := area.W
-
 	// Register scroll target.
-	if hitMap != nil && node.State != nil && contentH > float32(viewportH) {
+	if hitMap != nil && node.State != nil && needsScroll {
 		state := node.State
 		cH := contentH
-		vH := float32(viewportH)
+		vH := float32(actualH)
 		hitMap.AddScroll(
-			draw.R(float32(area.X), float32(area.Y), float32(w), float32(viewportH)),
+			draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(actualH)),
 			cH, vH,
 			func(deltaY float32) { state.ScrollBy(deltaY, cH, vH) },
 		)
 	}
 
-	// Draw scrollbar if content exceeds viewport.
-	if contentH > float32(viewportH) {
-		w += drawScrollbar(canvas, tokens, hitMap, node.State, area.X+w, area.Y, viewportH, contentH, offset)
-	}
-
-	return bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
+	return bounds{X: area.X, Y: area.Y, W: area.W, H: actualH}
 }
 
 // drawScrollbar renders a scrollbar track and thumb, returning the track width consumed.

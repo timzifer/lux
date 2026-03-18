@@ -825,7 +825,16 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.To
 	count := 0
 
 	for _, child := range node.Children {
-		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: area.W, H: area.H}, canvas, tokens, hitMap, hover, fs)
+		childW := area.W
+		if node.Axis == AxisRow {
+			// Give each row child only the remaining width so that
+			// children like ScrollView / VirtualList clip correctly.
+			childW = area.X + area.W - cursorX
+			if childW < 0 {
+				childW = 0
+			}
+		}
+		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: childW, H: area.H}, canvas, tokens, hitMap, hover, fs)
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
