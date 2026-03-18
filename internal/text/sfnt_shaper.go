@@ -181,23 +181,34 @@ func (s *SfntShaper) Shape(text string, style draw.TextStyle) []ShapedGlyph {
 	return out
 }
 
+// RasterizedGlyph holds the rasterized image plus the pixel-aligned metrics
+// that match the rasterization bounds exactly.
+type RasterizedGlyph struct {
+	Image    *image.Gray
+	Font     *fonts.Font
+	BearingX float32 // pixel-aligned horizontal bearing (matches Floor of bounds.Min.X)
+	BearingY float32 // pixel-aligned vertical bearing (matches Floor of bounds.Min.Y, negated)
+	Advance  float32
+}
+
 // RasterizeGlyph draws a single glyph into an image.Gray at the given size.
-// Returns the image and the font used. Used by the GlyphAtlas.
-func (s *SfntShaper) RasterizeGlyph(r rune, style draw.TextStyle) (*image.Gray, *fonts.Font) {
+// The returned bearings use Floor/Ceil to match the rasterized pixel bounds
+// exactly, preventing sub-pixel baseline misalignment.
+func (s *SfntShaper) RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedGlyph {
 	f := s.resolveFont(style)
 	if f == nil {
-		return nil, nil
+		return nil
 	}
 
 	sizePx := DpToPixels(style.Size)
 	face := s.getFace(f, sizePx)
 	if face == nil {
-		return nil, nil
+		return nil
 	}
 
 	bounds, _, ok := face.GlyphBounds(r)
 	if !ok {
-		return nil, nil
+		return nil
 	}
 
 	minX := bounds.Min.X.Floor()
@@ -208,7 +219,7 @@ func (s *SfntShaper) RasterizeGlyph(r rune, style draw.TextStyle) (*image.Gray, 
 	w := maxX - minX
 	h := maxY - minY
 	if w <= 0 || h <= 0 {
-		return nil, nil
+		return nil
 	}
 
 	img := image.NewGray(image.Rect(0, 0, w, h))
@@ -221,7 +232,18 @@ func (s *SfntShaper) RasterizeGlyph(r rune, style draw.TextStyle) (*image.Gray, 
 	}
 	d.DrawString(string(r))
 
-	return img, f
+	adv, ok := face.GlyphAdvance(r)
+	if !ok {
+		adv, _ = face.GlyphAdvance('?')
+	}
+
+	return &RasterizedGlyph{
+		Image:    img,
+		Font:     f,
+		BearingX: float32(minX),
+		BearingY: float32(-minY), // negate: minY is negative for ascenders
+		Advance:  fixedToFloat(adv),
+	}
 }
 
 // ── Helpers ──────────────────────────────────────────────────────

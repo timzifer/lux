@@ -122,21 +122,14 @@ func (a *GlyphAtlas) LookupOrInsert(key GlyphKey, shaper *SfntShaper, style draw
 		return entry, true
 	}
 
-	// Rasterize the glyph.
-	img, f := shaper.RasterizeGlyph(key.Rune, style)
-	if img == nil || f == nil {
+	// Rasterize the glyph. The returned bearings are pixel-aligned
+	// (using Floor/Ceil) to match the rasterized bitmap exactly.
+	rg := shaper.RasterizeGlyph(key.Rune, style)
+	if rg == nil {
 		return AtlasEntry{}, false
 	}
 
-	// Get glyph metrics for bearing info.
-	shaped := shaper.Shape(string(key.Rune), style)
-	var bearing draw.Point
-	var advance float32
-	if len(shaped) > 0 {
-		bearing = draw.Pt(shaped[0].BearingX, shaped[0].BearingY)
-		advance = shaped[0].Advance
-	}
-
-	entry := a.Insert(key, img, bearing, advance)
+	bearing := draw.Pt(rg.BearingX, rg.BearingY)
+	entry := a.Insert(key, rg.Image, bearing, rg.Advance)
 	return entry, true
 }
