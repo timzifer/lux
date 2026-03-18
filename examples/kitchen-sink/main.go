@@ -88,6 +88,8 @@ type Model struct {
 	ChipASelected  bool
 	ChipBSelected  bool
 	ShowTooltip    bool
+	ChipDismissed  bool
+	LastMenuAction string
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -106,6 +108,8 @@ type SetTabMsg struct{ Index int }
 type ToggleChipAMsg struct{}
 type ToggleChipBMsg struct{}
 type ToggleTooltipMsg struct{}
+type DismissChipMsg struct{}
+type MenuActionMsg struct{ Action string }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -140,6 +144,10 @@ func update(m Model, msg app.Msg) Model {
 		m.ChipBSelected = !m.ChipBSelected
 	case ToggleTooltipMsg:
 		m.ShowTooltip = !m.ShowTooltip
+	case DismissChipMsg:
+		m.ChipDismissed = true
+	case MenuActionMsg:
+		m.LastMenuAction = msg.Action
 
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
@@ -523,33 +531,50 @@ func accordionSection(m Model) ui.Element {
 }
 
 func badgesChipsSection(m Model) ui.Element {
-	return ui.Column(
+	tokens := theme.Default.Tokens()
+	children := []ui.Element{
 		sectionHeader("Badges & Chips"),
 
-		ui.Text("Badges (pill-shaped indicators):"),
+		ui.Text("Badges (colorful pill indicators):"),
 		ui.Spacer(4),
 		ui.Row(
 			ui.BadgeText("3"),
-			ui.BadgeText("99+"),
-			ui.Badge(ui.Icon(icons.Star)),
-			ui.Badge(ui.Row(ui.Icon(icons.Heart), ui.Text("New"))),
+			ui.BadgeColor(ui.Text("99+"), tokens.Colors.Status.Error),
+			ui.BadgeColor(ui.Icon(icons.Star), tokens.Colors.Status.Warning),
+			ui.BadgeColor(ui.Text("New"), tokens.Colors.Status.Success),
+			ui.BadgeColor(ui.Row(ui.Icon(icons.Heart), ui.Text("Hot")), tokens.Colors.Accent.Secondary),
 		),
 
 		ui.Spacer(12),
-		ui.Text("Chips (selectable, dismissible):"),
+		ui.Text("Chips (selectable):"),
 		ui.Spacer(4),
 		ui.Row(
 			ui.Chip(ui.Text("Go"), m.ChipASelected, func() { app.Send(ToggleChipAMsg{}) }),
 			ui.Chip(ui.Text("Rust"), m.ChipBSelected, func() { app.Send(ToggleChipBMsg{}) }),
 			ui.Chip(ui.Text("Python"), false, nil),
 		),
-		ui.Spacer(8),
-		ui.Text("Dismissible chip:"),
-		ui.ChipDismissible(
-			ui.Row(ui.Icon(icons.Star), ui.Text("Featured")),
-			true, func() {}, func() {},
-		),
+	}
 
+	// Dismissible chip (shown until dismissed)
+	if !m.ChipDismissed {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text("Dismissible chip (click × to remove):"),
+			ui.ChipDismissible(
+				ui.Row(ui.Icon(icons.Star), ui.Text("Featured")),
+				true,
+				func() {},
+				func() { app.Send(DismissChipMsg{}) },
+			),
+		)
+	} else {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text("Chip dismissed!"),
+		)
+	}
+
+	children = append(children,
 		ui.Spacer(12),
 		ui.Text("Tooltip (click button to toggle):"),
 		ui.Spacer(4),
@@ -562,31 +587,48 @@ func badgesChipsSection(m Model) ui.Element {
 			),
 		),
 	)
+
+	return ui.Column(children...)
 }
 
-func menusSection(_ Model) ui.Element {
-	return ui.Column(
+func menusSection(m Model) ui.Element {
+	menuAction := func(action string) func() {
+		return func() { app.Send(MenuActionMsg{action}) }
+	}
+
+	children := []ui.Element{
 		sectionHeader("Menus"),
 
-		ui.Text("MenuBar:"),
+		ui.Text("MenuBar (click items):"),
 		ui.Spacer(4),
 		ui.MenuBar([]ui.MenuItem{
-			{Label: ui.Text("File"), OnClick: func() {}},
-			{Label: ui.Text("Edit"), OnClick: func() {}},
-			{Label: ui.Text("View"), OnClick: func() {}},
-			{Label: ui.Text("Help"), OnClick: func() {}},
+			{Label: ui.Text("File"), OnClick: menuAction("File")},
+			{Label: ui.Text("Edit"), OnClick: menuAction("Edit")},
+			{Label: ui.Text("View"), OnClick: menuAction("View")},
+			{Label: ui.Text("Help"), OnClick: menuAction("Help")},
 		}),
+	}
 
+	if m.LastMenuAction != "" {
+		children = append(children,
+			ui.Spacer(4),
+			ui.Text(fmt.Sprintf("Last action: %s", m.LastMenuAction)),
+		)
+	}
+
+	children = append(children,
 		ui.Spacer(12),
-		ui.Text("ContextMenu (visible, positioned at 50,50 within area):"),
+		ui.Text("ContextMenu:"),
 		ui.Spacer(4),
 		ui.ContextMenu([]ui.MenuItem{
-			{Label: ui.Text("Cut"), OnClick: func() {}},
-			{Label: ui.Text("Copy"), OnClick: func() {}},
-			{Label: ui.Text("Paste"), OnClick: func() {}},
-			{Label: ui.Text("Delete"), OnClick: func() {}},
-		}, true, 50, 450),
+			{Label: ui.Text("Cut"), OnClick: menuAction("Cut")},
+			{Label: ui.Text("Copy"), OnClick: menuAction("Copy")},
+			{Label: ui.Text("Paste"), OnClick: menuAction("Paste")},
+			{Label: ui.Text("Delete"), OnClick: menuAction("Delete")},
+		}, true, 300, 400),
 	)
+
+	return ui.Column(children...)
 }
 
 // ── Main ─────────────────────────────────────────────────────────
