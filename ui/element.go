@@ -495,7 +495,7 @@ const (
 	buttonPadX     = 18
 	buttonPadY     = 12
 	buttonMinWidth = 180
-	buttonBorder   = 2
+	buttonBorder   = 1
 )
 
 // BuildScene lays out the element tree and paints it to the canvas.
@@ -572,8 +572,8 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		h := labelH + (buttonPadY * 2)
 
 		// Edge (border)
-		canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			draw.SolidPaint(tokens.Colors.Stroke.Border))
+		canvas.FillRoundRect(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			tokens.Radii.Button, draw.SolidPaint(tokens.Colors.Stroke.Border))
 
 		// Fill — blend with hover overlay (M4).
 		fillColor := tokens.Colors.Accent.Primary
@@ -584,9 +584,9 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		if hoverOpacity > 0 {
 			fillColor = lerpColor(fillColor, hoverHighlight(fillColor), hoverOpacity)
 		}
-		canvas.FillRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
+		canvas.FillRoundRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
 			float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
-			draw.SolidPaint(fillColor))
+			maxf(tokens.Radii.Button-float32(buttonBorder), 0), draw.SolidPaint(fillColor))
 
 		// Label, centered
 		canvas.DrawText(node.Label,
@@ -829,7 +829,7 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 const (
 	checkboxSize   = 16
 	checkboxGap    = 8
-	checkboxBorder = 2
+	checkboxBorder = 1
 
 	toggleTrackW   = 36
 	toggleTrackH   = 20
