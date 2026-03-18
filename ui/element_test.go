@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/theme"
 )
 
 func buildTestScene(root Element, w, h int) draw.Scene {
 	canvas := render.NewSceneCanvas(w, h)
-	return BuildScene(root, canvas, theme.Default, w, h)
+	return BuildScene(root, canvas, theme.Default, w, h, nil)
 }
 
 func TestBuildSceneEmpty(t *testing.T) {
@@ -159,6 +160,59 @@ func TestWithKey(t *testing.T) {
 	}
 	if scene.Glyphs[0].Text != "KEYED" {
 		t.Errorf("glyph text = %q, want %q", scene.Glyphs[0].Text, "KEYED")
+	}
+}
+
+func TestBuildSceneCollectsHitTargets(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Column(
+		Text("Label"),
+		Button("OK", func() {}),
+	), canvas, theme.Default, 800, 600, &hitMap)
+
+	if hitMap.Len() != 1 {
+		t.Fatalf("expected 1 hit target, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneHitTargetNilOnClick(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Button("X", nil), canvas, theme.Default, 800, 600, &hitMap)
+
+	if hitMap.Len() != 0 {
+		t.Errorf("nil OnClick should not register hit target, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneMultipleHitTargets(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Row(
+		Button("A", func() {}),
+		Button("B", func() {}),
+	), canvas, theme.Default, 800, 600, &hitMap)
+
+	if hitMap.Len() != 2 {
+		t.Fatalf("expected 2 hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestHitTargetClickable(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	clicked := false
+	BuildScene(Button("OK", func() { clicked = true }), canvas, theme.Default, 800, 600, &hitMap)
+
+	// Button is at framePadding (24) position, with buttonMinWidth (180) and some height.
+	target := hitMap.HitTest(float32(framePadding+10), float32(framePadding+5))
+	if target == nil {
+		t.Fatal("expected hit target at button position")
+	}
+	target.OnClick()
+	if !clicked {
+		t.Error("OnClick was not invoked")
 	}
 }
 

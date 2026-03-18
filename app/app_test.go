@@ -3,9 +3,11 @@
 package app
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
@@ -74,7 +76,7 @@ func TestRunWithMessages(t *testing.T) {
 
 func TestM2HelloWorldScene(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := ui.BuildScene(m2HelloView(testModel{}), canvas, theme.Default, 800, 600)
+	scene := ui.BuildScene(m2HelloView(testModel{}), canvas, theme.Default, 800, 600, nil)
 
 	if len(scene.Rects) < 2 {
 		t.Errorf("M2 scene should have at least 2 rects (button edge+fill), got %d", len(scene.Rects))
@@ -145,5 +147,145 @@ func TestCanvasInterface(t *testing.T) {
 	}
 	if len(scene.Glyphs) != 1 {
 		t.Errorf("expected 1 glyph, got %d", len(scene.Glyphs))
+	}
+}
+
+// ── M3 Counter Tests ──────────────────────────────────────────────
+
+type decrMsg struct{}
+
+func m3CounterUpdate(m testModel, msg Msg) testModel {
+	switch msg.(type) {
+	case incrMsg:
+		m.Count++
+	case decrMsg:
+		m.Count--
+	}
+	return m
+}
+
+func m3CounterView(m testModel) ui.Element {
+	return ui.Column(
+		ui.Text(fmt.Sprintf("Count: %d", m.Count)),
+		ui.Row(
+			ui.Button("−", func() { Send(decrMsg{}) }),
+			ui.Button("+", func() { Send(incrMsg{}) }),
+		),
+	)
+}
+
+func TestM3CounterViewRendersCorrectly(t *testing.T) {
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := ui.BuildScene(m3CounterView(testModel{Count: 42}), canvas, theme.Default, 800, 600, nil)
+
+	foundCount := false
+	for _, g := range scene.Glyphs {
+		if g.Text == "Count: 42" {
+			foundCount = true
+		}
+	}
+	if !foundCount {
+		t.Error("counter view should display 'Count: 42'")
+	}
+
+	// Should have 2 buttons = 4 rects (edge+fill each) + 3 glyphs (count text + 2 button labels).
+	if len(scene.Rects) < 4 {
+		t.Errorf("expected at least 4 rects (2 buttons), got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 3 {
+		t.Errorf("expected at least 3 glyphs (count + 2 buttons), got %d", len(scene.Glyphs))
+	}
+}
+
+func TestM3CounterHitTargets(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, &hitMap)
+
+	if hitMap.Len() != 2 {
+		t.Fatalf("counter view should register 2 hit targets (− and +), got %d", hitMap.Len())
+	}
+}
+
+func TestM3CounterClickIncrement(t *testing.T) {
+	var finalCount int
+	update := func(m testModel, msg Msg) testModel {
+		m = m3CounterUpdate(m, msg)
+		finalCount = m.Count
+		return m
+	}
+
+	// + button is the second in the Row at approx (216, 61) 180x45.
+	// Click on frame 1 so frame 0 can build the initial scene + hit targets.
+	// Frame 2 processes the message from the click.
+	plusX := float32(220) // inside + button (starts at x=216)
+	plusY := float32(70)  // inside + button (starts at y=61, height=45)
+
+	err := Run(testModel{Count: 0}, update, m3CounterView,
+		WithTitle("M3 counter test"),
+		WithSize(800, 600),
+		WithHeadlessFrames(3),
+		WithHeadlessClick(1, plusX, plusY),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if finalCount != 1 {
+		t.Errorf("expected count=1 after clicking +, got %d", finalCount)
+	}
+}
+
+func TestM3CounterClickDecrement(t *testing.T) {
+	var finalCount int
+	update := func(m testModel, msg Msg) testModel {
+		m = m3CounterUpdate(m, msg)
+		finalCount = m.Count
+		return m
+	}
+
+	// − button is at approx (24, 61) 180x45.
+	minusX := float32(30) // inside − button (starts at x=24)
+	minusY := float32(70) // inside − button (starts at y=61, height=45)
+
+	err := Run(testModel{Count: 5}, update, m3CounterView,
+		WithTitle("M3 decr test"),
+		WithSize(800, 600),
+		WithHeadlessFrames(3),
+		WithHeadlessClick(1, minusX, minusY),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if finalCount != 4 {
+		t.Errorf("expected count=4 after clicking −, got %d", finalCount)
+	}
+}
+
+func TestM3HeadlessMultipleFrames(t *testing.T) {
+	// Verify the headless platform runs the requested number of frames.
+	// The view is only called on model changes, so we track update calls instead.
+	updateCount := 0
+	update := func(m testModel, msg Msg) testModel {
+		updateCount++
+		m.Count++
+		return m
+	}
+	// Use a view that sends a message each time it's called,
+	// creating a chain: view → Send → update → view → Send → ...
+	view := func(m testModel) ui.Element {
+		if m.Count < 3 {
+			Send(incrMsg{})
+		}
+		return ui.Empty()
+	}
+
+	err := Run(testModel{Count: 0}, update, view,
+		WithHeadlessFrames(5),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if updateCount < 3 {
+		t.Errorf("expected at least 3 updates across frames, got %d", updateCount)
 	}
 }
