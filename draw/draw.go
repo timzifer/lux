@@ -4,6 +4,11 @@
 // Widgets, themes, and custom draw functions operate through these types.
 package draw
 
+import (
+	"encoding/hex"
+	"strings"
+)
+
 // Color is an RGBA color with float32 components in the range [0, 1].
 type Color struct {
 	R float32
@@ -91,4 +96,33 @@ type TextMetrics struct {
 	Ascent  float32
 	Descent float32
 	Leading float32
+}
+
+// Hex parses a CSS-style hex color string (#RGB, #RRGGBB, or #RRGGBBAA)
+// and returns a Color. Panics on malformed input — intended for compile-time
+// constants only.
+func Hex(s string) Color {
+	s = strings.TrimPrefix(s, "#")
+	switch len(s) {
+	case 3:
+		// #RGB → #RRGGBBAA
+		s = string([]byte{s[0], s[0], s[1], s[1], s[2], s[2], 'f', 'f'})
+	case 6:
+		// #RRGGBB — add full alpha
+		s += "ff"
+	case 8:
+		// #RRGGBBAA — already complete
+	default:
+		panic("draw.Hex: invalid hex color " + s)
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		panic("draw.Hex: " + err.Error())
+	}
+	return Color{
+		R: float32(b[0]) / 255,
+		G: float32(b[1]) / 255,
+		B: float32(b[2]) / 255,
+		A: float32(b[3]) / 255,
+	}
 }

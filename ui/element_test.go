@@ -224,25 +224,25 @@ func TestThemeColorsUsed(t *testing.T) {
 		t.Fatal("need at least 2 rects")
 	}
 
-	// Edge should use Outline color.
+	// Edge should use Stroke.Border color.
 	edge := scene.Rects[0]
-	if edge.Color != tokens.Colors.Outline {
-		t.Errorf("edge color = %v, want Outline %v", edge.Color, tokens.Colors.Outline)
+	if edge.Color != tokens.Colors.Stroke.Border {
+		t.Errorf("edge color = %v, want Stroke.Border %v", edge.Color, tokens.Colors.Stroke.Border)
 	}
 
-	// Fill should use Primary color.
+	// Fill should use Accent.Primary color.
 	fill := scene.Rects[1]
-	if fill.Color != tokens.Colors.Primary {
-		t.Errorf("fill color = %v, want Primary %v", fill.Color, tokens.Colors.Primary)
+	if fill.Color != tokens.Colors.Accent.Primary {
+		t.Errorf("fill color = %v, want Accent.Primary %v", fill.Color, tokens.Colors.Accent.Primary)
 	}
 
-	// Label should use OnPrimary color.
+	// Label should use Text.OnAccent color.
 	if len(scene.Glyphs) < 1 {
 		t.Fatal("need at least 1 glyph")
 	}
 	label := scene.Glyphs[0]
-	if label.Color != tokens.Colors.OnPrimary {
-		t.Errorf("label color = %v, want OnPrimary %v", label.Color, tokens.Colors.OnPrimary)
+	if label.Color != tokens.Colors.Text.OnAccent {
+		t.Errorf("label color = %v, want Text.OnAccent %v", label.Color, tokens.Colors.Text.OnAccent)
 	}
 }
 
@@ -264,8 +264,8 @@ func TestBuildSceneWithHoverState(t *testing.T) {
 		t.Fatal("need at least 2 rects for button")
 	}
 	fill := scene.Rects[1]
-	if fill.Color == tokens.Colors.Primary {
-		t.Error("hovered button fill should differ from raw Primary")
+	if fill.Color == tokens.Colors.Accent.Primary {
+		t.Error("hovered button fill should differ from raw Accent.Primary")
 	}
 }
 
@@ -279,8 +279,8 @@ func TestBuildSceneNilHoverState(t *testing.T) {
 		t.Fatal("need at least 2 rects")
 	}
 	fill := scene.Rects[1]
-	if fill.Color != tokens.Colors.Primary {
-		t.Errorf("non-hovered fill = %v, want Primary %v", fill.Color, tokens.Colors.Primary)
+	if fill.Color != tokens.Colors.Accent.Primary {
+		t.Errorf("non-hovered fill = %v, want Accent.Primary %v", fill.Color, tokens.Colors.Accent.Primary)
 	}
 }
 
@@ -292,8 +292,169 @@ func TestBuildSceneWithLightTheme(t *testing.T) {
 		t.Fatalf("expected 1 glyph, got %d", len(scene.Glyphs))
 	}
 	glyph := scene.Glyphs[0]
-	lightOnSurface := theme.Light.Tokens().Colors.OnSurface
-	if glyph.Color != lightOnSurface {
-		t.Errorf("light theme text color = %v, want %v", glyph.Color, lightOnSurface)
+	lightTextPrimary := theme.Light.Tokens().Colors.Text.Primary
+	if glyph.Color != lightTextPrimary {
+		t.Errorf("light theme text color = %v, want %v", glyph.Color, lightTextPrimary)
+	}
+}
+
+// ── Tier 1 Widget Tests ─────────────────────────────────────────
+
+func TestBuildSceneDivider(t *testing.T) {
+	scene := buildTestScene(Divider(), 800, 600)
+	tokens := theme.Default.Tokens()
+
+	if len(scene.Rects) != 1 {
+		t.Fatalf("Divider should produce 1 rect, got %d", len(scene.Rects))
+	}
+	r := scene.Rects[0]
+	if r.H != 1 {
+		t.Errorf("Divider height = %d, want 1", r.H)
+	}
+	if r.Color != tokens.Colors.Stroke.Divider {
+		t.Errorf("Divider color = %v, want Stroke.Divider %v", r.Color, tokens.Colors.Stroke.Divider)
+	}
+	// Divider should span available width (800 - 2*framePadding = 752)
+	expectedW := 800 - 2*framePadding
+	if r.W != expectedW {
+		t.Errorf("Divider width = %d, want %d", r.W, expectedW)
+	}
+}
+
+func TestBuildSceneDividerInColumn(t *testing.T) {
+	scene := buildTestScene(Column(
+		Text("ABOVE"),
+		Divider(),
+		Text("BELOW"),
+	), 800, 600)
+
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("expected 2 glyphs, got %d", len(scene.Glyphs))
+	}
+	above := scene.Glyphs[0]
+	below := scene.Glyphs[1]
+	if below.Y <= above.Y {
+		t.Errorf("BELOW (Y=%d) should be below ABOVE (Y=%d)", below.Y, above.Y)
+	}
+	if len(scene.Rects) < 1 {
+		t.Fatal("expected at least 1 rect for divider")
+	}
+}
+
+func TestBuildSceneSpacer(t *testing.T) {
+	scene := buildTestScene(Column(
+		Text("A"),
+		Spacer(40),
+		Text("B"),
+	), 800, 600)
+
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("expected 2 glyphs, got %d", len(scene.Glyphs))
+	}
+	a := scene.Glyphs[0]
+	b := scene.Glyphs[1]
+	// B should be pushed down by Spacer(40) + columnGap*2
+	gap := b.Y - a.Y
+	if gap < 40 {
+		t.Errorf("Spacer(40) should push B at least 40px below A, got gap=%d", gap)
+	}
+}
+
+func TestBuildSceneSpacerEmpty(t *testing.T) {
+	scene := buildTestScene(Spacer(20), 800, 600)
+	// Spacer should produce no draw commands
+	if len(scene.Rects) != 0 {
+		t.Errorf("Spacer should produce 0 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) != 0 {
+		t.Errorf("Spacer should produce 0 glyphs, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneIcon(t *testing.T) {
+	scene := buildTestScene(Icon("★"), 800, 600)
+	tokens := theme.Default.Tokens()
+
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("Icon should produce 1 glyph, got %d", len(scene.Glyphs))
+	}
+	g := scene.Glyphs[0]
+	if g.Text != "★" {
+		t.Errorf("Icon glyph text = %q, want %q", g.Text, "★")
+	}
+	if g.Color != tokens.Colors.Text.Primary {
+		t.Errorf("Icon color = %v, want Text.Primary %v", g.Color, tokens.Colors.Text.Primary)
+	}
+}
+
+func TestBuildSceneIconSize(t *testing.T) {
+	scene := buildTestScene(IconSize("→", 24), 800, 600)
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("IconSize should produce 1 glyph, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneStack(t *testing.T) {
+	scene := buildTestScene(Stack(
+		Text("BOTTOM"),
+		Text("TOP"),
+	), 800, 600)
+
+	if len(scene.Glyphs) != 2 {
+		t.Fatalf("Stack should produce 2 glyphs, got %d", len(scene.Glyphs))
+	}
+	bottom := scene.Glyphs[0]
+	top := scene.Glyphs[1]
+	// Both children should share the same origin (stacked on top of each other)
+	if bottom.X != top.X || bottom.Y != top.Y {
+		t.Errorf("Stack children should share origin: bottom=(%d,%d), top=(%d,%d)",
+			bottom.X, bottom.Y, top.X, top.Y)
+	}
+}
+
+func TestBuildSceneStackEmpty(t *testing.T) {
+	scene := buildTestScene(Stack(), 800, 600)
+	if len(scene.Rects) != 0 || len(scene.Glyphs) != 0 {
+		t.Error("Empty Stack should produce no draw commands")
+	}
+}
+
+func TestBuildSceneScrollView(t *testing.T) {
+	// Create content taller than the viewport
+	content := Column(
+		Text("LINE 1"),
+		Text("LINE 2"),
+		Text("LINE 3"),
+		Text("LINE 4"),
+	)
+	scene := buildTestScene(ScrollView(content, 50), 800, 600)
+
+	// Should render at least the visible glyphs
+	if len(scene.Glyphs) == 0 {
+		t.Fatal("ScrollView should render content glyphs")
+	}
+}
+
+func TestBuildSceneScrollViewNoScrollbar(t *testing.T) {
+	// Small content that fits within viewport — no scrollbar
+	scene := buildTestScene(ScrollView(Text("SHORT"), 200), 800, 600)
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("ScrollView should render 1 glyph, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestScrollStateClamp(t *testing.T) {
+	var s ScrollState
+	s.ScrollBy(-100, 500, 200) // scroll down 100
+	if s.Offset != 100 {
+		t.Errorf("Offset = %f, want 100", s.Offset)
+	}
+	s.ScrollBy(-500, 500, 200) // try to scroll past max
+	if s.Offset != 300 {        // max = 500 - 200 = 300
+		t.Errorf("Offset = %f, want 300 (clamped)", s.Offset)
+	}
+	s.ScrollBy(1000, 500, 200) // scroll back up past 0
+	if s.Offset != 0 {
+		t.Errorf("Offset = %f, want 0 (clamped)", s.Offset)
 	}
 }
