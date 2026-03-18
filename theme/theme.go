@@ -30,6 +30,15 @@ const (
 	WidgetKindSlider
 	WidgetKindProgressBar
 	WidgetKindSelect
+	// Tier 3
+	WidgetKindCard
+	WidgetKindTabs
+	WidgetKindAccordion
+	WidgetKindTooltip
+	WidgetKindBadge
+	WidgetKindChip
+	WidgetKindMenuBar
+	WidgetKindContextMenu
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).

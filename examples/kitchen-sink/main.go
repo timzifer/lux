@@ -23,6 +23,7 @@ import (
 var sectionIDs = []string{
 	"typography", "buttons", "form-controls", "range-progress",
 	"selection", "layout", "rich-text", "virtual-list", "tree",
+	"cards", "tabs", "accordion", "badges-chips", "menus",
 }
 
 func sectionLabel(id string) string {
@@ -45,6 +46,16 @@ func sectionLabel(id string) string {
 		return "VirtualList"
 	case "tree":
 		return "Tree"
+	case "cards":
+		return "Cards"
+	case "tabs":
+		return "Tabs"
+	case "accordion":
+		return "Accordion"
+	case "badges-chips":
+		return "Badges & Chips"
+	case "menus":
+		return "Menus"
 	default:
 		return id
 	}
@@ -70,8 +81,13 @@ type Model struct {
 	NavTree       *ui.TreeState
 	ActiveSection string
 	ToggleAnim    *ui.ToggleState
-	VListScroll   *ui.ScrollState
-	DemoTree      *ui.TreeState
+	VListScroll    *ui.ScrollState
+	DemoTree       *ui.TreeState
+	TabIndex       int
+	AccordionState *ui.AccordionState
+	ChipASelected  bool
+	ChipBSelected  bool
+	ShowTooltip    bool
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -86,6 +102,10 @@ type SetToggleMsg struct{ Value bool }
 type SetSliderMsg struct{ Value float32 }
 type SetTextMsg struct{ Value string }
 type SelectSectionMsg struct{ Section string }
+type SetTabMsg struct{ Index int }
+type ToggleChipAMsg struct{}
+type ToggleChipBMsg struct{}
+type ToggleTooltipMsg struct{}
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -112,6 +132,14 @@ func update(m Model, msg app.Msg) Model {
 		m.TextValue = msg.Value
 	case SelectSectionMsg:
 		m.ActiveSection = msg.Section
+	case SetTabMsg:
+		m.TabIndex = msg.Index
+	case ToggleChipAMsg:
+		m.ChipASelected = !m.ChipASelected
+	case ToggleChipBMsg:
+		m.ChipBSelected = !m.ChipBSelected
+	case ToggleTooltipMsg:
+		m.ShowTooltip = !m.ShowTooltip
 
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
@@ -183,6 +211,16 @@ func sectionContent(m Model) ui.Element {
 		return virtualListSection(m)
 	case "tree":
 		return treeSection(m)
+	case "cards":
+		return cardsSection()
+	case "tabs":
+		return tabsSection(m)
+	case "accordion":
+		return accordionSection(m)
+	case "badges-chips":
+		return badgesChipsSection(m)
+	case "menus":
+		return menusSection(m)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -420,6 +458,139 @@ func treeSection(m Model) ui.Element {
 	)
 }
 
+// ── Tier 3 Section Views ─────────────────────────────────────────
+
+func cardsSection() ui.Element {
+	return ui.Column(
+		sectionHeader("Cards"),
+		ui.Text("Card with text content:"),
+		ui.Spacer(4),
+		ui.Card(
+			ui.Text("This content lives inside a Card."),
+			ui.Text("Cards have elevation and borders."),
+		),
+		ui.Spacer(12),
+		ui.Text("Nested cards:"),
+		ui.Spacer(4),
+		ui.Card(
+			ui.Text("Outer card"),
+			ui.Spacer(8),
+			ui.Card(ui.Text("Inner nested card")),
+		),
+	)
+}
+
+func tabsSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Tabs"),
+		ui.Text("Tabs with rich headers (Icon + Text + Badge):"),
+		ui.Spacer(4),
+		ui.Tabs([]ui.TabItem{
+			{
+				Header:  ui.Row(ui.Icon(icons.Star), ui.Text("General")),
+				Content: ui.Text("General settings content goes here."),
+			},
+			{
+				Header:  ui.Row(ui.Icon(icons.Gear), ui.Text("Advanced"), ui.BadgeText("3")),
+				Content: ui.Column(ui.Text("Advanced settings."), ui.Text("With multiple items.")),
+			},
+			{
+				Header:  ui.Row(ui.Icon(icons.Eye), ui.Text("Preview")),
+				Content: ui.Card(ui.Text("Preview content inside a Card.")),
+			},
+		}, m.TabIndex, func(idx int) { app.Send(SetTabMsg{idx}) }),
+	)
+}
+
+func accordionSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Accordion"),
+		ui.Text("Collapsible sections (click to expand/collapse):"),
+		ui.Spacer(4),
+		ui.Accordion([]ui.AccordionSection{
+			{
+				Header:  ui.Text("Section 1 — Getting Started"),
+				Content: ui.Text("Welcome! This section covers the basics."),
+			},
+			{
+				Header:  ui.Text("Section 2 — Configuration"),
+				Content: ui.Column(ui.Text("Configure your settings here."), ui.Text("Multiple widgets supported.")),
+			},
+			{
+				Header:  ui.Text("Section 3 — Advanced Topics"),
+				Content: ui.Card(ui.Text("Advanced content inside a Card.")),
+			},
+		}, m.AccordionState),
+	)
+}
+
+func badgesChipsSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Badges & Chips"),
+
+		ui.Text("Badges (pill-shaped indicators):"),
+		ui.Spacer(4),
+		ui.Row(
+			ui.BadgeText("3"),
+			ui.BadgeText("99+"),
+			ui.Badge(ui.Icon(icons.Star)),
+			ui.Badge(ui.Row(ui.Icon(icons.Heart), ui.Text("New"))),
+		),
+
+		ui.Spacer(12),
+		ui.Text("Chips (selectable, dismissible):"),
+		ui.Spacer(4),
+		ui.Row(
+			ui.Chip(ui.Text("Go"), m.ChipASelected, func() { app.Send(ToggleChipAMsg{}) }),
+			ui.Chip(ui.Text("Rust"), m.ChipBSelected, func() { app.Send(ToggleChipBMsg{}) }),
+			ui.Chip(ui.Text("Python"), false, nil),
+		),
+		ui.Spacer(8),
+		ui.Text("Dismissible chip:"),
+		ui.ChipDismissible(
+			ui.Row(ui.Icon(icons.Star), ui.Text("Featured")),
+			true, func() {}, func() {},
+		),
+
+		ui.Spacer(12),
+		ui.Text("Tooltip (click button to toggle):"),
+		ui.Spacer(4),
+		ui.Row(
+			ui.Button("Toggle Tooltip", func() { app.Send(ToggleTooltipMsg{}) }),
+			ui.TooltipVisible(
+				ui.Text("← Hover target"),
+				ui.Text("This is a tooltip with arbitrary content!"),
+				m.ShowTooltip,
+			),
+		),
+	)
+}
+
+func menusSection(_ Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Menus"),
+
+		ui.Text("MenuBar:"),
+		ui.Spacer(4),
+		ui.MenuBar([]ui.MenuItem{
+			{Label: ui.Text("File"), OnClick: func() {}},
+			{Label: ui.Text("Edit"), OnClick: func() {}},
+			{Label: ui.Text("View"), OnClick: func() {}},
+			{Label: ui.Text("Help"), OnClick: func() {}},
+		}),
+
+		ui.Spacer(12),
+		ui.Text("ContextMenu (visible, positioned at 50,50 within area):"),
+		ui.Spacer(4),
+		ui.ContextMenu([]ui.MenuItem{
+			{Label: ui.Text("Cut"), OnClick: func() {}},
+			{Label: ui.Text("Copy"), OnClick: func() {}},
+			{Label: ui.Text("Paste"), OnClick: func() {}},
+			{Label: ui.Text("Delete"), OnClick: func() {}},
+		}, true, 50, 450),
+	)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
@@ -433,8 +604,9 @@ func main() {
 		ToggleAnim:    ui.NewToggleState(),
 		NavTree:       ui.NewTreeState(),
 		ActiveSection: "typography",
-		VListScroll:   &ui.ScrollState{},
-		DemoTree:      ui.NewTreeState(),
+		VListScroll:    &ui.ScrollState{},
+		DemoTree:       ui.NewTreeState(),
+		AccordionState: ui.NewAccordionState(),
 	}
 
 	if err := app.Run(initial, update, view,

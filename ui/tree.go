@@ -159,7 +159,7 @@ type flatNode struct {
 	HeightFraction float32 // 0..1, animated expand progress for children-of-animating-parent
 }
 
-func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
+func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	if len(node.RootIDs) == 0 || node.BuildNode == nil {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -330,7 +330,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		// Node content — vertically centered within the row.
 		nodeX := area.X + indent + indicatorW + 4
 		nodeArea := bounds{X: nodeX, Y: int(rowY) + centerY, W: contentW - indent - indicatorW - 4, H: nodeH}
-		layoutElement(node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected), nodeArea, canvas, tokens, hitMap, hover, focus)
+		layoutElement(node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected), nodeArea, canvas, tokens, hitMap, hover, overlays, focus)
 
 		// Row hit target for selection.
 		if hitMap != nil && node.OnSelect != nil {
