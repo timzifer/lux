@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/timzifer/lux/app"
+	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
 
@@ -27,6 +28,7 @@ func view(m Model) ui.Element {
 
 func main() {
 	if err := app.Run(Model{}, update, view,
+		app.WithTheme(theme.Default),
 		app.WithTitle("LUX — M2 Hello World"),
 		app.WithSize(800, 600),
 	); err != nil {

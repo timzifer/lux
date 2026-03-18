@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
+	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/ui"
 )
@@ -59,6 +61,14 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	}
 	defer renderer.Destroy()
 
+	activeTheme := cfg.theme
+	bgColor := activeTheme.Tokens().Colors.Background
+
+	// Tell the renderer about the background color if it supports it.
+	if bgs, ok := renderer.(interface{ SetBackgroundColor(draw.Color) }); ok {
+		bgs.SetBackgroundColor(bgColor)
+	}
+
 	currentModel := model
 	currentTree := view(currentModel)
 
@@ -82,7 +92,8 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			lastFrame = now
 
 			w, h := plat.FramebufferSize()
-			scene := ui.BuildScene(currentTree, w, h)
+			canvas := render.NewSceneCanvas(w, h)
+			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h)
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)

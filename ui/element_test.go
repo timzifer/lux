@@ -1,83 +1,76 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/internal/render"
+	"github.com/timzifer/lux/theme"
+)
+
+func buildTestScene(root Element, w, h int) draw.Scene {
+	canvas := render.NewSceneCanvas(w, h)
+	return BuildScene(root, canvas, theme.Default, w, h)
+}
 
 func TestBuildSceneEmpty(t *testing.T) {
-	scene := BuildScene(Empty(), 800, 600)
+	scene := buildTestScene(Empty(), 800, 600)
 	if len(scene.Rects) != 0 {
 		t.Errorf("Empty element should produce 0 rects, got %d", len(scene.Rects))
 	}
-	if len(scene.Texts) != 0 {
-		t.Errorf("Empty element should produce 0 texts, got %d", len(scene.Texts))
+	if len(scene.Glyphs) != 0 {
+		t.Errorf("Empty element should produce 0 glyphs, got %d", len(scene.Glyphs))
 	}
 }
 
 func TestBuildSceneText(t *testing.T) {
-	scene := BuildScene(Text("HELLO WORLD"), 800, 600)
-	if len(scene.Texts) != 1 {
-		t.Fatalf("Text element should produce 1 text, got %d", len(scene.Texts))
+	scene := buildTestScene(Text("HELLO WORLD"), 800, 600)
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("Text element should produce 1 glyph entry, got %d", len(scene.Glyphs))
 	}
-	txt := scene.Texts[0]
-	if txt.Text != "HELLO WORLD" {
-		t.Errorf("text content = %q, want %q", txt.Text, "HELLO WORLD")
+	glyph := scene.Glyphs[0]
+	if glyph.Text != "HELLO WORLD" {
+		t.Errorf("glyph text = %q, want %q", glyph.Text, "HELLO WORLD")
 	}
-	if txt.X != framePadding {
-		t.Errorf("text X = %d, want %d", txt.X, framePadding)
+	if glyph.X != framePadding {
+		t.Errorf("glyph X = %d, want %d", glyph.X, framePadding)
 	}
-	if txt.Y != framePadding {
-		t.Errorf("text Y = %d, want %d", txt.Y, framePadding)
-	}
-	if txt.Scale != textScale {
-		t.Errorf("text Scale = %d, want %d", txt.Scale, textScale)
-	}
-	if txt.Color != TextColor {
-		t.Errorf("text Color = %v, want %v", txt.Color, TextColor)
+	if glyph.Y != framePadding {
+		t.Errorf("glyph Y = %d, want %d", glyph.Y, framePadding)
 	}
 }
 
 func TestBuildSceneButton(t *testing.T) {
-	scene := BuildScene(Button("OK", nil), 800, 600)
+	scene := buildTestScene(Button("OK", nil), 800, 600)
 
-	// Button produces 2 rects (edge + fill) and 1 text (label).
+	// Button: 2 rects (edge + fill) + 1 glyph (label).
 	if len(scene.Rects) != 2 {
 		t.Fatalf("Button should produce 2 rects, got %d", len(scene.Rects))
 	}
-	if len(scene.Texts) != 1 {
-		t.Fatalf("Button should produce 1 text, got %d", len(scene.Texts))
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("Button should produce 1 glyph, got %d", len(scene.Glyphs))
 	}
 
 	edge := scene.Rects[0]
 	fill := scene.Rects[1]
-	label := scene.Texts[0]
+	label := scene.Glyphs[0]
 
-	// Edge rect is at framePadding origin.
 	if edge.X != framePadding || edge.Y != framePadding {
 		t.Errorf("edge origin = (%d,%d), want (%d,%d)", edge.X, edge.Y, framePadding, framePadding)
 	}
-	if edge.Color != ButtonEdgeColor {
-		t.Errorf("edge color = %v, want %v", edge.Color, ButtonEdgeColor)
+
+	if fill.X != framePadding+buttonBorder || fill.Y != framePadding+buttonBorder {
+		t.Errorf("fill origin = (%d,%d), want (%d,%d)", fill.X, fill.Y, framePadding+buttonBorder, framePadding+buttonBorder)
+	}
+	if fill.W != edge.W-buttonBorder*2 || fill.H != edge.H-buttonBorder*2 {
+		t.Errorf("fill size = %dx%d, want %dx%d", fill.W, fill.H, edge.W-buttonBorder*2, edge.H-buttonBorder*2)
 	}
 
-	// Fill rect is inset by 2px.
-	if fill.X != framePadding+2 || fill.Y != framePadding+2 {
-		t.Errorf("fill origin = (%d,%d), want (%d,%d)", fill.X, fill.Y, framePadding+2, framePadding+2)
-	}
-	if fill.W != edge.W-4 || fill.H != edge.H-4 {
-		t.Errorf("fill size = %dx%d, want %dx%d", fill.W, fill.H, edge.W-4, edge.H-4)
-	}
-	if fill.Color != ButtonColor {
-		t.Errorf("fill color = %v, want %v", fill.Color, ButtonColor)
-	}
-
-	// Label text must match.
 	if label.Text != "OK" {
 		t.Errorf("label text = %q, want %q", label.Text, "OK")
 	}
-	if label.Color != TextColor {
-		t.Errorf("label color = %v, want %v", label.Color, TextColor)
-	}
 
-	// Label must be inside the button bounds.
+	// Label inside button bounds.
 	if label.X < edge.X || label.X >= edge.X+edge.W {
 		t.Errorf("label X=%d outside button [%d, %d)", label.X, edge.X, edge.X+edge.W)
 	}
@@ -87,26 +80,23 @@ func TestBuildSceneButton(t *testing.T) {
 }
 
 func TestBuildSceneColumnTextAndButton(t *testing.T) {
-	// This is the M2 hello-world layout.
-	scene := BuildScene(Column(
+	scene := buildTestScene(Column(
 		Text("HELLO WORLD"),
 		Button("CLICK ME", nil),
 	), 800, 600)
 
-	// Expect: 2 rects (button edge+fill), 2 texts (label + button label).
 	if len(scene.Rects) != 2 {
 		t.Errorf("M2 scene should have 2 rects, got %d", len(scene.Rects))
 	}
-	if len(scene.Texts) != 2 {
-		t.Errorf("M2 scene should have 2 texts, got %d", len(scene.Texts))
+	if len(scene.Glyphs) != 2 {
+		t.Errorf("M2 scene should have 2 glyphs, got %d", len(scene.Glyphs))
 	}
-
-	if len(scene.Texts) < 2 {
+	if len(scene.Glyphs) < 2 {
 		t.FailNow()
 	}
 
-	hello := scene.Texts[0]
-	click := scene.Texts[1]
+	hello := scene.Glyphs[0]
+	click := scene.Glyphs[1]
 
 	if hello.Text != "HELLO WORLD" {
 		t.Errorf("first text = %q, want %q", hello.Text, "HELLO WORLD")
@@ -115,77 +105,89 @@ func TestBuildSceneColumnTextAndButton(t *testing.T) {
 		t.Errorf("second text = %q, want %q", click.Text, "CLICK ME")
 	}
 
-	// Button must be below the text (Y increases downward).
 	if click.Y <= hello.Y {
 		t.Errorf("button label Y=%d should be below text Y=%d", click.Y, hello.Y)
 	}
 
-	// Both must be within the framebuffer.
-	for _, txt := range scene.Texts {
-		if txt.X < 0 || txt.Y < 0 || txt.X >= 800 || txt.Y >= 600 {
-			t.Errorf("text %q at (%d,%d) is outside 800x600 framebuffer", txt.Text, txt.X, txt.Y)
+	for _, g := range scene.Glyphs {
+		if g.X < 0 || g.Y < 0 || g.X >= 800 || g.Y >= 600 {
+			t.Errorf("glyph %q at (%d,%d) outside 800x600", g.Text, g.X, g.Y)
 		}
 	}
-	for _, rect := range scene.Rects {
-		if rect.X < 0 || rect.Y < 0 || rect.X+rect.W > 800 || rect.Y+rect.H > 600 {
-			t.Errorf("rect at (%d,%d) size %dx%d extends outside 800x600 framebuffer", rect.X, rect.Y, rect.W, rect.H)
+	for _, r := range scene.Rects {
+		if r.X < 0 || r.Y < 0 || r.X+r.W > 800 || r.Y+r.H > 600 {
+			t.Errorf("rect at (%d,%d) %dx%d outside 800x600", r.X, r.Y, r.W, r.H)
 		}
 	}
 }
 
 func TestBuildSceneRow(t *testing.T) {
-	scene := BuildScene(Row(
+	scene := buildTestScene(Row(
 		Text("A"),
 		Text("B"),
 	), 800, 600)
 
-	if len(scene.Texts) != 2 {
-		t.Fatalf("Row with 2 texts should produce 2 texts, got %d", len(scene.Texts))
+	if len(scene.Glyphs) != 2 {
+		t.Fatalf("Row with 2 texts should produce 2 glyphs, got %d", len(scene.Glyphs))
 	}
 
-	a := scene.Texts[0]
-	b := scene.Texts[1]
+	a := scene.Glyphs[0]
+	b := scene.Glyphs[1]
 
-	// Same Y (horizontal layout).
 	if a.Y != b.Y {
 		t.Errorf("Row children should share Y: a.Y=%d, b.Y=%d", a.Y, b.Y)
 	}
-	// B must be to the right of A.
 	if b.X <= a.X {
 		t.Errorf("b.X=%d should be > a.X=%d", b.X, a.X)
 	}
 }
 
-func TestMeasureText(t *testing.T) {
-	w, h := measureText("ABC", 1)
-	if w != 3*charWidth*1 {
-		t.Errorf("width = %d, want %d", w, 3*charWidth)
+func TestBuildSceneDefaultSize(t *testing.T) {
+	scene := buildTestScene(Text("X"), 0, 0)
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("expected 1 glyph, got %d", len(scene.Glyphs))
 	}
-	if h != charHeight*1 {
-		t.Errorf("height = %d, want %d", h, charHeight)
-	}
-
-	w2, h2 := measureText("ABC", 3)
-	if w2 != 3*charWidth*3 {
-		t.Errorf("scaled width = %d, want %d", w2, 3*charWidth*3)
-	}
-	if h2 != charHeight*3 {
-		t.Errorf("scaled height = %d, want %d", h2, charHeight*3)
-	}
-
-	w0, h0 := measureText("", 1)
-	if w0 != 0 || h0 != 0 {
-		t.Errorf("empty text should be 0x0, got %dx%d", w0, h0)
+	if scene.Glyphs[0].X != framePadding {
+		t.Errorf("X = %d, want %d", scene.Glyphs[0].X, framePadding)
 	}
 }
 
-func TestBuildSceneDefaultSize(t *testing.T) {
-	// Zero dimensions should fall back to 800x600.
-	scene := BuildScene(Text("X"), 0, 0)
-	if len(scene.Texts) != 1 {
-		t.Fatalf("expected 1 text, got %d", len(scene.Texts))
+func TestWithKey(t *testing.T) {
+	scene := buildTestScene(WithKey("test", Text("KEYED")), 800, 600)
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("WithKey should render child: got %d glyphs", len(scene.Glyphs))
 	}
-	if scene.Texts[0].X != framePadding {
-		t.Errorf("X = %d, want %d (framePadding)", scene.Texts[0].X, framePadding)
+	if scene.Glyphs[0].Text != "KEYED" {
+		t.Errorf("glyph text = %q, want %q", scene.Glyphs[0].Text, "KEYED")
+	}
+}
+
+func TestThemeColorsUsed(t *testing.T) {
+	scene := buildTestScene(Button("X", nil), 800, 600)
+	tokens := theme.Default.Tokens()
+
+	if len(scene.Rects) < 2 {
+		t.Fatal("need at least 2 rects")
+	}
+
+	// Edge should use Outline color.
+	edge := scene.Rects[0]
+	if edge.Color != tokens.Colors.Outline {
+		t.Errorf("edge color = %v, want Outline %v", edge.Color, tokens.Colors.Outline)
+	}
+
+	// Fill should use Primary color.
+	fill := scene.Rects[1]
+	if fill.Color != tokens.Colors.Primary {
+		t.Errorf("fill color = %v, want Primary %v", fill.Color, tokens.Colors.Primary)
+	}
+
+	// Label should use OnPrimary color.
+	if len(scene.Glyphs) < 1 {
+		t.Fatal("need at least 1 glyph")
+	}
+	label := scene.Glyphs[0]
+	if label.Color != tokens.Colors.OnPrimary {
+		t.Errorf("label color = %v, want OnPrimary %v", label.Color, tokens.Colors.OnPrimary)
 	}
 }

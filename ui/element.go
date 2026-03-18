@@ -1,14 +1,52 @@
-// Package ui defines the Element types for the virtual tree.
+// Package ui defines the Widget system and Element types for the
+// virtual tree (RFC §4).
 package ui
 
-import "strings"
+import (
+	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/theme"
+)
 
-// Element is the base interface for all virtual tree nodes (RFC §4.3).
+// ── Widget System (RFC §4) ───────────────────────────────────────
+
+// WidgetState is an open interface — any type qualifies (RFC §4.1).
+type WidgetState interface{}
+
+// UID identifies a widget instance across frames.
+type UID uint64
+
+// Widget is the core interface for stateful, renderable components
+// (RFC §4.2).
+type Widget interface {
+	// Render returns an Element tree and (optionally updated) state.
+	// state is nil on the first call.
+	Render(ctx RenderCtx, state WidgetState) (Element, WidgetState)
+}
+
+// RenderCtx is the context passed to Widget.Render (RFC §4.2).
+type RenderCtx struct {
+	UID    UID
+	Theme  theme.Theme
+	Send   func(any) // local Send bound to this UID
+}
+
+// AdoptState is a generic helper that type-asserts the raw state or
+// returns a zero-value pointer for the first render (RFC §4.2).
+func AdoptState[S WidgetState](raw WidgetState) *S {
+	if s, ok := raw.(*S); ok {
+		return s
+	}
+	return new(S)
+}
+
+// ── Element Types (RFC §4.3) ─────────────────────────────────────
+
+// Element is the base interface for all virtual-tree nodes.
 type Element interface {
 	isElement()
 }
 
-// LayoutAxis controls how a box arranges its children.
+// LayoutAxis controls how a Box arranges its children.
 type LayoutAxis int
 
 const (
@@ -16,59 +54,14 @@ const (
 	AxisRow
 )
 
-// Color is a simple RGBA color used by the M2 software-style scene graph.
-type Color struct {
-	R uint8
-	G uint8
-	B uint8
-	A uint8
-}
-
-// DrawRect is a filled rectangle in framebuffer coordinates.
-type DrawRect struct {
-	X     int
-	Y     int
-	W     int
-	H     int
-	Color Color
-}
-
-// DrawText describes a text draw call in framebuffer coordinates.
-type DrawText struct {
-	X     int
-	Y     int
-	Scale int
-	Text  string
-	Color Color
-}
-
-// Scene is the fully laid-out draw list for a frame.
-type Scene struct {
-	Rects []DrawRect
-	Texts []DrawText
-}
-
-// Palette for the M2 hello-world renderer.
-var (
-	BackgroundColor = Color{R: 18, G: 18, B: 20, A: 255}
-	SurfaceColor    = Color{R: 28, G: 28, B: 32, A: 255}
-	ButtonColor     = Color{R: 52, G: 120, B: 246, A: 255}
-	ButtonEdgeColor = Color{R: 126, G: 177, B: 255, A: 255}
-	TextColor       = Color{R: 245, G: 247, B: 250, A: 255}
-)
-
 // Empty returns an Element that renders nothing.
-func Empty() Element {
-	return emptyElement{}
-}
+func Empty() Element { return emptyElement{} }
 
 // Text creates a text element.
-func Text(content string) Element {
-	return textElement{Content: content}
-}
+func Text(content string) Element { return textElement{Content: content} }
 
-// Button creates a simple button element.
-// The callback is accepted for API-shape compatibility with later milestones.
+// Button creates a button element.
+// The callback is wired in later milestones (M3+).
 func Button(label string, onClick func()) Element {
 	return buttonElement{Label: label, OnClick: onClick}
 }
@@ -83,13 +76,19 @@ func Row(children ...Element) Element {
 	return boxElement{Axis: AxisRow, Children: children}
 }
 
+// WithKey wraps an element with an explicit key for stable UIDs
+// across re-parenting (RFC §4.4).
+func WithKey(key string, el Element) Element {
+	return keyedElement{Key: key, Child: el}
+}
+
+// ── Concrete element structs ─────────────────────────────────────
+
 type emptyElement struct{}
 
 func (emptyElement) isElement() {}
 
-type textElement struct {
-	Content string
-}
+type textElement struct{ Content string }
 
 func (textElement) isElement() {}
 
@@ -107,27 +106,32 @@ type boxElement struct {
 
 func (boxElement) isElement() {}
 
-type bounds struct {
-	X int
-	Y int
-	W int
-	H int
+type keyedElement struct {
+	Key   string
+	Child Element
 }
+
+func (keyedElement) isElement() {}
+
+// ── Layout & Scene Building ──────────────────────────────────────
+// BuildScene converts an Element tree into draw commands via the
+// Canvas interface (RFC §6).
+
+type bounds struct{ X, Y, W, H int }
 
 const (
 	framePadding   = 24
 	columnGap      = 16
 	rowGap         = 12
-	textScale      = 3
-	charWidth      = 6
-	charHeight     = 7
 	buttonPadX     = 18
 	buttonPadY     = 12
 	buttonMinWidth = 180
+	buttonBorder   = 2
 )
 
-// BuildScene converts an Element tree into a simple scene for the M2 renderer.
-func BuildScene(root Element, width, height int) Scene {
+// BuildScene lays out the element tree and paints it to the canvas.
+// It returns the accumulated Scene.
+func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height int) draw.Scene {
 	if width <= 0 {
 		width = 800
 	}
@@ -135,51 +139,65 @@ func BuildScene(root Element, width, height int) Scene {
 		height = 600
 	}
 
-	scene := Scene{}
-	layoutElement(root, bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}, &scene)
-	return scene
+	tokens := th.Tokens()
+	area := bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
+	layoutElement(root, area, canvas, tokens)
+
+	// The canvas is a SceneCanvas — retrieve its scene.
+	type scener interface{ Scene() draw.Scene }
+	if sc, ok := canvas.(scener); ok {
+		return sc.Scene()
+	}
+	return draw.Scene{}
 }
 
-func layoutElement(el Element, area bounds, scene *Scene) bounds {
+func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
 	switch node := el.(type) {
-	case nil:
+	case nil, emptyElement:
 		return bounds{X: area.X, Y: area.Y}
-	case emptyElement:
-		return bounds{X: area.X, Y: area.Y}
+
+	case keyedElement:
+		return layoutElement(node.Child, area, canvas, tokens)
+
 	case textElement:
-		w, h := measureText(node.Content, textScale)
-		scene.Texts = append(scene.Texts, DrawText{
-			X:     area.X,
-			Y:     area.Y,
-			Scale: textScale,
-			Text:  node.Content,
-			Color: TextColor,
-		})
+		style := tokens.Typography.BodyMedium
+		metrics := canvas.MeasureText(node.Content, style)
+		w := int(metrics.Width)
+		h := int(metrics.Ascent)
+		canvas.DrawText(node.Content, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.OnSurface)
 		return bounds{X: area.X, Y: area.Y, W: w, H: h}
+
 	case buttonElement:
-		labelW, labelH := measureText(node.Label, textScale)
+		style := tokens.Typography.LabelSmall
+		metrics := canvas.MeasureText(node.Label, style)
+		labelW := int(metrics.Width)
+		labelH := int(metrics.Ascent)
 		w := max(buttonMinWidth, labelW+(buttonPadX*2))
 		h := labelH + (buttonPadY * 2)
-		scene.Rects = append(scene.Rects,
-			DrawRect{X: area.X, Y: area.Y, W: w, H: h, Color: ButtonEdgeColor},
-			DrawRect{X: area.X + 2, Y: area.Y + 2, W: max(w-4, 0), H: max(h-4, 0), Color: ButtonColor},
-		)
-		scene.Texts = append(scene.Texts, DrawText{
-			X:     area.X + (w-labelW)/2,
-			Y:     area.Y + (h-labelH)/2,
-			Scale: textScale,
-			Text:  node.Label,
-			Color: TextColor,
-		})
+
+		// Edge (border)
+		canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			draw.SolidPaint(tokens.Colors.Outline))
+		// Fill
+		canvas.FillRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
+			float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
+			draw.SolidPaint(tokens.Colors.Primary))
+		// Label, centered
+		canvas.DrawText(node.Label,
+			draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
+			style, tokens.Colors.OnPrimary)
+
 		return bounds{X: area.X, Y: area.Y, W: w, H: h}
+
 	case boxElement:
-		return layoutBox(node, area, scene)
+		return layoutBox(node, area, canvas, tokens)
+
 	default:
 		return bounds{X: area.X, Y: area.Y}
 	}
 }
 
-func layoutBox(node boxElement, area bounds, scene *Scene) bounds {
+func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
 	cursorX := area.X
 	cursorY := area.Y
 	maxW := 0
@@ -187,7 +205,7 @@ func layoutBox(node boxElement, area bounds, scene *Scene) bounds {
 	count := 0
 
 	for _, child := range node.Children {
-		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: area.W, H: area.H}, scene)
+		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: area.W, H: area.H}, canvas, tokens)
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
@@ -206,26 +224,7 @@ func layoutBox(node boxElement, area bounds, scene *Scene) bounds {
 	if count == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
-
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
-}
-
-func measureText(text string, scale int) (int, int) {
-	if scale <= 0 {
-		scale = 1
-	}
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" && text != "" {
-		trimmed = text
-	}
-	length := len([]rune(trimmed))
-	if length == 0 {
-		length = len([]rune(text))
-	}
-	if length == 0 {
-		return 0, 0
-	}
-	return length * charWidth * scale, charHeight * scale
 }
 
 func max(a, b int) int {

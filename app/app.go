@@ -15,6 +15,7 @@ import (
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
 
@@ -51,6 +52,7 @@ type options struct {
 	width           int
 	height          int
 	maxFrameDelta   time.Duration
+	theme           theme.Theme
 	platformFactory func() platform.Platform
 	rendererFactory func() gpu.Renderer
 }
@@ -61,6 +63,7 @@ func defaultOptions() options {
 		width:           800,
 		height:          600,
 		maxFrameDelta:   loop.DefaultMaxFrameDelta,
+		theme:           theme.Default,
 		platformFactory: defaultPlatformFactory,
 		rendererFactory: defaultRendererFactory,
 	}
@@ -85,6 +88,11 @@ func WithSize(w, h int) Option {
 // WithMaxFrameDelta overrides the default dt clamp (RFC §3.3).
 func WithMaxFrameDelta(d time.Duration) Option {
 	return func(o *options) { o.maxFrameDelta = d }
+}
+
+// WithTheme sets the application theme (RFC §5).
+func WithTheme(t theme.Theme) Option {
+	return func(o *options) { o.theme = t }
 }
 
 // WithPlatform overrides the platform backend.

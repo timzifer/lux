@@ -5,6 +5,9 @@ package app
 import (
 	"testing"
 
+	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/internal/render"
+	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
 
@@ -26,7 +29,7 @@ func testView(m testModel) ui.Element {
 	return ui.Empty()
 }
 
-// m2HelloView is the M2 hello world view — must produce visible output.
+// m2HelloView is the M2 hello world view.
 func m2HelloView(m testModel) ui.Element {
 	return ui.Column(
 		ui.Text("HELLO WORLD"),
@@ -35,7 +38,6 @@ func m2HelloView(m testModel) ui.Element {
 }
 
 func TestRunHeadless(t *testing.T) {
-	// In headless mode, Run executes one frame and returns.
 	err := Run(testModel{}, testUpdate, testView,
 		WithTitle("test"),
 		WithSize(320, 240),
@@ -46,14 +48,12 @@ func TestRunHeadless(t *testing.T) {
 }
 
 func TestSendBeforeRun(t *testing.T) {
-	// Send before Run should not panic.
 	Send(incrMsg{})
 	TrySend(incrMsg{})
 }
 
 func TestRunWithMessages(t *testing.T) {
 	var finalCount int
-
 	update := func(m testModel, msg Msg) testModel {
 		switch msg.(type) {
 		case incrMsg:
@@ -63,37 +63,33 @@ func TestRunWithMessages(t *testing.T) {
 		return m
 	}
 
-	// Send a message before Run — it will be picked up in the first frame.
 	err := Run(testModel{Count: 0}, update, testView,
 		WithTitle("msg-test"),
 	)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-
-	// finalCount may be 0 since we can't easily send messages
-	// into the headless run. This test verifies no panics/crashes.
 	_ = finalCount
 }
 
 func TestM2HelloWorldScene(t *testing.T) {
-	// Verify the M2 view produces a non-empty scene with label and button.
-	scene := ui.BuildScene(m2HelloView(testModel{}), 800, 600)
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := ui.BuildScene(m2HelloView(testModel{}), canvas, theme.Default, 800, 600)
 
 	if len(scene.Rects) < 2 {
 		t.Errorf("M2 scene should have at least 2 rects (button edge+fill), got %d", len(scene.Rects))
 	}
-	if len(scene.Texts) < 2 {
-		t.Fatalf("M2 scene should have at least 2 texts (label+button), got %d", len(scene.Texts))
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("M2 scene should have at least 2 glyphs (label+button), got %d", len(scene.Glyphs))
 	}
 
 	foundLabel := false
 	foundButton := false
-	for _, txt := range scene.Texts {
-		if txt.Text == "HELLO WORLD" {
+	for _, g := range scene.Glyphs {
+		if g.Text == "HELLO WORLD" {
 			foundLabel = true
 		}
-		if txt.Text == "CLICK ME" {
+		if g.Text == "CLICK ME" {
 			foundButton = true
 		}
 	}
@@ -106,8 +102,6 @@ func TestM2HelloWorldScene(t *testing.T) {
 }
 
 func TestM2RunHeadlessRendersScene(t *testing.T) {
-	// Verify the full pipeline: Run with the M2 view should not crash
-	// and should execute at least one frame.
 	var frameCount int
 	view := func(m testModel) ui.Element {
 		frameCount++
@@ -121,8 +115,35 @@ func TestM2RunHeadlessRendersScene(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	// view is called once during init + potentially once in OnFrame.
 	if frameCount < 1 {
-		t.Error("view was never called — no frame was rendered")
+		t.Error("view was never called")
+	}
+}
+
+func TestWithThemeOption(t *testing.T) {
+	err := Run(testModel{}, testUpdate, testView,
+		WithTheme(theme.Default),
+		WithTitle("theme-test"),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+}
+
+func TestCanvasInterface(t *testing.T) {
+	// Verify that SceneCanvas implements draw.Canvas.
+	canvas := render.NewSceneCanvas(800, 600)
+	var _ draw.Canvas = canvas
+
+	// Draw some primitives and verify scene output.
+	canvas.FillRect(draw.R(10, 20, 100, 50), draw.SolidPaint(draw.RGBA(255, 0, 0, 255)))
+	canvas.DrawText("TEST", draw.Pt(10, 20), draw.TextStyle{Size: 21}, draw.RGBA(255, 255, 255, 255))
+
+	scene := canvas.Scene()
+	if len(scene.Rects) != 1 {
+		t.Errorf("expected 1 rect, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) != 1 {
+		t.Errorf("expected 1 glyph, got %d", len(scene.Glyphs))
 	}
 }
