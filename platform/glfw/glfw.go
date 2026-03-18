@@ -1,7 +1,7 @@
-//go:build !nogui
+//go:build !nogui && !windows
 
 // Package glfw implements platform.Platform using GLFW.
-// This is the M1 windowing backend, suitable for macOS, Linux, and Windows.
+// This is the M1 windowing backend for macOS and Linux.
 package glfw
 
 import (
