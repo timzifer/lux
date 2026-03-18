@@ -77,7 +77,9 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 		as.SetAtlas(atlas)
 	}
 
-	activeTheme := cfg.theme
+	cachedTheme := theme.NewCachedTheme(cfg.theme)
+	cachedTheme.WarmUp()
+	var activeTheme theme.Theme = cachedTheme
 	bgColor := activeTheme.Tokens().Colors.Surface.Base
 
 	// Tell the renderer about the background color if it supports it.
@@ -116,15 +118,19 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 				// Handle framework-internal messages.
 				switch m := msg.(type) {
 				case SetThemeMsg:
-					activeTheme = m.Theme
+					cachedTheme = theme.NewCachedTheme(m.Theme)
+					cachedTheme.WarmUp()
+					activeTheme = cachedTheme
 					updateBgColor()
 					modelDirty = true
 				case SetDarkModeMsg:
 					if m.Dark {
-						activeTheme = theme.Slate
+						cachedTheme = theme.NewCachedTheme(theme.Slate)
 					} else {
-						activeTheme = theme.SlateLight
+						cachedTheme = theme.NewCachedTheme(theme.SlateLight)
 					}
+					cachedTheme.WarmUp()
+					activeTheme = cachedTheme
 					updateBgColor()
 					modelDirty = true
 

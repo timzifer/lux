@@ -25,7 +25,7 @@ var sectionIDs = []string{
 	"typography", "buttons", "form-controls", "range-progress",
 	"selection", "layout", "rich-text", "virtual-list", "tree",
 	"cards", "tabs", "accordion", "badges-chips", "menus",
-	"shortcuts", "overlays",
+	"shortcuts", "overlays", "canvas-paints",
 }
 
 func sectionLabel(id string) string {
@@ -62,6 +62,8 @@ func sectionLabel(id string) string {
 		return "Shortcuts"
 	case "overlays":
 		return "Overlays"
+	case "canvas-paints":
+		return "Canvas & Paints"
 	default:
 		return id
 	}
@@ -267,6 +269,8 @@ func sectionContent(m Model) ui.Element {
 		return shortcutsSection(m)
 	case "overlays":
 		return overlaysSection(m)
+	case "canvas-paints":
+		return canvasPaintsSection()
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -761,6 +765,82 @@ func overlaysSection(m Model) ui.Element {
 	)
 
 	return ui.Column(children...)
+}
+
+// ── Phase 3 Sections ──────────────────────────────────────────
+
+func canvasPaintsSection() ui.Element {
+	// Demonstrate the new Phase 3 Canvas API and Paint variants.
+	// Since the GPU backend doesn't render these yet, this section
+	// serves as an API showcase and compile-time validation.
+
+	// 1. PathBuilder with ArcTo
+	arcPath := draw.NewPath().
+		MoveTo(draw.Pt(0, 0)).
+		ArcTo(30, 30, 0, false, true, draw.Pt(60, 0)).
+		LineTo(draw.Pt(60, 40)).
+		LineTo(draw.Pt(0, 40)).
+		Close().
+		Build()
+	_ = arcPath // used for FillPath once GPU supports it
+
+	// 2. Gradient paints
+	linearPaint := draw.LinearGradientPaint(
+		draw.Pt(0, 0), draw.Pt(200, 0),
+		draw.GradientStop{Offset: 0, Color: draw.Hex("#3b82f6")},
+		draw.GradientStop{Offset: 1, Color: draw.Hex("#6366f1")},
+	)
+	radialPaint := draw.RadialGradientPaint(
+		draw.Pt(50, 50), 50,
+		draw.GradientStop{Offset: 0, Color: draw.Hex("#ffffff")},
+		draw.GradientStop{Offset: 1, Color: draw.Hex("#09090b")},
+	)
+	_ = linearPaint
+	_ = radialPaint
+
+	// 3. TextLayout
+	_ = draw.TextLayout{
+		Text:      "Centered text layout",
+		Style:     draw.TextStyle{Size: 14, Weight: draw.FontWeightRegular},
+		MaxWidth:  300,
+		Alignment: draw.TextAlignCenter,
+	}
+
+	// 4. LayerOptions
+	_ = draw.LayerOptions{
+		BlendMode: draw.BlendNormal,
+		Opacity:   0.8,
+		CacheHint: true,
+	}
+
+	return ui.Column(
+		sectionHeader("Canvas & Paints (Phase 3)"),
+
+		ui.Text("New Canvas API (GPU stubs — API validation):"),
+		ui.Spacer(4),
+		ui.Text("  PathBuilder.ArcTo — elliptical arc segments"),
+		ui.Text("  PushClipRoundRect / PushClipPath — advanced clipping"),
+		ui.Text("  PushBlur / PopBlur — backdrop blur effects"),
+		ui.Text("  PushLayer / PopLayer — compositing layers"),
+		ui.Text("  PushScale — uniform/non-uniform scaling"),
+		ui.Text("  DrawTextLayout — rich text layout with alignment"),
+		ui.Text("  DrawImageSlice — 9-slice image rendering"),
+		ui.Text("  DrawTexture — external texture surfaces"),
+
+		ui.Spacer(12),
+		ui.Text("Paint Variants:"),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("  LinearGradientPaint: %d stops", 2)),
+		ui.Text(fmt.Sprintf("  RadialGradientPaint: radius=%.0f", float64(50))),
+		ui.Text("  PatternPaint: tiled image fills"),
+
+		ui.Spacer(12),
+		ui.Text("Theme-Lookup-Cache:"),
+		ui.Spacer(4),
+		ui.Text("  CachedTheme wraps Theme with lazy resolution"),
+		ui.Text("  Auto-invalidation on SetThemeMsg / SetDarkModeMsg"),
+		ui.Text("  Warm-up before first frame in app.Run"),
+	)
 }
 
 // ── Main ─────────────────────────────────────────────────────────

@@ -69,6 +69,25 @@ func (b *PathBuilder) CubicTo(c1, c2, end Point) *PathBuilder {
 	return b
 }
 
+// ArcTo appends an elliptical arc segment (SVG-style arc parameters).
+// rx, ry are the ellipse radii, xRot is the X-axis rotation in degrees,
+// large selects the large arc, sweep selects clockwise direction,
+// and end is the arc endpoint.
+func (b *PathBuilder) ArcTo(rx, ry, xRot float32, large, sweep bool, end Point) *PathBuilder {
+	b.cmds = append(b.cmds, pathCmd{
+		kind:   pathCmdArcTo,
+		points: [3]Point{end},
+		hasArc: true,
+		arcDesc: arcDesc{
+			R:     Size{W: rx, H: ry},
+			XRot:  xRot,
+			Large: large,
+			Sweep: sweep,
+		},
+	})
+	return b
+}
+
 func (b *PathBuilder) Close() *PathBuilder {
 	b.cmds = append(b.cmds, pathCmd{kind: pathCmdClose})
 	return b
