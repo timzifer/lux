@@ -33,7 +33,7 @@
 | §6.4 VirtualList | ✅ Integriert | `ui/virtual_list.go` |
 | §7 Platform-Abstraktion | 🔶 Teilweise | Interface + GLFW-Backend; Wayland/X11/DRM/Win32/Cocoa fehlen |
 | §8 Externe Surfaces | ⏳ Wartend | |
-| §11 Accessibility (A11y) | ⏳ Wartend | Kein Code vorhanden |
+| §11 Accessibility (A11y) | ⏳ Wartend | Kein Code vorhanden; §11.3 `AccessNode.Lang` (i18n), §11.7 FocusTrap spezifiziert |
 | §12 Inspector & Debugging | ⏳ Wartend | |
 
 ---
@@ -1521,6 +1521,9 @@ type AccessNode struct {
     Label       string        // Primärer Name (aria-label Äquivalent)
     Description string        // Längere Beschreibung (aria-describedby)
     Value       string        // Aktueller Wert (für Sliders, Inputs etc.)
+    Lang        language.Tag  // BCP 47 Sprach-Tag (z.B. "de", "ar-EG")
+                              // Screenreader wechselt Stimme/Aussprache pro Node.
+                              // Leer = erbt von Parent-Node oder App-Locale.
     States      AccessStates  // Bitfield: Focused, Checked, Disabled, ...
     Actions     []AccessAction
     // Relation zu anderen Nodes (LabelledBy, DescribedBy, Controls, ...)
@@ -1619,7 +1622,35 @@ Auf DRM/KMS (kein Display-Server) läuft AT-SPI2 trotzdem — über den System-D
 
 Das bedeutet: Industrie-HMI auf Bare Metal kann vollständig barrierefrei sein. Das ist ein Alleinstellungsmerkmal gegenüber jedem nativen Widget-Toolkit, das auf Display-Server-A11y-Integration angewiesen ist.
 
-### 11.7 Live-Regions & Dynamische Updates
+### 11.7 Focus-Trapping & Modale Dialoge
+
+Korrekte Fokus-Verwaltung bei dynamischen Inhalten ist eine A11y-Pflicht, nicht Komfort:
+
+```go
+// FocusTrap fängt Tab-Navigation innerhalb eines Teilbaums ein.
+// Wird automatisch aktiviert wenn ein Dialog mit Modal=true geöffnet wird.
+type FocusTrap struct {
+    // RestoreFocus: Wenn der Trap aufgelöst wird (Dialog schließt),
+    // kehrt der Fokus zum Widget zurück, das ihn vorher hatte.
+    RestoreFocus bool  // Default: true
+
+    // InitialFocus: UID des Widgets das beim Öffnen des Traps
+    // den initialen Fokus erhalten soll.
+    // Leer = erstes fokussierbares Widget im Trap.
+    InitialFocus UID
+}
+```
+
+**Regeln:**
+- **Modal öffnet** → Fokus wandert in den Dialog (`InitialFocus` oder erstes fokussierbares Widget)
+- **Tab am letzten Widget** → Fokus springt zum ersten Widget im Trap (nicht aus dem Dialog heraus)
+- **Shift+Tab am ersten Widget** → Fokus springt zum letzten Widget im Trap
+- **Escape** → Dialog schließt, Fokus kehrt zum auslösenden Widget zurück (`RestoreFocus`)
+- **Screenreader:** Der Inhalt außerhalb des Traps wird als `aria-hidden` markiert (bzw. aus dem AccessTree entfernt)
+
+Nicht-modale Dialoge (z.B. Tooltips, Popovers) verwenden **keinen** FocusTrap — dort bleibt die normale Tab-Navigation aktiv.
+
+### 11.8 Live-Regions & Dynamische Updates
 
 Für dynamische Inhalte (Statusmeldungen, Benachrichtigungen) gibt es `AccessLiveRegion`:
 
@@ -1635,7 +1666,7 @@ const (
 
 Widgets markieren ihren Content-Bereich mit `LivePolite` oder `LiveAssertive`. Der Framework sendet `NotifyLiveRegion` an die Bridge wenn sich der `Value` oder `Label` eines solchen Nodes ändert.
 
-### 11.8 Testing
+### 11.9 Testing
 
 A11y-Korrektheit ist testbar ohne Screenreader:
 

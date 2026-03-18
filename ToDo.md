@@ -184,10 +184,50 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [ ] Mixed-Direction-Text korrekt verarbeiten
 - **Abhängig von:** 4.1, 4.2
 
-### 4.5 Inline-Widgets in RichText (RFC-003 §5.5)
+### 4.5 Unicode Line-Breaking (RFC-003 §3.6)
+- [ ] `LineBreaker`-Interface mit UAX #14-konformer Implementierung
+- [ ] Thai-/CJK-kompatible Umbruchregeln (nicht nur Leerzeichen-basiert)
+- [ ] Integration in TextLayout-Pipeline (RFC-003 §5.3)
+- **Abhängig von:** 4.1
+
+### 4.6 Grapheme-Cluster-Navigation (RFC-003 §3.7)
+- [ ] `rivo/uniseg`-Integration für Grapheme-Cluster-Segmentierung
+- [ ] Cursor-Bewegung auf Grapheme-Cluster-Grenzen (nicht Rune-Indizes)
+- [ ] Backspace löscht Grapheme-Cluster (Emoji, kombinierte Zeichen)
+- [ ] Doppelklick-Wortauswahl auf UAX#29 Word Boundaries
+- **Abhängig von:** nichts
+
+### 4.7 Inline-Widgets in RichText (RFC-003 §5.5)
 - [ ] `InlineWidget` Typ (Widget im Textfluss)
 - [ ] `ParagraphContent` Interface (`TextSpan | InlineWidget`)
 - **Abhängig von:** 4.1
+
+---
+
+## Phase 4b — i18n & Layout-Spiegelung
+
+### 4b.1 RTL-Layout-Spiegelung (RFC-002 §4.6)
+- [ ] `Insets` auf `Start`/`End` statt `Left`/`Right` umstellen
+- [ ] `LayoutDirection` (LTR/RTL) in `LayoutCtx` propagieren
+- [ ] `FlexRow` bei RTL automatisch spiegeln
+- [ ] `JustifyStart`/`AlignStart` bei RTL korrekt auflösen
+- [ ] Convenience-Konstruktoren: `InlineInsets`, `BlockInsets`
+- **Abhängig von:** nichts (API-Design-Entscheidung — je früher desto besser)
+- **Hinweis:** Nachrüsten ist extrem teuer — betrifft die gesamte Layout-API
+
+### 4b.2 Locale-Propagation (RFC-003 §3.8)
+- [ ] `App.Locale` Feld (`language.Tag`, BCP 47)
+- [ ] `app.WithLocale()` Option + `SetLocaleMsg` für Laufzeit-Wechsel
+- [ ] Locale → `LayoutDirection` Ableitung (Arabisch/Hebräisch → RTL)
+- [ ] Layout-Invalidierung bei Locale-Wechsel
+- **Abhängig von:** 4b.1
+
+### 4b.3 IME Compose-Window (RFC-002 §2.2)
+- [ ] `IMEComposeMsg` und `IMECommitMsg` Typen
+- [ ] `Platform.SetIMECursorRect()` für Kandidaten-Fenster-Positionierung
+- [ ] GLFW `glfwSetPreeditCallback` Integration
+- [ ] TextField/RichTextEditor: Kompositions-Text visuell unterscheidbar rendern
+- **Abhängig von:** 0.1 (Input-System)
 
 ---
 
@@ -229,12 +269,20 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ### 6.2 Accessibility (RFC-001 §11)
 - [ ] `AccessibleWidget`-Interface
-- [ ] `AccessNode`, `AccessRole`, `AccessStates` Typen
+- [ ] `AccessNode` mit `Lang`-Feld (`language.Tag` für Screenreader-Sprachenwechsel)
+- [ ] `AccessRole`, `AccessStates` Typen
 - [ ] `AccessTree`-Konstruktion aus VTree
-- [ ] AT-SPI2 Bridge (Linux)
-- [ ] UIA Bridge (Windows)
-- [ ] NSAccessibility Bridge (macOS)
-- **Abhängig von:** 0.2, 0.3 (Focus-Management für A11y nötig)
+- [ ] `FocusTrap` für modale Dialoge (RFC-001 §11.7)
+  - [ ] Fokus-Einschluss bei Modal-Öffnung (Tab/Shift+Tab zyklisch im Dialog)
+  - [ ] Fokus-Rückkehr bei Modal-Schließung (`RestoreFocus`)
+  - [ ] Inhalt außerhalb des Traps aus AccessTree ausblenden
+- [ ] Vollständige Keyboard-Navigation (Tab, Enter, Escape, Pfeiltasten) als Voraussetzung
+- [ ] Live-Regions (`LivePolite`, `LiveAssertive`) für dynamische Statusmeldungen
+- [ ] AT-SPI2 Bridge (Linux) — via D-Bus (`godbus`), kein CGo
+- [ ] UIA Bridge (Windows) — via CGo/COM
+- [ ] NSAccessibility Bridge (macOS) — via CGo/ObjC
+- [ ] `renderToAccessTree()` Test-Helper für A11y-Unit-Tests in CI
+- **Abhängig von:** 0.2, 0.3 (Focus-Management), 4b.2 (Locale für `Lang`-Feld)
 
 ### 6.3 State Persistence (RFC-001 §3.4)
 - [ ] `app.WithPersistence(PersistenceConfig[Model])` Option

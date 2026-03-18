@@ -27,7 +27,10 @@
 | §3.3 Shaper-Interface | ⏳ Wartend | |
 | §3.4 Font-Loading & Fallback-Chain | 🔶 Teilweise | `fonts` Package mit Embedded-Fonts; kein vollständiges FontFamily/Fallback |
 | §3.5 BiDi | ⏳ Wartend | |
-| §3.6 Package-Name | ✅ Integriert | `github.com/timzifer/lux` |
+| §3.6 Unicode Line-Breaking (UAX #14) | ⏳ Wartend | |
+| §3.7 Grapheme-Cluster & Cursor-Navigation | ⏳ Wartend | |
+| §3.8 i18n & l10n | ⏳ Wartend | Locale-Propagation, RTL-Layout (→ RFC-002 §4.6) |
+| §3.9 Package-Name | ✅ Integriert | `github.com/timzifer/lux` |
 | §4 Widget-Katalog | | |
 | §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |
 | §4.1 Tier 2 — Formulare | ✅ Integriert | TextField, Checkbox, Radio, Toggle, Slider, ProgressBar, Select |
@@ -655,7 +658,110 @@ func BidiParagraph(text string, baseDir TextDirection) []ShapingRun
 
 Mixed-Direction-Text (Arabisch mit eingebetteten Zahlen oder lateinischen Begriffen) wird korrekt verarbeitet — Bidi-Embedding-Levels, Mirroring-Characters, Neutral-Characters. Das ist keine Best-Effort-Implementierung sondern UAX#9-Konformität.
 
-### 3.6 Package-Name
+### 3.6 Unicode Line-Breaking (UAX #14)
+
+Zeilenumbrüche sind nicht trivial — am Leerzeichen brechen reicht nur für Latin-Text:
+
+- **Thai** hat keine Leerzeichen zwischen Wörtern — Line-Breaking erfordert Wörterbuch-basierte Segmentierung
+- **CJK** bricht an fast jedem Zeichen, aber nicht vor bestimmten Satzzeichen (z.B. Klammern, Punktuation)
+- **Bindestrich-Trennung** folgt sprachspezifischen Regeln
+
+```go
+// LineBreaker segmentiert Text in umbrechbare Einheiten gemäß UAX #14.
+// Implementierung: rivo/uniseg oder eigene UAX#14-Implementierung auf Basis
+// von golang.org/x/text/unicode/segment (wenn verfügbar).
+type LineBreaker interface {
+    // Breaks gibt die erlaubten Umbruchpositionen im Text zurück.
+    // Jeder Break hat einen Typ: Mandatory (Zeilenende), Opportunity (darf umbrechen),
+    // oder NoBreak (darf hier nicht umbrechen).
+    Breaks(text string) []LineBreak
+}
+
+type LineBreak struct {
+    Offset int           // Byte-Offset im Text
+    Kind   LineBreakKind // Mandatory, Opportunity
+}
+```
+
+Die TextLayout-Pipeline (§5.3) nutzt den LineBreaker für Zeilenumbruch. Ohne UAX#14-Konformität ist mehrzeiliger Text in nicht-lateinischen Schriften kaputt.
+
+### 3.7 Grapheme-Cluster & Cursor-Navigation
+
+Ein sichtbares "Zeichen" ist nicht immer eine Rune. Go-Strings sind UTF-8 und `[]rune` zählt Unicode-Codepoints — aber weder Bytes noch Runes entsprechen dem, was ein Benutzer als Zeichen wahrnimmt:
+
+| Sichtbar | Runes | Grapheme-Cluster |
+|----------|-------|------------------|
+| é | 1 oder 2 (precomposed oder e + ◌́) | 1 |
+| 👨‍👩‍👧 | 5 (Person + ZWJ + Person + ZWJ + Person) | 1 |
+| 🇩🇪 | 2 (Regional Indicator D + E) | 1 |
+
+```go
+// Grapheme-Cluster-Segmentierung via rivo/uniseg — pure Go, UAX#29-konform.
+// Wird verwendet für:
+//   - Cursor-Bewegung: ←/→ springt über einen Grapheme-Cluster, nicht eine Rune
+//   - Backspace: löscht einen Grapheme-Cluster
+//   - Textauswahl: Doppelklick markiert Wort-Grenzen (UAX#29 Word Boundaries)
+//   - Text-Messung: Cursor-Positionen im TextLayout
+import "github.com/rivo/uniseg"
+```
+
+**Regel:** Jede Cursor-Operation im Framework arbeitet auf Grapheme-Cluster-Grenzen, nie auf Byte- oder Rune-Indizes. Das betrifft `TextField`, `RichTextEditor` und die `TextLayout`-Pipeline.
+
+### 3.8 Internationalisierung (i18n) & Lokalisierung (l10n)
+
+Das Framework liefert die **Primitiven** für i18n — die Lokalisierung von App-Strings ist Sache der Anwendung.
+
+#### Was das Framework bereitstellt
+
+| Primitiv | Implementierung | Wo spezifiziert |
+|----------|----------------|-----------------|
+| RTL-Layout-Spiegelung | `LayoutDirection` im `LayoutCtx` | RFC-002 §4.6 |
+| BiDi-Text | `BidiParagraph()` | §3.5 |
+| Complex Script Shaping | `GoTextShaper` | §3.2, §3.3 |
+| Unicode Line-Breaking | `LineBreaker` | §3.6 |
+| Grapheme-Cluster-Navigation | `rivo/uniseg` | §3.7 |
+| IME-Support | `IMEComposeMsg` | RFC-002 §2.2 |
+| Locale-Propagation | `App.Locale` → `LayoutCtx.Direction` | RFC-002 §4.6 |
+| A11y Sprach-Tag | `AccessNode.Lang` | RFC-001 §11.3 |
+
+#### Was die Anwendung selbst macht (Framework-agnostisch)
+
+**Locale-aware Formatierung** via `golang.org/x/text/message`:
+
+```go
+import "golang.org/x/text/message"
+
+p := message.NewPrinter(language.German)
+label := p.Sprintf("%d Dateien", count)
+// → "1.234 Dateien" (deutsches Tausender-Trennzeichen)
+
+price := p.Sprintf("%.2f €", amount)
+// → "12,99 €" (deutsches Dezimalkomma)
+```
+
+**String-Kataloge** via `nicksnyder/go-i18n` oder ähnliche Libraries:
+
+```
+messages/
+  en.toml    # greeting = "Hello, {name}"
+  de.toml    # greeting = "Hallo, {name}"
+  ar.toml    # greeting = "مرحبا، {name}"
+```
+
+Das Framework erzwingt kein bestimmtes i18n-Pattern — aber es liefert ein `App.Locale`-Feld (BCP 47 `language.Tag`), das allen Primitiven zugrunde liegt. Widgets können darauf zugreifen um richtungsabhängige Entscheidungen zu treffen.
+
+#### App-Locale setzen
+
+```go
+app.Run(model, update, view,
+    app.WithLocale(language.German),   // Explizit
+    // oder: app.WithLocale(language.Und) → aus OS-Locale ableiten (Default)
+)
+```
+
+Locale-Wechsel zur Laufzeit via `SetLocaleMsg` — triggert Layout-Invalidierung (weil sich die Richtung ändern kann) und AccessTree-Update (weil sich `Lang` ändert).
+
+### 3.9 Package-Name
 
 Der Root-Name ist eine öffentliche API-Entscheidung die für die Lebensdauer des Projekts gilt.
 

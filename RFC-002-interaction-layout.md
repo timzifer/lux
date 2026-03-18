@@ -28,6 +28,7 @@
 | §2.2 KeyMsg, MouseMsg, ScrollMsg | ✅ Integriert | Vereinfachte Typen (string Key, keine ModifierSet-Bitfield) |
 | §2.2 TouchMsg | ⏳ Wartend | |
 | §2.2 TextInputMsg → CharMsg | ✅ Integriert | Als `CharMsg` statt `TextInputMsg` |
+| §2.2 IME Compose-Window | ⏳ Wartend | `IMEComposeMsg`, `SetIMECursorRect` |
 | §2.3 Focus-Management | 🔶 Teilweise | `FocusState` existiert, aber kein Focusable-Interface, kein Tab-Order |
 | §2.3 FocusGainedMsg/FocusLostMsg | ⏳ Wartend | |
 | §2.4 Hit-Testing | ✅ Integriert | `internal/hit/hit.go` |
@@ -44,7 +45,9 @@
 | §4.5 Stack | ✅ Integriert | |
 | §4.5 Padding/SizedBox/Expanded | ✅ Integriert | |
 | §4.3 Layout-Interface (Custom Layouts) | ⏳ Wartend | |
-| §4.8 Layout-Cache | ⏳ Wartend | |
+| §4.6 RTL-Layout-Spiegelung (i18n) | ⏳ Wartend | `Start`/`End` statt `Left`/`Right`, `LayoutDirection` |
+| §4.9 Layout-Cache | ⏳ Wartend | |
+| §4.10 Insets-Typ (Start/End) | ⏳ Wartend | Logische Richtungen statt physische |
 | §5 Datenbasierte Widgets | 🔶 Teilweise | |
 | §5.2 Tree-Widget | ✅ Integriert | `ui/tree.go` mit Expand/Collapse, Animation, Selection |
 | §5.3 Overlay-System | ⏳ Wartend | |
@@ -507,6 +510,33 @@ type TextInputMsg struct {
 ```
 
 **`KeyMsg` vs. `TextInputMsg`:** Keyboard-Shortcuts nutzen `KeyMsg` (logischer Key + Modifier). Texteingabe nutzt `TextInputMsg` (post-IME, korrekte Unicode-Komposition für CJK, Akzente etc.). Beides zu vermischen ist ein klassischer Fehler — das Framework macht die Trennung explizit.
+
+#### IME Compose-Window
+
+Für CJK-Eingabe (Chinesisch, Japanisch, Koreanisch) und andere Kompositions-Methoden muss das Framework ein IME Compose-Fenster unterstützen. Das ist ein natives OS-Fenster, das Kandidaten anzeigt und vom Benutzer gesteuert wird.
+
+```go
+// IMEComposeMsg wird während einer aktiven IME-Komposition gesendet.
+// Das Widget zeigt den unfertigen Text inline an (unterstrichen).
+type IMEComposeMsg struct {
+    // Text ist der aktuelle Kompositions-Text (z.B. "にほ" bevor "日本" bestätigt wird).
+    Text string
+    // Cursor ist die Position innerhalb des Kompositions-Texts.
+    Cursor int
+    // Selection markiert den aktuell ausgewählten Kandidaten-Bereich.
+    SelectionStart, SelectionEnd int
+}
+
+// IMECommitMsg wird gesendet wenn die IME-Komposition abgeschlossen ist.
+// Identisch mit TextInputMsg — expliziter Typ für Klarheit im Widget-Code.
+type IMECommitMsg = TextInputMsg
+```
+
+**Plattform-Pflichten:**
+- Das Framework muss dem OS die **Cursor-Position in Bildschirmkoordinaten** mitteilen, damit das Kandidaten-Fenster korrekt positioniert wird (`Platform.SetIMECursorRect(rect Rect)`)
+- `IMEComposeMsg` löst **keinen** `TextInputMsg` aus — erst `IMECommitMsg` nach Bestätigung
+- Widgets die IME unterstützen (TextField, RichTextEditor) müssen Kompositions-Text visuell unterscheidbar rendern (typisch: Unterstreichung)
+- Pro Plattform: GLFW `glfwSetPreeditCallback` (oder native API auf Cocoa/Win32/IBus)
 
 #### Mouse
 
@@ -1396,7 +1426,67 @@ type Expanded struct {
 // oder Flex/AlignStretch sauber gelöst. Ein zweiter Mess-Pass ist nie nötig.
 ```
 
-### 4.6 Spacing-Tokens
+### 4.6 RTL-Layout-Spiegelung (i18n)
+
+Für RTL-Sprachen (Arabisch, Hebräisch, Farsi) muss das Layout-System die horizontale Richtung automatisch spiegeln. Das ist eine **API-Design-Entscheidung die jetzt getroffen werden muss** — Nachrüsten ist extrem teuer, weil es die gesamte Layout-API betrifft.
+
+#### Prinzip: `Start`/`End` statt `Left`/`Right`
+
+Die gesamte Layout-API verwendet **logische Richtungen** statt physischer:
+
+```go
+// Insets verwendet Start/End statt Left/Right.
+// Start = links bei LTR, rechts bei RTL.
+type Insets struct {
+    Top    float32
+    End    float32
+    Bottom float32
+    Start  float32
+}
+
+// Convenience-Konstruktoren:
+func InsetStart(v float32) Insets     // nur Start-Padding
+func InsetEnd(v float32) Insets       // nur End-Padding
+func InsetSymmetric(h, v float32) Insets  // Start+End = h, Top+Bottom = v
+func UniformInsets(v float32) Insets   // alle vier gleich
+```
+
+**Was automatisch gespiegelt wird (bei RTL-Locale):**
+- `FlexRow` → Kinder fließen rechts-nach-links
+- `JustifyStart` → rechts statt links
+- `AlignStart` → rechts statt links
+- `Insets.Start` → rechte Seite
+- Icons neben Text (z.B. Pfeil in Button) → gespiegelt
+
+**Was NICHT gespiegelt wird:**
+- Fortschrittsbalken (immer links-nach-rechts)
+- Telefonnummern, Timestamps
+- Medien-Controls (Play/Pause-Buttons)
+- `FlexColumn` (vertikale Achse ist richtungsneutral)
+- Explizit physische Positionierung via `Stack` mit `Offset`
+
+#### Locale-Propagation
+
+```go
+// Die Layout-Richtung wird aus der App-Locale abgeleitet
+// und über den LayoutCtx propagiert.
+type LayoutCtx struct {
+    Constraints Constraints
+    Direction   LayoutDirection  // LTR oder RTL, aus Locale abgeleitet
+    Theme       Theme
+    // ...
+}
+
+type LayoutDirection uint8
+const (
+    LayoutLTR LayoutDirection = iota
+    LayoutRTL
+)
+```
+
+Widgets die physische Richtungen brauchen, können `ctx.Direction` abfragen. Alle eingebauten Layouts respektieren `Direction` automatisch.
+
+### 4.7 Spacing-Tokens
 
 Abstände kommen aus dem Theme — kein Magic-Number-Streusel im Widget-Code:
 
@@ -1428,7 +1518,7 @@ ui.Padding{
 }
 ```
 
-### 4.7 Custom Layout
+### 4.8 Custom Layout
 
 Eigene Layout-Algorithmen implementieren das `Layout`-Interface:
 
@@ -1464,7 +1554,7 @@ func (w WrapLayout) LayoutChildren(ctx LayoutCtx, children []Widget) Size {
 
 Das Framework muss kein Widget kennen das `Layout` implementiert — jeder Drittanbieter kann eigene Layout-Container bauen.
 
-### 4.8 Layout-Cache & Invalidierung
+### 4.9 Layout-Cache & Invalidierung
 
 Layout ist teuer verglichen mit Paint. Das Framework cachet Layout-Ergebnisse auf Sub-Tree-Ebene:
 
@@ -1487,17 +1577,19 @@ type layoutCache struct {
 
 Das ist kein Zufall: das API macht es unmöglich einen Bottom-up-Mess-Pass zu bauen. `LayoutCtx.Measure` nimmt nur `child Widget` als Parameter — kein Zugriff auf Parent oder Siblings.
 
-### 4.9 Insets-Typ
+### 4.10 Insets-Typ
 
 ```go
+// Insets verwendet logische Richtungen (Start/End) statt physische (Left/Right).
+// Start = links bei LTR, rechts bei RTL. Siehe §4.6 RTL-Layout-Spiegelung.
 type Insets struct {
-    Top, Right, Bottom, Left float32  // dp
+    Top, End, Bottom, Start float32  // dp
 }
 
 func UniformInsets(all float32) Insets
 func SymmetricInsets(horizontal, vertical float32) Insets
-func HorizontalInsets(left, right float32) Insets
-func VerticalInsets(top, bottom float32) Insets
+func InlineInsets(start, end float32) Insets    // Start/End (horizontale Achse, richtungsabhängig)
+func BlockInsets(top, bottom float32) Insets     // Top/Bottom (vertikale Achse, richtungsneutral)
 ```
 
 ---
