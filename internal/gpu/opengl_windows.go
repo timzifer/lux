@@ -105,6 +105,20 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	for _, tg := range scene.TexturedGlyphs {
 		r.drawTexturedGlyph(tg)
 	}
+	// Overlay pass
+	for _, rect := range scene.OverlayRects {
+		if rect.Radius > 0 {
+			r.fillRoundRect(rect.X, rect.Y, rect.W, rect.H, rect.Radius, rect.Color)
+		} else {
+			r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
+		}
+	}
+	for _, glyph := range scene.OverlayGlyphs {
+		r.drawGlyph(glyph)
+	}
+	for _, tg := range scene.OverlayTexturedGlyphs {
+		r.drawTexturedGlyph(tg)
+	}
 }
 
 func (r *OpenGLRenderer) EndFrame() {

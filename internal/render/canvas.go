@@ -15,13 +15,19 @@ import (
 // SceneCanvas implements draw.Canvas by accumulating draw commands
 // into a flat draw.Scene.
 type SceneCanvas struct {
-	width  int
-	height int
-	scene  draw.Scene
-	shaper text.Shaper
-	atlas  *text.GlyphAtlas
-	clips  []draw.Rect // clip rect stack
+	width       int
+	height      int
+	scene       draw.Scene
+	shaper      text.Shaper
+	atlas       *text.GlyphAtlas
+	clips       []draw.Rect // clip rect stack
+	overlayMode bool        // when true, draw commands go to overlay lists
 }
+
+// SetOverlayMode switches between main and overlay draw lists.
+// Overlay content is rendered after all main content, ensuring
+// dropdowns/tooltips fully cover underlying text.
+func (c *SceneCanvas) SetOverlayMode(on bool) { c.overlayMode = on }
 
 // CanvasOption configures a SceneCanvas.
 type CanvasOption func(*SceneCanvas)
@@ -81,10 +87,12 @@ func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
 			return
 		}
 	}
-	c.scene.Rects = append(c.scene.Rects, draw.DrawRect{
-		X: int(x), Y: int(y), W: int(w), H: int(h),
-		Color: paint.Color,
-	})
+	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.Color}
+	if c.overlayMode {
+		c.scene.OverlayRects = append(c.scene.OverlayRects, rect)
+	} else {
+		c.scene.Rects = append(c.scene.Rects, rect)
+	}
 }
 
 func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Paint) {
@@ -112,11 +120,12 @@ func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Pain
 			return
 		}
 	}
-	c.scene.Rects = append(c.scene.Rects, draw.DrawRect{
-		X: int(x), Y: int(y), W: int(w), H: int(h),
-		Color:  paint.Color,
-		Radius: radius,
-	})
+	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.Color, Radius: radius}
+	if c.overlayMode {
+		c.scene.OverlayRects = append(c.scene.OverlayRects, rect)
+	} else {
+		c.scene.Rects = append(c.scene.Rects, rect)
+	}
 }
 
 func (c *SceneCanvas) FillRoundRectCorners(r draw.Rect, _ draw.CornerRadii, paint draw.Paint) {
@@ -182,13 +191,12 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 		return
 	}
 	scale := text.BitmapScale(style.Size)
-	c.scene.Glyphs = append(c.scene.Glyphs, draw.DrawGlyph{
-		X:     int(origin.X),
-		Y:     int(origin.Y),
-		Scale: scale,
-		Text:  txt,
-		Color: color,
-	})
+	glyph := draw.DrawGlyph{X: int(origin.X), Y: int(origin.Y), Scale: scale, Text: txt, Color: color}
+	if c.overlayMode {
+		c.scene.OverlayGlyphs = append(c.scene.OverlayGlyphs, glyph)
+	} else {
+		c.scene.Glyphs = append(c.scene.Glyphs, glyph)
+	}
 }
 
 // drawTextTextured shapes text and emits TexturedGlyphs from the atlas.
@@ -270,7 +278,11 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 				continue
 			}
 		}
-		c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, tg)
+		if c.overlayMode {
+			c.scene.OverlayTexturedGlyphs = append(c.scene.OverlayTexturedGlyphs, tg)
+		} else {
+			c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, tg)
+		}
 
 		cursorX += sg.Advance
 	}

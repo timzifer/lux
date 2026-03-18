@@ -111,6 +111,32 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	if len(scene.TexturedGlyphs) > 0 {
 		r.drawTexturedGlyphs(scene.TexturedGlyphs)
 	}
+
+	// Overlay pass — rendered after all main content so overlays
+	// (dropdowns, tooltips, context menus) fully cover underlying text.
+	if len(scene.OverlayRects) > 0 {
+		var overlayRounded []draw.DrawRect
+		for _, rect := range scene.OverlayRects {
+			if rect.Radius > 0 {
+				overlayRounded = append(overlayRounded, rect)
+			} else {
+				if len(overlayRounded) > 0 {
+					r.drawRoundedRects(overlayRounded)
+					overlayRounded = overlayRounded[:0]
+				}
+				r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
+			}
+		}
+		if len(overlayRounded) > 0 {
+			r.drawRoundedRects(overlayRounded)
+		}
+	}
+	for _, glyph := range scene.OverlayGlyphs {
+		r.drawGlyph(glyph)
+	}
+	if len(scene.OverlayTexturedGlyphs) > 0 {
+		r.drawTexturedGlyphs(scene.OverlayTexturedGlyphs)
+	}
 }
 
 // EndFrame is a no-op for OpenGL (swap is handled by GLFW).
