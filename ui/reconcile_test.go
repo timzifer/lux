@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -82,7 +83,7 @@ func TestReconcileWidgetStatePreserved(t *testing.T) {
 	tree := Component(counterWidget{})
 
 	// First reconciliation — state initialised.
-	resolved, changed := r.Reconcile(tree, th, noopSend)
+	resolved, changed := r.Reconcile(tree, th, noopSend, nil, nil)
 	if !changed {
 		t.Error("first reconcile should report changed")
 	}
@@ -94,7 +95,7 @@ func TestReconcileWidgetStatePreserved(t *testing.T) {
 	}
 
 	// Second reconciliation — state carried forward.
-	_, _ = r.Reconcile(tree, th, noopSend)
+	_, _ = r.Reconcile(tree, th, noopSend, nil, nil)
 	if r.StateCount() != 1 {
 		t.Fatalf("expected 1 state entry after 2nd reconcile, got %d", r.StateCount())
 	}
@@ -121,8 +122,8 @@ func TestReconcileWidgetStateWithStableKey(t *testing.T) {
 		ComponentWithKey("b", counterWidget{}),
 	)
 
-	r.Reconcile(tree, th, noopSend)
-	r.Reconcile(tree, th, noopSend)
+	r.Reconcile(tree, th, noopSend, nil, nil)
+	r.Reconcile(tree, th, noopSend, nil, nil)
 
 	if r.StateCount() != 2 {
 		t.Fatalf("expected 2 states, got %d", r.StateCount())
@@ -134,12 +135,12 @@ func TestReconcileStateResetOnKeyChange(t *testing.T) {
 	th := theme.Default
 
 	tree1 := ComponentWithKey("v1", counterWidget{})
-	r.Reconcile(tree1, th, noopSend)
-	r.Reconcile(tree1, th, noopSend) // RenderCount = 2
+	r.Reconcile(tree1, th, noopSend, nil, nil)
+	r.Reconcile(tree1, th, noopSend, nil, nil) // RenderCount = 2
 
 	// Change the key — should get fresh state.
 	tree2 := ComponentWithKey("v2", counterWidget{})
-	r.Reconcile(tree2, th, noopSend)
+	r.Reconcile(tree2, th, noopSend, nil, nil)
 
 	uid := MakeUID(0, "v2", 0)
 	raw := r.StateFor(uid)
@@ -167,13 +168,13 @@ func TestReconcileNoChangeReturnsFalse(t *testing.T) {
 	tree := Column(Text("hello"), Button("ok", nil))
 
 	// First call — always changed.
-	_, changed := r.Reconcile(tree, th, noopSend)
+	_, changed := r.Reconcile(tree, th, noopSend, nil, nil)
 	if !changed {
 		t.Error("first reconcile should be changed")
 	}
 
 	// Same tree again — no change.
-	_, changed = r.Reconcile(tree, th, noopSend)
+	_, changed = r.Reconcile(tree, th, noopSend, nil, nil)
 	if changed {
 		t.Error("identical tree should not report changed")
 	}
@@ -183,8 +184,8 @@ func TestReconcileDetectsTextChange(t *testing.T) {
 	r := NewReconciler()
 	th := theme.Default
 
-	r.Reconcile(Text("v1"), th, noopSend)
-	_, changed := r.Reconcile(Text("v2"), th, noopSend)
+	r.Reconcile(Text("v1"), th, noopSend, nil, nil)
+	_, changed := r.Reconcile(Text("v2"), th, noopSend, nil, nil)
 	if !changed {
 		t.Error("different text content should report changed")
 	}
@@ -194,8 +195,8 @@ func TestReconcileDetectsStructuralChange(t *testing.T) {
 	r := NewReconciler()
 	th := theme.Default
 
-	r.Reconcile(Column(Text("a")), th, noopSend)
-	_, changed := r.Reconcile(Column(Text("a"), Text("b")), th, noopSend)
+	r.Reconcile(Column(Text("a")), th, noopSend, nil, nil)
+	_, changed := r.Reconcile(Column(Text("a"), Text("b")), th, noopSend, nil, nil)
 	if !changed {
 		t.Error("adding a child should report changed")
 	}
@@ -211,7 +212,7 @@ func TestReconcileRemovesOrphanedState(t *testing.T) {
 		ComponentWithKey("keep", counterWidget{}),
 		ComponentWithKey("drop", counterWidget{}),
 	)
-	r.Reconcile(tree, th, noopSend)
+	r.Reconcile(tree, th, noopSend, nil, nil)
 	if r.StateCount() != 2 {
 		t.Fatalf("expected 2 states, got %d", r.StateCount())
 	}
@@ -220,7 +221,7 @@ func TestReconcileRemovesOrphanedState(t *testing.T) {
 	tree2 := Column(
 		ComponentWithKey("keep", counterWidget{}),
 	)
-	r.Reconcile(tree2, th, noopSend)
+	r.Reconcile(tree2, th, noopSend, nil, nil)
 	if r.StateCount() != 1 {
 		t.Errorf("expected 1 state after removal, got %d", r.StateCount())
 	}
@@ -234,20 +235,29 @@ func TestReconcileExpandsWidgetToElement(t *testing.T) {
 
 	tree := Component(greetWidget{Name: "lux"})
 
-	resolved, _ := r.Reconcile(tree, th, noopSend)
-	te, ok := resolved.(textElement)
+	resolved, _ := r.Reconcile(tree, th, noopSend, nil, nil)
+	// Resolved widgets are wrapped in widgetBoundsElement.
+	wb, ok := resolved.(widgetBoundsElement)
 	if !ok {
-		t.Fatalf("expected textElement, got %T", resolved)
+		t.Fatalf("expected widgetBoundsElement, got %T", resolved)
+	}
+	te, ok := wb.Child.(textElement)
+	if !ok {
+		t.Fatalf("expected textElement child, got %T", wb.Child)
 	}
 	if te.Content != "hello lux" {
 		t.Errorf("content = %q, want %q", te.Content, "hello lux")
 	}
 
 	// Second call — state was persisted, so greeting changes.
-	resolved, _ = r.Reconcile(tree, th, noopSend)
-	te, ok = resolved.(textElement)
+	resolved, _ = r.Reconcile(tree, th, noopSend, nil, nil)
+	wb, ok = resolved.(widgetBoundsElement)
 	if !ok {
-		t.Fatalf("expected textElement, got %T", resolved)
+		t.Fatalf("expected widgetBoundsElement, got %T", resolved)
+	}
+	te, ok = wb.Child.(textElement)
+	if !ok {
+		t.Fatalf("expected textElement child, got %T", wb.Child)
 	}
 	if te.Content != "welcome back lux" {
 		t.Errorf("content = %q, want %q", te.Content, "welcome back lux")
@@ -294,5 +304,107 @@ func TestTreeEqualNested(t *testing.T) {
 	c := Column(Row(Text("y")), Button("ok", nil))
 	if treeEqual(a, c) {
 		t.Error("trees with different text should not be equal")
+	}
+}
+
+// ── Event dispatch integration ──────────────────────────────────
+
+// eventCapture is a widget that records which events it received.
+type eventCapture struct{}
+type eventCaptureState struct {
+	Events []InputEvent
+}
+
+func (eventCapture) Render(ctx RenderCtx, raw WidgetState) (Element, WidgetState) {
+	s := AdoptState[eventCaptureState](raw)
+	s.Events = ctx.Events
+	return Text("capture"), s
+}
+
+func TestReconcileDeliversEventsToWidget(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+
+	tree := ComponentWithKey("cap", eventCapture{})
+	uid := MakeUID(0, "cap", 0)
+
+	// First reconcile to establish the widget.
+	r.Reconcile(tree, th, noopSend, nil, nil)
+
+	// Set focus and collect events.
+	fm.SetFocusedUID(uid)
+	d.Collect(input.KeyMsg{Key: input.KeyA, Action: input.KeyPress})
+	d.Dispatch()
+
+	// Reconcile with dispatcher — widget should receive events.
+	r.Reconcile(tree, th, noopSend, d, fm)
+
+	state := r.StateFor(uid)
+	s, ok := state.(*eventCaptureState)
+	if !ok {
+		t.Fatalf("expected *eventCaptureState, got %T", state)
+	}
+	if len(s.Events) != 1 {
+		t.Fatalf("widget should receive 1 event, got %d", len(s.Events))
+	}
+	if s.Events[0].Kind != EventKey {
+		t.Errorf("event kind = %d, want EventKey", s.Events[0].Kind)
+	}
+}
+
+// focusableWidget implements the Focusable interface.
+type focusableWidget struct{}
+type focusableState struct{}
+
+func (focusableWidget) Render(_ RenderCtx, raw WidgetState) (Element, WidgetState) {
+	s := AdoptState[focusableState](raw)
+	return Text("focusable"), s
+}
+
+func (focusableWidget) FocusOptions() FocusOpts {
+	return FocusOpts{Focusable: true, TabIndex: 0}
+}
+
+func TestReconcileRegistersFocusableWidgets(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+	fm := NewFocusManager()
+
+	tree := Column(
+		ComponentWithKey("a", focusableWidget{}),
+		ComponentWithKey("b", focusableWidget{}),
+	)
+
+	r.Reconcile(tree, th, noopSend, nil, fm)
+
+	if fm.OrderLen() != 2 {
+		t.Errorf("expected 2 focusable widgets registered, got %d", fm.OrderLen())
+	}
+
+	// Tab navigation should work.
+	uid := fm.FocusNext()
+	expected := MakeUID(0, "a", 0)
+	if uid != expected {
+		t.Errorf("first FocusNext = %d, want %d (widget 'a')", uid, expected)
+	}
+}
+
+func TestTreeEqualWidgetBoundsElement(t *testing.T) {
+	a := widgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
+	b := widgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
+	if !treeEqual(a, b) {
+		t.Error("identical widgetBoundsElements should be equal")
+	}
+
+	c := widgetBoundsElement{WidgetUID: 42, Child: Text("world")}
+	if treeEqual(a, c) {
+		t.Error("widgetBoundsElements with different children should not be equal")
+	}
+
+	d := widgetBoundsElement{WidgetUID: 99, Child: Text("hello")}
+	if treeEqual(a, d) {
+		t.Error("widgetBoundsElements with different UIDs should not be equal")
 	}
 }

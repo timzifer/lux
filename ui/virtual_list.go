@@ -39,7 +39,7 @@ func (virtualListElement) isElement() {}
 
 const virtualListOverscan = 3
 
-func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	if node.ItemCount <= 0 || node.BuildItem == nil {
 		return bounds{X: area.X, Y: area.Y}
 	}

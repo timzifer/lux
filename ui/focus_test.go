@@ -162,3 +162,140 @@ func TestFocusGainedLostMsgs(t *testing.T) {
 		t.Errorf("FocusLostMsg.Source = %d, want FocusSourceProgram", lost.Source)
 	}
 }
+
+// ── Tab-order sorting (RFC-002 §2.3) ─────────────────────────────
+
+func TestSortOrderNaturalLayoutOrder(t *testing.T) {
+	fm := NewFocusManager()
+	fm.RegisterFocusable(30, FocusOpts{Focusable: true, TabIndex: 0})
+	fm.RegisterFocusable(10, FocusOpts{Focusable: true, TabIndex: 0})
+	fm.RegisterFocusable(20, FocusOpts{Focusable: true, TabIndex: 0})
+	fm.SortOrder()
+
+	// All TabIndex=0 → natural layout order (registration order).
+	uid := fm.FocusNext()
+	if uid != 30 {
+		t.Errorf("first = %d, want 30 (registered first)", uid)
+	}
+	uid = fm.FocusNext()
+	if uid != 10 {
+		t.Errorf("second = %d, want 10", uid)
+	}
+	uid = fm.FocusNext()
+	if uid != 20 {
+		t.Errorf("third = %d, want 20", uid)
+	}
+}
+
+func TestSortOrderPositiveTabIndexFirst(t *testing.T) {
+	fm := NewFocusManager()
+	fm.RegisterFocusable(100, FocusOpts{Focusable: true, TabIndex: 0}) // natural
+	fm.RegisterFocusable(200, FocusOpts{Focusable: true, TabIndex: 2}) // explicit 2
+	fm.RegisterFocusable(300, FocusOpts{Focusable: true, TabIndex: 1}) // explicit 1
+	fm.SortOrder()
+
+	// Positive TabIndex first (sorted ascending), then TabIndex=0.
+	uid := fm.FocusNext()
+	if uid != 300 {
+		t.Errorf("first = %d, want 300 (TabIndex=1)", uid)
+	}
+	uid = fm.FocusNext()
+	if uid != 200 {
+		t.Errorf("second = %d, want 200 (TabIndex=2)", uid)
+	}
+	uid = fm.FocusNext()
+	if uid != 100 {
+		t.Errorf("third = %d, want 100 (TabIndex=0, natural)", uid)
+	}
+}
+
+func TestSortOrderSkipsNegativeTabIndex(t *testing.T) {
+	fm := NewFocusManager()
+	fm.RegisterFocusable(10, FocusOpts{Focusable: true, TabIndex: 0})
+	fm.RegisterFocusable(20, FocusOpts{Focusable: true, TabIndex: -1}) // should be excluded
+	fm.RegisterFocusable(30, FocusOpts{Focusable: true, TabIndex: 0})
+
+	if fm.OrderLen() != 2 {
+		t.Errorf("OrderLen = %d, want 2 (negative TabIndex excluded)", fm.OrderLen())
+	}
+}
+
+// ── Element-level focus UIDs ──────────────────────────────────────
+
+func TestNextElementUIDDeterministic(t *testing.T) {
+	fm := NewFocusManager()
+	uid1 := fm.NextElementUID()
+	uid2 := fm.NextElementUID()
+
+	if uid1 == 0 || uid2 == 0 {
+		t.Error("element UIDs should be non-zero")
+	}
+	if uid1 == uid2 {
+		t.Error("consecutive element UIDs should differ")
+	}
+	// High bit should be set.
+	if uid1&elementFocusUIDBit == 0 {
+		t.Error("element UIDs should have high bit set")
+	}
+}
+
+func TestElementFocusRoundTrip(t *testing.T) {
+	fm := NewFocusManager()
+	uid := fm.NextElementUID()
+	fm.SetFocusedUID(uid)
+
+	if !fm.IsElementFocused(uid) {
+		t.Error("element should be focused after SetFocusedUID")
+	}
+	fm.Blur()
+	if fm.IsElementFocused(uid) {
+		t.Error("element should not be focused after Blur")
+	}
+}
+
+func TestResetOrderClearsElementCounter(t *testing.T) {
+	fm := NewFocusManager()
+	uid1 := fm.NextElementUID()
+	fm.ResetOrder()
+	uid2 := fm.NextElementUID()
+
+	// After reset, counter restarts → same UID.
+	if uid1 != uid2 {
+		t.Errorf("after ResetOrder, NextElementUID should produce same UID: %d != %d", uid1, uid2)
+	}
+}
+
+func TestNilFocusManagerSafety(t *testing.T) {
+	var fm *FocusManager
+	if fm.FocusedUID() != 0 {
+		t.Error("nil FocusManager should return 0")
+	}
+	if fm.IsFocused(42) {
+		t.Error("nil FocusManager should not report focused")
+	}
+	fm.SetFocusedUID(42) // should not panic
+	fm.Blur()            // should not panic
+	fm.ResetOrder()      // should not panic
+	fm.SortOrder()       // should not panic
+	fm.RegisterFocusable(1, FocusOpts{Focusable: true}) // should not panic
+
+	if fm.NextElementUID() != 0 {
+		t.Error("nil FocusManager NextElementUID should return 0")
+	}
+	if fm.OrderLen() != 0 {
+		t.Error("nil FocusManager OrderLen should return 0")
+	}
+}
+
+func TestInputStateHasFocusUID(t *testing.T) {
+	fm := NewFocusManager()
+	uid := fm.NextElementUID()
+	fm.Input = &InputState{
+		Value:    "hello",
+		FocusUID: uid,
+		OnChange: func(string) {},
+	}
+	if fm.Input.FocusUID != uid {
+		t.Errorf("InputState.FocusUID = %d, want %d", fm.Input.FocusUID, uid)
+	}
+}

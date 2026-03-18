@@ -28,9 +28,13 @@ func NewReconciler() *Reconciler {
 // Reconcile processes a new element tree: expands widgetElement nodes by
 // calling Widget.Render with persisted state, cleans up removed states,
 // and reports whether the resolved tree differs from the previous frame.
-func (r *Reconciler) Reconcile(newTree Element, th theme.Theme, send func(any)) (Element, bool) {
+//
+// If dispatcher is non-nil, each widget's RenderCtx.Events is populated
+// from the dispatcher's per-UID event buffers (RFC-002 §2.6). If fm is
+// non-nil, Focusable widgets are registered for tab-order tracking.
+func (r *Reconciler) Reconcile(newTree Element, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager) (Element, bool) {
 	seen := make(map[UID]bool)
-	resolved := r.resolveTree(newTree, 0, 0, seen, th, send)
+	resolved := r.resolveTree(newTree, 0, 0, seen, th, send, dispatcher, fm)
 
 	changed := !treeEqual(r.prevTree, resolved)
 	r.prevTree = resolved
@@ -87,7 +91,7 @@ func MakeUID(parent UID, key string, index int) UID {
 }
 
 // resolveTree recursively walks the element tree, expanding widgets.
-func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[UID]bool, th theme.Theme, send func(any)) Element {
+func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[UID]bool, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager) Element {
 	switch node := el.(type) {
 	case widgetElement:
 		key := node.Key
@@ -97,67 +101,83 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		uid := MakeUID(parentUID, key, index)
 		seen[uid] = true
 		state := r.states[uid]
+
+		// Build RenderCtx with dispatched events.
 		ctx := RenderCtx{UID: uid, Theme: th, Send: send}
+		if dispatcher != nil {
+			ctx.Events = dispatcher.EventsFor(uid)
+		}
+
+		// Register Focusable widgets with FocusManager.
+		if fm != nil {
+			if fw, ok := node.W.(Focusable); ok {
+				fm.RegisterFocusable(uid, fw.FocusOptions())
+			}
+		}
+
 		child, newState := node.W.Render(ctx, state)
 		r.states[uid] = newState
+
 		// Recursively resolve the widget's output (it may contain more widgets).
-		return r.resolveTree(child, uid, 0, seen, th, send)
+		resolved := r.resolveTree(child, uid, 0, seen, th, send, dispatcher, fm)
+
+		// Wrap in widgetBoundsElement so layout can track screen bounds.
+		return widgetBoundsElement{WidgetUID: uid, Child: resolved}
 
 	case keyedElement:
 		uid := MakeUID(parentUID, node.Key, index)
-		child := r.resolveTree(node.Child, uid, 0, seen, th, send)
+		child := r.resolveTree(node.Child, uid, 0, seen, th, send, dispatcher, fm)
 		return keyedElement{Key: node.Key, Child: child}
 
 	case boxElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
 		return boxElement{Axis: node.Axis, Children: children}
 
 	case stackElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
 		return stackElement{Children: children}
 
 	case scrollViewElement:
-		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
 		return scrollViewElement{Child: child, MaxHeight: node.MaxHeight, State: node.State}
 
 	case paddingElement:
-		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
 		return paddingElement{Insets: node.Insets, Child: child}
 
 	case sizedBoxElement:
 		if node.Child != nil {
-			child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
+			child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
 			return sizedBoxElement{Width: node.Width, Height: node.Height, Child: child}
 		}
 		return el
 
 	case expandedElement:
-		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
 		return expandedElement{Child: child, Grow: node.Grow}
 
 	case flexElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
 		return flexElement{Direction: node.Direction, Justify: node.Justify, Align: node.Align, Gap: node.Gap, Children: children}
 
 	case gridElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
 		return gridElement{Columns: node.Columns, RowGap: node.RowGap, ColGap: node.ColGap, Children: children}
 
 	default:
 		// Leaf elements (text, button, divider, virtualList, tree, richText, etc.) pass through unchanged.
-		// Leaf elements (text, button, divider, etc.) pass through unchanged.
 		return el
 	}
 }
@@ -184,6 +204,9 @@ func treeEqual(a, b Element) bool {
 	case keyedElement:
 		nb, ok := b.(keyedElement)
 		return ok && na.Key == nb.Key && treeEqual(na.Child, nb.Child)
+	case widgetBoundsElement:
+		nb, ok := b.(widgetBoundsElement)
+		return ok && na.WidgetUID == nb.WidgetUID && treeEqual(na.Child, nb.Child)
 	case boxElement:
 		nb, ok := b.(boxElement)
 		if !ok || na.Axis != nb.Axis || len(na.Children) != len(nb.Children) {

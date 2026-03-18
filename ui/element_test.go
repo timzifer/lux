@@ -941,11 +941,22 @@ func TestScrollStateScrollByDelta(t *testing.T) {
 // ── Focus / TextField Tests ──────────────────────────────────────
 
 func TestTextFieldFocusBorderHighlight(t *testing.T) {
-	focus := &FocusState{FocusedID: 1}
+	fm := NewFocusManager()
 	canvas := render.NewSceneCanvas(800, 600)
+	// First pass to assign element UIDs.
 	BuildScene(
-		TextField("hi", "", WithOnChange(func(string) {}), WithFocusState(focus)),
-		canvas, theme.Default, 800, 600, nil, nil, focus,
+		TextField("hi", "", WithOnChange(func(string) {}), WithFocus(fm)),
+		canvas, theme.Default, 800, 600, nil, nil, fm,
+	)
+	// Focus the first element UID.
+	fm.FocusNext()
+
+	// Rebuild with focus set.
+	canvas = render.NewSceneCanvas(800, 600)
+	fm.ResetOrder()
+	BuildScene(
+		TextField("hi", "", WithOnChange(func(string) {}), WithFocus(fm)),
+		canvas, theme.Default, 800, 600, nil, nil, fm,
 	)
 	scene := canvas.Scene()
 	tokens := theme.Default.Tokens()
@@ -961,11 +972,11 @@ func TestTextFieldFocusBorderHighlight(t *testing.T) {
 }
 
 func TestTextFieldUnfocusedBorder(t *testing.T) {
-	focus := &FocusState{FocusedID: 0} // nothing focused
+	fm := NewFocusManager() // nothing focused
 	canvas := render.NewSceneCanvas(800, 600)
 	BuildScene(
-		TextField("hi", "", WithOnChange(func(string) {}), WithFocusState(focus)),
-		canvas, theme.Default, 800, 600, nil, nil, focus,
+		TextField("hi", "", WithOnChange(func(string) {}), WithFocus(fm)),
+		canvas, theme.Default, 800, 600, nil, nil, fm,
 	)
 	scene := canvas.Scene()
 	tokens := theme.Default.Tokens()
@@ -980,12 +991,12 @@ func TestTextFieldUnfocusedBorder(t *testing.T) {
 }
 
 func TestTextFieldClickSetsFocus(t *testing.T) {
-	focus := &FocusState{}
+	fm := NewFocusManager()
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
 	BuildScene(
-		TextField("", "type here", WithOnChange(func(string) {}), WithFocusState(focus)),
-		canvas, theme.Default, 800, 600, &hitMap, nil, focus,
+		TextField("", "type here", WithOnChange(func(string) {}), WithFocus(fm)),
+		canvas, theme.Default, 800, 600, &hitMap, nil, fm,
 	)
 
 	if hitMap.Len() != 1 {
@@ -996,41 +1007,8 @@ func TestTextFieldClickSetsFocus(t *testing.T) {
 		t.Fatal("expected hit target at TextField position")
 	}
 	target.OnClick()
-	if focus.FocusedID != 1 {
-		t.Errorf("FocusedID = %d, want 1 after click", focus.FocusedID)
-	}
-}
-
-func TestHandleKeyMsgBackspace(t *testing.T) {
-	focus := &FocusState{FocusedID: 1}
-	var result string
-	handleKeyMsg(focus, "Backspace", "hello", func(v string) { result = v })
-	if result != "hell" {
-		t.Errorf("after Backspace: %q, want %q", result, "hell")
-	}
-}
-
-func TestHandleKeyMsgEscapeBlurs(t *testing.T) {
-	focus := &FocusState{FocusedID: 1}
-	handleKeyMsg(focus, "Escape", "hello", func(string) {})
-	if focus.FocusedID != 0 {
-		t.Errorf("Escape should blur: FocusedID = %d, want 0", focus.FocusedID)
-	}
-}
-
-func TestInternalCharInput(t *testing.T) {
-	var result string
-	handleCharInput('X', "hello", func(v string) { result = v })
-	if result != "helloX" {
-		t.Errorf("after char input: %q, want %q", result, "helloX")
-	}
-}
-
-func TestHandleCharInputIgnoresControl(t *testing.T) {
-	called := false
-	handleCharInput(0x08, "hello", func(v string) { called = true })
-	if called {
-		t.Error("control characters should be ignored")
+	if fm.FocusedUID() == 0 {
+		t.Error("FocusedUID should be non-zero after click")
 	}
 }
 
