@@ -194,9 +194,15 @@ func WithOnChange(fn func(string)) TextFieldOption {
 	return func(e *textFieldElement) { e.OnChange = fn }
 }
 
-// WithFocusState links the TextField to a FocusState for keyboard input.
-func WithFocusState(fs *FocusState) TextFieldOption {
+// WithFocusState links the TextField to a FocusManager for keyboard input.
+// Deprecated: use WithFocus instead.
+func WithFocusState(fs *FocusManager) TextFieldOption {
 	return func(e *textFieldElement) { e.Focus = fs }
+}
+
+// WithFocus links the TextField to a FocusManager for keyboard input.
+func WithFocus(fm *FocusManager) TextFieldOption {
+	return func(e *textFieldElement) { e.Focus = fm }
 }
 
 // SelectState holds the open/closed state for a Select dropdown.
@@ -559,8 +565,8 @@ type textFieldElement struct {
 	Value       string
 	Placeholder string
 	OnChange    func(string)
-	Focus       *FocusState
-	FocusID     int // assigned during layout
+	Focus       *FocusManager
+	FocusUID    UID // assigned during layout
 }
 
 func (textFieldElement) isElement() {}
@@ -582,6 +588,16 @@ type widgetElement struct {
 }
 
 func (widgetElement) isElement() {}
+
+// widgetBoundsElement wraps a widget's resolved element subtree,
+// carrying the widget UID so that layout can register screen bounds
+// for event dispatching (RFC-002 §2.6).
+type widgetBoundsElement struct {
+	WidgetUID UID
+	Child     Element
+}
+
+func (widgetBoundsElement) isElement() {}
 
 // ScrollState tracks scroll offset for ScrollView elements.
 type ScrollState struct {
@@ -612,79 +628,12 @@ func (s *ScrollState) ScrollBy(delta float32, contentHeight, viewportHeight floa
 type InputState struct {
 	Value    string
 	OnChange func(string)
-	FocusID  int
+	FocusUID UID
 }
 
-// FocusState tracks which element has keyboard focus.
-// It is shared between the element tree and the app loop.
-type FocusState struct {
-	FocusedID int         // ID of focused element, 0 = none
-	Input     *InputState // populated during layout for the focused TextField
-	nextID    int         // counter for assigning IDs during layout
-}
-
-// IsFocused returns true if the element with the given ID has focus.
-func (f *FocusState) IsFocused(id int) bool {
-	return f != nil && f.FocusedID == id
-}
-
-// SetFocused sets the focused element.
-func (f *FocusState) SetFocused(id int) {
-	if f != nil {
-		f.FocusedID = id
-	}
-}
-
-// Blur removes focus from all elements.
-func (f *FocusState) Blur() {
-	if f != nil {
-		f.FocusedID = 0
-	}
-}
-
-// nextFocusID assigns and returns the next focus ID during layout.
-func (f *FocusState) nextFocusID() int {
-	if f == nil {
-		return 0
-	}
-	f.nextID++
-	return f.nextID
-}
-
-// resetCounter resets the ID counter for a new layout pass.
-func (f *FocusState) resetCounter() {
-	if f != nil {
-		f.nextID = 0
-		f.Input = nil
-	}
-}
-
-// handleKeyMsg processes a key event for the focused TextField.
-func handleKeyMsg(focus *FocusState, key string, value string, onChange func(string)) {
-	if focus == nil || onChange == nil {
-		return
-	}
-	switch key {
-	case "Backspace":
-		if len(value) > 0 {
-			// Remove last rune.
-			runes := []rune(value)
-			onChange(string(runes[:len(runes)-1]))
-		}
-	case "Escape":
-		focus.Blur()
-	}
-}
-
-// handleCharInput appends a character to the value of a focused TextField.
-func handleCharInput(ch rune, value string, onChange func(string)) {
-	if onChange == nil {
-		return
-	}
-	if ch >= 32 { // printable characters only
-		onChange(value + string(ch))
-	}
-}
+// FocusState is a type alias for backward compatibility.
+// Deprecated: use FocusManager directly.
+type FocusState = FocusManager
 
 // ── Toggle State ─────────────────────────────────────────────────
 
@@ -844,12 +793,9 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 		hover.resetCounter()
 	}
 
-	var focus *FocusState
+	var focus *FocusManager
 	if len(focusOpt) > 0 {
 		focus = focusOpt[0]
-	}
-	if focus != nil {
-		focus.resetCounter()
 	}
 
 	tokens := th.Tokens()
@@ -879,8 +825,8 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	return draw.Scene{}
 }
 
-func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
-	var fs *FocusState
+func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
+	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
@@ -888,6 +834,11 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 	case nil, emptyElement, widgetElement:
 		// widgetElement should be resolved by the Reconciler before layout.
 		return bounds{X: area.X, Y: area.Y}
+
+	case widgetBoundsElement:
+		// Layout the child subtree. The bounds are tracked so the
+		// EventDispatcher can route mouse events to this widget UID.
+		return layoutElement(node.Child, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case keyedElement:
 		return layoutElement(node.Child, area, canvas, th, tokens, hitMap, hover, overlays, fs)
@@ -1075,8 +1026,8 @@ func lerpColor(a, b draw.Color, t float32) draw.Color {
 	}
 }
 
-func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
-	var fs *FocusState
+func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
+	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
@@ -1118,8 +1069,8 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme,
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
 }
 
-func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
-	var fs *FocusState
+func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
+	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
@@ -1136,8 +1087,8 @@ func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Th
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
 }
 
-func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
-	var fs *FocusState
+func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
+	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
@@ -1527,7 +1478,7 @@ func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas,
 	return bounds{X: area.X, Y: area.Y, W: trackW, H: progressBarH}
 }
 
-func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
+func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusManager) bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -1536,12 +1487,17 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 		w = area.W
 	}
 
-	// Assign a focus ID if focus state is provided.
-	focusID := 0
+	// Assign a focus UID if focus manager is provided.
+	var focusUID UID
 	if focus != nil {
-		focusID = focus.nextFocusID()
+		focusUID = focus.NextElementUID()
+		focus.RegisterFocusable(focusUID, FocusOpts{
+			Focusable:    true,
+			TabIndex:     0,
+			FocusOnClick: true,
+		})
 	}
-	focused := focus.IsFocused(focusID)
+	focused := focus.IsElementFocused(focusUID)
 
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindTextField); df != nil {
@@ -1589,7 +1545,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 		focus.Input = &InputState{
 			Value:    node.Value,
 			OnChange: node.OnChange,
-			FocusID:  focusID,
+			FocusUID: focusUID,
 		}
 	}
 
@@ -1600,10 +1556,10 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 			hover.nextButtonHoverOpacity()
 		}
 		if hitMap != nil {
-			fid := focusID
-			fs := focus
+			uid := focusUID
+			fm := focus
 			hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-				func() { fs.SetFocused(fid) })
+				func() { fm.SetFocusedUID(uid) })
 		}
 	}
 
@@ -1726,8 +1682,8 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
-	var fs *FocusState
+func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
+	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
@@ -1745,8 +1701,8 @@ func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th them
 	return bounds{X: area.X, Y: area.Y, W: cb.W + inL + inR, H: cb.H + inT + inB}
 }
 
-func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
-	var fs *FocusState
+func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
+	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
@@ -1804,7 +1760,7 @@ const (
 
 // ── Tier 3 Layout Functions ──────────────────────────────────────
 
-func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	// Measure child to determine card size.
 	nc := nullCanvas{delegate: canvas}
 	childArea := bounds{X: area.X + cardPadding, Y: area.Y + cardPadding, W: max(area.W-cardPadding*2, 0), H: max(area.H-cardPadding*2, 0)}
@@ -1832,7 +1788,7 @@ func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Them
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	if len(node.Items) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -1921,7 +1877,7 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Them
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	if len(node.Sections) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -2000,7 +1956,7 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th 
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: cursorY - area.Y}
 }
 
-func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	// Layout trigger normally.
 	triggerBounds := layoutElement(node.Trigger, area, canvas, th, tokens, hitMap, hover, overlays, focus)
 
@@ -2050,7 +2006,7 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th them
 	return triggerBounds
 }
 
-func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	// Measure content
 	nc := nullCanvas{delegate: canvas}
 	cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
@@ -2083,7 +2039,7 @@ func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Th
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	// Measure label
 	nc := nullCanvas{delegate: canvas}
 	cb := layoutElement(node.Label, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
@@ -2163,7 +2119,7 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	if len(node.Items) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -2326,7 +2282,7 @@ func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas 
 	}
 }
 
-func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	if !node.Visible || len(node.Items) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}

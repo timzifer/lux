@@ -41,12 +41,12 @@ type ViewFunc[M any] func(M) ui.Element
 // globalLoop holds the active loop instance for package-level Send/TrySend.
 var globalLoop *loop.Loop
 
-// globalFocus holds the app-level focus state for keyboard input routing.
-var globalFocus = &ui.FocusState{}
+// globalFocus holds the app-level FocusManager for keyboard input routing.
+var globalFocus = ui.NewFocusManager()
 
-// Focus returns the app-level FocusState for keyboard input routing.
-// Pass this to ui.WithFocusState when creating TextFields.
-func Focus() *ui.FocusState { return globalFocus }
+// Focus returns the app-level FocusManager for keyboard input routing.
+// Pass this to ui.WithFocus when creating TextFields.
+func Focus() *ui.FocusManager { return globalFocus }
 
 // Send enqueues a message into the app loop. Thread-safe, never blocks (RFC §3.2).
 func Send(msg Msg) {

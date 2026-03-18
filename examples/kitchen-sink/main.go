@@ -289,7 +289,7 @@ func formControlsSection(m Model) ui.Element {
 		sectionHeader("Form Controls"),
 		ui.TextField(m.TextValue, "Enter text...",
 			ui.WithOnChange(func(v string) { app.Send(SetTextMsg{v}) }),
-			ui.WithFocusState(app.Focus()),
+			ui.WithFocus(app.Focus()),
 		),
 		ui.Spacer(8),
 		ui.Checkbox("Enable notifications", m.CheckA, func(v bool) { app.Send(SetCheckAMsg{v}) }),

@@ -89,9 +89,13 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	}
 	updateBgColor()
 
+	// Focus management (RFC-002 §2.3).
+	fm := globalFocus
+	dispatcher := ui.NewEventDispatcher(fm)
+
 	reconciler := ui.NewReconciler()
 	currentModel := model
-	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send)
+	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
@@ -101,15 +105,18 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
-			// 1. Drain messages — intercept theme switches before user update (RFC §5.5).
+			// 1. Drain messages — intercept theme switches and focus requests
+			// before user update (RFC §5.5). Collect input events for dispatch.
 			modelDirty := false
+			dispatcher.ResetEvents()
+
 			appLoop.DrainMessages(func(msg any) bool {
 				// Handle framework-internal messages.
 				switch m := msg.(type) {
 				case SetThemeMsg:
 					activeTheme = m.Theme
 					updateBgColor()
-					modelDirty = true // theme change requires repaint
+					modelDirty = true
 				case SetDarkModeMsg:
 					if m.Dark {
 						activeTheme = theme.Slate
@@ -117,11 +124,45 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 						activeTheme = theme.SlateLight
 					}
 					updateBgColor()
-					modelDirty = true // theme change requires repaint
+					modelDirty = true
+
+				case ui.RequestFocusMsg:
+					oldUID := fm.FocusedUID()
+					fm.SetFocusedUID(m.Target)
+					dispatcher.QueueFocusChange(oldUID, m.Target, ui.FocusSourceProgram)
+					modelDirty = true
+					return true
+
+				case ui.ReleaseFocusMsg:
+					oldUID := fm.FocusedUID()
+					fm.Blur()
+					dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceProgram)
+					modelDirty = true
+					return true
+
 				case input.KeyMsg:
-					// Internalize keyboard input — never forward to userland.
+					// Collect for widget-level dispatch.
+					dispatcher.Collect(m)
+
+					// Handle Tab/Shift+Tab for focus navigation.
 					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
-						if is := globalFocus.Input; is != nil {
+						if m.Key == input.KeyTab {
+							oldUID := fm.FocusedUID()
+							var newUID ui.UID
+							if m.Modifiers.Has(input.ModShift) {
+								newUID = fm.FocusPrev()
+							} else {
+								newUID = fm.FocusNext()
+							}
+							if newUID != oldUID {
+								dispatcher.QueueFocusChange(oldUID, newUID, ui.FocusSourceTab)
+								modelDirty = true
+							}
+							return true
+						}
+
+						// Framework-internal keyboard handling for TextFields.
+						if is := fm.Input; is != nil {
 							switch m.Key {
 							case input.KeyBackspace:
 								if len(is.Value) > 0 {
@@ -132,30 +173,45 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 									modelDirty = true
 								}
 							case input.KeyEscape:
-								globalFocus.Blur()
+								oldUID := fm.FocusedUID()
+								fm.Blur()
+								dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceProgram)
 								modelDirty = true
 							}
 						}
 					}
 					return true
+
 				case input.CharMsg:
-					// Internalize character input — never forward to userland.
-					if is := globalFocus.Input; is != nil && m.Char >= 32 {
+					// Collect for widget-level dispatch.
+					dispatcher.Collect(m)
+					// Framework-internal character input for TextFields.
+					if is := fm.Input; is != nil && m.Char >= 32 {
 						v := is.Value + string(m.Char)
 						is.Value = v
 						is.OnChange(v)
 						modelDirty = true
 					}
 					return true
+
 				case input.TextInputMsg:
-					// Internalize IME/composed text input — never forward to userland.
-					if is := globalFocus.Input; is != nil && m.Text != "" {
+					// Collect for widget-level dispatch.
+					dispatcher.Collect(m)
+					// Framework-internal IME input for TextFields.
+					if is := fm.Input; is != nil && m.Text != "" {
 						v := is.Value + m.Text
 						is.Value = v
 						is.OnChange(v)
 						modelDirty = true
 					}
 					return true
+
+				case input.MouseMsg:
+					dispatcher.Collect(m)
+				case input.ScrollMsg:
+					dispatcher.Collect(m)
+				case input.TouchMsg:
+					dispatcher.Collect(m)
 				}
 				newModel := update(currentModel, msg)
 				if modelChanged(any(newModel), any(currentModel)) {
@@ -177,9 +233,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			animDirty := reconciler.TickAnimators(dt)
 
 			// Deliver TickMsg directly — always call update, but only
-			// force a rebuild if the model is modified. We use the
-			// tickDirty flag to track this separately so that apps
-			// without animation don't pay for unnecessary rebuilds.
+			// force a rebuild if the model is modified.
 			tickModel := update(currentModel, TickMsg{DeltaTime: dt})
 			tickDirty := modelChanged(any(tickModel), any(currentModel))
 			currentModel = tickModel
@@ -187,8 +241,17 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 			// Re-run view and reconcile only when the model changed.
 			if modelDirty {
+				// Reset focus order for this frame (rebuilt during reconcile + layout).
+				fm.ResetOrder()
+
+				// Dispatch collected input events to per-UID buffers.
+				dispatcher.Dispatch()
+
 				newTree := view(currentModel)
-				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send)
+				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm)
+
+				// Sort tab order derived from layout tree (RFC-002 §2.3).
+				fm.SortOrder()
 			}
 
 			// 3. Update hover target from previous frame's hitMap.
@@ -202,7 +265,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			w, h := plat.FramebufferSize()
 			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 			hitMap.Reset()
-			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap, &hoverState, globalFocus)
+			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap, &hoverState, fm)
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)
@@ -232,9 +295,14 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			// Left-click hit-test and drag tracking.
 			if button == 0 {
 				if pressed {
-					// Blur focus first; if the click lands on a TextField,
+					// Blur focus first; if the click lands on a focusable element,
 					// its hit target will re-focus it.
-					globalFocus.Blur()
+					oldUID := fm.FocusedUID()
+					fm.Blur()
+					if oldUID != 0 {
+						dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+					}
+
 					if target := hitMap.HitTest(x, y); target != nil {
 						if target.OnClickAt != nil {
 							target.OnClickAt(x, y)

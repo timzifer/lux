@@ -159,7 +159,7 @@ type flatNode struct {
 	HeightFraction float32 // 0..1, animated expand progress for children-of-animating-parent
 }
 
-func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	if len(node.RootIDs) == 0 || node.BuildNode == nil {
 		return bounds{X: area.X, Y: area.Y}
 	}

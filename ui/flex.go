@@ -86,7 +86,7 @@ type flexElement struct {
 func (flexElement) isElement() {}
 
 // layoutFlex performs a two-pass layout: measure with nullCanvas, then paint.
-func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
 	n := len(node.Children)
 	if n == 0 {
 		return bounds{X: area.X, Y: area.Y}

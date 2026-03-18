@@ -19,18 +19,18 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] `TouchMsg` implementieren (TouchID, Phase, Force)
 - **Abhängig von:** nichts (Kern-Package `input/`, keine Imports)
 
-### 0.2 RenderCtx.Events — Input-Dispatch an Widgets (RFC-001 §4, RFC-002 §2.6) 🔶
+### 0.2 RenderCtx.Events — Input-Dispatch an Widgets (RFC-001 §4, RFC-002 §2.6) ✅
 - [x] `RenderCtx` um `Events []InputEvent` Feld erweitern
 - [x] `InputEvent` als typisierten Union-Wrapper implementieren
-- [ ] Framework-internes Dispatching: Mouse → Hit-Test → Widget, Keyboard → Focus → Widget
+- [x] Framework-internes Dispatching: Mouse → Hit-Test → Widget, Keyboard → Focus → Widget
 - **Abhängig von:** 0.1
 
-### 0.3 Focus-Management (RFC-002 §2.3) 🔶
+### 0.3 Focus-Management (RFC-002 §2.3) ✅
 - [x] `Focusable`-Interface auf `Widget` definieren (`FocusOptions() FocusOpts`)
-- [ ] Tab-Reihenfolge aus Layout-Baum ableiten
+- [x] Tab-Reihenfolge aus Layout-Baum ableiten
 - [x] `FocusGainedMsg` / `FocusLostMsg` implementieren
 - [x] `RequestFocusMsg` / `ReleaseFocusMsg` implementieren
-- [ ] Bestehenden `FocusState` in die neue Architektur überführen
+- [x] Bestehenden `FocusState` in die neue Architektur überführen
 - **Abhängig von:** 0.2
 
 ### 0.4 Animator-Interface — Framework-getriebene Animationen (RFC-002 §1.3) ✅
