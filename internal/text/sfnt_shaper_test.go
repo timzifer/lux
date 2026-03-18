@@ -76,22 +76,25 @@ func TestSfntShaperMeasureConsistency(t *testing.T) {
 
 func TestSfntShaperRasterizeGlyph(t *testing.T) {
 	s := newTestShaper()
-	img, f := s.RasterizeGlyph('A', bodyStyle)
-	if img == nil {
+	rg := s.RasterizeGlyph('A', bodyStyle)
+	if rg == nil {
+		t.Fatal("RasterizeGlyph('A') returned nil")
+	}
+	if rg.Image == nil {
 		t.Fatal("RasterizeGlyph('A') returned nil image")
 	}
-	if f == nil {
+	if rg.Font == nil {
 		t.Fatal("RasterizeGlyph('A') returned nil font")
 	}
-	if img.Bounds().Dx() <= 0 || img.Bounds().Dy() <= 0 {
-		t.Errorf("glyph image bounds = %v, want non-zero", img.Bounds())
+	if rg.Image.Bounds().Dx() <= 0 || rg.Image.Bounds().Dy() <= 0 {
+		t.Errorf("glyph image bounds = %v, want non-zero", rg.Image.Bounds())
 	}
 
 	// Verify some pixels are non-zero (the glyph was actually drawn).
 	hasContent := false
-	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
-		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
-			if img.GrayAt(x, y).Y > 0 {
+	for y := rg.Image.Bounds().Min.Y; y < rg.Image.Bounds().Max.Y; y++ {
+		for x := rg.Image.Bounds().Min.X; x < rg.Image.Bounds().Max.X; x++ {
+			if rg.Image.GrayAt(x, y).Y > 0 {
 				hasContent = true
 				break
 			}
