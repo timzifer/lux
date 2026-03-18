@@ -1025,3 +1025,376 @@ func TestHandleCharInputIgnoresControl(t *testing.T) {
 		t.Error("control characters should be ignored")
 	}
 }
+
+// ── Tier 3 Widget Tests ──────────────────────────────────────────
+
+func TestBuildSceneCard(t *testing.T) {
+	scene := buildTestScene(Card(Text("Inside card")), 800, 600)
+	// Card: 2 rects (border + fill) + 1 glyph (child text)
+	if len(scene.Rects) < 2 {
+		t.Errorf("Card should produce at least 2 rects (border + fill), got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("Card should produce at least 1 glyph (child), got %d", len(scene.Glyphs))
+	}
+	if scene.Glyphs[0].Text != "Inside card" {
+		t.Errorf("card child text = %q, want %q", scene.Glyphs[0].Text, "Inside card")
+	}
+}
+
+func TestBuildSceneCardColors(t *testing.T) {
+	scene := buildTestScene(Card(Text("X")), 800, 600)
+	tokens := theme.Default.Tokens()
+
+	if len(scene.Rects) < 2 {
+		t.Fatal("need at least 2 rects for card")
+	}
+	border := scene.Rects[0]
+	fill := scene.Rects[1]
+	if border.Color != tokens.Colors.Stroke.Border {
+		t.Errorf("card border color = %v, want Stroke.Border", border.Color)
+	}
+	if fill.Color != tokens.Colors.Surface.Elevated {
+		t.Errorf("card fill color = %v, want Surface.Elevated", fill.Color)
+	}
+}
+
+func TestBuildSceneCardMultipleChildren(t *testing.T) {
+	scene := buildTestScene(Card(Text("A"), Text("B")), 800, 600)
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("Card with 2 texts should produce at least 2 glyphs, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneBadge(t *testing.T) {
+	scene := buildTestScene(Badge(Text("3")), 800, 600)
+	tokens := theme.Default.Tokens()
+	// Badge: 1 rect (pill background) + 1 glyph (content)
+	if len(scene.Rects) < 1 {
+		t.Errorf("Badge should produce at least 1 rect (pill bg), got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("Badge should produce at least 1 glyph, got %d", len(scene.Glyphs))
+	}
+	// Background should be Accent.Primary
+	if scene.Rects[0].Color != tokens.Colors.Accent.Primary {
+		t.Errorf("badge bg = %v, want Accent.Primary", scene.Rects[0].Color)
+	}
+}
+
+func TestBuildSceneBadgeWithIcon(t *testing.T) {
+	scene := buildTestScene(Badge(Icon("★")), 800, 600)
+	if len(scene.Rects) < 1 {
+		t.Errorf("Badge with icon should produce at least 1 rect, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("Badge with icon should produce at least 1 glyph, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneBadgeText(t *testing.T) {
+	scene := buildTestScene(BadgeText("99+"), 800, 600)
+	if len(scene.Glyphs) < 1 {
+		t.Fatal("BadgeText should produce at least 1 glyph")
+	}
+}
+
+func TestBuildSceneBadgeMinSize(t *testing.T) {
+	scene := buildTestScene(Badge(Text("1")), 800, 600)
+	// The pill background rect should have at least badgeMinSize dimensions.
+	if len(scene.Rects) < 1 {
+		t.Fatal("need at least 1 rect for badge")
+	}
+	bg := scene.Rects[0]
+	if bg.W < badgeMinSize || bg.H < badgeMinSize {
+		t.Errorf("badge size = %dx%d, want at least %dx%d", bg.W, bg.H, badgeMinSize, badgeMinSize)
+	}
+}
+
+func TestBuildSceneChip(t *testing.T) {
+	scene := buildTestScene(Chip(Text("Tag"), false, nil), 800, 600)
+	// Chip: 2 rects (border + fill) + 1 glyph (label)
+	if len(scene.Rects) < 2 {
+		t.Errorf("Chip should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("Chip should produce at least 1 glyph, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneChipSelected(t *testing.T) {
+	scene := buildTestScene(Chip(Text("Tag"), true, nil), 800, 600)
+	tokens := theme.Default.Tokens()
+	if len(scene.Rects) < 2 {
+		t.Fatal("need at least 2 rects for selected chip")
+	}
+	// Selected chip border should use Accent.Primary
+	border := scene.Rects[0]
+	if border.Color != tokens.Colors.Accent.Primary {
+		t.Errorf("selected chip border = %v, want Accent.Primary", border.Color)
+	}
+}
+
+func TestBuildSceneChipHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Chip(Text("Tag"), false, func() {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 1 {
+		t.Errorf("Chip with onClick should register 1 hit target, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneChipDismissible(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(ChipDismissible(Text("Tag"), false, func() {}, func() {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 2 {
+		t.Errorf("Dismissible Chip should register 2 hit targets (click + dismiss), got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneChipNoCallbackNoHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Chip(Text("Tag"), false, nil), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 0 {
+		t.Errorf("Chip with nil onClick should register 0 hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneTabs(t *testing.T) {
+	items := []TabItem{
+		{Header: Text("Tab 1"), Content: Text("Content 1")},
+		{Header: Text("Tab 2"), Content: Text("Content 2")},
+	}
+	scene := buildTestScene(Tabs(items, 0, nil), 800, 600)
+	// Should produce glyphs for both tab headers + selected content
+	if len(scene.Glyphs) < 3 {
+		t.Fatalf("Tabs should produce at least 3 glyphs (2 headers + 1 content), got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneTabsRichHeaders(t *testing.T) {
+	items := []TabItem{
+		{Header: Row(Icon("★"), Text("Settings")), Content: Text("Settings content")},
+		{Header: Row(Icon("♥"), Text("Favorites")), Content: Text("Favorites content")},
+	}
+	scene := buildTestScene(Tabs(items, 0, nil), 800, 600)
+	// Should render icon + text for both headers + selected content
+	if len(scene.Glyphs) < 5 {
+		t.Fatalf("Tabs with rich headers should produce at least 5 glyphs, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneTabsHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	items := []TabItem{
+		{Header: Text("A"), Content: Text("CA")},
+		{Header: Text("B"), Content: Text("CB")},
+	}
+	BuildScene(Tabs(items, 0, func(int) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 2 {
+		t.Errorf("Tabs with 2 items + onSelect should register 2 hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneTabsSelectedContent(t *testing.T) {
+	items := []TabItem{
+		{Header: Text("Tab 1"), Content: Text("Content 1")},
+		{Header: Text("Tab 2"), Content: Text("Content 2")},
+	}
+	scene0 := buildTestScene(Tabs(items, 0, nil), 800, 600)
+	scene1 := buildTestScene(Tabs(items, 1, nil), 800, 600)
+
+	// Find content glyph (last glyph should be the content)
+	last0 := scene0.Glyphs[len(scene0.Glyphs)-1]
+	last1 := scene1.Glyphs[len(scene1.Glyphs)-1]
+
+	if last0.Text != "Content 1" {
+		t.Errorf("selected=0 content = %q, want 'Content 1'", last0.Text)
+	}
+	if last1.Text != "Content 2" {
+		t.Errorf("selected=1 content = %q, want 'Content 2'", last1.Text)
+	}
+}
+
+func TestBuildSceneAccordion(t *testing.T) {
+	state := NewAccordionState()
+	sections := []AccordionSection{
+		{Header: Text("Section 1"), Content: Text("Body 1")},
+		{Header: Text("Section 2"), Content: Text("Body 2")},
+	}
+	scene := buildTestScene(Accordion(sections, state), 800, 600)
+	// Collapsed: 2 headers + 2 chevrons + 1 divider = at least 4 glyphs + rects
+	if len(scene.Glyphs) < 4 {
+		t.Fatalf("Collapsed Accordion should produce at least 4 glyphs (2 chevrons + 2 headers), got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneAccordionExpandCollapse(t *testing.T) {
+	state := NewAccordionState()
+	state.Expanded[0] = true // expand first section
+	sections := []AccordionSection{
+		{Header: Text("Section 1"), Content: Text("Body 1")},
+		{Header: Text("Section 2"), Content: Text("Body 2")},
+	}
+	scene := buildTestScene(Accordion(sections, state), 800, 600)
+	// Expanded first section: 2 chevrons + 2 headers + 1 body content = 5 glyphs
+	if len(scene.Glyphs) < 5 {
+		t.Fatalf("Accordion with 1 expanded section should produce at least 5 glyphs, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneAccordionHitTarget(t *testing.T) {
+	state := NewAccordionState()
+	sections := []AccordionSection{
+		{Header: Text("S1"), Content: Text("C1")},
+		{Header: Text("S2"), Content: Text("C2")},
+	}
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Accordion(sections, state), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 2 {
+		t.Errorf("Accordion with 2 sections should register 2 hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneTooltipHidden(t *testing.T) {
+	scene := buildTestScene(Tooltip(Text("Hover me"), Text("Tip")), 800, 600)
+	// Default not visible — only trigger should render
+	if len(scene.Glyphs) < 1 {
+		t.Fatal("Tooltip trigger should produce at least 1 glyph")
+	}
+	if len(scene.Glyphs) > 1 {
+		t.Errorf("Hidden tooltip should not render content, got %d glyphs", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneTooltipVisible(t *testing.T) {
+	scene := buildTestScene(TooltipVisible(Text("Hover me"), Text("Tip content"), true), 800, 600)
+	// Visible: trigger glyph + tooltip content glyph + tooltip border/fill rects
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("Visible tooltip should produce at least 2 glyphs (trigger + content), got %d", len(scene.Glyphs))
+	}
+	if len(scene.Rects) < 2 {
+		t.Errorf("Visible tooltip should produce at least 2 rects (border + fill), got %d", len(scene.Rects))
+	}
+}
+
+func TestBuildSceneTooltipOverlayRendersLast(t *testing.T) {
+	// The tooltip overlay should render after the main tree.
+	scene := buildTestScene(Column(
+		TooltipVisible(Text("A"), Text("TIP"), true),
+		Text("B"),
+	), 800, 600)
+	// Glyphs order: A, B (main tree), then TIP (overlay)
+	if len(scene.Glyphs) < 3 {
+		t.Fatalf("expected at least 3 glyphs, got %d", len(scene.Glyphs))
+	}
+	// The last glyph should be from the tooltip overlay
+	last := scene.Glyphs[len(scene.Glyphs)-1]
+	if last.Text != "TIP" {
+		t.Errorf("last glyph = %q, want 'TIP' (overlay renders last)", last.Text)
+	}
+}
+
+func TestBuildSceneMenuBar(t *testing.T) {
+	items := []MenuItem{
+		{Label: Text("File"), OnClick: func() {}},
+		{Label: Text("Edit"), OnClick: func() {}},
+	}
+	scene := buildTestScene(MenuBar(items), 800, 600)
+	// Should produce: 2 rects (bg + border) + 2 glyphs (labels)
+	if len(scene.Rects) < 2 {
+		t.Errorf("MenuBar should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("MenuBar should produce at least 2 glyphs (labels), got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneMenuBarHitTarget(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	items := []MenuItem{
+		{Label: Text("File"), OnClick: func() {}},
+		{Label: Text("Edit"), OnClick: func() {}},
+	}
+	BuildScene(MenuBar(items), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 2 {
+		t.Errorf("MenuBar with 2 items should register 2 hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneMenuBarEmpty(t *testing.T) {
+	scene := buildTestScene(MenuBar(nil), 800, 600)
+	if len(scene.Rects) != 0 {
+		t.Errorf("Empty MenuBar should produce 0 rects, got %d", len(scene.Rects))
+	}
+}
+
+func TestBuildSceneContextMenuHidden(t *testing.T) {
+	items := []MenuItem{
+		{Label: Text("Cut")},
+		{Label: Text("Copy")},
+	}
+	scene := buildTestScene(ContextMenu(items, false, 100, 100), 800, 600)
+	if len(scene.Rects) != 0 {
+		t.Errorf("Hidden ContextMenu should produce 0 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) != 0 {
+		t.Errorf("Hidden ContextMenu should produce 0 glyphs, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneContextMenuVisible(t *testing.T) {
+	items := []MenuItem{
+		{Label: Text("Cut"), OnClick: func() {}},
+		{Label: Text("Copy"), OnClick: func() {}},
+	}
+	scene := buildTestScene(ContextMenu(items, true, 100, 100), 800, 600)
+	// Visible: border + fill rects + 2 item label glyphs
+	if len(scene.Rects) < 2 {
+		t.Errorf("Visible ContextMenu should produce at least 2 rects, got %d", len(scene.Rects))
+	}
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("Visible ContextMenu should produce at least 2 glyphs, got %d", len(scene.Glyphs))
+	}
+}
+
+func TestBuildSceneContextMenuHitTargets(t *testing.T) {
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	items := []MenuItem{
+		{Label: Text("Cut"), OnClick: func() {}},
+		{Label: Text("Copy"), OnClick: func() {}},
+	}
+	BuildScene(ContextMenu(items, true, 100, 100), canvas, theme.Default, 800, 600, &hitMap, nil)
+	if hitMap.Len() != 2 {
+		t.Errorf("ContextMenu with 2 items should register 2 hit targets, got %d", hitMap.Len())
+	}
+}
+
+func TestBuildSceneColumnWithTier3(t *testing.T) {
+	// Mix all tiers — should not panic.
+	state := NewAccordionState()
+	scene := buildTestScene(Column(
+		Card(Text("Card content")),
+		Badge(Text("5")),
+		Chip(Text("chip"), false, nil),
+		Tabs([]TabItem{
+			{Header: Text("T1"), Content: Text("C1")},
+		}, 0, nil),
+		Accordion([]AccordionSection{
+			{Header: Text("H"), Content: Text("B")},
+		}, state),
+	), 800, 600)
+
+	if len(scene.Rects) == 0 {
+		t.Fatal("Mixed column with Tier 3 widgets should produce rects")
+	}
+	if len(scene.Glyphs) == 0 {
+		t.Fatal("Mixed column with Tier 3 widgets should produce glyphs")
+	}
+}
