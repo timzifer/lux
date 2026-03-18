@@ -102,6 +102,8 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	var hoverState ui.HoverState
 	var mouseX, mouseY float32
 	var dragTarget *hit.Target // active drag target (non-nil while dragging)
+	var currentCursor input.CursorKind
+	var dynamicHandlers []globalHandlerEntry
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
@@ -140,9 +142,35 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 					modelDirty = true
 					return true
 
+				case RegisterHandlerMsg:
+					dynamicHandlers = append(dynamicHandlers, globalHandlerEntry{id: m.ID, handler: m.Handler})
+					return true
+				case UnregisterHandlerMsg:
+					for i, h := range dynamicHandlers {
+						if h.id == m.ID {
+							dynamicHandlers = append(dynamicHandlers[:i], dynamicHandlers[i+1:]...)
+							break
+						}
+					}
+					return true
+
 				case input.KeyMsg:
 					// Collect for widget-level dispatch.
 					dispatcher.Collect(m)
+
+					// Check registered shortcuts before other handling (RFC-002 §2.5).
+					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
+						for _, sc := range cfg.shortcuts {
+							if m.Key == sc.shortcut.Key && m.Modifiers == sc.shortcut.Modifiers {
+								newModel := update(currentModel, input.ShortcutMsg{Shortcut: sc.shortcut, ID: sc.id})
+								if modelChanged(any(newModel), any(currentModel)) {
+									modelDirty = true
+								}
+								currentModel = newModel
+								return true // consumed
+							}
+						}
+					}
 
 					// Handle Tab/Shift+Tab for focus navigation.
 					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
@@ -249,6 +277,14 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 				// Reset focus order for this frame (rebuilt during reconcile + layout).
 				fm.ResetOrder()
 
+				// Global Handler Layer: filter events before widget dispatch (RFC-002 §2.8).
+				for _, h := range cfg.globalHandlers {
+					dispatcher.FilterCollectedEvents(h.handler)
+				}
+				for _, h := range dynamicHandlers {
+					dispatcher.FilterCollectedEvents(h.handler)
+				}
+
 				// Dispatch collected input events to per-UID buffers.
 				dispatcher.Dispatch()
 
@@ -332,6 +368,15 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			// Continue firing positional callback while dragging.
 			if dragTarget != nil && dragTarget.OnClickAt != nil {
 				dragTarget.OnClickAt(x, y)
+			}
+			// Update cursor based on hovered hit target (RFC-002 §2.7).
+			newCursor := input.CursorDefault
+			if target := hitMap.HitTest(x, y); target != nil {
+				newCursor = target.Cursor
+			}
+			if newCursor != currentCursor {
+				currentCursor = newCursor
+				plat.SetCursor(newCursor)
 			}
 		},
 

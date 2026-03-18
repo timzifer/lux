@@ -3,6 +3,7 @@
 package app
 
 import (
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/platform"
 )
@@ -148,6 +149,7 @@ func (p *headlessPlatform) SetTitle(title string)        { p.title = title }
 func (p *headlessPlatform) WindowSize() (int, int)       { return p.w, p.h }
 func (p *headlessPlatform) FramebufferSize() (int, int)  { return p.w, p.h }
 func (p *headlessPlatform) ShouldClose() bool            { return true }
+func (p *headlessPlatform) SetCursor(_ input.CursorKind) {}
 
 // WithHeadlessFrames sets how many frames the headless platform runs.
 func WithHeadlessFrames(n int) Option {

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/platform"
 )
 
@@ -225,6 +226,10 @@ func (p *Platform) ShouldClose() bool {
 func (p *Platform) NativeHandle() uintptr {
 	return p.hwnd
 }
+
+// SetCursor changes the system cursor shape (RFC-002 §2.7).
+// TODO: Implement Win32 cursor mapping via SetCursor/LoadCursor.
+func (p *Platform) SetCursor(_ input.CursorKind) {}
 
 func ensureWindowClass() error {
 	registerClassOnce.Do(func() {

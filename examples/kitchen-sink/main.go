@@ -13,6 +13,7 @@ import (
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/icons"
@@ -24,6 +25,7 @@ var sectionIDs = []string{
 	"typography", "buttons", "form-controls", "range-progress",
 	"selection", "layout", "rich-text", "virtual-list", "tree",
 	"cards", "tabs", "accordion", "badges-chips", "menus",
+	"shortcuts", "overlays",
 }
 
 func sectionLabel(id string) string {
@@ -56,6 +58,10 @@ func sectionLabel(id string) string {
 		return "Badges & Chips"
 	case "menus":
 		return "Menus"
+	case "shortcuts":
+		return "Shortcuts"
+	case "overlays":
+		return "Overlays"
 	default:
 		return id
 	}
@@ -91,6 +97,11 @@ type Model struct {
 	ChipDismissed  bool
 	LastMenuAction string
 	MenuBarState   *ui.MenuBarState
+	// Phase 1 features
+	ShortcutLog    string
+	OverlayOpen    bool
+	HandlerLog     string
+	KineticScroll  *ui.KineticScroll
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -111,6 +122,9 @@ type ToggleChipBMsg struct{}
 type ToggleChipCMsg struct{}
 type DismissChipMsg struct{}
 type MenuActionMsg struct{ Action string }
+type ToggleOverlayMsg struct{}
+type DismissOverlayMsg struct{}
+type SetHandlerLogMsg struct{ Text string }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -149,6 +163,22 @@ func update(m Model, msg app.Msg) Model {
 		m.ChipDismissed = true
 	case MenuActionMsg:
 		m.LastMenuAction = msg.Action
+	case input.ShortcutMsg:
+		m.ShortcutLog = fmt.Sprintf("Shortcut: %s", msg.ID)
+		switch msg.ID {
+		case "incr":
+			m.Count++
+		case "decr":
+			m.Count--
+		}
+	case ToggleOverlayMsg:
+		m.OverlayOpen = !m.OverlayOpen
+	case DismissOverlayMsg:
+		m.OverlayOpen = false
+	case ui.DismissOverlayMsg:
+		m.OverlayOpen = false
+	case SetHandlerLogMsg:
+		m.HandlerLog = msg.Text
 
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
@@ -157,6 +187,9 @@ func update(m Model, msg app.Msg) Model {
 		m.ToggleAnim.Tick(msg.DeltaTime)
 		m.NavTree.Tick(msg.DeltaTime)
 		m.DemoTree.Tick(msg.DeltaTime)
+		if m.KineticScroll != nil {
+			m.KineticScroll.Tick(msg.DeltaTime)
+		}
 	}
 	return m
 }
@@ -230,6 +263,10 @@ func sectionContent(m Model) ui.Element {
 		return badgesChipsSection(m)
 	case "menus":
 		return menusSection(m)
+	case "shortcuts":
+		return shortcutsSection(m)
+	case "overlays":
+		return overlaysSection(m)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -645,6 +682,86 @@ func menusSection(m Model) ui.Element {
 	return ui.Column(children...)
 }
 
+// ── Phase 1 Sections ──────────────────────────────────────────────
+
+func shortcutsSection(m Model) ui.Element {
+	children := []ui.Element{
+		sectionHeader("Keyboard Shortcuts"),
+		ui.Text("Registered shortcuts:"),
+		ui.Spacer(4),
+		ui.Text("  Ctrl+I → Increment counter"),
+		ui.Text("  Ctrl+D → Decrement counter"),
+		ui.Spacer(8),
+		ui.Text(fmt.Sprintf("Counter value: %d", m.Count)),
+	}
+
+	if m.ShortcutLog != "" {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text(fmt.Sprintf("Last shortcut: %s", m.ShortcutLog)),
+		)
+	}
+
+	children = append(children,
+		ui.Spacer(16),
+		sectionHeader("Global Handler Layer"),
+		ui.Text("A global handler logs all key events before widget dispatch."),
+	)
+	if m.HandlerLog != "" {
+		children = append(children,
+			ui.Spacer(4),
+			ui.Text(fmt.Sprintf("Handler log: %s", m.HandlerLog)),
+		)
+	}
+
+	return ui.Column(children...)
+}
+
+func overlaysSection(m Model) ui.Element {
+	children := []ui.Element{
+		sectionHeader("Overlay System"),
+		ui.Text("Click the button to toggle a dismissable overlay:"),
+		ui.Spacer(4),
+		ui.Button("Toggle Overlay", func() { app.Send(ToggleOverlayMsg{}) }),
+	}
+
+	if m.OverlayOpen {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text("Overlay is OPEN (click outside or press button to close)"),
+			ui.Spacer(4),
+			// The actual Overlay element rendered above normal flow.
+			ui.Overlay{
+				ID:          "demo-overlay",
+				Anchor:      draw.R(300, 300, 100, 30),
+				Placement:   ui.PlacementBelow,
+				Dismissable: true,
+				Content: ui.Card(ui.Column(
+					ui.Text("This is an overlay!"),
+					ui.Spacer(4),
+					ui.Text("It renders above normal content."),
+					ui.Spacer(8),
+					ui.Button("Close", func() { app.Send(DismissOverlayMsg{}) }),
+				)),
+			},
+		)
+	} else {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text("Overlay is closed."),
+		)
+	}
+
+	children = append(children,
+		ui.Spacer(16),
+		sectionHeader("Kinetic Scrolling"),
+		ui.Text("KineticScroll with friction-decay physics is available."),
+		ui.Text("Use trackpad for smooth kinetic scrolling or mouse wheel for discrete steps."),
+	)
+
+	return ui.Column(children...)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
@@ -662,12 +779,26 @@ func main() {
 		DemoTree:       ui.NewTreeState(),
 		AccordionState: ui.NewAccordionState(),
 		MenuBarState:   ui.NewMenuBarState(),
+		KineticScroll:  ui.NewKineticScroll(theme.Default.Tokens().Scroll),
+	}
+
+	// Global handler that logs key events (Phase 1: §2.8).
+	keyLogger := func(ev ui.InputEvent) bool {
+		if ev.Kind == ui.EventKey && ev.Key != nil {
+			app.Send(SetHandlerLogMsg{Text: fmt.Sprintf("Key=%d Action=%d", ev.Key.Key, ev.Key.Action)})
+		}
+		return false // don't consume — let events pass through
 	}
 
 	if err := app.Run(initial, update, view,
 		app.WithTheme(theme.Default),
 		app.WithTitle("Lux Kitchen Sink"),
 		app.WithSize(900, 700),
+		// Phase 1: Keyboard Shortcuts (RFC-002 §2.5)
+		app.WithShortcut(input.Shortcut{Key: input.KeyI, Modifiers: input.ModCtrl}, "incr"),
+		app.WithShortcut(input.Shortcut{Key: input.KeyD, Modifiers: input.ModCtrl}, "decr"),
+		// Phase 1: Global Handler Layer (RFC-002 §2.8)
+		app.WithGlobalHandler(keyLogger),
 	); err != nil {
 		log.Fatal(err)
 	}

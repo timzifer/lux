@@ -46,39 +46,39 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ---
 
-## Phase 1 — Interaktions-Infrastruktur
+## Phase 1 — Interaktions-Infrastruktur ✅
 
-### 1.1 Cursor-Management (RFC-002 §2.7)
-- [ ] `CursorKind` Enum und `Cursable`-Interface implementieren
-- [ ] Platform-Interface um `SetCursor(CursorKind)` erweitern
-- [ ] GLFW-Backend: Cursor-Änderung umsetzen
+### 1.1 Cursor-Management (RFC-002 §2.7) ✅
+- [x] `CursorKind` Enum und `Cursable`-Interface implementieren
+- [x] Platform-Interface um `SetCursor(CursorKind)` erweitern
+- [x] GLFW-Backend: Cursor-Änderung umsetzen
 - **Abhängig von:** 0.2 (Hit-Test liefert Widget unter Cursor)
 
-### 1.2 Keyboard-Shortcuts (RFC-002 §2.5)
-- [ ] `Shortcut` Typ und `ShortcutMsg` implementieren
-- [ ] `app.WithShortcut()` Option
-- [ ] Plattform-Normalisierung (Cmd↔Ctrl via `PlatformShortcut`)
+### 1.2 Keyboard-Shortcuts (RFC-002 §2.5) ✅
+- [x] `Shortcut` Typ und `ShortcutMsg` implementieren
+- [x] `app.WithShortcut()` Option
+- [x] Plattform-Normalisierung (Cmd↔Ctrl via `PlatformShortcut`)
 - **Abhängig von:** 0.1, 0.3
 
-### 1.3 Global Handler Layer (RFC-002 §2.8)
-- [ ] `GlobalHandler func(InputEvent) bool` definieren
-- [ ] `app.WithGlobalHandler()` und `RegisterHandlerMsg`/`UnregisterHandlerMsg`
-- [ ] Dispatch-Reihenfolge: GlobalHandler → Overlay → HitTest → Widget
+### 1.3 Global Handler Layer (RFC-002 §2.8) ✅
+- [x] `GlobalHandler func(InputEvent) bool` definieren
+- [x] `app.WithGlobalHandler()` und `RegisterHandlerMsg`/`UnregisterHandlerMsg`
+- [x] Dispatch-Reihenfolge: GlobalHandler → Overlay → HitTest → Widget
 - **Abhängig von:** 0.2
 
-### 1.4 Kinetic Scrolling (RFC-002 §3)
-- [ ] `KineticScroll` Typ mit Friction-Decay-Modell implementieren
-- [ ] `scrollPhase` State-Machine (Idle, Tracking, Decelerating, Snapping)
-- [ ] Overscroll & Rubber-Band-Rückfederung via Spring
-- [ ] Velocity-Tracking aus Trackpad-Deltas
-- [ ] Bestehenden `ScrollState` in `KineticScroll` überführen
+### 1.4 Kinetic Scrolling (RFC-002 §3) ✅
+- [x] `KineticScroll` Typ mit Friction-Decay-Modell implementieren
+- [x] `scrollPhase` State-Machine (Idle, Tracking, Decelerating, Snapping)
+- [x] Overscroll & Rubber-Band-Rückfederung via Spring
+- [x] Velocity-Tracking aus Trackpad-Deltas
+- [ ] Bestehenden `ScrollState` in `KineticScroll` überführen (Migration optional, beide koexistieren)
 - **Abhängig von:** 0.1 (ScrollMsg.Precise), 0.4 (Animator)
 
-### 1.5 Overlay-System (RFC-002 §5.3)
-- [ ] `Overlay`-Element mit Anchor, Placement, Dismissable
-- [ ] Overlay-Layer im Render-Pass (über normalem Layout-Flow)
-- [ ] Overlay-Input-Priority (vor normalem Hit-Test)
-- [ ] `DismissOverlayMsg`
+### 1.5 Overlay-System (RFC-002 §5.3) ✅
+- [x] `Overlay`-Element mit Anchor, Placement, Dismissable
+- [x] Overlay-Layer im Render-Pass (über normalem Layout-Flow)
+- [x] Overlay-Input-Priority (vor normalem Hit-Test)
+- [x] `DismissOverlayMsg`
 - **Abhängig von:** 0.2
 
 ---
