@@ -1115,12 +1115,12 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, tokens th
 		draw.R(float32(thumbX), float32(thumbY), float32(sliderThumbD), float32(sliderThumbD)),
 		draw.SolidPaint(tokens.Colors.Accent.Primary))
 
-	// Hit target (positional)
+	// Hit target (draggable positional)
 	if hitMap != nil && node.OnChange != nil {
 		areaX := float32(area.X)
 		tw := float32(trackW)
 		onChange := node.OnChange
-		hitMap.AddAt(draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(sliderHeight)),
+		hitMap.AddDrag(draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(sliderHeight)),
 			func(x, _ float32) {
 				v := (x - areaX) / tw
 				if v < 0 {

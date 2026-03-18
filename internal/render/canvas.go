@@ -122,7 +122,13 @@ func (c *SceneCanvas) FillRoundRectCorners(r draw.Rect, _ draw.CornerRadii, pain
 }
 
 func (c *SceneCanvas) FillEllipse(r draw.Rect, paint draw.Paint) {
-	c.FillRect(r, paint)
+	// Use a rounded rect with radius = min(w,h)/2 to produce a circle/ellipse
+	// via the SDF shader.
+	radius := r.W
+	if r.H < radius {
+		radius = r.H
+	}
+	c.FillRoundRect(r, radius/2, paint)
 }
 
 func (c *SceneCanvas) StrokeRect(r draw.Rect, stroke draw.Stroke) {

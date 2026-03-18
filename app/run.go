@@ -96,6 +96,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	var hitMap hit.Map
 	var hoverState ui.HoverState
 	var mouseX, mouseY float32
+	var dragTarget *hit.Target // active drag target (non-nil while dragging)
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
@@ -205,17 +206,25 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			}
 			Send(input.MouseMsg{X: x, Y: y, Button: btn, Action: action})
 
-			// Legacy hit-test for left-click.
-			if button == 0 && pressed {
-				// Blur focus first; if the click lands on a TextField,
-				// its hit target will re-focus it.
-				globalFocus.Blur()
-				if target := hitMap.HitTest(x, y); target != nil {
-					if target.OnClickAt != nil {
-						target.OnClickAt(x, y)
-					} else if target.OnClick != nil {
-						target.OnClick()
+			// Left-click hit-test and drag tracking.
+			if button == 0 {
+				if pressed {
+					// Blur focus first; if the click lands on a TextField,
+					// its hit target will re-focus it.
+					globalFocus.Blur()
+					if target := hitMap.HitTest(x, y); target != nil {
+						if target.OnClickAt != nil {
+							target.OnClickAt(x, y)
+							if target.Draggable {
+								dragTarget = target
+							}
+						} else if target.OnClick != nil {
+							target.OnClick()
+						}
 					}
+				} else {
+					// Release ends any active drag.
+					dragTarget = nil
 				}
 			}
 		},
@@ -224,6 +233,10 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			mouseX = x
 			mouseY = y
 			Send(input.MouseMsg{X: x, Y: y, Action: input.MouseMove})
+			// Continue firing positional callback while dragging.
+			if dragTarget != nil && dragTarget.OnClickAt != nil {
+				dragTarget.OnClickAt(x, y)
+			}
 		},
 
 		OnScroll: func(deltaX, deltaY float32) {
