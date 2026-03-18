@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"math"
 	"time"
 
 	"github.com/timzifer/lux/anim"
@@ -614,16 +615,16 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 			style = node.Style
 		}
 		metrics := canvas.MeasureText(node.Content, style)
-		w := int(metrics.Width)
-		h := int(metrics.Ascent)
+		w := int(math.Ceil(float64(metrics.Width)))
+		h := int(math.Ceil(float64(metrics.Ascent)))
 		canvas.DrawText(node.Content, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.Text.Primary)
 		return bounds{X: area.X, Y: area.Y, W: w, H: h}
 
 	case buttonElement:
 		style := tokens.Typography.Label
 		metrics := canvas.MeasureText(node.Label, style)
-		labelW := int(metrics.Width)
-		labelH := int(metrics.Ascent)
+		labelW := int(math.Ceil(float64(metrics.Width)))
+		labelH := int(math.Ceil(float64(metrics.Ascent)))
 		w := max(buttonMinWidth, labelW+(buttonPadX*2))
 		h := labelH + (buttonPadY * 2)
 
@@ -678,8 +679,8 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 			LineHeight: 1.0,
 		}
 		metrics := canvas.MeasureText(node.Name, style)
-		w := int(metrics.Width)
-		h := int(metrics.Ascent)
+		w := int(math.Ceil(float64(metrics.Width)))
+		h := int(math.Ceil(float64(metrics.Ascent)))
 		if w == 0 {
 			w = int(size)
 		}
@@ -911,8 +912,8 @@ const (
 func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
-	labelW := int(metrics.Width)
-	labelH := int(metrics.Ascent)
+	labelW := int(math.Ceil(float64(metrics.Width)))
+	labelH := int(math.Ceil(float64(metrics.Ascent)))
 	totalH := max(checkboxSize, labelH)
 	totalW := checkboxSize + checkboxGap + labelW
 
@@ -972,8 +973,8 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, token
 func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
-	labelW := int(metrics.Width)
-	labelH := int(metrics.Ascent)
+	labelW := int(math.Ceil(float64(metrics.Width)))
+	labelH := int(math.Ceil(float64(metrics.Ascent)))
 	totalH := max(checkboxSize, labelH)
 	totalW := checkboxSize + checkboxGap + labelW
 

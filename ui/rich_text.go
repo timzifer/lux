@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"math"
+
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/theme"
 )
@@ -82,8 +84,8 @@ func layoutRichText(node richTextElement, area bounds, canvas draw.Canvas, token
 			}
 
 			metrics := canvas.MeasureText(span.Text, style)
-			spanW := int(metrics.Width)
-			spanH := int(metrics.Ascent)
+			spanW := int(math.Ceil(float64(metrics.Width)))
+			spanH := int(math.Ceil(float64(metrics.Ascent)))
 			if spanH > lineH {
 				lineH = spanH
 			}
