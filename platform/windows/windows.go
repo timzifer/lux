@@ -31,6 +31,10 @@ const (
 	wmLButtonDown  = 0x0201
 	wmRButtonDown  = 0x0204
 	wmMButtonDown  = 0x0207
+	wmMouseWheel   = 0x020A
+	wmKeyDown      = 0x0100
+	wmKeyUp        = 0x0101
+	wmChar         = 0x0102
 
 	pmRemove      = 0x0001
 	swShowDefault = 10
@@ -280,6 +284,29 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 				p.callbacks.OnMouseButton(x, y, button, true)
 			}
 			return 0
+		case wmMouseWheel:
+			if p.callbacks.OnScroll != nil {
+				delta := float32(int16(wParam>>16)) / 120.0
+				p.callbacks.OnScroll(0, delta)
+			}
+			return 0
+		case wmKeyDown:
+			if p.callbacks.OnKey != nil {
+				name := win32KeyName(int(wParam))
+				p.callbacks.OnKey(name, 0, 0) // press
+			}
+			return 0
+		case wmKeyUp:
+			if p.callbacks.OnKey != nil {
+				name := win32KeyName(int(wParam))
+				p.callbacks.OnKey(name, 1, 0) // release
+			}
+			return 0
+		case wmChar:
+			if p.callbacks.OnChar != nil {
+				p.callbacks.OnChar(rune(wParam))
+			}
+			return 0
 		case wmClose:
 			p.shouldClose = true
 			if p.callbacks.OnClose != nil {
@@ -335,4 +362,42 @@ type rect struct {
 	Top    int32
 	Right  int32
 	Bottom int32
+}
+
+// win32KeyName maps a Win32 virtual key code to a human-readable name.
+func win32KeyName(vk int) string {
+	switch vk {
+	case 0x08:
+		return "Backspace"
+	case 0x09:
+		return "Tab"
+	case 0x0D:
+		return "Enter"
+	case 0x1B:
+		return "Escape"
+	case 0x20:
+		return "Space"
+	case 0x25:
+		return "Left"
+	case 0x26:
+		return "Up"
+	case 0x27:
+		return "Right"
+	case 0x28:
+		return "Down"
+	case 0x23:
+		return "End"
+	case 0x24:
+		return "Home"
+	case 0x2E:
+		return "Delete"
+	default:
+		if vk >= 0x41 && vk <= 0x5A {
+			return string(rune(vk))
+		}
+		if vk >= 0x30 && vk <= 0x39 {
+			return string(rune(vk))
+		}
+		return fmt.Sprintf("Key(%d)", vk)
+	}
 }

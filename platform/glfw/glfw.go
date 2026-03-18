@@ -93,6 +93,48 @@ func (p *Platform) Run(cb platform.Callbacks) error {
 		})
 	}
 
+	if cb.OnScroll != nil {
+		p.window.SetScrollCallback(func(_ *glfw.Window, xoff, yoff float64) {
+			cb.OnScroll(float32(xoff), float32(yoff))
+		})
+	}
+
+	if cb.OnKey != nil {
+		p.window.SetKeyCallback(func(_ *glfw.Window, key glfw.Key, _ int, action glfw.Action, mods glfw.ModifierKey) {
+			name := glfwKeyName(key)
+			act := int(action) // glfw: 0=release, 1=press, 2=repeat
+			// Remap to our convention: 0=press, 1=release, 2=repeat
+			switch action {
+			case glfw.Press:
+				act = 0
+			case glfw.Release:
+				act = 1
+			case glfw.Repeat:
+				act = 2
+			}
+			m := 0
+			if mods&glfw.ModShift != 0 {
+				m |= 1
+			}
+			if mods&glfw.ModControl != 0 {
+				m |= 2
+			}
+			if mods&glfw.ModAlt != 0 {
+				m |= 4
+			}
+			if mods&glfw.ModSuper != 0 {
+				m |= 8
+			}
+			cb.OnKey(name, act, m)
+		})
+	}
+
+	if cb.OnChar != nil {
+		p.window.SetCharCallback(func(_ *glfw.Window, ch rune) {
+			cb.OnChar(ch)
+		})
+	}
+
 	for !p.window.ShouldClose() {
 		glfw.PollEvents()
 		if cb.OnFrame != nil {
@@ -147,4 +189,50 @@ func (p *Platform) ShouldClose() bool {
 // Window returns the underlying GLFW window.
 func (p *Platform) Window() *glfw.Window {
 	return p.window
+}
+
+// glfwKeyName maps a GLFW key code to a human-readable name.
+func glfwKeyName(key glfw.Key) string {
+	switch key {
+	case glfw.KeySpace:
+		return "Space"
+	case glfw.KeyEnter:
+		return "Enter"
+	case glfw.KeyTab:
+		return "Tab"
+	case glfw.KeyBackspace:
+		return "Backspace"
+	case glfw.KeyEscape:
+		return "Escape"
+	case glfw.KeyLeft:
+		return "Left"
+	case glfw.KeyRight:
+		return "Right"
+	case glfw.KeyUp:
+		return "Up"
+	case glfw.KeyDown:
+		return "Down"
+	case glfw.KeyHome:
+		return "Home"
+	case glfw.KeyEnd:
+		return "End"
+	case glfw.KeyDelete:
+		return "Delete"
+	case glfw.KeyLeftShift, glfw.KeyRightShift:
+		return "Shift"
+	case glfw.KeyLeftControl, glfw.KeyRightControl:
+		return "Ctrl"
+	case glfw.KeyLeftAlt, glfw.KeyRightAlt:
+		return "Alt"
+	case glfw.KeyLeftSuper, glfw.KeyRightSuper:
+		return "Super"
+	default:
+		if key >= glfw.KeyA && key <= glfw.KeyZ {
+			return string(rune('A' + (key - glfw.KeyA)))
+		}
+		if key >= glfw.Key0 && key <= glfw.Key9 {
+			return string(rune('0' + (key - glfw.Key0)))
+		}
+		return fmt.Sprintf("Key(%d)", key)
+	}
 }

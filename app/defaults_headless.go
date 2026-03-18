@@ -13,6 +13,9 @@ var headlessConfig struct {
 	frames     int
 	clicks     []mouseClick
 	mouseMoves []mouseMove
+	scrolls    []scrollEvent
+	keyEvents  []keyEvent
+	charEvents []charEvent
 }
 
 func init() {
@@ -23,6 +26,9 @@ func resetHeadlessConfig() {
 	headlessConfig.frames = 0
 	headlessConfig.clicks = nil
 	headlessConfig.mouseMoves = nil
+	headlessConfig.scrolls = nil
+	headlessConfig.keyEvents = nil
+	headlessConfig.charEvents = nil
 }
 
 func defaultPlatformFactory() platform.Platform {
@@ -30,6 +36,9 @@ func defaultPlatformFactory() platform.Platform {
 		frames:     headlessConfig.frames,
 		clicks:     headlessConfig.clicks,
 		mouseMoves: headlessConfig.mouseMoves,
+		scrolls:    headlessConfig.scrolls,
+		keyEvents:  headlessConfig.keyEvents,
+		charEvents: headlessConfig.charEvents,
 	}
 	resetHeadlessConfig()
 	return p
@@ -46,6 +55,9 @@ type headlessPlatform struct {
 	frames     int          // total frames to run (0 means 1)
 	clicks     []mouseClick // injected mouse clicks
 	mouseMoves []mouseMove  // injected mouse moves
+	scrolls    []scrollEvent
+	keyEvents  []keyEvent
+	charEvents []charEvent
 }
 
 type mouseClick struct {
@@ -56,6 +68,23 @@ type mouseClick struct {
 type mouseMove struct {
 	frame int     // which frame to inject (0-based)
 	x, y  float32 // cursor position
+}
+
+type scrollEvent struct {
+	frame        int
+	deltaX, deltaY float32
+}
+
+type keyEvent struct {
+	frame  int
+	key    string
+	action int // 0=press, 1=release, 2=repeat
+	mods   int
+}
+
+type charEvent struct {
+	frame int
+	ch    rune
 }
 
 func (p *headlessPlatform) Init(cfg platform.Config) error {
@@ -89,6 +118,24 @@ func (p *headlessPlatform) Run(cb platform.Callbacks) error {
 				cb.OnMouseButton(c.x, c.y, 0, true)
 			}
 		}
+		// Inject scroll events.
+		for _, s := range p.scrolls {
+			if s.frame == f && cb.OnScroll != nil {
+				cb.OnScroll(s.deltaX, s.deltaY)
+			}
+		}
+		// Inject key events.
+		for _, k := range p.keyEvents {
+			if k.frame == f && cb.OnKey != nil {
+				cb.OnKey(k.key, k.action, k.mods)
+			}
+		}
+		// Inject char events.
+		for _, c := range p.charEvents {
+			if c.frame == f && cb.OnChar != nil {
+				cb.OnChar(c.ch)
+			}
+		}
 		if cb.OnFrame != nil {
 			cb.OnFrame()
 		}
@@ -120,5 +167,27 @@ func WithHeadlessClick(frame int, x, y float32) Option {
 func WithHeadlessMouseMove(frame int, x, y float32) Option {
 	return func(o *options) {
 		headlessConfig.mouseMoves = append(headlessConfig.mouseMoves, mouseMove{frame: frame, x: x, y: y})
+	}
+}
+
+// WithHeadlessScroll injects a scroll event on the given frame (0-based).
+func WithHeadlessScroll(frame int, deltaX, deltaY float32) Option {
+	return func(o *options) {
+		headlessConfig.scrolls = append(headlessConfig.scrolls, scrollEvent{frame: frame, deltaX: deltaX, deltaY: deltaY})
+	}
+}
+
+// WithHeadlessKey injects a key event on the given frame (0-based).
+// action: 0=press, 1=release, 2=repeat.  mods: bit 0=Shift, 1=Ctrl, 2=Alt, 3=Super.
+func WithHeadlessKey(frame int, key string, action int, mods int) Option {
+	return func(o *options) {
+		headlessConfig.keyEvents = append(headlessConfig.keyEvents, keyEvent{frame: frame, key: key, action: action, mods: mods})
+	}
+}
+
+// WithHeadlessChar injects a character input event on the given frame (0-based).
+func WithHeadlessChar(frame int, ch rune) Option {
+	return func(o *options) {
+		headlessConfig.charEvents = append(headlessConfig.charEvents, charEvent{frame: frame, ch: ch})
 	}
 }

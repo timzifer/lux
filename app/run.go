@@ -6,6 +6,7 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
@@ -149,9 +150,25 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 		OnResize: func(width, height int) {
 			renderer.Resize(width, height)
+			Send(input.ResizeMsg{Width: width, Height: height})
 		},
 
 		OnMouseButton: func(x, y float32, button int, pressed bool) {
+			// Send input message for all mouse button events.
+			btn := input.MouseButtonLeft
+			switch button {
+			case 1:
+				btn = input.MouseButtonRight
+			case 2:
+				btn = input.MouseButtonMiddle
+			}
+			action := input.MouseRelease
+			if pressed {
+				action = input.MousePress
+			}
+			Send(input.MouseMsg{X: x, Y: y, Button: btn, Action: action})
+
+			// Legacy hit-test for left-click.
 			if button == 0 && pressed {
 				if target := hitMap.HitTest(x, y); target != nil {
 					if target.OnClickAt != nil {
@@ -166,6 +183,35 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 		OnMouseMove: func(x, y float32) {
 			mouseX = x
 			mouseY = y
+			Send(input.MouseMsg{X: x, Y: y, Action: input.MouseMove})
+		},
+
+		OnScroll: func(deltaX, deltaY float32) {
+			Send(input.ScrollMsg{DeltaX: deltaX, DeltaY: deltaY})
+		},
+
+		OnKey: func(key string, action int, mods int) {
+			a := input.KeyPress
+			switch action {
+			case 1:
+				a = input.KeyRelease
+			case 2:
+				a = input.KeyRepeat
+			}
+			Send(input.KeyMsg{
+				Key: key,
+				Modifiers: input.KeyModifiers{
+					Shift: mods&1 != 0,
+					Ctrl:  mods&2 != 0,
+					Alt:   mods&4 != 0,
+					Super: mods&8 != 0,
+				},
+				Action: a,
+			})
+		},
+
+		OnChar: func(ch rune) {
+			Send(input.CharMsg{Char: ch})
 		},
 	})
 }

@@ -815,3 +815,177 @@ func TestSfntCheckboxWithLabel(t *testing.T) {
 		t.Fatal("Sfnt Checkbox should produce TexturedGlyphs")
 	}
 }
+
+// ── Scroll Offset Tests ──────────────────────────────────────────
+
+func TestScrollViewOffsetShiftsContent(t *testing.T) {
+	content := Column(
+		Text("LINE 1"),
+		Text("LINE 2"),
+		Text("LINE 3"),
+		Text("LINE 4"),
+	)
+
+	// Render without offset.
+	sceneNoScroll := buildTestScene(ScrollView(content, 50), 800, 600)
+
+	// Render with offset.
+	state := &ScrollState{Offset: 20}
+	canvas := render.NewSceneCanvas(800, 600)
+	sceneWithScroll := BuildScene(ScrollView(content, 50, state), canvas, theme.Default, 800, 600, nil, nil)
+
+	if len(sceneNoScroll.Glyphs) == 0 || len(sceneWithScroll.Glyphs) == 0 {
+		t.Fatal("both scenes should produce glyphs")
+	}
+
+	// With offset, the first glyph's Y should be shifted up by the offset.
+	noScrollY := sceneNoScroll.Glyphs[0].Y
+	scrolledY := sceneWithScroll.Glyphs[0].Y
+	if scrolledY >= noScrollY {
+		t.Errorf("scrolled glyph Y=%d should be less than non-scrolled Y=%d (offset shifts content up)", scrolledY, noScrollY)
+	}
+	diff := noScrollY - scrolledY
+	if diff != 20 {
+		t.Errorf("Y difference = %d, want 20 (offset=20)", diff)
+	}
+}
+
+func TestScrollViewThumbPositionReflectsOffset(t *testing.T) {
+	content := Column(
+		Text("A"), Text("B"), Text("C"), Text("D"),
+		Text("E"), Text("F"), Text("G"), Text("H"),
+	)
+
+	// No offset — thumb at top.
+	state0 := &ScrollState{Offset: 0}
+	canvas0 := render.NewSceneCanvas(800, 600)
+	scene0 := BuildScene(ScrollView(content, 40, state0), canvas0, theme.Default, 800, 600, nil, nil)
+
+	// Large offset — thumb should be lower.
+	state1 := &ScrollState{Offset: 100}
+	canvas1 := render.NewSceneCanvas(800, 600)
+	scene1 := BuildScene(ScrollView(content, 40, state1), canvas1, theme.Default, 800, 600, nil, nil)
+
+	// Both scenes should have a scrollbar (track + thumb = 2+ rects).
+	if len(scene0.Rects) < 2 || len(scene1.Rects) < 2 {
+		t.Fatalf("expected scrollbar rects: scene0=%d, scene1=%d", len(scene0.Rects), len(scene1.Rects))
+	}
+
+	// The last rect in each scene is the scrollbar thumb.
+	thumb0 := scene0.Rects[len(scene0.Rects)-1]
+	thumb1 := scene1.Rects[len(scene1.Rects)-1]
+
+	if thumb1.Y <= thumb0.Y {
+		t.Errorf("scrolled thumb Y=%d should be below non-scrolled thumb Y=%d", thumb1.Y, thumb0.Y)
+	}
+}
+
+func TestScrollStateScrollByDelta(t *testing.T) {
+	var s ScrollState
+	// Scroll down by 50 in a 200-content, 100-viewport scenario.
+	s.ScrollBy(-50, 200, 100)
+	if s.Offset != 50 {
+		t.Errorf("Offset = %f, want 50", s.Offset)
+	}
+	// Scroll up by 100 — should clamp to 0.
+	s.ScrollBy(100, 200, 100)
+	if s.Offset != 0 {
+		t.Errorf("Offset = %f, want 0 (clamped)", s.Offset)
+	}
+}
+
+// ── Focus / TextField Tests ──────────────────────────────────────
+
+func TestTextFieldFocusBorderHighlight(t *testing.T) {
+	focus := &FocusState{FocusedID: 1}
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(
+		TextField("hi", "", WithOnChange(func(string) {}), WithFocusState(focus)),
+		canvas, theme.Default, 800, 600, nil, nil, focus,
+	)
+	scene := canvas.Scene()
+	tokens := theme.Default.Tokens()
+
+	// The first rect is the border — when focused, it should use Accent.Primary.
+	if len(scene.Rects) < 1 {
+		t.Fatal("expected at least 1 rect for border")
+	}
+	border := scene.Rects[0]
+	if border.Color != tokens.Colors.Accent.Primary {
+		t.Errorf("focused border color = %v, want Accent.Primary %v", border.Color, tokens.Colors.Accent.Primary)
+	}
+}
+
+func TestTextFieldUnfocusedBorder(t *testing.T) {
+	focus := &FocusState{FocusedID: 0} // nothing focused
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(
+		TextField("hi", "", WithOnChange(func(string) {}), WithFocusState(focus)),
+		canvas, theme.Default, 800, 600, nil, nil, focus,
+	)
+	scene := canvas.Scene()
+	tokens := theme.Default.Tokens()
+
+	if len(scene.Rects) < 1 {
+		t.Fatal("expected at least 1 rect for border")
+	}
+	border := scene.Rects[0]
+	if border.Color != tokens.Colors.Stroke.Border {
+		t.Errorf("unfocused border color = %v, want Stroke.Border %v", border.Color, tokens.Colors.Stroke.Border)
+	}
+}
+
+func TestTextFieldClickSetsFocus(t *testing.T) {
+	focus := &FocusState{}
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(
+		TextField("", "type here", WithOnChange(func(string) {}), WithFocusState(focus)),
+		canvas, theme.Default, 800, 600, &hitMap, nil, focus,
+	)
+
+	if hitMap.Len() != 1 {
+		t.Fatalf("TextField with onChange+focus should register 1 hit target, got %d", hitMap.Len())
+	}
+	target := hitMap.HitTest(float32(framePadding+5), float32(framePadding+5))
+	if target == nil {
+		t.Fatal("expected hit target at TextField position")
+	}
+	target.OnClick()
+	if focus.FocusedID != 1 {
+		t.Errorf("FocusedID = %d, want 1 after click", focus.FocusedID)
+	}
+}
+
+func TestHandleKeyMsgBackspace(t *testing.T) {
+	focus := &FocusState{FocusedID: 1}
+	var result string
+	HandleKeyMsg(focus, "Backspace", "hello", func(v string) { result = v })
+	if result != "hell" {
+		t.Errorf("after Backspace: %q, want %q", result, "hell")
+	}
+}
+
+func TestHandleKeyMsgEscapeBlurs(t *testing.T) {
+	focus := &FocusState{FocusedID: 1}
+	HandleKeyMsg(focus, "Escape", "hello", func(string) {})
+	if focus.FocusedID != 0 {
+		t.Errorf("Escape should blur: FocusedID = %d, want 0", focus.FocusedID)
+	}
+}
+
+func TestHandleCharInput(t *testing.T) {
+	var result string
+	HandleCharInput('X', "hello", func(v string) { result = v })
+	if result != "helloX" {
+		t.Errorf("after char input: %q, want %q", result, "helloX")
+	}
+}
+
+func TestHandleCharInputIgnoresControl(t *testing.T) {
+	called := false
+	HandleCharInput(0x08, "hello", func(v string) { called = true })
+	if called {
+		t.Error("control characters should be ignored")
+	}
+}
