@@ -64,6 +64,7 @@ type TextStyle struct {
 	Weight     FontWeight // 100–900; 400 = Regular
 	LineHeight float32    // multiplier
 	Tracking   float32    // em
+	Raster     bool       // force bitmap rasterization, skip MSDF
 }
 
 // FontWeight represents a CSS-like font weight (100–900).

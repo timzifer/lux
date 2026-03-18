@@ -51,8 +51,8 @@ func TestBuildSceneText(t *testing.T) {
 	}
 }
 
-func TestBuildSceneButton(t *testing.T) {
-	scene := buildTestScene(Button("OK", nil), 800, 600)
+func TestBuildSceneButtonText(t *testing.T) {
+	scene := buildTestScene(ButtonText("OK", nil), 800, 600)
 
 	// Button: 2 rects (edge + fill) + 1 glyph (label).
 	if len(scene.Rects) != 2 {
@@ -90,10 +90,10 @@ func TestBuildSceneButton(t *testing.T) {
 	}
 }
 
-func TestBuildSceneColumnTextAndButton(t *testing.T) {
+func TestBuildSceneColumnTextAndButtonText(t *testing.T) {
 	scene := buildTestScene(Column(
 		Text("HELLO WORLD"),
-		Button("CLICK ME", nil),
+		ButtonText("CLICK ME", nil),
 	), 800, 600)
 
 	if len(scene.Rects) != 2 {
@@ -178,7 +178,7 @@ func TestBuildSceneCollectsHitTargets(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
 	BuildScene(Column(
 		Text("Label"),
-		Button("OK", func() {}),
+		ButtonText("OK", func() {}),
 	), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	if hitMap.Len() != 1 {
@@ -189,7 +189,7 @@ func TestBuildSceneCollectsHitTargets(t *testing.T) {
 func TestBuildSceneHitTargetNilOnClick(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Button("X", nil), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(ButtonText("X", nil), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	if hitMap.Len() != 0 {
 		t.Errorf("nil OnClick should not register hit target, got %d", hitMap.Len())
@@ -200,8 +200,8 @@ func TestBuildSceneMultipleHitTargets(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
 	BuildScene(Row(
-		Button("A", func() {}),
-		Button("B", func() {}),
+		ButtonText("A", func() {}),
+		ButtonText("B", func() {}),
 	), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	if hitMap.Len() != 2 {
@@ -213,7 +213,7 @@ func TestHitTargetClickable(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
 	clicked := false
-	BuildScene(Button("OK", func() { clicked = true }), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(ButtonText("OK", func() { clicked = true }), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	// Button is at framePadding (24) position, with buttonMinWidth (180) and some height.
 	target := hitMap.HitTest(float32(framePadding+10), float32(framePadding+5))
@@ -227,7 +227,7 @@ func TestHitTargetClickable(t *testing.T) {
 }
 
 func TestThemeColorsUsed(t *testing.T) {
-	scene := buildTestScene(Button("X", nil), 800, 600)
+	scene := buildTestScene(ButtonText("X", nil), 800, 600)
 	tokens := theme.Default.Tokens()
 
 	if len(scene.Rects) < 2 {
@@ -265,7 +265,7 @@ func TestBuildSceneWithHoverState(t *testing.T) {
 	hover.Tick(0)          // ensure the anim completes
 
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := BuildScene(Button("OK", nil), canvas, theme.Default, 800, 600, nil, &hover)
+	scene := BuildScene(ButtonText("OK", nil), canvas, theme.Default, 800, 600, nil, &hover)
 
 	tokens := theme.Default.Tokens()
 
@@ -282,7 +282,7 @@ func TestBuildSceneWithHoverState(t *testing.T) {
 func TestBuildSceneNilHoverState(t *testing.T) {
 	// nil HoverState should render normally without panic.
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := BuildScene(Button("OK", nil), canvas, theme.Default, 800, 600, nil, nil)
+	scene := BuildScene(ButtonText("OK", nil), canvas, theme.Default, 800, 600, nil, nil)
 
 	tokens := theme.Default.Tokens()
 	if len(scene.Rects) < 2 {
@@ -736,8 +736,8 @@ func TestSfntBuildSceneText(t *testing.T) {
 	}
 }
 
-func TestSfntBuildSceneButton(t *testing.T) {
-	scene := buildTestSceneSfnt(Button("OK", nil), 800, 600)
+func TestSfntBuildSceneButtonText(t *testing.T) {
+	scene := buildTestSceneSfnt(ButtonText("OK", nil), 800, 600)
 	// Button: 2 rects (edge + fill) + glyphs for "OK" (2 chars).
 	if len(scene.Rects) != 2 {
 		t.Fatalf("Button should produce 2 rects, got %d", len(scene.Rects))
@@ -748,10 +748,10 @@ func TestSfntBuildSceneButton(t *testing.T) {
 	}
 }
 
-func TestSfntBuildSceneColumnTextAndButton(t *testing.T) {
+func TestSfntBuildSceneColumnTextAndButtonText(t *testing.T) {
 	scene := buildTestSceneSfnt(Column(
 		Text("HELLO"),
-		Button("GO", nil),
+		ButtonText("GO", nil),
 	), 800, 600)
 
 	// HELLO (5 glyphs) + GO (2 glyphs) = 7 glyphs.
@@ -1407,7 +1407,7 @@ func (c *customDrawTheme) DrawFunc(k theme.WidgetKind) theme.DrawFunc {
 	return c.base.DrawFunc(k)
 }
 
-func TestCustomThemeDrawFuncButton(t *testing.T) {
+func TestCustomThemeDrawFuncButtonText(t *testing.T) {
 	// Use a custom DrawFunc that draws a single distinctive rect for the button.
 	var customCalled bool
 	customTheme := &customDrawTheme{
@@ -1422,7 +1422,7 @@ func TestCustomThemeDrawFuncButton(t *testing.T) {
 
 	canvas := render.NewSceneCanvas(800, 600)
 	scene := BuildScene(
-		Button("Custom", nil),
+		ButtonText("Custom", nil),
 		canvas, customTheme, 800, 600, nil, nil,
 	)
 

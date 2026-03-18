@@ -36,7 +36,7 @@ func testView(m testModel) ui.Element {
 func m2HelloView(m testModel) ui.Element {
 	return ui.Column(
 		ui.Text("HELLO WORLD"),
-		ui.Button("CLICK ME", nil),
+		ui.ButtonText("CLICK ME", nil),
 	)
 }
 
@@ -169,8 +169,8 @@ func m3CounterView(m testModel) ui.Element {
 	return ui.Column(
 		ui.Text(fmt.Sprintf("Count: %d", m.Count)),
 		ui.Row(
-			ui.Button("−", func() { Send(decrMsg{}) }),
-			ui.Button("+", func() { Send(incrMsg{}) }),
+			ui.ButtonText("−", func() { Send(decrMsg{}) }),
+			ui.ButtonText("+", func() { Send(incrMsg{}) }),
 		),
 	)
 }

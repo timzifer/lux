@@ -119,9 +119,14 @@ func TextStyled(content string, style draw.TextStyle) Element {
 	return textElement{Content: content, Style: style}
 }
 
-// Button creates a button element with an optional click callback.
-func Button(label string, onClick func()) Element {
-	return buttonElement{Label: label, OnClick: onClick}
+// Button creates a button element with arbitrary Element content and an optional click callback.
+func Button(content Element, onClick func()) Element {
+	return buttonElement{Content: content, OnClick: onClick}
+}
+
+// ButtonText is a convenience constructor for text-only buttons.
+func ButtonText(label string, onClick func()) Element {
+	return buttonElement{Content: textElement{Content: label}, OnClick: onClick}
 }
 
 // Column stacks children vertically.
@@ -323,7 +328,7 @@ type textElement struct {
 func (textElement) isElement() {}
 
 type buttonElement struct {
-	Label   string
+	Content Element
 	OnClick func()
 }
 
@@ -798,7 +803,7 @@ func (s *overlayStack) push(entry overlayEntry) {
 // BuildScene converts an Element tree into draw commands via the
 // Canvas interface (RFC §6).
 
-type bounds struct{ X, Y, W, H int }
+type bounds struct{ X, Y, W, H, Baseline int }
 
 const (
 	framePadding   = 24
@@ -890,15 +895,17 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		w := int(math.Ceil(float64(metrics.Width)))
 		h := int(math.Ceil(float64(metrics.Ascent)))
 		canvas.DrawText(node.Content, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.Text.Primary)
-		return bounds{X: area.X, Y: area.Y, W: w, H: h}
+		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
 	case buttonElement:
-		style := tokens.Typography.Label
-		metrics := canvas.MeasureText(node.Label, style)
-		labelW := int(math.Ceil(float64(metrics.Width)))
-		labelH := int(math.Ceil(float64(metrics.Ascent)))
-		w := max(buttonMinWidth, labelW+(buttonPadX*2))
-		h := labelH + (buttonPadY * 2)
+		// Pass 1: measure content via nullCanvas.
+		nc := nullCanvas{delegate: canvas}
+		cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
+
+		contentW := cb.W
+		contentH := cb.H
+		w := max(buttonMinWidth, contentW+(buttonPadX*2))
+		h := contentH + (buttonPadY * 2)
 
 		var hoverOpacity float32
 		if hover != nil {
@@ -927,10 +934,21 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 				float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
 				maxf(tokens.Radii.Button-float32(buttonBorder), 0), draw.SolidPaint(fillColor))
 
-			// Label, centered
-			canvas.DrawText(node.Label,
-				draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
-				style, tokens.Colors.Text.OnAccent)
+			// Pass 2: render content centered.
+			// For text-only content, render with OnAccent color for backward compat.
+			if txt, ok := node.Content.(textElement); ok {
+				style := tokens.Typography.Label
+				metrics := canvas.MeasureText(txt.Content, style)
+				labelW := int(math.Ceil(float64(metrics.Width)))
+				labelH := int(math.Ceil(float64(metrics.Ascent)))
+				canvas.DrawText(txt.Content,
+					draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
+					style, tokens.Colors.Text.OnAccent)
+			} else {
+				contentX := area.X + (w-contentW)/2
+				contentY := area.Y + (h-contentH)/2
+				layoutElement(node.Content, bounds{X: contentX, Y: contentY, W: contentW, H: contentH}, canvas, th, tokens, hitMap, hover, overlays, fs)
+			}
 		}
 
 		// Register hit target for click handling (M3).
@@ -938,22 +956,22 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 			hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)), node.OnClick)
 		}
 
-		return bounds{X: area.X, Y: area.Y, W: w, H: h}
+		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: buttonPadY + cb.Baseline}
 
 	case dividerElement:
 		h := 1
 		canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(h)),
 			draw.SolidPaint(tokens.Colors.Stroke.Divider))
-		return bounds{X: area.X, Y: area.Y, W: area.W, H: h}
+		return bounds{X: area.X, Y: area.Y, W: area.W, H: h, Baseline: h}
 
 	case spacerElement:
 		s := int(node.Size)
-		return bounds{X: area.X, Y: area.Y, W: s, H: s}
+		return bounds{X: area.X, Y: area.Y, W: s, H: s, Baseline: s}
 
 	case iconElement:
 		size := node.Size
 		if size == 0 {
-			size = tokens.Typography.Label.Size
+			size = tokens.Typography.Label.Size * 2
 		}
 		// Use the Phosphor icon font for icon elements.
 		// Render into a fixed square cell so all icons have uniform size
@@ -963,13 +981,14 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 			Size:       size,
 			Weight:     draw.FontWeightRegular,
 			LineHeight: 1.0,
+			Raster:     true,
 		}
 		cellSize := int(math.Ceil(float64(size)))
 		metrics := canvas.MeasureText(node.Name, style)
 		offsetX := (float32(cellSize) - metrics.Width) / 2
 		offsetY := (float32(cellSize) - metrics.Ascent) / 2
 		canvas.DrawText(node.Name, draw.Pt(float32(area.X)+offsetX, float32(area.Y)+offsetY), style, tokens.Colors.Text.Primary)
-		return bounds{X: area.X, Y: area.Y, W: cellSize, H: cellSize}
+		return bounds{X: area.X, Y: area.Y, W: cellSize, H: cellSize, Baseline: cellSize}
 
 	case stackElement:
 		return layoutStack(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
@@ -1069,42 +1088,107 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme,
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
-	cursorX := area.X
+
+	if node.Axis == AxisRow {
+		return layoutBoxRow(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
+	}
+
+	// Column: single-pass layout.
 	cursorY := area.Y
 	maxW := 0
 	maxH := 0
 	count := 0
+	firstBaseline := 0
 
 	for _, child := range node.Children {
-		childW := area.W
-		if node.Axis == AxisRow {
-			// Give each row child only the remaining width so that
-			// children like ScrollView / VirtualList clip correctly.
-			childW = area.X + area.W - cursorX
-			if childW < 0 {
-				childW = 0
-			}
-		}
-		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: childW, H: area.H}, canvas, th, tokens, hitMap, hover, overlays, fs)
+		childBounds := layoutElement(child, bounds{X: area.X, Y: cursorY, W: area.W, H: area.H}, canvas, th, tokens, hitMap, hover, overlays, fs)
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
-		count++
-		if node.Axis == AxisRow {
-			cursorX += childBounds.W + rowGap
-			maxW = max(maxW, cursorX-area.X-rowGap)
-			maxH = max(maxH, childBounds.H)
-		} else {
-			cursorY += childBounds.H + columnGap
-			maxW = max(maxW, childBounds.W)
-			maxH = max(maxH, cursorY-area.Y-columnGap)
+		if count == 0 {
+			firstBaseline = childBounds.Baseline
 		}
+		count++
+		cursorY += childBounds.H + columnGap
+		maxW = max(maxW, childBounds.W)
+		maxH = max(maxH, cursorY-area.Y-columnGap)
 	}
 
 	if count == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
+	if firstBaseline == 0 {
+		firstBaseline = maxH
+	}
+	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
+}
+
+// layoutBoxRow performs a two-pass row layout with baseline alignment.
+// Pass 1 measures all children via nullCanvas; Pass 2 renders them
+// with vertical offsets so that baselines align.
+func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
+	n := len(node.Children)
+	if n == 0 {
+		return bounds{X: area.X, Y: area.Y}
+	}
+
+	// Pass 1: measure with nullCanvas.
+	type childInfo struct {
+		w, h, baseline int
+	}
+	infos := make([]childInfo, n)
+	nc := nullCanvas{delegate: canvas}
+	cursorX := area.X
+	maxBaseline := 0
+	hasContent := false
+
+	for i, child := range node.Children {
+		childW := area.X + area.W - cursorX
+		if childW < 0 {
+			childW = 0
+		}
+		cb := layoutElement(child, bounds{X: cursorX, Y: area.Y, W: childW, H: area.H}, nc, th, tokens, nil, nil, nil)
+		if cb.W == 0 && cb.H == 0 {
+			continue
+		}
+		bl := cb.Baseline
+		if bl == 0 {
+			bl = cb.H // bottom fallback
+		}
+		infos[i] = childInfo{w: cb.W, h: cb.H, baseline: bl}
+		maxBaseline = max(maxBaseline, bl)
+		cursorX += cb.W + rowGap
+		hasContent = true
+	}
+
+	if !hasContent {
+		return bounds{X: area.X, Y: area.Y}
+	}
+
+	// Pass 2: render with baseline offsets.
+	cursorX = area.X
+	maxW := 0
+	maxH := 0
+	count := 0
+
+	for i, child := range node.Children {
+		info := infos[i]
+		if info.w == 0 && info.h == 0 {
+			continue
+		}
+		yOffset := maxBaseline - info.baseline
+		childW := area.X + area.W - cursorX
+		if childW < 0 {
+			childW = 0
+		}
+		layoutElement(child, bounds{X: cursorX, Y: area.Y + yOffset, W: childW, H: area.H}, canvas, th, tokens, hitMap, hover, overlays, focus)
+		count++
+		cursorX += info.w + rowGap
+		maxW = max(maxW, cursorX-area.X-rowGap)
+		maxH = max(maxH, info.h+yOffset)
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: maxBaseline}
 }
 
 func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
@@ -1114,15 +1198,22 @@ func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Th
 	}
 	maxW := 0
 	maxH := 0
-	for _, child := range node.Children {
+	firstBaseline := 0
+	for i, child := range node.Children {
 		childBounds := layoutElement(child, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 		maxW = max(maxW, childBounds.W)
 		maxH = max(maxH, childBounds.H)
+		if i == 0 {
+			firstBaseline = childBounds.Baseline
+		}
 	}
 	if maxW == 0 && maxH == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
+	if firstBaseline == 0 {
+		firstBaseline = maxH
+	}
+	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
 }
 
 func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
@@ -1736,7 +1827,7 @@ func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th them
 		H: max(area.H-inT-inB, 0),
 	}
 	cb := layoutElement(node.Child, childArea, canvas, th, tokens, hitMap, hover, overlays, fs)
-	return bounds{X: area.X, Y: area.Y, W: cb.W + inL + inR, H: cb.H + inT + inB}
+	return bounds{X: area.X, Y: area.Y, W: cb.W + inL + inR, H: cb.H + inT + inB, Baseline: inT + cb.Baseline}
 }
 
 func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusManager) bounds {
@@ -1746,11 +1837,16 @@ func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th th
 	}
 	w := int(node.Width)
 	h := int(node.Height)
+	var baseline int
 	if node.Child != nil {
 		childArea := bounds{X: area.X, Y: area.Y, W: w, H: h}
-		layoutElement(node.Child, childArea, canvas, th, tokens, hitMap, hover, overlays, fs)
+		cb := layoutElement(node.Child, childArea, canvas, th, tokens, hitMap, hover, overlays, fs)
+		baseline = cb.Baseline
 	}
-	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+	if baseline == 0 {
+		baseline = h
+	}
+	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: baseline}
 }
 
 func maxf(a, b float32) float32 {

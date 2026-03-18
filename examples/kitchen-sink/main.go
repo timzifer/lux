@@ -195,7 +195,7 @@ func view(m Model) ui.Element {
 		// Footer
 		ui.Spacer(12),
 		ui.Row(
-			ui.Button(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
+			ui.ButtonText(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
 		),
 	))
 }
@@ -267,8 +267,8 @@ func buttonsSection(m Model) ui.Element {
 		sectionHeader("Buttons & Icons"),
 		ui.Text(fmt.Sprintf("Counter: %d", m.Count)),
 		ui.Row(
-			ui.Button("-", func() { app.Send(DecrMsg{}) }),
-			ui.Button("+", func() { app.Send(IncrMsg{}) }),
+			ui.ButtonText("-", func() { app.Send(DecrMsg{}) }),
+			ui.ButtonText("+", func() { app.Send(IncrMsg{}) }),
 		),
 		ui.Spacer(8),
 		ui.Text("Icons (Phosphor):"),
@@ -353,9 +353,9 @@ func layoutSection() ui.Element {
 		// Flex with Expanded
 		ui.Text("Flex with Expanded:"),
 		ui.Flex([]ui.Element{
-			ui.Button("Fixed", nil),
+			ui.ButtonText("Fixed", nil),
 			ui.Expanded(ui.Text("← takes remaining space →")),
-			ui.Button("Fixed", nil),
+			ui.ButtonText("Fixed", nil),
 		}),
 		ui.Spacer(8),
 

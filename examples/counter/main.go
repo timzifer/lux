@@ -47,11 +47,11 @@ func view(m Model) ui.Element {
 		ui.Text(fmt.Sprintf("Count: %d", m.Count)),
 		ui.Divider(),
 		ui.Row(
-			ui.Button("-", func() { app.Send(DecrMsg{}) }),
-			ui.Button("+", func() { app.Send(IncrMsg{}) }),
+			ui.ButtonText("-", func() { app.Send(DecrMsg{}) }),
+			ui.ButtonText("+", func() { app.Send(IncrMsg{}) }),
 		),
 		ui.Divider(),
-		ui.Button(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
+		ui.ButtonText(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
 	)
 }
 

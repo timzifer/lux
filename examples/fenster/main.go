@@ -22,7 +22,7 @@ func update(m Model, msg app.Msg) Model {
 func view(m Model) ui.Element {
 	return ui.Column(
 		ui.Text("HELLO WORLD"),
-		ui.Button("CLICK ME", nil),
+		ui.ButtonText("CLICK ME", nil),
 	)
 }
 

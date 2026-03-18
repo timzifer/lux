@@ -165,7 +165,7 @@ func TestReconcileNoChangeReturnsFalse(t *testing.T) {
 	r := NewReconciler()
 	th := theme.Default
 
-	tree := Column(Text("hello"), Button("ok", nil))
+	tree := Column(Text("hello"), ButtonText("ok", nil))
 
 	// First call — always changed.
 	_, changed := r.Reconcile(tree, th, noopSend, nil, nil)
@@ -295,13 +295,13 @@ func TestTreeEqualTier2Elements(t *testing.T) {
 }
 
 func TestTreeEqualNested(t *testing.T) {
-	a := Column(Row(Text("x")), Button("ok", nil))
-	b := Column(Row(Text("x")), Button("ok", nil))
+	a := Column(Row(Text("x")), ButtonText("ok", nil))
+	b := Column(Row(Text("x")), ButtonText("ok", nil))
 	if !treeEqual(a, b) {
 		t.Error("structurally identical nested trees should be equal")
 	}
 
-	c := Column(Row(Text("y")), Button("ok", nil))
+	c := Column(Row(Text("y")), ButtonText("ok", nil))
 	if treeEqual(a, c) {
 		t.Error("trees with different text should not be equal")
 	}

@@ -241,7 +241,7 @@ func treeEqual(a, b Element) bool {
 		return ok && na.Content == nb.Content && na.Style == nb.Style
 	case buttonElement:
 		nb, ok := b.(buttonElement)
-		return ok && na.Label == nb.Label
+		return ok && treeEqual(na.Content, nb.Content)
 	case keyedElement:
 		nb, ok := b.(keyedElement)
 		return ok && na.Key == nb.Key && treeEqual(na.Child, nb.Child)

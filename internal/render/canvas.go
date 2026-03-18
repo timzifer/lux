@@ -216,7 +216,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 	// Use MSDF only for large sizes where the scalable SDF sharpness
 	// advantage outweighs the lack of hinting. Below the threshold,
 	// the hinted bitmap rasterizer produces crisper results.
-	useMSDF := f.SfntFont() != nil && sizePx >= text.MSDFMinSize
+	useMSDF := f.SfntFont() != nil && sizePx >= text.MSDFMinSize && !style.Raster
 
 	// Compute the font ascent so we can convert the top-left origin to
 	// a baseline for glyph placement: baseline = origin.Y + ascent.
