@@ -2,7 +2,7 @@
 
 **Repository:** `github.com/timzifer/lux`
 
-**Status:** Draft  
+**Status:** Active
 **Version:** 0.2.0  
 **Datum:** 2026-03-17  
 
