@@ -85,6 +85,31 @@ func WithKey(key string, el Element) Element {
 	return keyedElement{Key: key, Child: el}
 }
 
+// Divider creates a horizontal divider line (RFC-003 §4.1).
+func Divider() Element { return dividerElement{} }
+
+// Spacer creates invisible spacing of the given size in dp (RFC-003 §4.1).
+func Spacer(size float32) Element { return spacerElement{Size: size} }
+
+// Icon renders a text symbol at the theme's label size (RFC-003 §4.1).
+// The name is rendered as-is (typically a single character or emoji).
+func Icon(name string) Element { return iconElement{Name: name, Size: 0} }
+
+// IconSize renders a text symbol at a specific size in dp.
+func IconSize(name string, size float32) Element { return iconElement{Name: name, Size: size} }
+
+// Stack overlays children on top of each other (z-axis, RFC-003 §4.1).
+// First child is the bottom layer, last child is the top layer.
+func Stack(children ...Element) Element {
+	return stackElement{Children: children}
+}
+
+// ScrollView constrains a child to a maximum height, clipping overflow
+// and rendering a scrollbar when content exceeds the viewport (RFC-003 §4.1).
+func ScrollView(child Element, maxHeight float32) Element {
+	return scrollViewElement{Child: child, MaxHeight: maxHeight}
+}
+
 // ── Concrete element structs ─────────────────────────────────────
 
 type emptyElement struct{}
@@ -115,6 +140,53 @@ type keyedElement struct {
 }
 
 func (keyedElement) isElement() {}
+
+type dividerElement struct{}
+
+func (dividerElement) isElement() {}
+
+type spacerElement struct{ Size float32 }
+
+func (spacerElement) isElement() {}
+
+type iconElement struct {
+	Name string
+	Size float32 // 0 = use theme Label size
+}
+
+func (iconElement) isElement() {}
+
+type stackElement struct{ Children []Element }
+
+func (stackElement) isElement() {}
+
+type scrollViewElement struct {
+	Child     Element
+	MaxHeight float32
+}
+
+func (scrollViewElement) isElement() {}
+
+// ScrollState tracks scroll offset for ScrollView elements.
+type ScrollState struct {
+	Offset   float32 // current vertical scroll offset in dp
+	Velocity float32 // scroll velocity for momentum
+}
+
+// ScrollBy adjusts the scroll offset, clamping to [0, maxScroll].
+func (s *ScrollState) ScrollBy(delta float32, contentHeight, viewportHeight float32) {
+	s.Offset -= delta
+	maxScroll := contentHeight - viewportHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if s.Offset < 0 {
+		s.Offset = 0
+	}
+	if s.Offset > maxScroll {
+		s.Offset = maxScroll
+	}
+}
 
 // ── Hover State (M4) ────────────────────────────────────────────
 
@@ -230,15 +302,15 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		return layoutElement(node.Child, area, canvas, tokens, hitMap, hover)
 
 	case textElement:
-		style := tokens.Typography.BodyMedium
+		style := tokens.Typography.Body
 		metrics := canvas.MeasureText(node.Content, style)
 		w := int(metrics.Width)
 		h := int(metrics.Ascent)
-		canvas.DrawText(node.Content, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.OnSurface)
+		canvas.DrawText(node.Content, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.Text.Primary)
 		return bounds{X: area.X, Y: area.Y, W: w, H: h}
 
 	case buttonElement:
-		style := tokens.Typography.LabelSmall
+		style := tokens.Typography.Label
 		metrics := canvas.MeasureText(node.Label, style)
 		labelW := int(metrics.Width)
 		labelH := int(metrics.Ascent)
@@ -247,10 +319,10 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 
 		// Edge (border)
 		canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			draw.SolidPaint(tokens.Colors.Outline))
+			draw.SolidPaint(tokens.Colors.Stroke.Border))
 
 		// Fill — blend with hover overlay (M4).
-		fillColor := tokens.Colors.Primary
+		fillColor := tokens.Colors.Accent.Primary
 		var hoverOpacity float32
 		if hover != nil {
 			hoverOpacity = hover.nextButtonHoverOpacity()
@@ -265,7 +337,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		// Label, centered
 		canvas.DrawText(node.Label,
 			draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
-			style, tokens.Colors.OnPrimary)
+			style, tokens.Colors.Text.OnAccent)
 
 		// Register hit target for click handling (M3).
 		if hitMap != nil {
@@ -273,6 +345,45 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		}
 
 		return bounds{X: area.X, Y: area.Y, W: w, H: h}
+
+	case dividerElement:
+		h := 1
+		canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(h)),
+			draw.SolidPaint(tokens.Colors.Stroke.Divider))
+		return bounds{X: area.X, Y: area.Y, W: area.W, H: h}
+
+	case spacerElement:
+		s := int(node.Size)
+		return bounds{X: area.X, Y: area.Y, W: s, H: s}
+
+	case iconElement:
+		size := node.Size
+		if size == 0 {
+			size = tokens.Typography.Label.Size
+		}
+		style := draw.TextStyle{
+			FontFamily: tokens.Typography.Label.FontFamily,
+			Size:       size,
+			Weight:     tokens.Typography.Label.Weight,
+			LineHeight: 1.0,
+		}
+		metrics := canvas.MeasureText(node.Name, style)
+		w := int(metrics.Width)
+		h := int(metrics.Ascent)
+		if w == 0 {
+			w = int(size)
+		}
+		if h == 0 {
+			h = int(size)
+		}
+		canvas.DrawText(node.Name, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.Text.Primary)
+		return bounds{X: area.X, Y: area.Y, W: w, H: h}
+
+	case stackElement:
+		return layoutStack(node, area, canvas, tokens, hitMap, hover)
+
+	case scrollViewElement:
+		return layoutScrollView(node, area, canvas, tokens, hitMap, hover)
 
 	case boxElement:
 		return layoutBox(node, area, canvas, tokens, hitMap, hover)
@@ -330,6 +441,74 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.To
 		return bounds{X: area.X, Y: area.Y}
 	}
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
+}
+
+func layoutStack(node stackElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+	maxW := 0
+	maxH := 0
+	for _, child := range node.Children {
+		childBounds := layoutElement(child, area, canvas, tokens, hitMap, hover)
+		maxW = max(maxW, childBounds.W)
+		maxH = max(maxH, childBounds.H)
+	}
+	if maxW == 0 && maxH == 0 {
+		return bounds{X: area.X, Y: area.Y}
+	}
+	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
+}
+
+func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+	viewportH := int(node.MaxHeight)
+	if viewportH <= 0 || viewportH > area.H {
+		viewportH = area.H
+	}
+
+	// Clip to viewport
+	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(viewportH)))
+
+	// Render child (full height, no offset for now — scroll state is external)
+	childArea := bounds{X: area.X, Y: area.Y, W: area.W, H: area.H}
+	childBounds := layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover)
+
+	canvas.PopClip()
+
+	contentH := childBounds.H
+	w := max(childBounds.W, area.W)
+
+	// Draw scrollbar if content exceeds viewport
+	if contentH > viewportH {
+		trackW := int(tokens.Scroll.TrackWidth)
+		if trackW <= 0 {
+			trackW = 8
+		}
+		thumbR := tokens.Scroll.ThumbRadius
+		if thumbR <= 0 {
+			thumbR = 4
+		}
+
+		trackX := area.X + w
+		trackColor := tokens.Colors.Stroke.Divider
+		thumbColor := tokens.Colors.Text.Secondary
+
+		// Track
+		canvas.FillRoundRect(
+			draw.R(float32(trackX), float32(area.Y), float32(trackW), float32(viewportH)),
+			thumbR, draw.SolidPaint(trackColor))
+
+		// Thumb — proportional to visible/content ratio
+		ratio := float32(viewportH) / float32(contentH)
+		thumbH := int(float32(viewportH) * ratio)
+		if thumbH < 20 {
+			thumbH = 20
+		}
+		canvas.FillRoundRect(
+			draw.R(float32(trackX), float32(area.Y), float32(trackW), float32(thumbH)),
+			thumbR, draw.SolidPaint(thumbColor))
+
+		w += trackW
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
 }
 
 func max(a, b int) int {

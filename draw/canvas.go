@@ -74,6 +74,7 @@ const (
 	FontWeightLight      FontWeight = 300
 	FontWeightRegular    FontWeight = 400
 	FontWeightMedium     FontWeight = 500
+	FontWeightSemiBold   FontWeight = 600
 	FontWeightBold       FontWeight = 700
 	FontWeightBlack      FontWeight = 900
 )

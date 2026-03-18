@@ -64,11 +64,11 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	defer renderer.Destroy()
 
 	activeTheme := cfg.theme
-	bgColor := activeTheme.Tokens().Colors.Background
+	bgColor := activeTheme.Tokens().Colors.Surface.Base
 
 	// Tell the renderer about the background color if it supports it.
 	updateBgColor := func() {
-		bgColor = activeTheme.Tokens().Colors.Background
+		bgColor = activeTheme.Tokens().Colors.Surface.Base
 		if bgs, ok := renderer.(interface{ SetBackgroundColor(draw.Color) }); ok {
 			bgs.SetBackgroundColor(bgColor)
 		}
@@ -93,9 +93,9 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 					updateBgColor()
 				case SetDarkModeMsg:
 					if m.Dark {
-						activeTheme = theme.Default
+						activeTheme = theme.Slate
 					} else {
-						activeTheme = theme.Light
+						activeTheme = theme.SlateLight
 					}
 					updateBgColor()
 				}

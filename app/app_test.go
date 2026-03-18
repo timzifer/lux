@@ -354,11 +354,11 @@ func TestM4LightThemeTokens(t *testing.T) {
 	lightTokens := theme.Light.Tokens()
 	darkTokens := theme.Default.Tokens()
 
-	if lightTokens.Colors.Background == darkTokens.Colors.Background {
-		t.Error("light and dark backgrounds should differ")
+	if lightTokens.Colors.Surface.Base == darkTokens.Colors.Surface.Base {
+		t.Error("light and dark Surface.Base should differ")
 	}
-	if lightTokens.Colors.OnSurface == darkTokens.Colors.OnSurface {
-		t.Error("light and dark OnSurface should differ")
+	if lightTokens.Colors.Text.Primary == darkTokens.Colors.Text.Primary {
+		t.Error("light and dark Text.Primary should differ")
 	}
 }
 
@@ -392,13 +392,13 @@ func TestM4HoverChangesButtonColor(t *testing.T) {
 		t.Fatalf("expected at least 4 rects, got %d", len(scene.Rects))
 	}
 	hoveredFill := scene.Rects[1]
-	if hoveredFill.Color == darkTokens.Colors.Primary {
-		t.Error("hovered button fill should differ from raw Primary")
+	if hoveredFill.Color == darkTokens.Colors.Accent.Primary {
+		t.Error("hovered button fill should differ from raw Accent.Primary")
 	}
 
-	// Second button should still be raw Primary (not hovered).
+	// Second button should still be raw Accent.Primary (not hovered).
 	normalFill := scene.Rects[3]
-	if normalFill.Color != darkTokens.Colors.Primary {
-		t.Errorf("non-hovered button fill = %v, want Primary %v", normalFill.Color, darkTokens.Colors.Primary)
+	if normalFill.Color != darkTokens.Colors.Accent.Primary {
+		t.Errorf("non-hovered button fill = %v, want Accent.Primary %v", normalFill.Color, darkTokens.Colors.Accent.Primary)
 	}
 }
