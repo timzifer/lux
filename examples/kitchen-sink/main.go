@@ -118,6 +118,8 @@ func update(m Model, msg app.Msg) Model {
 		m.AnimTime += dt
 		m.Progress = float32(math.Mod(m.AnimTime*0.15, 1.0))
 		m.ToggleAnim.Tick(msg.DeltaTime)
+		m.NavTree.Tick(msg.DeltaTime)
+		m.DemoTree.Tick(msg.DeltaTime)
 	}
 	return m
 }

@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"time"
+
+	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
@@ -9,14 +12,18 @@ import (
 
 // TreeState tracks expand/collapse and selection state for a Tree widget.
 type TreeState struct {
-	Expanded map[string]bool
-	Selected string
-	Scroll   ScrollState
+	Expanded   map[string]bool
+	Selected   string
+	Scroll     ScrollState
+	expandAnim map[string]*anim.Anim[float32] // per-node expand animation (0=collapsed, 1=expanded)
 }
 
 // NewTreeState creates a ready-to-use TreeState.
 func NewTreeState() *TreeState {
-	return &TreeState{Expanded: make(map[string]bool)}
+	return &TreeState{
+		Expanded:   make(map[string]bool),
+		expandAnim: make(map[string]*anim.Anim[float32]),
+	}
 }
 
 // IsExpanded reports whether the given node is expanded.
@@ -24,12 +31,76 @@ func (ts *TreeState) IsExpanded(id string) bool {
 	return ts != nil && ts.Expanded[id]
 }
 
-// Toggle flips the expand/collapse state of a node.
+// Toggle flips the expand/collapse state of a node with animation.
 func (ts *TreeState) Toggle(id string) {
 	if ts == nil {
 		return
 	}
 	ts.Expanded[id] = !ts.Expanded[id]
+
+	a := ts.getOrCreateAnim(id)
+	if ts.Expanded[id] {
+		a.SetTarget(1.0, 150*time.Millisecond, anim.OutCubic)
+	} else {
+		a.SetTarget(0.0, 150*time.Millisecond, anim.OutCubic)
+	}
+}
+
+// expandProgress returns the current expand animation progress for a node.
+// Returns 1.0 if expanded (no animation), 0.0 if collapsed (no animation).
+func (ts *TreeState) expandProgress(id string) float32 {
+	if ts == nil {
+		return 0
+	}
+	if a, ok := ts.expandAnim[id]; ok {
+		return a.Value()
+	}
+	if ts.Expanded[id] {
+		return 1.0
+	}
+	return 0.0
+}
+
+// isAnimating reports whether a node's expand/collapse is currently animating.
+func (ts *TreeState) isAnimating(id string) bool {
+	if ts == nil {
+		return false
+	}
+	a, ok := ts.expandAnim[id]
+	return ok && !a.IsDone()
+}
+
+func (ts *TreeState) getOrCreateAnim(id string) *anim.Anim[float32] {
+	if ts.expandAnim == nil {
+		ts.expandAnim = make(map[string]*anim.Anim[float32])
+	}
+	a, ok := ts.expandAnim[id]
+	if !ok {
+		a = &anim.Anim[float32]{}
+		// Initialize to current state.
+		if ts.Expanded[id] {
+			// We just toggled TO expanded, so start from 0.
+			a.SetImmediate(0.0)
+		} else {
+			// We just toggled TO collapsed, so start from 1.
+			a.SetImmediate(1.0)
+		}
+		ts.expandAnim[id] = a
+	}
+	return a
+}
+
+// Tick advances all expand/collapse animations by dt.
+func (ts *TreeState) Tick(dt time.Duration) {
+	if ts == nil {
+		return
+	}
+	for id, a := range ts.expandAnim {
+		if !a.Tick(dt) {
+			// Animation done — clean up.
+			delete(ts.expandAnim, id)
+		}
+	}
 }
 
 // SetSelected sets the currently selected node.
@@ -81,10 +152,11 @@ func (treeElement) isElement() {}
 
 // flatNode is a node in the flattened visible tree.
 type flatNode struct {
-	ID       string
-	Depth    int
-	HasKids  bool
-	Expanded bool
+	ID             string
+	Depth          int
+	HasKids        bool
+	Expanded       bool
+	HeightFraction float32 // 0..1, animated expand progress for children-of-animating-parent
 }
 
 func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
@@ -106,10 +178,10 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		viewportH = area.H
 	}
 
-	// Flatten the visible tree.
+	// Flatten the visible tree, including children of animating nodes.
 	var flat []flatNode
-	var walk func(ids []string, depth int)
-	walk = func(ids []string, depth int) {
+	var walk func(ids []string, depth int, parentFraction float32)
+	walk = func(ids []string, depth int, parentFraction float32) {
 		for _, id := range ids {
 			var kids []string
 			if node.Children != nil {
@@ -117,15 +189,31 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 			}
 			hasKids := len(kids) > 0
 			expanded := node.State != nil && node.State.IsExpanded(id)
-			flat = append(flat, flatNode{ID: id, Depth: depth, HasKids: hasKids, Expanded: expanded})
-			if expanded && hasKids {
-				walk(kids, depth+1)
+			flat = append(flat, flatNode{ID: id, Depth: depth, HasKids: hasKids, Expanded: expanded, HeightFraction: parentFraction})
+
+			if !hasKids {
+				continue
+			}
+
+			// Include children if expanded OR if collapse animation is still running.
+			progress := float32(0)
+			if node.State != nil {
+				progress = node.State.expandProgress(id)
+			}
+			childFraction := parentFraction * progress
+
+			if expanded || (node.State != nil && node.State.isAnimating(id)) {
+				walk(kids, depth+1, childFraction)
 			}
 		}
 	}
-	walk(node.RootIDs, 0)
+	walk(node.RootIDs, 0, 1.0)
 
-	contentH := float32(len(flat) * nodeH)
+	// Compute total content height considering animation fractions.
+	var contentH float32
+	for _, fn := range flat {
+		contentH += float32(nodeH) * fn.HeightFraction
+	}
 
 	// The tree grows to fit its content, capped at viewportH.
 	// Only scroll when content exceeds the viewport.
@@ -152,16 +240,6 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		offset = node.State.Scroll.Offset
 	}
 
-	// Visible range.
-	firstVisible := int(offset) / nodeH
-	if firstVisible < 0 {
-		firstVisible = 0
-	}
-	lastVisible := (int(offset) + actualH) / nodeH
-	if lastVisible >= len(flat) {
-		lastVisible = len(flat) - 1
-	}
-
 	// Content width excluding the scrollbar.
 	contentW := area.W - scrollbarW
 
@@ -179,16 +257,48 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 	textH := int(bodyMetrics.Ascent + 0.5)
 	centerY := (nodeH - textH) / 2
 
-	for i := firstVisible; i <= lastVisible; i++ {
-		fn := flat[i]
-		rowY := area.Y + i*nodeH - int(offset)
+	// Compute cumulative y-positions for each row, considering animation.
+	rowYPositions := make([]float32, len(flat))
+	cumY := float32(0)
+	for i, fn := range flat {
+		rowYPositions[i] = cumY
+		cumY += float32(nodeH) * fn.HeightFraction
+	}
+
+	for i, fn := range flat {
+		effectiveH := float32(nodeH) * fn.HeightFraction
+		if effectiveH < 0.5 {
+			continue // Too small to render.
+		}
+
+		rowY := float32(area.Y) + rowYPositions[i] - offset
+		rowYBottom := rowY + effectiveH
+
+		// Skip rows outside the viewport.
+		if rowYBottom < float32(area.Y) || rowY >= float32(area.Y+actualH) {
+			// Still need to consume hover indices for hit targets.
+			if fn.HasKids && hover != nil {
+				hover.nextButtonHoverOpacity()
+			}
+			if node.OnSelect != nil && hover != nil {
+				hover.nextButtonHoverOpacity()
+			}
+			continue
+		}
+
 		indent := fn.Depth * indentW
+
+		// Clip partially visible (animating) rows.
+		partialClip := fn.HeightFraction < 1.0
+		if partialClip {
+			canvas.PushClip(draw.R(float32(area.X), rowY, float32(area.W), effectiveH))
+		}
 
 		// Selection highlight.
 		selected := node.State != nil && node.State.Selected == fn.ID
 		if selected {
 			canvas.FillRect(
-				draw.R(float32(area.X), float32(rowY), float32(contentW), float32(nodeH)),
+				draw.R(float32(area.X), rowY, float32(contentW), float32(nodeH)),
 				draw.SolidPaint(tokens.Colors.Surface.Hovered))
 		}
 
@@ -200,7 +310,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 				indicator = icons.CaretDown
 			}
 			canvas.DrawText(indicator,
-				draw.Pt(float32(area.X+indent), float32(rowY+4)),
+				draw.Pt(float32(area.X+indent), rowY+4),
 				indicatorStyle, tokens.Colors.Text.Secondary)
 
 			// Hit target for expand/collapse toggle.
@@ -211,7 +321,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 					hover.nextButtonHoverOpacity()
 				}
 				hitMap.Add(
-					draw.R(float32(area.X+indent), float32(rowY), float32(indicatorW), float32(nodeH)),
+					draw.R(float32(area.X+indent), rowY, float32(indicatorW), effectiveH),
 					func() { ts.Toggle(id) },
 				)
 			}
@@ -219,7 +329,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 
 		// Node content — vertically centered within the row.
 		nodeX := area.X + indent + indicatorW + 4
-		nodeArea := bounds{X: nodeX, Y: rowY + centerY, W: contentW - indent - indicatorW - 4, H: nodeH}
+		nodeArea := bounds{X: nodeX, Y: int(rowY) + centerY, W: contentW - indent - indicatorW - 4, H: nodeH}
 		layoutElement(node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected), nodeArea, canvas, tokens, hitMap, hover, focus)
 
 		// Row hit target for selection.
@@ -231,7 +341,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 				hover.nextButtonHoverOpacity()
 			}
 			hitMap.Add(
-				draw.R(float32(area.X+indent+indicatorW), float32(rowY), float32(contentW-indent-indicatorW), float32(nodeH)),
+				draw.R(float32(area.X+indent+indicatorW), rowY, float32(contentW-indent-indicatorW), effectiveH),
 				func() {
 					if ts != nil {
 						ts.SetSelected(id)
@@ -239,6 +349,10 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 					onSelect(id)
 				},
 			)
+		}
+
+		if partialClip {
+			canvas.PopClip()
 		}
 	}
 
