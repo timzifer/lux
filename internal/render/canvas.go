@@ -86,8 +86,35 @@ func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
 }
 
 func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Paint) {
-	// M2: rounded rects rendered as regular rects.
-	c.FillRect(r, paint)
+	if c.isClipped(r.X, r.Y, r.W, r.H) {
+		return
+	}
+	x, y, w, h := r.X, r.Y, r.W, r.H
+	if len(c.clips) > 0 {
+		clip := c.clips[len(c.clips)-1]
+		if x < clip.X {
+			w -= clip.X - x
+			x = clip.X
+		}
+		if y < clip.Y {
+			h -= clip.Y - y
+			y = clip.Y
+		}
+		if x+w > clip.X+clip.W {
+			w = clip.X + clip.W - x
+		}
+		if y+h > clip.Y+clip.H {
+			h = clip.Y + clip.H - y
+		}
+		if w <= 0 || h <= 0 {
+			return
+		}
+	}
+	c.scene.Rects = append(c.scene.Rects, draw.DrawRect{
+		X: int(x), Y: int(y), W: int(w), H: int(h),
+		Color:  paint.Color,
+		Radius: radius,
+	})
 }
 
 func (c *SceneCanvas) FillRoundRectCorners(r draw.Rect, _ draw.CornerRadii, paint draw.Paint) {

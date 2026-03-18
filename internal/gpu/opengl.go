@@ -29,6 +29,14 @@ type OpenGLRenderer struct {
 	atlasUniform int32
 	atlas        *text.GlyphAtlas
 	textInited   bool
+
+	// Rounded rect rendering resources.
+	rectProgram     uint32
+	rectVAO         uint32
+	rectVBO         uint32
+	rectInstanceVBO uint32
+	rectProjUniform int32
+	rectInited      bool
 }
 
 // NewOpenGL creates an OpenGL-based renderer.
@@ -76,11 +84,20 @@ func (r *OpenGLRenderer) BeginFrame() {
 	gl.Enable(gl.SCISSOR_TEST)
 }
 
-// Draw renders the scene via gl.Scissor + gl.Clear for rects,
-// bitmap glyphs via per-pixel scissor, and textured quads for atlas glyphs.
+// Draw renders the scene via gl.Scissor + gl.Clear for sharp rects,
+// shader-based SDF for rounded rects, bitmap glyphs via per-pixel scissor,
+// and textured quads for atlas glyphs.
 func (r *OpenGLRenderer) Draw(scene draw.Scene) {
+	var roundedRects []draw.DrawRect
 	for _, rect := range scene.Rects {
-		r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
+		if rect.Radius > 0 {
+			roundedRects = append(roundedRects, rect)
+		} else {
+			r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
+		}
+	}
+	if len(roundedRects) > 0 {
+		r.drawRoundedRects(roundedRects)
 	}
 	for _, glyph := range scene.Glyphs {
 		r.drawGlyph(glyph)
@@ -103,6 +120,12 @@ func (r *OpenGLRenderer) Destroy() {
 			gl.DeleteTextures(1, &r.atlasTexture)
 		}
 	}
+	if r.rectInited {
+		gl.DeleteProgram(r.rectProgram)
+		gl.DeleteVertexArrays(1, &r.rectVAO)
+		gl.DeleteBuffers(1, &r.rectVBO)
+		gl.DeleteBuffers(1, &r.rectInstanceVBO)
+	}
 }
 
 func (r *OpenGLRenderer) fillRect(x, y, w, h int, color draw.Color) {
@@ -121,6 +144,103 @@ func (r *OpenGLRenderer) drawGlyph(cmd draw.DrawGlyph) {
 	render.RenderBitmapGlyph(cmd.Text, cmd.X, cmd.Y, cmd.Scale, func(px, py, w, h int) {
 		r.fillRect(px, py, w, h, cmd.Color)
 	})
+}
+
+// ── Rounded rect rendering ───────────────────────────────────────
+
+func (r *OpenGLRenderer) initRectRendering() {
+	if r.rectInited {
+		return
+	}
+
+	program, err := compileProgram(rectVertexShader, rectFragmentShader)
+	if err != nil {
+		return
+	}
+
+	r.rectProgram = program
+	r.rectProjUniform = gl.GetUniformLocation(program, gl.Str("uProj\x00"))
+
+	// Unit quad vertices: 6 vertices (2 triangles).
+	quadVerts := []float32{
+		0, 0,
+		1, 0,
+		0, 1,
+		1, 0,
+		1, 1,
+		0, 1,
+	}
+
+	gl.GenVertexArrays(1, &r.rectVAO)
+	gl.GenBuffers(1, &r.rectVBO)
+	gl.GenBuffers(1, &r.rectInstanceVBO)
+
+	gl.BindVertexArray(r.rectVAO)
+
+	// Attribute 0: unit quad vertex (per-vertex).
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.rectVBO)
+	gl.BufferData(gl.ARRAY_BUFFER, len(quadVerts)*4, gl.Ptr(quadVerts), gl.STATIC_DRAW)
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointerWithOffset(0, 2, gl.FLOAT, false, 2*4, 0)
+
+	// Instance buffer: rect (x,y,w,h), color (r,g,b,a), radius — 9 floats per instance.
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.rectInstanceVBO)
+
+	stride := int32(9 * 4)
+	// Attribute 1: aRect (vec4) = x, y, w, h
+	gl.EnableVertexAttribArray(1)
+	gl.VertexAttribPointerWithOffset(1, 4, gl.FLOAT, false, stride, 0)
+	gl.VertexAttribDivisor(1, 1)
+
+	// Attribute 2: aColor (vec4) = r, g, b, a
+	gl.EnableVertexAttribArray(2)
+	gl.VertexAttribPointerWithOffset(2, 4, gl.FLOAT, false, stride, uintptr(4*4))
+	gl.VertexAttribDivisor(2, 1)
+
+	// Attribute 3: aRadius (float)
+	gl.EnableVertexAttribArray(3)
+	gl.VertexAttribPointerWithOffset(3, 1, gl.FLOAT, false, stride, uintptr(8*4))
+	gl.VertexAttribDivisor(3, 1)
+
+	gl.BindVertexArray(0)
+	r.rectInited = true
+}
+
+func (r *OpenGLRenderer) drawRoundedRects(rects []draw.DrawRect) {
+	r.initRectRendering()
+	if !r.rectInited {
+		return
+	}
+
+	gl.Disable(gl.SCISSOR_TEST)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+	gl.UseProgram(r.rectProgram)
+
+	proj := orthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
+	gl.UniformMatrix4fv(r.rectProjUniform, 1, false, &proj[0])
+
+	// Build instance data: 9 floats per rect.
+	instances := make([]float32, 0, len(rects)*9)
+	for _, rect := range rects {
+		instances = append(instances,
+			float32(rect.X), float32(rect.Y), float32(rect.W), float32(rect.H),
+			rect.Color.R, rect.Color.G, rect.Color.B, rect.Color.A,
+			rect.Radius,
+		)
+	}
+
+	gl.BindVertexArray(r.rectVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.rectInstanceVBO)
+	gl.BufferData(gl.ARRAY_BUFFER, len(instances)*4, gl.Ptr(instances), gl.DYNAMIC_DRAW)
+
+	gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, int32(len(rects)))
+
+	gl.BindVertexArray(0)
+	gl.UseProgram(0)
+	gl.Disable(gl.BLEND)
+	gl.Enable(gl.SCISSOR_TEST)
 }
 
 // ── Textured glyph rendering ────────────────────────────────────
