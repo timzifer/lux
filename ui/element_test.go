@@ -862,6 +862,30 @@ func TestScrollViewOffsetShiftsContent(t *testing.T) {
 	}
 }
 
+func TestScrollViewRegistersScrollTarget(t *testing.T) {
+	content := Column(
+		Text("A"), Text("B"), Text("C"), Text("D"),
+		Text("E"), Text("F"), Text("G"), Text("H"),
+		Text("I"), Text("J"), Text("K"), Text("L"),
+	)
+	scroll := &ScrollState{}
+	var hitMap hit.Map
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(ScrollView(content, 40, scroll), canvas, theme.Default, 800, 600, &hitMap, nil)
+
+	// The scroll target should be registered.
+	target := hitMap.HitTestScroll(30, 30)
+	if target == nil {
+		t.Fatal("expected scroll target at (30, 30)")
+	}
+
+	// Scrolling should modify the state.
+	target.OnScroll(-30)
+	if scroll.Offset != 30 {
+		t.Errorf("Offset = %f, want 30 after OnScroll(-30)", scroll.Offset)
+	}
+}
+
 func TestScrollViewThumbPositionReflectsOffset(t *testing.T) {
 	content := Column(
 		Text("A"), Text("B"), Text("C"), Text("D"),

@@ -777,6 +777,21 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 		}
 	}
 
+	// Register the viewport as a scroll target so the framework can
+	// route mouse-wheel events directly to the ScrollState.
+	if hitMap != nil && node.State != nil && contentH > viewportH {
+		state := node.State
+		cH := float32(contentH)
+		vH := float32(viewportH)
+		hitMap.AddScroll(
+			draw.R(float32(area.X), float32(area.Y), float32(w), float32(viewportH)),
+			cH, vH,
+			func(deltaY float32) {
+				state.ScrollBy(deltaY, cH, vH)
+			},
+		)
+	}
+
 	// Draw scrollbar if content exceeds viewport.
 	if contentH > viewportH {
 		trackW := int(tokens.Scroll.TrackWidth)
@@ -804,7 +819,6 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 			thumbH = 20
 		}
 
-		// Thumb position: offset fraction * available track space.
 		maxScroll := float32(contentH - viewportH)
 		thumbTravel := float32(viewportH - thumbH)
 		var thumbY float32
@@ -817,6 +831,28 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 		canvas.FillRoundRect(
 			draw.R(float32(trackX), thumbY, float32(trackW), float32(thumbH)),
 			thumbR, draw.SolidPaint(thumbColor))
+
+		// Track-click: clicking on the scrollbar track jumps to that position.
+		if hitMap != nil && node.State != nil {
+			state := node.State
+			ms := maxScroll
+			aY := float32(area.Y)
+			vph := float32(viewportH)
+			hitMap.AddAt(
+				draw.R(float32(trackX), float32(area.Y), float32(trackW), float32(viewportH)),
+				func(_, y float32) {
+					// Map click Y to scroll offset.
+					frac := (y - aY) / vph
+					if frac < 0 {
+						frac = 0
+					}
+					if frac > 1 {
+						frac = 1
+					}
+					state.Offset = frac * ms
+				},
+			)
+		}
 
 		w += trackW
 	}

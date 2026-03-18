@@ -107,7 +107,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 
 	case scrollViewElement:
 		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send)
-		return scrollViewElement{Child: child, MaxHeight: node.MaxHeight}
+		return scrollViewElement{Child: child, MaxHeight: node.MaxHeight, State: node.State}
 
 	default:
 		// Leaf elements (text, button, divider, etc.) pass through unchanged.
