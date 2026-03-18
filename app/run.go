@@ -24,7 +24,6 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 		opt(&cfg)
 	}
 
-	// Create the frame loop.
 	var loopOpts []loop.Option
 	if cfg.maxFrameDelta != loop.DefaultMaxFrameDelta {
 		loopOpts = append(loopOpts, loop.WithMaxFrameDelta(cfg.maxFrameDelta))
@@ -33,7 +32,6 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	globalLoop = appLoop
 	defer func() { globalLoop = nil }()
 
-	// Create platform and GPU renderer via platform-specific defaults.
 	plat := cfg.platformFactory()
 	if err := plat.Init(platform.Config{
 		Title:  cfg.title,
@@ -54,34 +52,33 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	}
 	defer renderer.Destroy()
 
-	// Current model and element tree.
 	currentModel := model
-	_ = view(currentModel) // Initial view call (result unused in M1).
+	currentTree := view(currentModel)
 
 	lastFrame := time.Now()
 
-	// Run the platform event loop.
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
-			// Drain pending messages and run update (RFC §3.3).
 			appLoop.DrainMessages(func(msg any) bool {
 				newModel := update(currentModel, msg)
 				if anyChanged(currentModel, newModel) {
 					currentModel = newModel
-					_ = view(currentModel)
+					currentTree = view(currentModel)
 					return true
 				}
 				return false
 			})
 
-			// dt calculation with clamping (RFC §3.3).
 			now := time.Now()
 			rawDt := now.Sub(lastFrame)
-			_ = appLoop.ClampDt(rawDt) // dt used for animations in M2+.
+			_ = appLoop.ClampDt(rawDt)
 			lastFrame = now
 
-			// Render: clear to black (M1).
+			w, h := plat.FramebufferSize()
+			scene := ui.BuildScene(currentTree, w, h)
+
 			renderer.BeginFrame()
+			renderer.Draw(scene)
 			renderer.EndFrame()
 		},
 

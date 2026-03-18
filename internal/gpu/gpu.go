@@ -1,9 +1,9 @@
 // Package gpu provides the GPU rendering abstraction for the framework.
-// For M1 it provides a minimal OpenGL backend that clears the screen to black.
 package gpu
 
-// Renderer abstracts GPU operations. M1 only needs ClearFrame.
-// Will be replaced by a wgpu-based implementation in M2+.
+import "github.com/timzifer/lux/ui"
+
+// Renderer abstracts GPU operations.
 type Renderer interface {
 	// Init initializes the GPU context for the given window.
 	Init(cfg Config) error
@@ -13,6 +13,9 @@ type Renderer interface {
 
 	// BeginFrame starts a new frame.
 	BeginFrame()
+
+	// Draw renders the current scene.
+	Draw(scene ui.Scene)
 
 	// EndFrame presents the rendered frame.
 	EndFrame()

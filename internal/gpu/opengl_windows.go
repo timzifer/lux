@@ -2,18 +2,15 @@
 
 package gpu
 
-// OpenGLRenderer implements the Windows M1 renderer.
-//
-// The platform layer still creates and presents the window/context. For M1 on
-// Windows we keep rendering intentionally minimal so the application can open a
-// window and drive the frame loop without depending on platform-specific GL
-// bindings during the bootstrap milestone.
+import "github.com/timzifer/lux/ui"
+
+// OpenGLRenderer implements the Windows M1/M2 bootstrap renderer.
 type OpenGLRenderer struct {
 	width  int
 	height int
 }
 
-// NewOpenGL creates the Windows M1 renderer.
+// NewOpenGL creates the Windows bootstrap renderer.
 func NewOpenGL() *OpenGLRenderer {
 	return &OpenGLRenderer{}
 }
@@ -33,6 +30,9 @@ func (r *OpenGLRenderer) Resize(width, height int) {
 
 // BeginFrame is intentionally a no-op for the Windows bootstrap renderer.
 func (r *OpenGLRenderer) BeginFrame() {}
+
+// Draw is a no-op until the native Windows GPU backend lands.
+func (r *OpenGLRenderer) Draw(scene ui.Scene) {}
 
 // EndFrame is a no-op because swap is handled by the platform layer.
 func (r *OpenGLRenderer) EndFrame() {}
