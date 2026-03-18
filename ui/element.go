@@ -1987,9 +1987,11 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Them
 				draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH)),
 				draw.SolidPaint(tokens.Colors.Surface.Hovered))
 		} else if hoverOpacity > 0 {
+			hc := tokens.Colors.Surface.Hovered
+			hc.A *= hoverOpacity
 			canvas.FillRect(
 				draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH)),
-				draw.SolidPaint(lerpColor(draw.Color{}, tokens.Colors.Surface.Hovered, hoverOpacity)))
+				draw.SolidPaint(hc))
 		}
 
 		// Tab header content
