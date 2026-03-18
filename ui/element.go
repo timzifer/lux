@@ -64,6 +64,12 @@ func Empty() Element { return emptyElement{} }
 // Text creates a text element.
 func Text(content string) Element { return textElement{Content: content} }
 
+// TextStyled creates a text element with a specific text style.
+// Use this for headings or other non-Body text.
+func TextStyled(content string, style draw.TextStyle) Element {
+	return textElement{Content: content, Style: style}
+}
+
 // Button creates a button element with an optional click callback.
 func Button(label string, onClick func()) Element {
 	return buttonElement{Label: label, OnClick: onClick}
@@ -110,13 +116,61 @@ func ScrollView(child Element, maxHeight float32) Element {
 	return scrollViewElement{Child: child, MaxHeight: maxHeight}
 }
 
+// ── Tier 2 Constructors (RFC-003 §4.1) ──────────────────────────
+
+// Checkbox creates a boolean toggle with a label.
+func Checkbox(label string, checked bool, onToggle func(bool)) Element {
+	return checkboxElement{Label: label, Checked: checked, OnToggle: onToggle}
+}
+
+// Radio creates a single-choice option. Group multiple Radio elements
+// in a Column; the user's model owns which option is selected.
+func Radio(label string, selected bool, onSelect func()) Element {
+	return radioElement{Label: label, Selected: selected, OnSelect: onSelect}
+}
+
+// Toggle creates a switch widget.
+func Toggle(on bool, onToggle func(bool)) Element {
+	return toggleElement{On: on, OnToggle: onToggle}
+}
+
+// Slider creates a continuous value selector (0.0–1.0).
+func Slider(value float32, onChange func(float32)) Element {
+	return sliderElement{Value: value, OnChange: onChange}
+}
+
+// ProgressBar creates a determinate progress indicator (0.0–1.0).
+func ProgressBar(value float32) Element {
+	return progressBarElement{Value: value}
+}
+
+// ProgressBarIndeterminate creates an indeterminate progress indicator.
+func ProgressBarIndeterminate() Element {
+	return progressBarElement{Indeterminate: true}
+}
+
+// TextField creates a text input field (visual only — keyboard input
+// requires a future focus/input system).
+func TextField(value string, placeholder string) Element {
+	return textFieldElement{Value: value, Placeholder: placeholder}
+}
+
+// Select creates a dropdown selector (visual only — dropdown overlay
+// requires a future popup system).
+func Select(value string, options []string) Element {
+	return selectElement{Value: value, Options: options}
+}
+
 // ── Concrete element structs ─────────────────────────────────────
 
 type emptyElement struct{}
 
 func (emptyElement) isElement() {}
 
-type textElement struct{ Content string }
+type textElement struct {
+	Content string
+	Style   draw.TextStyle // zero value = use tokens.Typography.Body
+}
 
 func (textElement) isElement() {}
 
@@ -166,6 +220,59 @@ type scrollViewElement struct {
 }
 
 func (scrollViewElement) isElement() {}
+
+// ── Tier 2 element structs ──────────────────────────────────────
+
+type checkboxElement struct {
+	Label    string
+	Checked  bool
+	OnToggle func(bool)
+}
+
+func (checkboxElement) isElement() {}
+
+type radioElement struct {
+	Label    string
+	Selected bool
+	OnSelect func()
+}
+
+func (radioElement) isElement() {}
+
+type toggleElement struct {
+	On       bool
+	OnToggle func(bool)
+}
+
+func (toggleElement) isElement() {}
+
+type sliderElement struct {
+	Value    float32
+	OnChange func(float32)
+}
+
+func (sliderElement) isElement() {}
+
+type progressBarElement struct {
+	Value         float32
+	Indeterminate bool
+}
+
+func (progressBarElement) isElement() {}
+
+type textFieldElement struct {
+	Value       string
+	Placeholder string
+}
+
+func (textFieldElement) isElement() {}
+
+type selectElement struct {
+	Value   string
+	Options []string
+}
+
+func (selectElement) isElement() {}
 
 // ScrollState tracks scroll offset for ScrollView elements.
 type ScrollState struct {
@@ -303,6 +410,9 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 
 	case textElement:
 		style := tokens.Typography.Body
+		if node.Style.Size > 0 {
+			style = node.Style
+		}
 		metrics := canvas.MeasureText(node.Content, style)
 		w := int(metrics.Width)
 		h := int(metrics.Ascent)
@@ -387,6 +497,22 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 
 	case boxElement:
 		return layoutBox(node, area, canvas, tokens, hitMap, hover)
+
+	// Tier 2 widgets
+	case checkboxElement:
+		return layoutCheckbox(node, area, canvas, tokens, hitMap, hover)
+	case radioElement:
+		return layoutRadio(node, area, canvas, tokens, hitMap, hover)
+	case toggleElement:
+		return layoutToggle(node, area, canvas, tokens, hitMap, hover)
+	case sliderElement:
+		return layoutSlider(node, area, canvas, tokens, hitMap, hover)
+	case progressBarElement:
+		return layoutProgressBar(node, area, canvas, tokens)
+	case textFieldElement:
+		return layoutTextField(node, area, canvas, tokens)
+	case selectElement:
+		return layoutSelect(node, area, canvas, tokens)
 
 	default:
 		return bounds{X: area.X, Y: area.Y}
@@ -509,6 +635,371 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
+}
+
+// ── Tier 2 Layout Constants ──────────────────────────────────────
+
+const (
+	checkboxSize   = 16
+	checkboxGap    = 8
+	checkboxBorder = 2
+
+	toggleTrackW   = 36
+	toggleTrackH   = 20
+	toggleThumbD   = 16
+	toggleThumbPad = 2
+
+	sliderTrackH   = 4
+	sliderHeight   = 20
+	sliderThumbD   = 16
+	sliderMaxWidth = 200
+
+	progressBarH    = 6
+	progressBarMaxW = 200
+
+	textFieldW    = 200
+	textFieldPadX = 8
+	textFieldPadY = 8
+)
+
+// ── Tier 2 Layout Functions ─────────────────────────────────────
+
+func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+	style := tokens.Typography.Body
+	metrics := canvas.MeasureText(node.Label, style)
+	labelW := int(metrics.Width)
+	labelH := int(metrics.Ascent)
+	totalH := max(checkboxSize, labelH)
+	totalW := checkboxSize + checkboxGap + labelW
+
+	// Hover
+	var hoverOpacity float32
+	if hover != nil {
+		hoverOpacity = hover.nextButtonHoverOpacity()
+	}
+
+	boxY := area.Y + (totalH-checkboxSize)/2
+
+	// Border
+	canvas.FillRoundRect(
+		draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize)),
+		tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
+
+	// Fill
+	fillColor := tokens.Colors.Surface.Elevated
+	if hoverOpacity > 0 {
+		fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+	}
+	if node.Checked {
+		fillColor = tokens.Colors.Accent.Primary
+	}
+	canvas.FillRoundRect(
+		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
+			float32(checkboxSize-checkboxBorder*2), float32(checkboxSize-checkboxBorder*2)),
+		maxf(tokens.Radii.Input-checkboxBorder, 0), draw.SolidPaint(fillColor))
+
+	// Checkmark
+	if node.Checked {
+		checkStyle := draw.TextStyle{
+			Size:   float32(checkboxSize - checkboxBorder*2 - 2),
+			Weight: draw.FontWeightBold,
+		}
+		canvas.DrawText("✓",
+			draw.Pt(float32(area.X+checkboxBorder+1), float32(boxY+checkboxBorder+1)),
+			checkStyle, tokens.Colors.Text.OnAccent)
+	}
+
+	// Label
+	labelX := area.X + checkboxSize + checkboxGap
+	labelY := area.Y + (totalH-labelH)/2
+	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, tokens.Colors.Text.Primary)
+
+	// Hit target
+	if hitMap != nil && node.OnToggle != nil {
+		checked := node.Checked
+		onToggle := node.OnToggle
+		hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH)),
+			func() { onToggle(!checked) })
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
+}
+
+func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+	style := tokens.Typography.Body
+	metrics := canvas.MeasureText(node.Label, style)
+	labelW := int(metrics.Width)
+	labelH := int(metrics.Ascent)
+	totalH := max(checkboxSize, labelH)
+	totalW := checkboxSize + checkboxGap + labelW
+
+	// Hover
+	var hoverOpacity float32
+	if hover != nil {
+		hoverOpacity = hover.nextButtonHoverOpacity()
+	}
+
+	boxY := area.Y + (totalH-checkboxSize)/2
+
+	// Outer circle
+	canvas.FillEllipse(
+		draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize)),
+		draw.SolidPaint(tokens.Colors.Stroke.Border))
+
+	// Inner fill
+	fillColor := tokens.Colors.Surface.Elevated
+	if hoverOpacity > 0 {
+		fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+	}
+	canvas.FillEllipse(
+		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
+			float32(checkboxSize-checkboxBorder*2), float32(checkboxSize-checkboxBorder*2)),
+		draw.SolidPaint(fillColor))
+
+	// Selected dot
+	if node.Selected {
+		dotSize := 8
+		dotOffset := (checkboxSize - dotSize) / 2
+		canvas.FillEllipse(
+			draw.R(float32(area.X+dotOffset), float32(boxY+dotOffset), float32(dotSize), float32(dotSize)),
+			draw.SolidPaint(tokens.Colors.Accent.Primary))
+	}
+
+	// Label
+	labelX := area.X + checkboxSize + checkboxGap
+	labelY := area.Y + (totalH-labelH)/2
+	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, tokens.Colors.Text.Primary)
+
+	// Hit target
+	if hitMap != nil && node.OnSelect != nil {
+		hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH)),
+			node.OnSelect)
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
+}
+
+func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+	// Hover
+	var hoverOpacity float32
+	if hover != nil {
+		hoverOpacity = hover.nextButtonHoverOpacity()
+	}
+
+	// Track
+	trackColor := tokens.Colors.Surface.Pressed
+	if node.On {
+		trackColor = tokens.Colors.Accent.Primary
+	}
+	if hoverOpacity > 0 {
+		trackColor = lerpColor(trackColor, hoverHighlight(trackColor), hoverOpacity)
+	}
+	canvas.FillRoundRect(
+		draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH)),
+		float32(toggleTrackH)/2, draw.SolidPaint(trackColor))
+
+	// Thumb
+	thumbX := area.X + toggleThumbPad
+	if node.On {
+		thumbX = area.X + toggleTrackW - toggleThumbD - toggleThumbPad
+	}
+	thumbY := area.Y + (toggleTrackH-toggleThumbD)/2
+	thumbColor := tokens.Colors.Text.OnAccent
+	if !node.On {
+		thumbColor = tokens.Colors.Text.Secondary
+	}
+	canvas.FillEllipse(
+		draw.R(float32(thumbX), float32(thumbY), float32(toggleThumbD), float32(toggleThumbD)),
+		draw.SolidPaint(thumbColor))
+
+	// Hit target
+	if hitMap != nil && node.OnToggle != nil {
+		on := node.On
+		onToggle := node.OnToggle
+		hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH)),
+			func() { onToggle(!on) })
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: toggleTrackW, H: toggleTrackH}
+}
+
+func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+	trackW := sliderMaxWidth
+	if area.W < trackW {
+		trackW = area.W
+	}
+
+	// Hover
+	var hoverOpacity float32
+	if hover != nil {
+		hoverOpacity = hover.nextButtonHoverOpacity()
+	}
+
+	trackY := area.Y + (sliderHeight-sliderTrackH)/2
+
+	// Track background
+	trackColor := tokens.Colors.Surface.Pressed
+	if hoverOpacity > 0 {
+		trackColor = lerpColor(trackColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+	}
+	canvas.FillRoundRect(
+		draw.R(float32(area.X), float32(trackY), float32(trackW), float32(sliderTrackH)),
+		float32(sliderTrackH)/2, draw.SolidPaint(trackColor))
+
+	// Filled portion
+	val := node.Value
+	if val < 0 {
+		val = 0
+	}
+	if val > 1 {
+		val = 1
+	}
+	filledW := int(float32(trackW) * val)
+	if filledW > 0 {
+		canvas.FillRoundRect(
+			draw.R(float32(area.X), float32(trackY), float32(filledW), float32(sliderTrackH)),
+			float32(sliderTrackH)/2, draw.SolidPaint(tokens.Colors.Accent.Primary))
+	}
+
+	// Thumb
+	thumbX := area.X + filledW - sliderThumbD/2
+	if thumbX < area.X {
+		thumbX = area.X
+	}
+	thumbY := area.Y + (sliderHeight-sliderThumbD)/2
+	canvas.FillEllipse(
+		draw.R(float32(thumbX), float32(thumbY), float32(sliderThumbD), float32(sliderThumbD)),
+		draw.SolidPaint(tokens.Colors.Accent.Primary))
+
+	// Hit target (positional)
+	if hitMap != nil && node.OnChange != nil {
+		areaX := float32(area.X)
+		tw := float32(trackW)
+		onChange := node.OnChange
+		hitMap.AddAt(draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(sliderHeight)),
+			func(x, _ float32) {
+				v := (x - areaX) / tw
+				if v < 0 {
+					v = 0
+				}
+				if v > 1 {
+					v = 1
+				}
+				onChange(v)
+			})
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: trackW, H: sliderHeight}
+}
+
+func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
+	trackW := progressBarMaxW
+	if area.W < trackW {
+		trackW = area.W
+	}
+
+	// Track
+	canvas.FillRoundRect(
+		draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(progressBarH)),
+		float32(progressBarH)/2, draw.SolidPaint(tokens.Colors.Surface.Pressed))
+
+	if node.Indeterminate {
+		// Static 30% bar at center
+		barW := int(float32(trackW) * 0.3)
+		barX := area.X + (trackW-barW)/2
+		canvas.FillRoundRect(
+			draw.R(float32(barX), float32(area.Y), float32(barW), float32(progressBarH)),
+			float32(progressBarH)/2, draw.SolidPaint(tokens.Colors.Accent.Primary))
+	} else {
+		// Determinate fill
+		val := node.Value
+		if val < 0 {
+			val = 0
+		}
+		if val > 1 {
+			val = 1
+		}
+		filledW := int(float32(trackW) * val)
+		if filledW > 0 {
+			canvas.FillRoundRect(
+				draw.R(float32(area.X), float32(area.Y), float32(filledW), float32(progressBarH)),
+				float32(progressBarH)/2, draw.SolidPaint(tokens.Colors.Accent.Primary))
+		}
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: trackW, H: progressBarH}
+}
+
+func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
+	style := tokens.Typography.Body
+	h := int(style.Size) + textFieldPadY*2
+
+	w := textFieldW
+	if area.W < w {
+		w = area.W
+	}
+
+	// Border
+	canvas.FillRoundRect(
+		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+		tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
+
+	// Fill
+	canvas.FillRoundRect(
+		draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
+		maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+
+	// Text or placeholder
+	textX := area.X + textFieldPadX
+	textY := area.Y + textFieldPadY
+	if node.Value != "" {
+		canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
+	} else if node.Placeholder != "" {
+		canvas.DrawText(node.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+}
+
+func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
+	style := tokens.Typography.Body
+	h := int(style.Size) + textFieldPadY*2
+
+	w := textFieldW
+	if area.W < w {
+		w = area.W
+	}
+
+	// Border
+	canvas.FillRoundRect(
+		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+		tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
+
+	// Fill
+	canvas.FillRoundRect(
+		draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
+		maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+
+	// Value text
+	textX := area.X + textFieldPadX
+	textY := area.Y + textFieldPadY
+	if node.Value != "" {
+		canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
+	}
+
+	// Down arrow indicator
+	arrowStyle := tokens.Typography.LabelSmall
+	arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
+	canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, tokens.Colors.Text.Secondary)
+
+	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+}
+
+func maxf(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func max(a, b int) int {

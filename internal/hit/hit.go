@@ -5,8 +5,9 @@ import "github.com/timzifer/lux/draw"
 
 // Target is a clickable region with an associated callback.
 type Target struct {
-	Bounds  draw.Rect
-	OnClick func()
+	Bounds    draw.Rect
+	OnClick   func()
+	OnClickAt func(x, y float32) // positional click (e.g. Slider)
 }
 
 // Map collects hit targets during layout and resolves pointer hits.
@@ -45,6 +46,14 @@ func (m *Map) HitTestIndex(x, y float32) int {
 		}
 	}
 	return -1
+}
+
+// AddAt registers a clickable region with a positional callback. Ignored if onClick is nil.
+func (m *Map) AddAt(bounds draw.Rect, onClick func(x, y float32)) {
+	if onClick == nil {
+		return
+	}
+	m.targets = append(m.targets, Target{Bounds: bounds, OnClickAt: onClick})
 }
 
 // Len returns the number of registered targets.
