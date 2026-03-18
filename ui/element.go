@@ -199,10 +199,33 @@ func WithFocusState(fs *FocusState) TextFieldOption {
 	return func(e *textFieldElement) { e.Focus = fs }
 }
 
-// Select creates a dropdown selector (visual only — dropdown overlay
-// requires a future popup system).
-func Select(value string, options []string) Element {
-	return selectElement{Value: value, Options: options}
+// SelectState holds the open/closed state for a Select dropdown.
+type SelectState struct {
+	Open bool
+}
+
+// SelectOption configures a Select element.
+type SelectOption func(*selectElement)
+
+// WithSelectState links the Select to a SelectState for dropdown behaviour.
+func WithSelectState(s *SelectState) SelectOption {
+	return func(e *selectElement) { e.State = s }
+}
+
+// WithOnSelect sets the callback invoked when an option is chosen.
+func WithOnSelect(fn func(string)) SelectOption {
+	return func(e *selectElement) { e.OnSelect = fn }
+}
+
+// Select creates a dropdown selector. When configured with
+// WithSelectState and WithOnSelect, it supports interactive
+// open/close and item selection via an overlay dropdown.
+func Select(value string, options []string, opts ...SelectOption) Element {
+	el := selectElement{Value: value, Options: options}
+	for _, o := range opts {
+		o(&el)
+	}
+	return el
 }
 
 // Component creates an element that wraps a Widget. The Reconciler
@@ -543,8 +566,10 @@ type textFieldElement struct {
 func (textFieldElement) isElement() {}
 
 type selectElement struct {
-	Value   string
-	Options []string
+	Value    string
+	Options  []string
+	State    *SelectState
+	OnSelect func(string)
 }
 
 func (selectElement) isElement() {}
@@ -830,7 +855,7 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	tokens := th.Tokens()
 	area := bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
 	var overlays overlayStack
-	layoutElement(root, area, canvas, tokens, hitMap, hover, &overlays, focus)
+	layoutElement(root, area, canvas, th, tokens, hitMap, hover, &overlays, focus)
 
 	// Switch canvas to overlay mode so overlay draw commands go to
 	// separate scene lists, rendered after all main content.
@@ -854,7 +879,7 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	return draw.Scene{}
 }
 
-func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
+func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
 	var fs *FocusState
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -865,7 +890,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		return bounds{X: area.X, Y: area.Y}
 
 	case keyedElement:
-		return layoutElement(node.Child, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutElement(node.Child, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case textElement:
 		style := tokens.Typography.Body
@@ -886,27 +911,38 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		w := max(buttonMinWidth, labelW+(buttonPadX*2))
 		h := labelH + (buttonPadY * 2)
 
-		// Edge (border)
-		canvas.FillRoundRect(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			tokens.Radii.Button, draw.SolidPaint(tokens.Colors.Stroke.Border))
-
-		// Fill — blend with hover overlay (M4).
-		fillColor := tokens.Colors.Accent.Primary
 		var hoverOpacity float32
 		if hover != nil {
 			hoverOpacity = hover.nextButtonHoverOpacity()
 		}
-		if hoverOpacity > 0 {
-			fillColor = lerpColor(fillColor, hoverHighlight(fillColor), hoverOpacity)
-		}
-		canvas.FillRoundRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
-			float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
-			maxf(tokens.Radii.Button-float32(buttonBorder), 0), draw.SolidPaint(fillColor))
 
-		// Label, centered
-		canvas.DrawText(node.Label,
-			draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
-			style, tokens.Colors.Text.OnAccent)
+		// Custom theme DrawFunc dispatch (RFC §5.3).
+		if df := th.DrawFunc(theme.WidgetKindButton); df != nil {
+			rect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+			df(theme.DrawCtx{
+				Canvas:  canvas,
+				Bounds:  rect,
+				Hovered: hoverOpacity > 0,
+			}, tokens, node)
+		} else {
+			// Edge (border)
+			canvas.FillRoundRect(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+				tokens.Radii.Button, draw.SolidPaint(tokens.Colors.Stroke.Border))
+
+			// Fill — blend with hover overlay (M4).
+			fillColor := tokens.Colors.Accent.Primary
+			if hoverOpacity > 0 {
+				fillColor = lerpColor(fillColor, hoverHighlight(fillColor), hoverOpacity)
+			}
+			canvas.FillRoundRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
+				float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
+				maxf(tokens.Radii.Button-float32(buttonBorder), 0), draw.SolidPaint(fillColor))
+
+			// Label, centered
+			canvas.DrawText(node.Label,
+				draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
+				style, tokens.Colors.Text.OnAccent)
+		}
 
 		// Register hit target for click handling (M3).
 		if hitMap != nil {
@@ -947,72 +983,72 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 		return bounds{X: area.X, Y: area.Y, W: cellSize, H: cellSize}
 
 	case stackElement:
-		return layoutStack(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutStack(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case scrollViewElement:
-		return layoutScrollView(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutScrollView(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case boxElement:
-		return layoutBox(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutBox(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case paddingElement:
-		return layoutPadding(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutPadding(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case sizedBoxElement:
-		return layoutSizedBox(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutSizedBox(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case expandedElement:
 		// Outside a Flex context, Expanded passes through to its child.
-		return layoutElement(node.Child, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutElement(node.Child, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case flexElement:
-		return layoutFlex(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutFlex(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case gridElement:
-		return layoutGrid(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutGrid(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case virtualListElement:
-		return layoutVirtualList(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutVirtualList(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case treeElement:
-		return layoutTree(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutTree(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	case richTextElement:
-		return layoutRichText(node, area, canvas, tokens)
+		return layoutRichText(node, area, canvas, th, tokens)
 
 	// Tier 2 widgets
 	case checkboxElement:
-		return layoutCheckbox(node, area, canvas, tokens, hitMap, hover)
+		return layoutCheckbox(node, area, canvas, th, tokens, hitMap, hover)
 	case radioElement:
-		return layoutRadio(node, area, canvas, tokens, hitMap, hover)
+		return layoutRadio(node, area, canvas, th, tokens, hitMap, hover)
 	case toggleElement:
-		return layoutToggle(node, area, canvas, tokens, hitMap, hover)
+		return layoutToggle(node, area, canvas, th, tokens, hitMap, hover)
 	case sliderElement:
-		return layoutSlider(node, area, canvas, tokens, hitMap, hover)
+		return layoutSlider(node, area, canvas, th, tokens, hitMap, hover)
 	case progressBarElement:
-		return layoutProgressBar(node, area, canvas, tokens)
+		return layoutProgressBar(node, area, canvas, th, tokens)
 	case textFieldElement:
-		return layoutTextField(node, area, canvas, tokens, hitMap, hover, fs)
+		return layoutTextField(node, area, canvas, th, tokens, hitMap, hover, fs)
 	case selectElement:
-		return layoutSelect(node, area, canvas, tokens)
+		return layoutSelect(node, area, canvas, th, tokens, hitMap, hover, overlays)
 
 	// Tier 3 widgets
 	case cardElement:
-		return layoutCard(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutCard(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case tabsElement:
-		return layoutTabs(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutTabs(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case accordionElement:
-		return layoutAccordion(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutAccordion(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case tooltipElement:
-		return layoutTooltip(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutTooltip(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case badgeElement:
-		return layoutBadge(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutBadge(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case chipElement:
-		return layoutChip(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutChip(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case menuBarElement:
-		return layoutMenuBar(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutMenuBar(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case contextMenuElement:
-		return layoutContextMenu(node, area, canvas, tokens, hitMap, hover, overlays, fs)
+		return layoutContextMenu(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	default:
 		return bounds{X: area.X, Y: area.Y}
@@ -1039,7 +1075,7 @@ func lerpColor(a, b draw.Color, t float32) draw.Color {
 	}
 }
 
-func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
+func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
 	var fs *FocusState
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -1060,7 +1096,7 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.To
 				childW = 0
 			}
 		}
-		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: childW, H: area.H}, canvas, tokens, hitMap, hover, overlays, fs)
+		childBounds := layoutElement(child, bounds{X: cursorX, Y: cursorY, W: childW, H: area.H}, canvas, th, tokens, hitMap, hover, overlays, fs)
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
@@ -1082,7 +1118,7 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, tokens theme.To
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
 }
 
-func layoutStack(node stackElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
+func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
 	var fs *FocusState
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -1090,7 +1126,7 @@ func layoutStack(node stackElement, area bounds, canvas draw.Canvas, tokens them
 	maxW := 0
 	maxH := 0
 	for _, child := range node.Children {
-		childBounds := layoutElement(child, area, canvas, tokens, hitMap, hover, overlays, fs)
+		childBounds := layoutElement(child, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 		maxW = max(maxW, childBounds.W)
 		maxH = max(maxH, childBounds.H)
 	}
@@ -1100,7 +1136,7 @@ func layoutStack(node stackElement, area bounds, canvas draw.Canvas, tokens them
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH}
 }
 
-func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
+func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
 	var fs *FocusState
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -1121,7 +1157,7 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 
 	// Render child offset by -offset in Y so content scrolls upward.
 	childArea := bounds{X: area.X, Y: area.Y - int(offset), W: area.W, H: area.H + int(offset)}
-	childBounds := layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover, overlays, fs)
+	childBounds := layoutElement(node.Child, childArea, canvas, th, tokens, hitMap, hover, overlays, fs)
 
 	canvas.PopClip()
 
@@ -1192,7 +1228,7 @@ const (
 
 // ── Tier 2 Layout Functions ─────────────────────────────────────
 
-func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
@@ -1253,7 +1289,7 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, token
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
@@ -1307,7 +1343,7 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, tokens them
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	// Hover
 	var hoverOpacity float32
 	if hover != nil {
@@ -1375,7 +1411,7 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, tokens th
 	return bounds{X: area.X, Y: area.Y, W: toggleTrackW, H: toggleTrackH}
 }
 
-func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
+func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) bounds {
 	trackW := sliderMaxWidth
 	if area.W < trackW {
 		trackW = area.W
@@ -1444,7 +1480,7 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, tokens th
 	return bounds{X: area.X, Y: area.Y, W: trackW, H: sliderHeight}
 }
 
-func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
+func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet) bounds {
 	trackW := progressBarMaxW
 	if area.W < trackW {
 		trackW = area.W
@@ -1491,7 +1527,7 @@ func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas,
 	return bounds{X: area.X, Y: area.Y, W: trackW, H: progressBarH}
 }
 
-func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
+func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -1507,35 +1543,44 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tok
 	}
 	focused := focus.IsFocused(focusID)
 
-	// Border — highlight when focused.
-	borderColor := tokens.Colors.Stroke.Border
-	if focused {
-		borderColor = tokens.Colors.Accent.Primary
-	}
-	canvas.FillRoundRect(
-		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-		tokens.Radii.Input, draw.SolidPaint(borderColor))
+	// Custom theme DrawFunc dispatch (RFC §5.3).
+	if df := th.DrawFunc(theme.WidgetKindTextField); df != nil {
+		df(theme.DrawCtx{
+			Canvas:  canvas,
+			Bounds:  draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			Focused: focused,
+		}, tokens, node)
+	} else {
+		// Border — highlight when focused.
+		borderColor := tokens.Colors.Stroke.Border
+		if focused {
+			borderColor = tokens.Colors.Accent.Primary
+		}
+		canvas.FillRoundRect(
+			draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			tokens.Radii.Input, draw.SolidPaint(borderColor))
 
-	// Fill
-	canvas.FillRoundRect(
-		draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
-		maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+		// Fill
+		canvas.FillRoundRect(
+			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
+			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
 
-	// Text or placeholder
-	textX := area.X + textFieldPadX
-	textY := area.Y + textFieldPadY
-	if node.Value != "" {
-		canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
-	} else if node.Placeholder != "" {
-		canvas.DrawText(node.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
-	}
+		// Text or placeholder
+		textX := area.X + textFieldPadX
+		textY := area.Y + textFieldPadY
+		if node.Value != "" {
+			canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
+		} else if node.Placeholder != "" {
+			canvas.DrawText(node.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
+		}
 
-	// Cursor when focused
-	if focused {
-		metrics := canvas.MeasureText(node.Value, style)
-		cursorX := float32(textX) + metrics.Width
-		canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
-			draw.SolidPaint(tokens.Colors.Text.Primary))
+		// Cursor when focused
+		if focused {
+			metrics := canvas.MeasureText(node.Value, style)
+			cursorX := float32(textX) + metrics.Width
+			canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
+				draw.SolidPaint(tokens.Colors.Text.Primary))
+		}
 	}
 
 	// Store input state for the focused TextField so the framework can
@@ -1565,7 +1610,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tok
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
+func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack) bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -1574,32 +1619,114 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, tokens th
 		w = area.W
 	}
 
-	// Border
-	canvas.FillRoundRect(
-		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-		tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
-
-	// Fill
-	canvas.FillRoundRect(
-		draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
-		maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
-
-	// Value text
-	textX := area.X + textFieldPadX
-	textY := area.Y + textFieldPadY
-	if node.Value != "" {
-		canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
+	// Consume a hover slot for the select trigger.
+	var hoverOpacity float32
+	if hover != nil {
+		hoverOpacity = hover.nextButtonHoverOpacity()
 	}
 
-	// Down arrow indicator
-	arrowStyle := tokens.Typography.LabelSmall
-	arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
-	canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, tokens.Colors.Text.Secondary)
+	isOpen := node.State != nil && node.State.Open
+
+	// Custom theme DrawFunc dispatch (RFC §5.3).
+	if df := th.DrawFunc(theme.WidgetKindSelect); df != nil {
+		df(theme.DrawCtx{
+			Canvas:  canvas,
+			Bounds:  draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			Hovered: hoverOpacity > 0,
+		}, tokens, node)
+	} else {
+		// Border — highlight when open.
+		borderColor := tokens.Colors.Stroke.Border
+		if isOpen {
+			borderColor = tokens.Colors.Accent.Primary
+		}
+		canvas.FillRoundRect(
+			draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			tokens.Radii.Input, draw.SolidPaint(borderColor))
+
+		// Fill
+		canvas.FillRoundRect(
+			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
+			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+
+		// Value text
+		textX := area.X + textFieldPadX
+		textY := area.Y + textFieldPadY
+		if node.Value != "" {
+			canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
+		}
+
+		// Down arrow indicator
+		arrowStyle := tokens.Typography.LabelSmall
+		arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
+		canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, tokens.Colors.Text.Secondary)
+	}
+
+	// Hit target to toggle open/close.
+	if node.State != nil && hitMap != nil {
+		state := node.State
+		hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			func() { state.Open = !state.Open })
+	}
+
+	// Dropdown overlay when open.
+	if isOpen && len(node.Options) > 0 {
+		dropX := area.X
+		dropY := area.Y + h
+		dropW := w
+		opts := node.Options
+		onSelect := node.OnSelect
+		state := node.State
+		overlays.push(overlayEntry{
+			Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
+				itemH := int(tokens.Typography.Body.Size) + textFieldPadY*2
+				totalH := itemH * len(opts)
+
+				// Dropdown background.
+				canvas.FillRoundRect(
+					draw.R(float32(dropX), float32(dropY), float32(dropW), float32(totalH)),
+					tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Surface.Elevated))
+				// Dropdown border.
+				canvas.StrokeRoundRect(
+					draw.R(float32(dropX), float32(dropY), float32(dropW), float32(totalH)),
+					tokens.Radii.Input, draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
+
+				for i, opt := range opts {
+					itemY := dropY + i*itemH
+					var ho float32
+					if hover != nil {
+						ho = hover.nextButtonHoverOpacity()
+					}
+					if ho > 0 {
+						canvas.FillRect(
+							draw.R(float32(dropX+1), float32(itemY), float32(max(dropW-2, 0)), float32(itemH)),
+							draw.SolidPaint(tokens.Colors.Surface.Hovered))
+					}
+					canvas.DrawText(opt,
+						draw.Pt(float32(dropX+textFieldPadX), float32(itemY+textFieldPadY)),
+						tokens.Typography.Body, tokens.Colors.Text.Primary)
+
+					if hitMap != nil {
+						o := opt
+						hitMap.Add(draw.R(float32(dropX), float32(itemY), float32(dropW), float32(itemH)),
+							func() {
+								if onSelect != nil {
+									onSelect(o)
+								}
+								if state != nil {
+									state.Open = false
+								}
+							})
+					}
+				}
+			},
+		})
+	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
+func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
 	var fs *FocusState
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -1614,11 +1741,11 @@ func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, tokens 
 		W: max(area.W-inL-inR, 0),
 		H: max(area.H-inT-inB, 0),
 	}
-	cb := layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover, overlays, fs)
+	cb := layoutElement(node.Child, childArea, canvas, th, tokens, hitMap, hover, overlays, fs)
 	return bounds{X: area.X, Y: area.Y, W: cb.W + inL + inR, H: cb.H + inT + inB}
 }
 
-func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
+func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus ...*FocusState) bounds {
 	var fs *FocusState
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -1627,7 +1754,7 @@ func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, token
 	h := int(node.Height)
 	if node.Child != nil {
 		childArea := bounds{X: area.X, Y: area.Y, W: w, H: h}
-		layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover, overlays, fs)
+		layoutElement(node.Child, childArea, canvas, th, tokens, hitMap, hover, overlays, fs)
 	}
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
@@ -1677,11 +1804,11 @@ const (
 
 // ── Tier 3 Layout Functions ──────────────────────────────────────
 
-func layoutCard(node cardElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	// Measure child to determine card size.
 	nc := nullCanvas{delegate: canvas}
 	childArea := bounds{X: area.X + cardPadding, Y: area.Y + cardPadding, W: max(area.W-cardPadding*2, 0), H: max(area.H-cardPadding*2, 0)}
-	cb := layoutElement(node.Child, childArea, nc, tokens, nil, nil, nil)
+	cb := layoutElement(node.Child, childArea, nc, th, tokens, nil, nil, nil)
 
 	w := cb.W + cardPadding*2
 	h := cb.H + cardPadding*2
@@ -1700,12 +1827,12 @@ func layoutCard(node cardElement, area bounds, canvas draw.Canvas, tokens theme.
 		maxf(tokens.Radii.Card-cardBorder, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
 
 	// Child content
-	layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover, overlays, focus)
+	layoutElement(node.Child, childArea, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	if len(node.Items) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -1718,7 +1845,7 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, tokens theme.
 	measures := make([]tabMeasure, len(node.Items))
 	headerH := 0
 	for i, item := range node.Items {
-		cb := layoutElement(item.Header, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, tokens, nil, nil, nil)
+		cb := layoutElement(item.Header, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
 		w := cb.W + tabHeaderPadX*2
 		h := cb.H + tabHeaderPadY*2
 		measures[i] = tabMeasure{w: w, h: h}
@@ -1757,7 +1884,7 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, tokens theme.
 
 		// Tab header content
 		headerArea := bounds{X: cursorX + tabHeaderPadX, Y: area.Y + tabHeaderPadY, W: max(tw-tabHeaderPadX*2, 0), H: max(headerH-tabHeaderPadY*2, 0)}
-		layoutElement(item.Header, headerArea, canvas, tokens, hitMap, hover, overlays, focus)
+		layoutElement(item.Header, headerArea, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 		// Selection indicator (underline)
 		if i == selected {
@@ -1787,14 +1914,14 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, tokens theme.
 	// Selected tab content
 	contentY := area.Y + headerH + 1 + columnGap
 	contentArea := bounds{X: area.X, Y: contentY, W: area.W, H: max(area.H-headerH-1-columnGap, 0)}
-	cb := layoutElement(node.Items[selected].Content, contentArea, canvas, tokens, hitMap, hover, overlays, focus)
+	cb := layoutElement(node.Items[selected].Content, contentArea, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 	totalH := headerH + 1 + columnGap + cb.H
 	totalW := max(totalHeaderW, cb.W)
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	if len(node.Sections) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -1845,7 +1972,7 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, tok
 		// Header content
 		headerX := area.X + 8 + int(chevronStyle.Size) + 8
 		headerArea := bounds{X: headerX, Y: cursorY + (accordionHeaderH-16)/2, W: max(area.W-headerX+area.X, 0), H: 16}
-		layoutElement(section.Header, headerArea, canvas, tokens, hitMap, hover, overlays, focus)
+		layoutElement(section.Header, headerArea, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 		// Hit target for expand/collapse
 		if hitMap != nil && node.State != nil {
@@ -1865,7 +1992,7 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, tok
 		// Content (if expanded)
 		if expanded {
 			contentArea := bounds{X: area.X + cardPadding, Y: cursorY + 8, W: max(area.W-cardPadding*2, 0), H: max(area.H-(cursorY-area.Y)-8, 0)}
-			cb := layoutElement(section.Content, contentArea, canvas, tokens, hitMap, hover, overlays, focus)
+			cb := layoutElement(section.Content, contentArea, canvas, th, tokens, hitMap, hover, overlays, focus)
 			cursorY += cb.H + 16 // 8 top + 8 bottom padding
 		}
 	}
@@ -1873,9 +2000,9 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, tok
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: cursorY - area.Y}
 }
 
-func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	// Layout trigger normally.
-	triggerBounds := layoutElement(node.Trigger, area, canvas, tokens, hitMap, hover, overlays, focus)
+	triggerBounds := layoutElement(node.Trigger, area, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 	// Determine visibility: explicit or hover-based.
 	visible := node.Visible
@@ -1897,7 +2024,7 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, tokens 
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, _ *HoverState) {
 				// Measure content
 				nc := nullCanvas{delegate: canvas}
-				cb := layoutElement(content, bounds{X: 0, Y: 0, W: 300, H: 200}, nc, tokens, nil, nil, nil)
+				cb := layoutElement(content, bounds{X: 0, Y: 0, W: 300, H: 200}, nc, th, tokens, nil, nil, nil)
 
 				w := cb.W + tooltipPadding*2
 				h := cb.H + tooltipPadding*2
@@ -1915,7 +2042,7 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, tokens 
 					maxf(tokens.Radii.Button-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
 
 				// Content
-				layoutElement(content, bounds{X: x + tooltipPadding, Y: y + tooltipPadding, W: max(w-tooltipPadding*2, 0), H: max(h-tooltipPadding*2, 0)}, canvas, tokens, hitMap, nil, nil)
+				layoutElement(content, bounds{X: x + tooltipPadding, Y: y + tooltipPadding, W: max(w-tooltipPadding*2, 0), H: max(h-tooltipPadding*2, 0)}, canvas, th, tokens, hitMap, nil, nil)
 			},
 		})
 	}
@@ -1923,10 +2050,10 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, tokens 
 	return triggerBounds
 }
 
-func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	// Measure content
 	nc := nullCanvas{delegate: canvas}
-	cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, tokens, nil, nil, nil)
+	cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
 
 	w := cb.W + badgePadX*2
 	h := cb.H + badgePadY*2
@@ -1951,15 +2078,15 @@ func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, tokens them
 	// Content (centered)
 	contentX := area.X + (w-cb.W)/2
 	contentY := area.Y + (h-cb.H)/2
-	layoutElement(node.Content, bounds{X: contentX, Y: contentY, W: cb.W, H: cb.H}, canvas, tokens, hitMap, hover, overlays, focus)
+	layoutElement(node.Content, bounds{X: contentX, Y: contentY, W: cb.W, H: cb.H}, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutChip(node chipElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	// Measure label
 	nc := nullCanvas{delegate: canvas}
-	cb := layoutElement(node.Label, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, tokens, nil, nil, nil)
+	cb := layoutElement(node.Label, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
 
 	labelW := cb.W
 	dismissW := 0
@@ -1998,7 +2125,7 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, tokens theme.
 
 	// Label content
 	labelArea := bounds{X: area.X + chipPadX, Y: area.Y + chipPadY, W: labelW, H: cb.H}
-	layoutElement(node.Label, labelArea, canvas, tokens, hitMap, hover, overlays, focus)
+	layoutElement(node.Label, labelArea, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 	// Dismiss "×"
 	if node.OnDismiss != nil {
@@ -2036,7 +2163,7 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, tokens theme.
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	if len(node.Items) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -2070,7 +2197,7 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 
 	for i, item := range node.Items {
 		// Measure label
-		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: area.W, H: menuBarHeight}, nc, tokens, nil, nil, nil)
+		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: area.W, H: menuBarHeight}, nc, th, tokens, nil, nil, nil)
 		itemW := cb.W + menuBarItemPadX*2
 
 		hasAction := item.OnClick != nil || len(item.Items) > 0
@@ -2095,7 +2222,7 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 
 		// Draw label
 		labelArea := bounds{X: cursorX + menuBarItemPadX, Y: area.Y + (menuBarHeight-cb.H)/2, W: cb.W, H: cb.H}
-		layoutElement(item.Label, labelArea, canvas, tokens, hitMap, hover, overlays, focus)
+		layoutElement(item.Label, labelArea, canvas, th, tokens, hitMap, hover, overlays, focus)
 
 		// Hit target
 		if hitMap != nil && hasAction {
@@ -2126,7 +2253,7 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 			subItems := item.Items
 			overlays.push(overlayEntry{
 				Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
-					layoutMenuDropdown(subItems, dropdownX, dropdownY, nc, canvas, tokens, hitMap, hover)
+					layoutMenuDropdown(subItems, dropdownX, dropdownY, nc, canvas, th, tokens, hitMap, hover)
 				},
 			})
 		}
@@ -2139,11 +2266,11 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, tokens 
 
 // layoutMenuDropdown renders a dropdown menu at the given position.
 // Shared by MenuBar dropdowns and potentially nested menus.
-func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
+func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
 	// Measure all items.
 	maxItemW := 0
 	for _, item := range items {
-		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, tokens, nil, nil, nil)
+		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, th, tokens, nil, nil, nil)
 		w := cb.W + menuItemPadX*2
 		if w > maxItemW {
 			maxItemW = w
@@ -2187,7 +2314,7 @@ func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas 
 		}
 
 		labelArea := bounds{X: posX + menuItemPadX, Y: cursorY + (menuItemHeight-16)/2, W: max(menuW-menuItemPadX*2, 0), H: 16}
-		layoutElement(item.Label, labelArea, canvas, tokens, hitMap, nil, nil)
+		layoutElement(item.Label, labelArea, canvas, th, tokens, hitMap, nil, nil)
 
 		if hitMap != nil && item.OnClick != nil {
 			onClick := item.OnClick
@@ -2199,7 +2326,7 @@ func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas 
 	}
 }
 
-func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
+func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusState) bounds {
 	if !node.Visible || len(node.Items) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -2212,7 +2339,7 @@ func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas,
 	// Push overlay for context menu rendering.
 	overlays.push(overlayEntry{
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
-			layoutMenuDropdown(items, posX, posY, nc, canvas, tokens, hitMap, hover)
+			layoutMenuDropdown(items, posX, posY, nc, canvas, th, tokens, hitMap, hover)
 		},
 	})
 
