@@ -59,6 +59,10 @@ type Overlay struct {
 
 	// Animation defines enter/exit behavior.
 	Animation OverlayAnimation
+
+	// OnDismiss is called when a dismissable overlay's backdrop is clicked.
+	// Required for dismiss-on-click-outside to work when Dismissable is true.
+	OnDismiss func()
 }
 
 // isElement marks Overlay as an Element.

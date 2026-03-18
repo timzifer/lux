@@ -2365,10 +2365,18 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 	content := node.Content
 	anchor := node.Anchor
 	placement := node.Placement
+	dismissable := node.Dismissable
+	onDismiss := node.OnDismiss
 	winW, winH := overlays.windowW, overlays.windowH
 
 	overlays.push(overlayEntry{
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState) {
+			// If dismissable, register a full-window backdrop hit target.
+			// Added BEFORE content targets so content takes priority (hitMap is LIFO).
+			if dismissable && onDismiss != nil && hitMap != nil {
+				hitMap.Add(draw.R(0, 0, float32(winW), float32(winH)), onDismiss)
+			}
+
 			// Measure content with null canvas.
 			nc := nullCanvas{delegate: canvas}
 			cb := layoutElement(content, bounds{X: 0, Y: 0, W: 400, H: 300}, nc, th, tokens, nil, nil, nil)

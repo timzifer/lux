@@ -736,6 +736,7 @@ func overlaysSection(m Model) ui.Element {
 				Anchor:      draw.R(300, 300, 100, 30),
 				Placement:   ui.PlacementBelow,
 				Dismissable: true,
+				OnDismiss:   func() { app.Send(DismissOverlayMsg{}) },
 				Content: ui.Card(ui.Column(
 					ui.Text("This is an overlay!"),
 					ui.Spacer(4),
