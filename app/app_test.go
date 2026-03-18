@@ -720,3 +720,179 @@ func TestWidgetRenderedInRunLoop(t *testing.T) {
 	// The widget should have been rendered at least twice (initial + after msg).
 	_ = finalTicks // We validated by not crashing — the reconciler expanded the widget.
 }
+
+// ── Part 1: TickMsg with non-comparable models ──────────────────
+
+type sliceModel struct {
+	Items []string
+}
+
+func TestTickMsgWithNonComparableModel(t *testing.T) {
+	// A model containing a slice is not comparable via ==.
+	// This must not panic.
+	update := func(m sliceModel, msg Msg) sliceModel {
+		switch msg.(type) {
+		case TickMsg:
+			m.Items = append(m.Items, "tick")
+		}
+		return m
+	}
+	view := func(m sliceModel) ui.Element {
+		return ui.Text(fmt.Sprintf("len=%d", len(m.Items)))
+	}
+
+	err := Run(sliceModel{Items: []string{"init"}}, update, view,
+		WithTitle("slice-model test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+}
+
+type mapModel struct {
+	Data map[string]int
+}
+
+func TestTickMsgWithMapModel(t *testing.T) {
+	// A model containing a map is not comparable via ==.
+	// This must not panic.
+	update := func(m mapModel, msg Msg) mapModel {
+		switch msg.(type) {
+		case TickMsg:
+			if m.Data == nil {
+				m.Data = make(map[string]int)
+			}
+			m.Data["tick"]++
+		}
+		return m
+	}
+	view := func(m mapModel) ui.Element {
+		return ui.Text("map-model")
+	}
+
+	err := Run(mapModel{}, update, view,
+		WithTitle("map-model test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+}
+
+func TestTickMsgUnchangedModelNoBuild(t *testing.T) {
+	// When TickMsg doesn't change the model, view should not be called again.
+	viewCalls := 0
+	update := func(m testModel, msg Msg) testModel {
+		// Ignore TickMsg — model stays the same.
+		return m
+	}
+	view := func(m testModel) ui.Element {
+		viewCalls++
+		return ui.Text(fmt.Sprintf("count=%d", m.Count))
+	}
+
+	err := Run(testModel{Count: 0}, update, view,
+		WithTitle("tick-no-rebuild test"),
+		WithHeadlessFrames(5),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if viewCalls != 1 {
+		t.Errorf("view called %d times, want 1 (TickMsg should not trigger rebuild when model unchanged)", viewCalls)
+	}
+}
+
+// ── Part 2: Changed-detection for normal messages ───────────────
+
+type ignoreMsg struct{}
+
+func TestMessageWithoutModelChangeNoRebuild(t *testing.T) {
+	viewCalls := 0
+	sentOnce := false
+	update := func(m testModel, msg Msg) testModel {
+		// Ignore ignoreMsg — model stays the same.
+		return m
+	}
+	view := func(m testModel) ui.Element {
+		viewCalls++
+		if !sentOnce {
+			sentOnce = true
+			Send(ignoreMsg{})
+		}
+		return ui.Text("static")
+	}
+
+	err := Run(testModel{}, update, view,
+		WithTitle("no-change-no-rebuild test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	// Initial view call only; ignoreMsg should not cause a rebuild.
+	if viewCalls != 1 {
+		t.Errorf("view called %d times, want 1 (message that doesn't change model should not rebuild)", viewCalls)
+	}
+}
+
+func TestThemeSwitchTriggersRepaint(t *testing.T) {
+	viewCalls := 0
+	sentOnce := false
+	update := func(m testModel, msg Msg) testModel {
+		return m // model unchanged
+	}
+	view := func(m testModel) ui.Element {
+		viewCalls++
+		if !sentOnce {
+			sentOnce = true
+			Send(SetThemeMsg{Theme: theme.Light})
+		}
+		return ui.Text("themed")
+	}
+
+	err := Run(testModel{}, update, view,
+		WithTitle("theme-repaint test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	// view should be called at least twice: initial + after theme switch.
+	if viewCalls < 2 {
+		t.Errorf("view called %d times, want >= 2 (theme switch should trigger repaint)", viewCalls)
+	}
+}
+
+// ── Part 4: TextInputMsg ────────────────────────────────────────
+
+func TestTextInputMsgNotForwardedToUserland(t *testing.T) {
+	var receivedTextInput bool
+	update := func(m testModel, msg Msg) testModel {
+		if _, ok := msg.(input.TextInputMsg); ok {
+			receivedTextInput = true
+		}
+		return m
+	}
+
+	sentOnce := false
+	view := func(m testModel) ui.Element {
+		if !sentOnce {
+			sentOnce = true
+			Send(input.TextInputMsg{Text: "abc"})
+		}
+		return ui.Empty()
+	}
+
+	err := Run(testModel{}, update, view,
+		WithTitle("textinput-event test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if receivedTextInput {
+		t.Error("TextInputMsg should not reach userland update")
+	}
+}

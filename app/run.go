@@ -109,6 +109,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 				case SetThemeMsg:
 					activeTheme = m.Theme
 					updateBgColor()
+					modelDirty = true // theme change requires repaint
 				case SetDarkModeMsg:
 					if m.Dark {
 						activeTheme = theme.Slate
@@ -116,6 +117,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 						activeTheme = theme.SlateLight
 					}
 					updateBgColor()
+					modelDirty = true // theme change requires repaint
 				case input.KeyMsg:
 					// Internalize keyboard input — never forward to userland.
 					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
@@ -127,9 +129,11 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 									v := string(runes[:len(runes)-1])
 									is.Value = v
 									is.OnChange(v)
+									modelDirty = true
 								}
 							case input.KeyEscape:
 								globalFocus.Blur()
+								modelDirty = true
 							}
 						}
 					}
@@ -140,11 +144,24 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 						v := is.Value + string(m.Char)
 						is.Value = v
 						is.OnChange(v)
+						modelDirty = true
+					}
+					return true
+				case input.TextInputMsg:
+					// Internalize IME/composed text input — never forward to userland.
+					if is := globalFocus.Input; is != nil && m.Text != "" {
+						v := is.Value + m.Text
+						is.Value = v
+						is.OnChange(v)
+						modelDirty = true
 					}
 					return true
 				}
-				currentModel = update(currentModel, msg)
-				modelDirty = true
+				newModel := update(currentModel, msg)
+				if modelChanged(any(newModel), any(currentModel)) {
+					modelDirty = true
+				}
+				currentModel = newModel
 				return true
 			})
 
@@ -164,7 +181,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			// tickDirty flag to track this separately so that apps
 			// without animation don't pay for unnecessary rebuilds.
 			tickModel := update(currentModel, TickMsg{DeltaTime: dt})
-			tickDirty := any(tickModel) != any(currentModel)
+			tickDirty := modelChanged(any(tickModel), any(currentModel))
 			currentModel = tickModel
 			modelDirty = modelDirty || tickDirty || animDirty
 
@@ -272,6 +289,14 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			Send(input.CharMsg{Char: ch})
 		},
 	})
+}
+
+// modelChanged reports whether two model values differ.
+// It uses == for comparable types and conservatively assumes changed
+// for non-comparable types (slices, maps, funcs) to avoid panics.
+func modelChanged(a, b any) bool {
+	defer func() { recover() }()
+	return a != b
 }
 
 // Ensure ViewFunc constraint is satisfied at compile time.

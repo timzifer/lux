@@ -1402,3 +1402,142 @@ func TestBuildSceneColumnWithTier3(t *testing.T) {
 		t.Fatal("Mixed column with Tier 3 widgets should produce glyphs")
 	}
 }
+
+// ── Theme DrawFunc Dispatch Tests ───────────────────────────────
+
+// customDrawTheme wraps a base theme and adds a custom DrawFunc for a given WidgetKind.
+type customDrawTheme struct {
+	base  theme.Theme
+	kind  theme.WidgetKind
+	drawF theme.DrawFunc
+}
+
+func (c *customDrawTheme) Tokens() theme.TokenSet         { return c.base.Tokens() }
+func (c *customDrawTheme) Parent() theme.Theme             { return c.base }
+func (c *customDrawTheme) DrawFunc(k theme.WidgetKind) theme.DrawFunc {
+	if k == c.kind {
+		return c.drawF
+	}
+	return c.base.DrawFunc(k)
+}
+
+func TestCustomThemeDrawFuncButton(t *testing.T) {
+	// Use a custom DrawFunc that draws a single distinctive rect for the button.
+	var customCalled bool
+	customTheme := &customDrawTheme{
+		base: theme.Default,
+		kind: theme.WidgetKindButton,
+		drawF: func(ctx theme.DrawCtx, tokens theme.TokenSet, state any) {
+			customCalled = true
+			// Draw a single marker rect so we can detect it in the scene.
+			ctx.Canvas.FillRect(ctx.Bounds, draw.SolidPaint(draw.RGBA(255, 0, 255, 255)))
+		},
+	}
+
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := BuildScene(
+		Button("Custom", nil),
+		canvas, customTheme, 800, 600, nil, nil,
+	)
+
+	if !customCalled {
+		t.Fatal("custom DrawFunc for Button was not called")
+	}
+
+	// The custom DrawFunc draws exactly 1 rect. Default draws 2 (border + fill).
+	// Verify our marker rect is present.
+	found := false
+	for _, r := range scene.Rects {
+		if r.Color == draw.RGBA(255, 0, 255, 255) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("custom button DrawFunc marker rect not found in scene")
+	}
+
+	// Verify default label text is NOT drawn (custom DrawFunc replaces all rendering).
+	for _, g := range scene.Glyphs {
+		if g.Text == "Custom" {
+			t.Error("default button label should not appear when custom DrawFunc is used")
+		}
+	}
+}
+
+func TestDefaultThemeDrawFuncIsNil(t *testing.T) {
+	// Built-in themes return nil DrawFunc, so default rendering runs.
+	if df := theme.Default.DrawFunc(theme.WidgetKindButton); df != nil {
+		t.Error("Default theme should return nil DrawFunc for Button")
+	}
+	if df := theme.Light.DrawFunc(theme.WidgetKindTextField); df != nil {
+		t.Error("Light theme should return nil DrawFunc for TextField")
+	}
+}
+
+// ── Select Dropdown Tests ───────────────────────────────────────
+
+func TestSelectRendersDropdownArrowDefault(t *testing.T) {
+	scene := buildTestScene(Select("Apple", []string{"Apple", "Banana", "Cherry"}), 800, 600)
+	// Should have at least 2 rects (border + fill) and 2 glyphs (value + arrow).
+	if len(scene.Rects) < 2 {
+		t.Errorf("Select should have at least 2 rects, got %d", len(scene.Rects))
+	}
+	found := false
+	for _, g := range scene.Glyphs {
+		if g.Text == "Apple" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Select should display its current value")
+	}
+}
+
+func TestSelectOpenStateRendersOverlay(t *testing.T) {
+	state := &SelectState{Open: true}
+	var selected string
+	el := Select("Apple", []string{"Apple", "Banana", "Cherry"},
+		WithSelectState(state),
+		WithOnSelect(func(v string) { selected = v }),
+	)
+
+	canvas := render.NewSceneCanvas(800, 600)
+	var hitMap hit.Map
+	scene := BuildScene(el, canvas, theme.Default, 800, 600, &hitMap, nil)
+
+	// When open, overlay items should be rendered (3 items = 3 text entries + value + arrow).
+	optionCount := 0
+	for _, g := range scene.OverlayGlyphs {
+		for _, opt := range []string{"Apple", "Banana", "Cherry"} {
+			if g.Text == opt {
+				optionCount++
+			}
+		}
+	}
+	if optionCount != 3 {
+		t.Errorf("open Select should render 3 option texts in overlay, got %d", optionCount)
+	}
+
+	// Should have hit targets for items.
+	// Main select trigger + 3 dropdown items = 4 total.
+	if hitMap.Len() < 4 {
+		t.Errorf("expected at least 4 hit targets (trigger + 3 items), got %d", hitMap.Len())
+	}
+
+	_ = selected
+	_ = scene
+}
+
+func TestSelectClosedStateNoOverlay(t *testing.T) {
+	state := &SelectState{Open: false}
+	el := Select("Apple", []string{"Apple", "Banana", "Cherry"}, WithSelectState(state))
+
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := BuildScene(el, canvas, theme.Default, 800, 600, nil, nil)
+
+	// No overlay content when closed.
+	if len(scene.OverlayRects) != 0 || len(scene.OverlayGlyphs) != 0 {
+		t.Error("closed Select should not produce overlay content")
+	}
+}
