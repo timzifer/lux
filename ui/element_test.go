@@ -1273,29 +1273,33 @@ func TestBuildSceneTooltipHidden(t *testing.T) {
 
 func TestBuildSceneTooltipVisible(t *testing.T) {
 	scene := buildTestScene(TooltipVisible(Text("Hover me"), Text("Tip content"), true), 800, 600)
-	// Visible: trigger glyph + tooltip content glyph + tooltip border/fill rects
-	if len(scene.Glyphs) < 2 {
-		t.Fatalf("Visible tooltip should produce at least 2 glyphs (trigger + content), got %d", len(scene.Glyphs))
+	// Trigger glyph in main scene, tooltip content in overlay scene
+	if len(scene.Glyphs) < 1 {
+		t.Fatalf("Visible tooltip should produce at least 1 main glyph (trigger), got %d", len(scene.Glyphs))
 	}
-	if len(scene.Rects) < 2 {
-		t.Errorf("Visible tooltip should produce at least 2 rects (border + fill), got %d", len(scene.Rects))
+	if len(scene.OverlayGlyphs) < 1 {
+		t.Fatalf("Visible tooltip should produce at least 1 overlay glyph (content), got %d", len(scene.OverlayGlyphs))
+	}
+	if len(scene.OverlayRects) < 2 {
+		t.Errorf("Visible tooltip should produce at least 2 overlay rects (border + fill), got %d", len(scene.OverlayRects))
 	}
 }
 
 func TestBuildSceneTooltipOverlayRendersLast(t *testing.T) {
-	// The tooltip overlay should render after the main tree.
+	// The tooltip overlay content should be in overlay lists (rendered after main).
 	scene := buildTestScene(Column(
 		TooltipVisible(Text("A"), Text("TIP"), true),
 		Text("B"),
 	), 800, 600)
-	// Glyphs order: A, B (main tree), then TIP (overlay)
-	if len(scene.Glyphs) < 3 {
-		t.Fatalf("expected at least 3 glyphs, got %d", len(scene.Glyphs))
+	// Main glyphs: A, B. Overlay glyphs: TIP.
+	if len(scene.Glyphs) < 2 {
+		t.Fatalf("expected at least 2 main glyphs, got %d", len(scene.Glyphs))
 	}
-	// The last glyph should be from the tooltip overlay
-	last := scene.Glyphs[len(scene.Glyphs)-1]
-	if last.Text != "TIP" {
-		t.Errorf("last glyph = %q, want 'TIP' (overlay renders last)", last.Text)
+	if len(scene.OverlayGlyphs) < 1 {
+		t.Fatalf("expected at least 1 overlay glyph, got %d", len(scene.OverlayGlyphs))
+	}
+	if scene.OverlayGlyphs[0].Text != "TIP" {
+		t.Errorf("overlay glyph = %q, want 'TIP'", scene.OverlayGlyphs[0].Text)
 	}
 }
 
@@ -1354,12 +1358,12 @@ func TestBuildSceneContextMenuVisible(t *testing.T) {
 		{Label: Text("Copy"), OnClick: func() {}},
 	}
 	scene := buildTestScene(ContextMenu(items, true, 100, 100), 800, 600)
-	// Visible: border + fill rects + 2 item label glyphs
-	if len(scene.Rects) < 2 {
-		t.Errorf("Visible ContextMenu should produce at least 2 rects, got %d", len(scene.Rects))
+	// Visible: border + fill in overlay rects, 2 item labels in overlay glyphs
+	if len(scene.OverlayRects) < 2 {
+		t.Errorf("Visible ContextMenu should produce at least 2 overlay rects, got %d", len(scene.OverlayRects))
 	}
-	if len(scene.Glyphs) < 2 {
-		t.Fatalf("Visible ContextMenu should produce at least 2 glyphs, got %d", len(scene.Glyphs))
+	if len(scene.OverlayGlyphs) < 2 {
+		t.Fatalf("Visible ContextMenu should produce at least 2 overlay glyphs, got %d", len(scene.OverlayGlyphs))
 	}
 }
 
