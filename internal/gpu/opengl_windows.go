@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"math"
 	"syscall"
 	"unsafe"
 
@@ -240,8 +241,8 @@ func (r *OpenGLRenderer) drawTexturedGlyph(g draw.TexturedGlyph) {
 		return
 	}
 
-	dstX := int(g.DstX)
-	dstY := int(g.DstY)
+	dstX := int(math.Round(float64(g.DstX)))
+	dstY := int(math.Round(float64(g.DstY)))
 	srcR := byte(g.Color.R * 255)
 	srcG := byte(g.Color.G * 255)
 	srcB := byte(g.Color.B * 255)

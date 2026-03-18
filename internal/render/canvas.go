@@ -5,6 +5,8 @@
 package render
 
 import (
+	"math"
+
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
 	"github.com/timzifer/lux/internal/text"
@@ -204,8 +206,10 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 
 	// Compute the font ascent so we can convert the top-left origin to
 	// a baseline for glyph placement: baseline = origin.Y + ascent.
+	// Snap baseline to integer pixels to prevent glyphs from jumping
+	// between sub-pixel rows (especially visible on macOS / Retina).
 	metrics := shaper.Measure(txt, style)
-	baseline := origin.Y + metrics.Ascent
+	baseline := float32(math.Round(float64(origin.Y + metrics.Ascent)))
 
 	for _, sg := range shaped {
 		if sg.Rune == ' ' {
@@ -220,8 +224,8 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			continue
 		}
 
-		dstX := cursorX + entry.BearingX
-		dstY := baseline - entry.BearingY
+		dstX := float32(math.Round(float64(cursorX + entry.BearingX)))
+		dstY := float32(math.Round(float64(baseline - entry.BearingY)))
 		if c.isClipped(dstX, dstY, float32(entry.W), float32(entry.H)) {
 			cursorX += sg.Advance
 			continue
