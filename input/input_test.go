@@ -218,3 +218,73 @@ func TestMouseMsgWithModifiers(t *testing.T) {
 		t.Error("should have Shift modifier")
 	}
 }
+
+// ── Shortcut Tests (RFC-002 §2.5) ──────────────────────────────
+
+func TestShortcutEquality(t *testing.T) {
+	a := Shortcut{Key: KeyS, Modifiers: ModCtrl}
+	b := Shortcut{Key: KeyS, Modifiers: ModCtrl}
+	if a != b {
+		t.Error("identical shortcuts should be equal")
+	}
+	c := Shortcut{Key: KeyS, Modifiers: ModCtrl | ModShift}
+	if a == c {
+		t.Error("shortcuts with different modifiers should not be equal")
+	}
+}
+
+func TestPlatformShortcut(t *testing.T) {
+	s := PlatformShortcut(PlatformActionCopy)
+	if s.Key != KeyC {
+		t.Errorf("copy shortcut key = %d, want KeyC", s.Key)
+	}
+	// On this platform (Linux), should use Ctrl.
+	if !s.Modifiers.Has(ModCtrl) {
+		t.Error("copy shortcut should have Ctrl on Linux")
+	}
+}
+
+func TestPlatformShortcutRedo(t *testing.T) {
+	s := PlatformShortcut(PlatformActionRedo)
+	if s.Key != KeyZ {
+		t.Errorf("redo key = %d, want KeyZ", s.Key)
+	}
+	if !s.Modifiers.Has(ModShift) {
+		t.Error("redo should have Shift modifier")
+	}
+}
+
+func TestShortcutMsgFields(t *testing.T) {
+	msg := ShortcutMsg{
+		Shortcut: Shortcut{Key: KeyS, Modifiers: ModCtrl},
+		ID:       "save",
+	}
+	if msg.ID != "save" {
+		t.Errorf("ID = %q, want save", msg.ID)
+	}
+}
+
+// ── CursorKind Tests (RFC-002 §2.7) ────────────────────────────
+
+func TestCursorKindValues(t *testing.T) {
+	if CursorDefault != 0 {
+		t.Errorf("CursorDefault = %d, want 0", CursorDefault)
+	}
+	if CursorNone != 14 {
+		t.Errorf("CursorNone = %d, want 14", CursorNone)
+	}
+	// Ensure all cursor kinds are distinct.
+	seen := make(map[CursorKind]bool)
+	cursors := []CursorKind{
+		CursorDefault, CursorText, CursorPointer, CursorMove,
+		CursorResizeNS, CursorResizeEW, CursorResizeNESW, CursorResizeNWSE,
+		CursorNotAllowed, CursorCrosshair, CursorGrab, CursorGrabbing,
+		CursorWait, CursorProgress, CursorNone,
+	}
+	for _, c := range cursors {
+		if seen[c] {
+			t.Errorf("duplicate CursorKind value: %d", c)
+		}
+		seen[c] = true
+	}
+}

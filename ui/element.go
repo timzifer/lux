@@ -8,6 +8,7 @@ import (
 
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
 )
@@ -90,6 +91,16 @@ func AdoptState[S WidgetState](raw WidgetState) *S {
 		return s
 	}
 	return new(S)
+}
+
+// Cursable is an optional interface on Widget (RFC-002 §2.7).
+// Widgets that implement it declare the desired system cursor when the
+// mouse pointer hovers over them. The framework calls Cursor() after
+// hit-testing and sets the platform cursor accordingly.
+// Default (when not implemented) is CursorDefault.
+type Cursable interface {
+	Widget
+	Cursor(state WidgetState) input.CursorKind
 }
 
 // ── Element Types (RFC §4.3) ─────────────────────────────────────

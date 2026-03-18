@@ -12,6 +12,7 @@ package app
 import (
 	"time"
 
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/platform"
@@ -63,6 +64,18 @@ func TrySend(msg Msg) bool {
 	return globalLoop.TrySend(msg)
 }
 
+// shortcutEntry binds a key combination to a user-defined ID.
+type shortcutEntry struct {
+	shortcut input.Shortcut
+	id       input.ShortcutID
+}
+
+// globalHandlerEntry binds an optional ID to a global input handler.
+type globalHandlerEntry struct {
+	id      HandlerID
+	handler GlobalHandler
+}
+
 // options holds configuration parsed from Option functions.
 type options struct {
 	title           string
@@ -72,6 +85,8 @@ type options struct {
 	theme           theme.Theme
 	platformFactory func() platform.Platform
 	rendererFactory func() gpu.Renderer
+	shortcuts       []shortcutEntry
+	globalHandlers  []globalHandlerEntry
 }
 
 func defaultOptions() options {
@@ -120,4 +135,41 @@ func WithPlatform(f func() platform.Platform) Option {
 // WithRenderer overrides the GPU renderer.
 func WithRenderer(f func() gpu.Renderer) Option {
 	return func(o *options) { o.rendererFactory = f }
+}
+
+// WithShortcut registers a global keyboard shortcut (RFC-002 §2.5).
+// When the key combination is pressed, a ShortcutMsg with the given ID
+// is sent into the user update loop.
+func WithShortcut(s input.Shortcut, id input.ShortcutID) Option {
+	return func(o *options) {
+		o.shortcuts = append(o.shortcuts, shortcutEntry{shortcut: s, id: id})
+	}
+}
+
+// ── Global Handler Layer (RFC-002 §2.8) ─────────────────────────
+
+// HandlerID identifies a dynamically registered global handler.
+type HandlerID string
+
+// GlobalHandler processes input events before normal widget dispatch.
+// Return true to consume the event (prevent widget delivery).
+type GlobalHandler func(event ui.InputEvent) (consumed bool)
+
+// RegisterHandlerMsg dynamically registers a global handler at runtime.
+type RegisterHandlerMsg struct {
+	ID      HandlerID
+	Handler GlobalHandler
+}
+
+// UnregisterHandlerMsg removes a dynamically registered handler.
+type UnregisterHandlerMsg struct {
+	ID HandlerID
+}
+
+// WithGlobalHandler registers a static global handler (RFC-002 §2.8).
+// Static handlers are always active and checked before dynamic ones.
+func WithGlobalHandler(h GlobalHandler) Option {
+	return func(o *options) {
+		o.globalHandlers = append(o.globalHandlers, globalHandlerEntry{handler: h})
+	}
 }
