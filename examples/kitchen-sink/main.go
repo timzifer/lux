@@ -167,7 +167,7 @@ func view(m Model) ui.Element {
 		ui.ProgressBar(m.Progress),
 		ui.Spacer(4),
 		ui.Text("Indeterminate:"),
-		ui.ProgressBarIndeterminate(),
+		ui.ProgressBarIndeterminate(float32(math.Mod(m.AnimTime*0.8, 1.0))),
 		ui.Divider(),
 
 		// ── Selection ───────────────────────────────────────

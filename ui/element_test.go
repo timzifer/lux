@@ -829,24 +829,36 @@ func TestScrollViewOffsetShiftsContent(t *testing.T) {
 	// Render without offset.
 	sceneNoScroll := buildTestScene(ScrollView(content, 50), 800, 600)
 
-	// Render with offset.
+	// Render with offset — LINE 1 gets clipped above the viewport,
+	// so the first visible glyph changes.
 	state := &ScrollState{Offset: 20}
 	canvas := render.NewSceneCanvas(800, 600)
 	sceneWithScroll := BuildScene(ScrollView(content, 50, state), canvas, theme.Default, 800, 600, nil, nil)
 
-	if len(sceneNoScroll.Glyphs) == 0 || len(sceneWithScroll.Glyphs) == 0 {
-		t.Fatal("both scenes should produce glyphs")
+	if len(sceneNoScroll.Glyphs) == 0 {
+		t.Fatal("non-scrolled scene should produce glyphs")
 	}
 
-	// With offset, the first glyph's Y should be shifted up by the offset.
-	noScrollY := sceneNoScroll.Glyphs[0].Y
-	scrolledY := sceneWithScroll.Glyphs[0].Y
-	if scrolledY >= noScrollY {
-		t.Errorf("scrolled glyph Y=%d should be less than non-scrolled Y=%d (offset shifts content up)", scrolledY, noScrollY)
+	// The non-scrolled first glyph should be "LINE 1".
+	if sceneNoScroll.Glyphs[0].Text != "LINE 1" {
+		t.Errorf("non-scrolled first glyph = %q, want LINE 1", sceneNoScroll.Glyphs[0].Text)
 	}
-	diff := noScrollY - scrolledY
-	if diff != 20 {
-		t.Errorf("Y difference = %d, want 20 (offset=20)", diff)
+
+	// With offset, LINE 1 should be clipped out of the viewport.
+	// The first visible glyph should be LINE 2 (shifted up but still in clip).
+	if len(sceneWithScroll.Glyphs) == 0 {
+		t.Fatal("scrolled scene should produce glyphs")
+	}
+	if sceneWithScroll.Glyphs[0].Text != "LINE 2" {
+		t.Errorf("scrolled first visible glyph = %q, want LINE 2", sceneWithScroll.Glyphs[0].Text)
+	}
+
+	// The visible content should differ between scrolled and non-scrolled.
+	// Non-scrolled starts with LINE 1; scrolled starts with LINE 2.
+	if len(sceneNoScroll.Glyphs) > 0 && len(sceneWithScroll.Glyphs) > 0 {
+		if sceneNoScroll.Glyphs[0].Text == sceneWithScroll.Glyphs[0].Text {
+			t.Error("scrolled and non-scrolled views should show different first content")
+		}
 	}
 }
 

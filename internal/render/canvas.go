@@ -18,6 +18,7 @@ type SceneCanvas struct {
 	scene  draw.Scene
 	shaper text.Shaper
 	atlas  *text.GlyphAtlas
+	clips  []draw.Rect // clip rect stack
 }
 
 // CanvasOption configures a SceneCanvas.
@@ -53,8 +54,33 @@ func (c *SceneCanvas) Scene() draw.Scene { return c.scene }
 // ── Primitives ───────────────────────────────────────────────────
 
 func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
+	if c.isClipped(r.X, r.Y, r.W, r.H) {
+		return
+	}
+	// Intersect with clip rect to clamp visible portion.
+	x, y, w, h := r.X, r.Y, r.W, r.H
+	if len(c.clips) > 0 {
+		clip := c.clips[len(c.clips)-1]
+		if x < clip.X {
+			w -= clip.X - x
+			x = clip.X
+		}
+		if y < clip.Y {
+			h -= clip.Y - y
+			y = clip.Y
+		}
+		if x+w > clip.X+clip.W {
+			w = clip.X + clip.W - x
+		}
+		if y+h > clip.Y+clip.H {
+			h = clip.Y + clip.H - y
+		}
+		if w <= 0 || h <= 0 {
+			return
+		}
+	}
 	c.scene.Rects = append(c.scene.Rects, draw.DrawRect{
-		X: int(r.X), Y: int(r.Y), W: int(r.W), H: int(r.H),
+		X: int(x), Y: int(y), W: int(w), H: int(h),
 		Color: paint.Color,
 	})
 }
@@ -117,6 +143,9 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 	}
 
 	// Legacy bitmap path.
+	if c.isClipped(origin.X, origin.Y, style.Size*float32(len(txt)), style.Size) {
+		return
+	}
 	scale := text.BitmapScale(style.Size)
 	c.scene.Glyphs = append(c.scene.Glyphs, draw.DrawGlyph{
 		X:     int(origin.X),
@@ -128,6 +157,7 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 }
 
 // drawTextTextured shapes text and emits TexturedGlyphs from the atlas.
+// origin.Y is the top-left of the text bounding box (not the baseline).
 func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw.TextStyle, color draw.Color, shaper *text.SfntShaper) {
 	shaped := shaper.Shape(txt, style)
 	cursorX := origin.X
@@ -138,6 +168,11 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 		return
 	}
 	fontID := f.ID()
+
+	// Compute the font ascent so we can convert the top-left origin to
+	// a baseline for glyph placement: baseline = origin.Y + ascent.
+	metrics := shaper.Measure(txt, style)
+	baseline := origin.Y + metrics.Ascent
 
 	for _, sg := range shaped {
 		if sg.Rune == ' ' {
@@ -152,9 +187,15 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			continue
 		}
 
+		dstX := cursorX + entry.BearingX
+		dstY := baseline - entry.BearingY
+		if c.isClipped(dstX, dstY, float32(entry.W), float32(entry.H)) {
+			cursorX += sg.Advance
+			continue
+		}
 		c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, draw.TexturedGlyph{
-			DstX: cursorX + entry.BearingX,
-			DstY: origin.Y - entry.BearingY,
+			DstX: dstX,
+			DstY: dstY,
 			DstW: float32(entry.W),
 			DstH: float32(entry.H),
 			SrcX: entry.X, SrcY: entry.Y,
@@ -180,8 +221,33 @@ func (c *SceneCanvas) DrawShadow(_ draw.Rect, _ draw.Shadow) {}
 
 // ── Clipping & Transform ─────────────────────────────────────────
 
-func (c *SceneCanvas) PushClip(_ draw.Rect)         {}
-func (c *SceneCanvas) PopClip()                      {}
+func (c *SceneCanvas) PushClip(r draw.Rect) {
+	c.clips = append(c.clips, r)
+}
+
+func (c *SceneCanvas) PopClip() {
+	if len(c.clips) > 0 {
+		c.clips = c.clips[:len(c.clips)-1]
+	}
+}
+
+// clipRect returns the current clip rect, or the full canvas if none.
+func (c *SceneCanvas) clipRect() draw.Rect {
+	if len(c.clips) == 0 {
+		return draw.R(0, 0, float32(c.width), float32(c.height))
+	}
+	return c.clips[len(c.clips)-1]
+}
+
+// isClipped returns true if the rect is fully outside the current clip.
+func (c *SceneCanvas) isClipped(x, y, w, h float32) bool {
+	if len(c.clips) == 0 {
+		return false
+	}
+	clip := c.clips[len(c.clips)-1]
+	return x+w <= clip.X || x >= clip.X+clip.W ||
+		y+h <= clip.Y || y >= clip.Y+clip.H
+}
 func (c *SceneCanvas) PushTransform(_ draw.Transform) {}
 func (c *SceneCanvas) PopTransform()                  {}
 func (c *SceneCanvas) PushOffset(_, _ float32)        {}

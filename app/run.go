@@ -180,6 +180,9 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 			// Legacy hit-test for left-click.
 			if button == 0 && pressed {
+				// Blur focus first; if the click lands on a TextField,
+				// its hit target will re-focus it.
+				globalFocus.Blur()
 				if target := hitMap.HitTest(x, y); target != nil {
 					if target.OnClickAt != nil {
 						target.OnClickAt(x, y)
