@@ -5,10 +5,12 @@ import (
 	"time"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/fonts"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/internal/render"
+	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
@@ -62,6 +64,16 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 		return fmt.Errorf("gpu init: %w", err)
 	}
 	defer renderer.Destroy()
+
+	// Initialize the font rendering pipeline (RFC-003 §3).
+	atlas := text.NewGlyphAtlas(512, 512)
+	shaper := text.NewSfntShaper(fonts.Fallback)
+
+	// If the renderer supports atlas-based text, wire it up.
+	type atlasSetter interface{ SetAtlas(*text.GlyphAtlas) }
+	if as, ok := renderer.(atlasSetter); ok {
+		as.SetAtlas(atlas)
+	}
 
 	activeTheme := cfg.theme
 	bgColor := activeTheme.Tokens().Colors.Surface.Base
@@ -123,7 +135,7 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 			// 5. Build scene with hover state.
 			w, h := plat.FramebufferSize()
-			canvas := render.NewSceneCanvas(w, h)
+			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 			hitMap.Reset()
 			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap, &hoverState)
 

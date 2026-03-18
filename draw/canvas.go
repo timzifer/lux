@@ -110,8 +110,18 @@ type DrawGlyph struct {
 	Color Color
 }
 
+// TexturedGlyph is an atlas-based glyph drawn as a textured quad.
+type TexturedGlyph struct {
+	DstX, DstY float32 // screen position (dp)
+	DstW, DstH float32 // screen size (dp)
+	SrcX, SrcY int     // atlas position (pixels)
+	SrcW, SrcH int     // atlas size (pixels)
+	Color      Color
+}
+
 // Scene is the fully laid-out draw list for one frame.
 type Scene struct {
-	Rects  []DrawRect
-	Glyphs []DrawGlyph
+	Rects          []DrawRect
+	Glyphs         []DrawGlyph      // legacy bitmap glyphs
+	TexturedGlyphs []TexturedGlyph  // atlas-based glyphs
 }

@@ -1,13 +1,18 @@
 // Package fonts provides font loading, fallback chains, and the
-// embedded fallback font (RFC §16).
+// embedded fallback font (RFC §16, RFC-003 §3).
 //
-// For M2 the package supplies a bitmap fallback; go-text/typesetting
-// integration follows in later milestones.
+// The package embeds Noto Sans as the default fallback and provides
+// LoadFile, LoadFS, and LoadBytes for loading additional TTF/OTF fonts.
+// The 5×7 bitmap fallback is retained as the ultimate fallback.
 package fonts
 
 import (
+	"io/fs"
+	"os"
 	"strings"
 	"unicode"
+
+	"golang.org/x/image/font/sfnt"
 )
 
 // FontStyle distinguishes normal, italic, and oblique faces.
@@ -26,9 +31,57 @@ type FontFaceKey struct {
 }
 
 // Font is a loaded TTF/OTF font. Immutable after Load.
-// For M2 this wraps the built-in 5×7 bitmap glyph set.
+// When sfnt is non-nil the font was loaded from a TTF/OTF file;
+// when nil the legacy 5×7 bitmap fallback is used.
 type Font struct {
+	id   uint64 // unique ID, assigned at load time
 	name string
+	sfnt *sfnt.Font
+}
+
+var nextFontID uint64 = 1
+
+// Name returns the font's display name.
+func (f *Font) Name() string { return f.name }
+
+// ID returns a unique identifier for this font instance (used for atlas caching).
+func (f *Font) ID() uint64 { return f.id }
+
+// SfntFont returns the parsed sfnt.Font, or nil for the bitmap fallback.
+func (f *Font) SfntFont() *sfnt.Font { return f.sfnt }
+
+// IsBitmap reports whether this font uses the legacy bitmap glyphs.
+func (f *Font) IsBitmap() bool { return f.sfnt == nil }
+
+// ── Loading API (RFC-003 §3.4) ──────────────────────────────────
+
+// LoadBytes parses a TTF or OTF font from raw bytes.
+func LoadBytes(data []byte) (*Font, error) {
+	parsed, err := sfnt.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	id := nextFontID
+	nextFontID++
+	return &Font{id: id, sfnt: parsed}, nil
+}
+
+// LoadFile loads a TTF or OTF font from a file path.
+func LoadFile(path string) (*Font, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return LoadBytes(data)
+}
+
+// LoadFS loads a TTF or OTF font from an fs.FS.
+func LoadFS(fsys fs.FS, path string) (*Font, error) {
+	data, err := fs.ReadFile(fsys, path)
+	if err != nil {
+		return nil, err
+	}
+	return LoadBytes(data)
 }
 
 // FontFamily groups multiple faces and provides a fallback chain.
@@ -55,9 +108,19 @@ const BitmapCharWidth = 6
 // BitmapCharHeight is the height of one bitmap character cell.
 const BitmapCharHeight = 7
 
-// Fallback is the embedded bitmap font family used when no other
-// font is available.  It covers ASCII and common punctuation.
-var Fallback = &FontFamily{Name: "Bitmap5x7"}
+// Fallback is the embedded font family used when no other font is available.
+// It contains Noto Sans (loaded at init) with the 5×7 bitmap as ultimate fallback.
+var Fallback = &FontFamily{
+	Name:  "Noto Sans",
+	Faces: make(map[FontFaceKey]*Font),
+}
+
+// DefaultFont returns the embedded Noto Sans regular font, loading it
+// on first access. Returns nil if the embedded font cannot be parsed.
+func DefaultFont() *Font {
+	initDefaultFont()
+	return defaultFont
+}
 
 // ── glyph data ───────────────────────────────────────────────────
 
@@ -119,4 +182,7 @@ func init() {
 		}
 		glyphs[[]rune(ch)[0]] = glyphs['?']
 	}
+
+	// Load the embedded Noto Sans font into the Fallback family.
+	initDefaultFont()
 }

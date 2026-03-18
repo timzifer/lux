@@ -4,10 +4,13 @@ package gpu
 
 import (
 	"fmt"
+	"strings"
+	"unsafe"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/render"
+	"github.com/timzifer/lux/internal/text"
 )
 
 // OpenGLRenderer implements Renderer using OpenGL 3.3 Core.
@@ -15,6 +18,17 @@ type OpenGLRenderer struct {
 	width  int
 	height int
 	bgColor draw.Color
+
+	// Text rendering resources.
+	textProgram  uint32
+	textVAO      uint32
+	textVBO      uint32
+	atlasTexture uint32
+	projUniform  int32
+	colorUniform int32
+	atlasUniform int32
+	atlas        *text.GlyphAtlas
+	textInited   bool
 }
 
 // NewOpenGL creates an OpenGL-based renderer.
@@ -42,6 +56,11 @@ func (r *OpenGLRenderer) SetBackgroundColor(c draw.Color) {
 	r.bgColor = c
 }
 
+// SetAtlas sets the glyph atlas for textured glyph rendering.
+func (r *OpenGLRenderer) SetAtlas(a *text.GlyphAtlas) {
+	r.atlas = a
+}
+
 // Resize updates the viewport.
 func (r *OpenGLRenderer) Resize(width, height int) {
 	r.width = width
@@ -57,7 +76,8 @@ func (r *OpenGLRenderer) BeginFrame() {
 	gl.Enable(gl.SCISSOR_TEST)
 }
 
-// Draw renders the scene via gl.Scissor + gl.Clear.
+// Draw renders the scene via gl.Scissor + gl.Clear for rects,
+// bitmap glyphs via per-pixel scissor, and textured quads for atlas glyphs.
 func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	for _, rect := range scene.Rects {
 		r.fillRect(rect.X, rect.Y, rect.W, rect.H, rect.Color)
@@ -65,13 +85,25 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	for _, glyph := range scene.Glyphs {
 		r.drawGlyph(glyph)
 	}
+	if len(scene.TexturedGlyphs) > 0 {
+		r.drawTexturedGlyphs(scene.TexturedGlyphs)
+	}
 }
 
 // EndFrame is a no-op for OpenGL (swap is handled by GLFW).
 func (r *OpenGLRenderer) EndFrame() {}
 
 // Destroy releases OpenGL resources.
-func (r *OpenGLRenderer) Destroy() {}
+func (r *OpenGLRenderer) Destroy() {
+	if r.textInited {
+		gl.DeleteProgram(r.textProgram)
+		gl.DeleteVertexArrays(1, &r.textVAO)
+		gl.DeleteBuffers(1, &r.textVBO)
+		if r.atlasTexture != 0 {
+			gl.DeleteTextures(1, &r.atlasTexture)
+		}
+	}
+}
 
 func (r *OpenGLRenderer) fillRect(x, y, w, h int, color draw.Color) {
 	if w <= 0 || h <= 0 || r.width <= 0 || r.height <= 0 {
@@ -90,3 +122,229 @@ func (r *OpenGLRenderer) drawGlyph(cmd draw.DrawGlyph) {
 		r.fillRect(px, py, w, h, cmd.Color)
 	})
 }
+
+// ── Textured glyph rendering ────────────────────────────────────
+
+func (r *OpenGLRenderer) initTextRendering() {
+	if r.textInited {
+		return
+	}
+
+	program, err := compileProgram(textVertexShader, textFragmentShader)
+	if err != nil {
+		// If shaders fail to compile, fall back silently.
+		return
+	}
+
+	r.textProgram = program
+	r.projUniform = gl.GetUniformLocation(program, gl.Str("uProj\x00"))
+	r.colorUniform = gl.GetUniformLocation(program, gl.Str("uColor\x00"))
+	r.atlasUniform = gl.GetUniformLocation(program, gl.Str("uAtlas\x00"))
+
+	// Create VAO and VBO.
+	gl.GenVertexArrays(1, &r.textVAO)
+	gl.GenBuffers(1, &r.textVBO)
+
+	gl.BindVertexArray(r.textVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.textVBO)
+
+	// Vertex layout: [posX, posY, uvX, uvY] per vertex.
+	stride := int32(4 * 4) // 4 floats * 4 bytes
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointerWithOffset(0, 2, gl.FLOAT, false, stride, 0)
+	gl.EnableVertexAttribArray(1)
+	gl.VertexAttribPointerWithOffset(1, 2, gl.FLOAT, false, stride, uintptr(2*4))
+
+	gl.BindVertexArray(0)
+
+	// Create atlas texture.
+	gl.GenTextures(1, &r.atlasTexture)
+	gl.BindTexture(gl.TEXTURE_2D, r.atlasTexture)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	// GL_RED for single-channel grayscale.
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_R, gl.RED)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_G, gl.RED)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_B, gl.RED)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_A, gl.RED)
+	gl.BindTexture(gl.TEXTURE_2D, 0)
+
+	r.textInited = true
+}
+
+func (r *OpenGLRenderer) uploadAtlas() {
+	if r.atlas == nil || !r.atlas.Dirty {
+		return
+	}
+	gl.BindTexture(gl.TEXTURE_2D, r.atlasTexture)
+	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
+	gl.TexImage2D(
+		gl.TEXTURE_2D, 0, gl.RED,
+		int32(r.atlas.Width), int32(r.atlas.Height),
+		0, gl.RED, gl.UNSIGNED_BYTE,
+		gl.Ptr(r.atlas.Image.Pix),
+	)
+	r.atlas.Dirty = false
+}
+
+func (r *OpenGLRenderer) drawTexturedGlyphs(glyphs []draw.TexturedGlyph) {
+	r.initTextRendering()
+	if !r.textInited || r.atlas == nil {
+		return
+	}
+
+	r.uploadAtlas()
+
+	// Disable scissor for textured rendering.
+	gl.Disable(gl.SCISSOR_TEST)
+
+	// Enable alpha blending.
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+	gl.UseProgram(r.textProgram)
+
+	// Set orthographic projection matrix.
+	proj := orthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
+	gl.UniformMatrix4fv(r.projUniform, 1, false, &proj[0])
+
+	// Bind atlas texture.
+	gl.ActiveTexture(gl.TEXTURE0)
+	gl.BindTexture(gl.TEXTURE_2D, r.atlasTexture)
+	gl.Uniform1i(r.atlasUniform, 0)
+
+	gl.BindVertexArray(r.textVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.textVBO)
+
+	atlasW := float32(r.atlas.Width)
+	atlasH := float32(r.atlas.Height)
+
+	// Build vertex data: 6 vertices per glyph (2 triangles).
+	vertices := make([]float32, 0, len(glyphs)*6*4)
+
+	var prevColor draw.Color
+	firstGlyph := true
+
+	for _, g := range glyphs {
+		// If color changes, flush the current batch.
+		if !firstGlyph && g.Color != prevColor {
+			r.flushTextBatch(vertices, prevColor)
+			vertices = vertices[:0]
+		}
+		prevColor = g.Color
+		firstGlyph = false
+
+		x0 := g.DstX
+		y0 := g.DstY
+		x1 := g.DstX + g.DstW
+		y1 := g.DstY + g.DstH
+
+		u0 := float32(g.SrcX) / atlasW
+		v0 := float32(g.SrcY) / atlasH
+		u1 := float32(g.SrcX+g.SrcW) / atlasW
+		v1 := float32(g.SrcY+g.SrcH) / atlasH
+
+		// Two triangles forming a quad.
+		vertices = append(vertices,
+			x0, y0, u0, v0,
+			x1, y0, u1, v0,
+			x0, y1, u0, v1,
+
+			x1, y0, u1, v0,
+			x1, y1, u1, v1,
+			x0, y1, u0, v1,
+		)
+	}
+
+	if len(vertices) > 0 {
+		r.flushTextBatch(vertices, prevColor)
+	}
+
+	gl.BindVertexArray(0)
+	gl.UseProgram(0)
+	gl.Disable(gl.BLEND)
+	gl.Enable(gl.SCISSOR_TEST)
+}
+
+func (r *OpenGLRenderer) flushTextBatch(vertices []float32, color draw.Color) {
+	gl.Uniform4f(r.colorUniform, color.R, color.G, color.B, color.A)
+	gl.BufferData(gl.ARRAY_BUFFER,
+		len(vertices)*4,
+		gl.Ptr(vertices),
+		gl.DYNAMIC_DRAW)
+	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(vertices)/4))
+}
+
+// ── Shader helpers ──────────────────────────────────────────────
+
+func compileProgram(vertSrc, fragSrc string) (uint32, error) {
+	vert, err := compileShader(vertSrc, gl.VERTEX_SHADER)
+	if err != nil {
+		return 0, err
+	}
+	frag, err := compileShader(fragSrc, gl.FRAGMENT_SHADER)
+	if err != nil {
+		gl.DeleteShader(vert)
+		return 0, err
+	}
+
+	prog := gl.CreateProgram()
+	gl.AttachShader(prog, vert)
+	gl.AttachShader(prog, frag)
+	gl.LinkProgram(prog)
+
+	var status int32
+	gl.GetProgramiv(prog, gl.LINK_STATUS, &status)
+	if status == gl.FALSE {
+		var logLen int32
+		gl.GetProgramiv(prog, gl.INFO_LOG_LENGTH, &logLen)
+		log := strings.Repeat("\x00", int(logLen+1))
+		gl.GetProgramInfoLog(prog, logLen, nil, gl.Str(log))
+		gl.DeleteProgram(prog)
+		gl.DeleteShader(vert)
+		gl.DeleteShader(frag)
+		return 0, fmt.Errorf("program link: %s", log)
+	}
+
+	gl.DeleteShader(vert)
+	gl.DeleteShader(frag)
+	return prog, nil
+}
+
+func compileShader(src string, shaderType uint32) (uint32, error) {
+	shader := gl.CreateShader(shaderType)
+	csrc, free := gl.Strs(src)
+	gl.ShaderSource(shader, 1, csrc, nil)
+	free()
+	gl.CompileShader(shader)
+
+	var status int32
+	gl.GetShaderiv(shader, gl.COMPILE_STATUS, &status)
+	if status == gl.FALSE {
+		var logLen int32
+		gl.GetShaderiv(shader, gl.INFO_LOG_LENGTH, &logLen)
+		log := strings.Repeat("\x00", int(logLen+1))
+		gl.GetShaderInfoLog(shader, logLen, nil, gl.Str(log))
+		gl.DeleteShader(shader)
+		return 0, fmt.Errorf("shader compile: %s", log)
+	}
+	return shader, nil
+}
+
+// orthoMatrix returns a 4x4 orthographic projection matrix.
+func orthoMatrix(left, right, bottom, top, near, far float32) [16]float32 {
+	dx := right - left
+	dy := top - bottom
+	dz := far - near
+	return [16]float32{
+		2 / dx, 0, 0, 0,
+		0, 2 / dy, 0, 0,
+		0, 0, -2 / dz, 0,
+		-(right + left) / dx, -(top + bottom) / dy, -(far + near) / dz, 1,
+	}
+}
+
+// Ensure unsafe is used (for gl.Ptr).
+var _ = unsafe.Pointer(nil)

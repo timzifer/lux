@@ -16,12 +16,35 @@ type SceneCanvas struct {
 	width  int
 	height int
 	scene  draw.Scene
-	shaper text.BitmapShaper
+	shaper text.Shaper
+	atlas  *text.GlyphAtlas
+}
+
+// CanvasOption configures a SceneCanvas.
+type CanvasOption func(*SceneCanvas)
+
+// WithShaper sets the text shaper. Default is BitmapShaper.
+func WithShaper(s text.Shaper) CanvasOption {
+	return func(c *SceneCanvas) { c.shaper = s }
+}
+
+// WithAtlas sets the glyph atlas for textured glyph rendering.
+func WithAtlas(a *text.GlyphAtlas) CanvasOption {
+	return func(c *SceneCanvas) { c.atlas = a }
 }
 
 // NewSceneCanvas creates a canvas for the given framebuffer size.
-func NewSceneCanvas(width, height int) *SceneCanvas {
-	return &SceneCanvas{width: width, height: height}
+// Without options it defaults to the bitmap shaper for backward compatibility.
+func NewSceneCanvas(width, height int, opts ...CanvasOption) *SceneCanvas {
+	c := &SceneCanvas{
+		width:  width,
+		height: height,
+		shaper: text.BitmapShaper{},
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // Scene returns the accumulated draw commands.
@@ -81,6 +104,19 @@ func (c *SceneCanvas) StrokePath(_ draw.Path, _ draw.Stroke) {}
 // ── Text ─────────────────────────────────────────────────────────
 
 func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextStyle, color draw.Color) {
+	if len(txt) == 0 {
+		return
+	}
+
+	// If we have an atlas and an sfnt shaper, use the textured glyph path.
+	if c.atlas != nil {
+		if sfntShaper, ok := c.shaper.(*text.SfntShaper); ok {
+			c.drawTextTextured(txt, origin, style, color, sfntShaper)
+			return
+		}
+	}
+
+	// Legacy bitmap path.
 	scale := text.BitmapScale(style.Size)
 	c.scene.Glyphs = append(c.scene.Glyphs, draw.DrawGlyph{
 		X:     int(origin.X),
@@ -89,6 +125,45 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 		Text:  txt,
 		Color: color,
 	})
+}
+
+// drawTextTextured shapes text and emits TexturedGlyphs from the atlas.
+func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw.TextStyle, color draw.Color, shaper *text.SfntShaper) {
+	shaped := shaper.Shape(txt, style)
+	cursorX := origin.X
+	sizePx := uint16(text.DpToPixels(style.Size))
+
+	f := fonts.DefaultFont()
+	if f == nil {
+		return
+	}
+	fontID := f.ID()
+
+	for _, sg := range shaped {
+		if sg.Rune == ' ' {
+			cursorX += sg.Advance
+			continue
+		}
+
+		key := text.GlyphKey{FontID: fontID, Rune: sg.Rune, SizePx: sizePx}
+		entry, ok := c.atlas.LookupOrInsert(key, shaper, style)
+		if !ok {
+			cursorX += sg.Advance
+			continue
+		}
+
+		c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, draw.TexturedGlyph{
+			DstX: cursorX + entry.BearingX,
+			DstY: origin.Y - entry.BearingY,
+			DstW: float32(entry.W),
+			DstH: float32(entry.H),
+			SrcX: entry.X, SrcY: entry.Y,
+			SrcW: entry.W, SrcH: entry.H,
+			Color: color,
+		})
+
+		cursorX += sg.Advance
+	}
 }
 
 func (c *SceneCanvas) MeasureText(txt string, style draw.TextStyle) draw.TextMetrics {

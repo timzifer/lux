@@ -10,10 +10,20 @@ import (
 	"github.com/timzifer/lux/fonts"
 )
 
-// Shaper shapes a run of text into positioned glyphs.
-// M2 provides a BitmapShaper; later milestones will add a GoTextShaper.
+// ShapedGlyph describes a single positioned glyph produced by shaping.
+type ShapedGlyph struct {
+	Rune     rune
+	Advance  float32 // horizontal advance in dp
+	BearingX float32 // left-side bearing in dp
+	BearingY float32 // top bearing from baseline in dp
+	Width    float32 // glyph bounding box width in dp
+	Height   float32 // glyph bounding box height in dp
+}
+
+// Shaper shapes a run of text into positioned glyphs (RFC-003 §3.3).
 type Shaper interface {
 	Measure(text string, style draw.TextStyle) draw.TextMetrics
+	Shape(text string, style draw.TextStyle) []ShapedGlyph
 }
 
 // BitmapShaper implements Shaper using the embedded 5×7 bitmap font.
@@ -44,6 +54,26 @@ func bitmapScale(size float32) int {
 		s = 1
 	}
 	return s
+}
+
+// Shape returns one ShapedGlyph per rune using bitmap metrics.
+func (BitmapShaper) Shape(text string, style draw.TextStyle) []ShapedGlyph {
+	scale := bitmapScale(style.Size)
+	adv := float32(fonts.BitmapCharWidth) * float32(scale)
+	h := float32(fonts.BitmapCharHeight) * float32(scale)
+	runes := []rune(text)
+	out := make([]ShapedGlyph, len(runes))
+	for i, r := range runes {
+		out[i] = ShapedGlyph{
+			Rune:     r,
+			Advance:  adv,
+			BearingX: 0,
+			BearingY: h,
+			Width:    adv,
+			Height:   h,
+		}
+	}
+	return out
 }
 
 // BitmapScale is exported for the renderer.
