@@ -44,9 +44,16 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 	renderer := cfg.rendererFactory()
 	fbW, fbH := plat.FramebufferSize()
+
+	var nativeHandle uintptr
+	if nh, ok := plat.(interface{ NativeHandle() uintptr }); ok {
+		nativeHandle = nh.NativeHandle()
+	}
+
 	if err := renderer.Init(gpu.Config{
-		Width:  fbW,
-		Height: fbH,
+		Width:        fbW,
+		Height:       fbH,
+		NativeHandle: nativeHandle,
 	}); err != nil {
 		return fmt.Errorf("gpu init: %w", err)
 	}

@@ -26,6 +26,7 @@ type Renderer interface {
 
 // Config holds GPU initialization parameters.
 type Config struct {
-	Width  int
-	Height int
+	Width        int
+	Height       int
+	NativeHandle uintptr // Platform-specific window handle (HWND on Windows, 0 otherwise).
 }
