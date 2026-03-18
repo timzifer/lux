@@ -397,11 +397,21 @@ func (s *ScrollState) ScrollBy(delta float32, contentHeight, viewportHeight floa
 
 // ── Focus State ──────────────────────────────────────────────────
 
+// InputState tracks the focused TextField's value and callback so that
+// the framework can handle KeyMsg/CharMsg internally without exposing
+// raw input events to userland.
+type InputState struct {
+	Value    string
+	OnChange func(string)
+	FocusID  int
+}
+
 // FocusState tracks which element has keyboard focus.
 // It is shared between the element tree and the app loop.
 type FocusState struct {
-	FocusedID int  // ID of focused element, 0 = none
-	nextID    int  // counter for assigning IDs during layout
+	FocusedID int         // ID of focused element, 0 = none
+	Input     *InputState // populated during layout for the focused TextField
+	nextID    int         // counter for assigning IDs during layout
 }
 
 // IsFocused returns true if the element with the given ID has focus.
@@ -436,12 +446,12 @@ func (f *FocusState) nextFocusID() int {
 func (f *FocusState) resetCounter() {
 	if f != nil {
 		f.nextID = 0
+		f.Input = nil
 	}
 }
 
-// HandleKeyMsg processes a key event for the focused TextField.
-// Returns the new value if the field was modified, or the original value unchanged.
-func HandleKeyMsg(focus *FocusState, key string, value string, onChange func(string)) {
+// handleKeyMsg processes a key event for the focused TextField.
+func handleKeyMsg(focus *FocusState, key string, value string, onChange func(string)) {
 	if focus == nil || onChange == nil {
 		return
 	}
@@ -457,8 +467,8 @@ func HandleKeyMsg(focus *FocusState, key string, value string, onChange func(str
 	}
 }
 
-// HandleCharInput appends a character to the value of a focused TextField.
-func HandleCharInput(ch rune, value string, onChange func(string)) {
+// handleCharInput appends a character to the value of a focused TextField.
+func handleCharInput(ch rune, value string, onChange func(string)) {
 	if onChange == nil {
 		return
 	}
@@ -1218,6 +1228,16 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, tok
 		cursorX := float32(textX) + metrics.Width
 		canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
 			draw.SolidPaint(tokens.Colors.Text.Primary))
+	}
+
+	// Store input state for the focused TextField so the framework can
+	// handle KeyMsg/CharMsg internally (no userland boilerplate needed).
+	if focused && node.OnChange != nil && focus != nil {
+		focus.Input = &InputState{
+			Value:    node.Value,
+			OnChange: node.OnChange,
+			FocusID:  focusID,
+		}
 	}
 
 	// Hit target for focus acquisition.

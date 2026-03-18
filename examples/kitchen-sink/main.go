@@ -13,7 +13,6 @@ import (
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -111,23 +110,6 @@ func update(m Model, msg app.Msg) Model {
 		m.TextValue = msg.Value
 	case SelectSectionMsg:
 		m.ActiveSection = msg.Section
-
-	case input.KeyMsg:
-		if msg.Action == input.KeyPress || msg.Action == input.KeyRepeat {
-			focus := app.Focus()
-			if focus.FocusedID > 0 {
-				ui.HandleKeyMsg(focus, msg.Key, m.TextValue, func(v string) {
-					m.TextValue = v
-				})
-			}
-		}
-	case input.CharMsg:
-		focus := app.Focus()
-		if focus.FocusedID > 0 {
-			ui.HandleCharInput(msg.Char, m.TextValue, func(v string) {
-				m.TextValue = v
-			})
-		}
 
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()

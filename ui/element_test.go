@@ -996,7 +996,7 @@ func TestTextFieldClickSetsFocus(t *testing.T) {
 func TestHandleKeyMsgBackspace(t *testing.T) {
 	focus := &FocusState{FocusedID: 1}
 	var result string
-	HandleKeyMsg(focus, "Backspace", "hello", func(v string) { result = v })
+	handleKeyMsg(focus, "Backspace", "hello", func(v string) { result = v })
 	if result != "hell" {
 		t.Errorf("after Backspace: %q, want %q", result, "hell")
 	}
@@ -1004,15 +1004,15 @@ func TestHandleKeyMsgBackspace(t *testing.T) {
 
 func TestHandleKeyMsgEscapeBlurs(t *testing.T) {
 	focus := &FocusState{FocusedID: 1}
-	HandleKeyMsg(focus, "Escape", "hello", func(string) {})
+	handleKeyMsg(focus, "Escape", "hello", func(string) {})
 	if focus.FocusedID != 0 {
 		t.Errorf("Escape should blur: FocusedID = %d, want 0", focus.FocusedID)
 	}
 }
 
-func TestHandleCharInput(t *testing.T) {
+func TestInternalCharInput(t *testing.T) {
 	var result string
-	HandleCharInput('X', "hello", func(v string) { result = v })
+	handleCharInput('X', "hello", func(v string) { result = v })
 	if result != "helloX" {
 		t.Errorf("after char input: %q, want %q", result, "helloX")
 	}
@@ -1020,7 +1020,7 @@ func TestHandleCharInput(t *testing.T) {
 
 func TestHandleCharInputIgnoresControl(t *testing.T) {
 	called := false
-	HandleCharInput(0x08, "hello", func(v string) { called = true })
+	handleCharInput(0x08, "hello", func(v string) { called = true })
 	if called {
 		t.Error("control characters should be ignored")
 	}
