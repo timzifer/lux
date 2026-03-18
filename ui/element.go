@@ -201,6 +201,31 @@ func ComponentWithKey(key string, w Widget) Element {
 	return widgetElement{W: w, Key: key}
 }
 
+// Padding adds inner spacing around a single child (RFC-002 §4.5).
+func Padding(insets draw.Insets, child Element) Element {
+	return paddingElement{Insets: insets, Child: child}
+}
+
+// SizedBox enforces a specific size on a child. If child is omitted,
+// it acts as an empty spacer with the given dimensions (RFC-002 §4.5).
+func SizedBox(width, height float32, child ...Element) Element {
+	var c Element
+	if len(child) > 0 {
+		c = child[0]
+	}
+	return sizedBoxElement{Width: width, Height: height, Child: c}
+}
+
+// Expanded takes all available space on the main axis within a Flex
+// parent. An optional flex factor controls the proportion (default 1).
+func Expanded(child Element, flex ...float32) Element {
+	grow := float32(1)
+	if len(flex) > 0 {
+		grow = flex[0]
+	}
+	return expandedElement{Child: child, Grow: grow}
+}
+
 // ── Concrete element structs ─────────────────────────────────────
 
 type emptyElement struct{}
@@ -261,6 +286,27 @@ type scrollViewElement struct {
 }
 
 func (scrollViewElement) isElement() {}
+
+type paddingElement struct {
+	Insets draw.Insets
+	Child  Element
+}
+
+func (paddingElement) isElement() {}
+
+type sizedBoxElement struct {
+	Width, Height float32
+	Child         Element // nil = empty spacer
+}
+
+func (sizedBoxElement) isElement() {}
+
+type expandedElement struct {
+	Child Element
+	Grow  float32
+}
+
+func (expandedElement) isElement() {}
 
 // ── Tier 2 element structs ──────────────────────────────────────
 
@@ -642,6 +688,31 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, tokens theme.Tok
 	case boxElement:
 		return layoutBox(node, area, canvas, tokens, hitMap, hover, fs)
 
+	case paddingElement:
+		return layoutPadding(node, area, canvas, tokens, hitMap, hover, fs)
+
+	case sizedBoxElement:
+		return layoutSizedBox(node, area, canvas, tokens, hitMap, hover, fs)
+
+	case expandedElement:
+		// Outside a Flex context, Expanded passes through to its child.
+		return layoutElement(node.Child, area, canvas, tokens, hitMap, hover, fs)
+
+	case flexElement:
+		return layoutFlex(node, area, canvas, tokens, hitMap, hover, fs)
+
+	case gridElement:
+		return layoutGrid(node, area, canvas, tokens, hitMap, hover, fs)
+
+	case virtualListElement:
+		return layoutVirtualList(node, area, canvas, tokens, hitMap, hover, fs)
+
+	case treeElement:
+		return layoutTree(node, area, canvas, tokens, hitMap, hover, fs)
+
+	case richTextElement:
+		return layoutRichText(node, area, canvas, tokens)
+
 	// Tier 2 widgets
 	case checkboxElement:
 		return layoutCheckbox(node, area, canvas, tokens, hitMap, hover)
@@ -794,67 +865,7 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 
 	// Draw scrollbar if content exceeds viewport.
 	if contentH > viewportH {
-		trackW := int(tokens.Scroll.TrackWidth)
-		if trackW <= 0 {
-			trackW = 8
-		}
-		thumbR := tokens.Scroll.ThumbRadius
-		if thumbR <= 0 {
-			thumbR = 4
-		}
-
-		trackX := area.X + w
-		trackColor := tokens.Colors.Stroke.Divider
-		thumbColor := tokens.Colors.Text.Secondary
-
-		// Track
-		canvas.FillRoundRect(
-			draw.R(float32(trackX), float32(area.Y), float32(trackW), float32(viewportH)),
-			thumbR, draw.SolidPaint(trackColor))
-
-		// Thumb — proportional to visible/content ratio, positioned by offset.
-		ratio := float32(viewportH) / float32(contentH)
-		thumbH := int(float32(viewportH) * ratio)
-		if thumbH < 20 {
-			thumbH = 20
-		}
-
-		maxScroll := float32(contentH - viewportH)
-		thumbTravel := float32(viewportH - thumbH)
-		var thumbY float32
-		if maxScroll > 0 {
-			thumbY = float32(area.Y) + (offset/maxScroll)*thumbTravel
-		} else {
-			thumbY = float32(area.Y)
-		}
-
-		canvas.FillRoundRect(
-			draw.R(float32(trackX), thumbY, float32(trackW), float32(thumbH)),
-			thumbR, draw.SolidPaint(thumbColor))
-
-		// Track-click: clicking on the scrollbar track jumps to that position.
-		if hitMap != nil && node.State != nil {
-			state := node.State
-			ms := maxScroll
-			aY := float32(area.Y)
-			vph := float32(viewportH)
-			hitMap.AddAt(
-				draw.R(float32(trackX), float32(area.Y), float32(trackW), float32(viewportH)),
-				func(_, y float32) {
-					// Map click Y to scroll offset.
-					frac := (y - aY) / vph
-					if frac < 0 {
-						frac = 0
-					}
-					if frac > 1 {
-						frac = 1
-					}
-					state.Offset = frac * ms
-				},
-			)
-		}
-
-		w += trackW
+		w += drawScrollbar(canvas, tokens, hitMap, node.State, area.X+w, area.Y, viewportH, float32(contentH), offset)
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
@@ -1257,6 +1268,31 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, tokens th
 	arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
 	canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, tokens.Colors.Text.Secondary)
 
+	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+}
+
+func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
+	inL := int(node.Insets.Left)
+	inT := int(node.Insets.Top)
+	inR := int(node.Insets.Right)
+	inB := int(node.Insets.Bottom)
+	childArea := bounds{
+		X: area.X + inL,
+		Y: area.Y + inT,
+		W: max(area.W-inL-inR, 0),
+		H: max(area.H-inT-inB, 0),
+	}
+	cb := layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover, focus)
+	return bounds{X: area.X, Y: area.Y, W: cb.W + inL + inR, H: cb.H + inT + inB}
+}
+
+func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, focus *FocusState) bounds {
+	w := int(node.Width)
+	h := int(node.Height)
+	if node.Child != nil {
+		childArea := bounds{X: area.X, Y: area.Y, W: w, H: h}
+		layoutElement(node.Child, childArea, canvas, tokens, hitMap, hover, focus)
+	}
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
