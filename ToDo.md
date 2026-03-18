@@ -125,21 +125,21 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ## Phase 3 — Rendering-Pipeline ausbauen
 
-### 3.1 Canvas-API vervollständigen (RFC-001 §6.2)
-- [ ] `PushClipRoundRect`, `PushClipPath`
-- [ ] `PushBlur` / `PopBlur`
-- [ ] `PushLayer` / `PopLayer`
-- [ ] `PushScale`
-- [ ] `DrawTextLayout` / `NewTextLayout`
-- [ ] `DrawImageSlice` (9-Slice)
-- [ ] `DrawTexture` (für Surface-Slots)
-- [ ] `ArcTo` im PathBuilder
+### 3.1 Canvas-API vervollständigen (RFC-001 §6.2) ✅
+- [x] `PushClipRoundRect`, `PushClipPath`
+- [x] `PushBlur` / `PopBlur`
+- [x] `PushLayer` / `PopLayer`
+- [x] `PushScale`
+- [x] `DrawTextLayout` / `NewTextLayout`
+- [x] `DrawImageSlice` (9-Slice)
+- [x] `DrawTexture` (für Surface-Slots)
+- [x] `ArcTo` im PathBuilder
 - **Abhängig von:** nichts (erweitert bestehendes `draw/` Interface)
 
-### 3.2 Paint-Varianten (RFC-001 §6.2.3)
-- [ ] `LinearGradientPaint` implementieren
-- [ ] `RadialGradientPaint` implementieren
-- [ ] `PatternPaint` implementieren
+### 3.2 Paint-Varianten (RFC-001 §6.2.3) ✅
+- [x] `LinearGradientPaint` implementieren
+- [x] `RadialGradientPaint` implementieren
+- [x] `PatternPaint` implementieren
 - **Abhängig von:** 3.1
 
 ### 3.3 MSDF-Text-Rendering (RFC-001 §6.3) ✅
@@ -153,10 +153,10 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] `CacheHint`-Unterstützung in `LayerOptions`
 - **Abhängig von:** nichts
 
-### 3.5 Theme-Lookup-Cache (RFC-001 §5.4, RFC-003 §1.4)
-- [ ] `resolvedCache` pro Theme-Instanz (DrawFunc + TokenSet)
-- [ ] Cache-Invalidierung bei `SetThemeMsg` / `SetDarkModeMsg`
-- [ ] Warm-Up in `app.Run` vor erstem Frame
+### 3.5 Theme-Lookup-Cache (RFC-001 §5.4, RFC-003 §1.4) ✅
+- [x] `resolvedCache` pro Theme-Instanz (DrawFunc + TokenSet)
+- [x] Cache-Invalidierung bei `SetThemeMsg` / `SetDarkModeMsg`
+- [x] Warm-Up in `app.Run` vor erstem Frame
 - **Abhängig von:** nichts
 
 ---

@@ -27,10 +27,13 @@ type Canvas interface {
 
 	DrawText(text string, origin Point, style TextStyle, color Color)
 	MeasureText(text string, style TextStyle) TextMetrics
+	DrawTextLayout(layout TextLayout, origin Point, color Color)
 
 	// ── Images & Textures ────────────────────────────────────────
 
 	DrawImage(img ImageID, dst Rect, opts ImageOptions)
+	DrawImageSlice(slice ImageSlice, dst Rect, opts ImageOptions)
+	DrawTexture(tex TextureID, dst Rect)
 
 	// ── Shadows ──────────────────────────────────────────────────
 
@@ -39,15 +42,22 @@ type Canvas interface {
 	// ── Clipping & Transform ─────────────────────────────────────
 
 	PushClip(r Rect)
+	PushClipRoundRect(r Rect, radius float32)
+	PushClipPath(p Path)
 	PopClip()
 	PushTransform(t Transform)
 	PopTransform()
 	PushOffset(dx, dy float32)
+	PushScale(sx, sy float32)
 
 	// ── Effects ──────────────────────────────────────────────────
 
 	PushOpacity(alpha float32)
 	PopOpacity()
+	PushBlur(radius float32)
+	PopBlur()
+	PushLayer(opts LayerOptions)
+	PopLayer()
 
 	// ── State ────────────────────────────────────────────────────
 
@@ -80,8 +90,34 @@ const (
 	FontWeightBlack      FontWeight = 900
 )
 
+// TextAlign controls horizontal text alignment within a TextLayout.
+type TextAlign uint8
+
+const (
+	TextAlignLeft TextAlign = iota
+	TextAlignCenter
+	TextAlignRight
+)
+
+// TextLayout describes a block of text with layout constraints.
+type TextLayout struct {
+	Text      string
+	Style     TextStyle
+	MaxWidth  float32   // 0 = unbounded
+	Alignment TextAlign // Left, Center, Right
+}
+
 // ImageID is a handle to a loaded image/texture.
 type ImageID uint64
+
+// TextureID is a handle to a GPU texture (for Surface slots).
+type TextureID uint64
+
+// ImageSlice describes a 9-slice image for scalable borders/backgrounds.
+type ImageSlice struct {
+	Image  ImageID
+	Insets Insets // defines the 9-slice border regions
+}
 
 // ImageOptions controls image rendering.
 type ImageOptions struct {
