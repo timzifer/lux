@@ -1,15 +1,15 @@
-//go:build !nogui && !windows
+//go:build !nogui && windows
 
 package app
 
 import (
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/platform"
-	glfwplatform "github.com/timzifer/lux/platform/glfw"
+	windowsplatform "github.com/timzifer/lux/platform/windows"
 )
 
 func defaultPlatformFactory() platform.Platform {
-	return glfwplatform.New()
+	return windowsplatform.New()
 }
 
 func defaultRendererFactory() gpu.Renderer {

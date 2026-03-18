@@ -1,4 +1,4 @@
-//go:build !nogui
+//go:build !nogui && !windows
 
 package gpu
 
