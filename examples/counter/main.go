@@ -1,6 +1,8 @@
-// Counter (M3) — interactive counter with increment/decrement buttons.
+// Counter (M4) — interactive counter with theme switching and hover animations.
 //
-// This is the Appendix B example from RFC-001:
+// This builds on the M3 counter (Appendix B) and adds M4 features:
+//   - Dark/Light theme toggle via SetDarkModeMsg
+//   - Button hover animation (automatic via framework)
 //
 //	go run ./examples/counter/
 package main
@@ -16,10 +18,12 @@ import (
 
 type Model struct {
 	Count int
+	Dark  bool
 }
 
 type IncrMsg struct{}
 type DecrMsg struct{}
+type ToggleThemeMsg struct{}
 
 func update(m Model, msg app.Msg) Model {
 	switch msg.(type) {
@@ -27,22 +31,30 @@ func update(m Model, msg app.Msg) Model {
 		m.Count++
 	case DecrMsg:
 		m.Count--
+	case ToggleThemeMsg:
+		m.Dark = !m.Dark
+		app.Send(app.SetDarkModeMsg{Dark: m.Dark})
 	}
 	return m
 }
 
 func view(m Model) ui.Element {
+	themeLabel := "LIGHT"
+	if m.Dark {
+		themeLabel = "DARK"
+	}
 	return ui.Column(
 		ui.Text(fmt.Sprintf("Count: %d", m.Count)),
 		ui.Row(
 			ui.Button("-", func() { app.Send(DecrMsg{}) }),
 			ui.Button("+", func() { app.Send(IncrMsg{}) }),
 		),
+		ui.Button(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
 	)
 }
 
 func main() {
-	if err := app.Run(Model{Count: 0}, update, view,
+	if err := app.Run(Model{Count: 0, Dark: true}, update, view,
 		app.WithTheme(theme.Default),
 		app.WithTitle("Counter"),
 	); err != nil {

@@ -11,7 +11,7 @@ import (
 
 func buildTestScene(root Element, w, h int) draw.Scene {
 	canvas := render.NewSceneCanvas(w, h)
-	return BuildScene(root, canvas, theme.Default, w, h, nil)
+	return BuildScene(root, canvas, theme.Default, w, h, nil, nil)
 }
 
 func TestBuildSceneEmpty(t *testing.T) {
@@ -169,7 +169,7 @@ func TestBuildSceneCollectsHitTargets(t *testing.T) {
 	BuildScene(Column(
 		Text("Label"),
 		Button("OK", func() {}),
-	), canvas, theme.Default, 800, 600, &hitMap)
+	), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	if hitMap.Len() != 1 {
 		t.Fatalf("expected 1 hit target, got %d", hitMap.Len())
@@ -179,7 +179,7 @@ func TestBuildSceneCollectsHitTargets(t *testing.T) {
 func TestBuildSceneHitTargetNilOnClick(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Button("X", nil), canvas, theme.Default, 800, 600, &hitMap)
+	BuildScene(Button("X", nil), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	if hitMap.Len() != 0 {
 		t.Errorf("nil OnClick should not register hit target, got %d", hitMap.Len())
@@ -192,7 +192,7 @@ func TestBuildSceneMultipleHitTargets(t *testing.T) {
 	BuildScene(Row(
 		Button("A", func() {}),
 		Button("B", func() {}),
-	), canvas, theme.Default, 800, 600, &hitMap)
+	), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	if hitMap.Len() != 2 {
 		t.Fatalf("expected 2 hit targets, got %d", hitMap.Len())
@@ -203,7 +203,7 @@ func TestHitTargetClickable(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
 	clicked := false
-	BuildScene(Button("OK", func() { clicked = true }), canvas, theme.Default, 800, 600, &hitMap)
+	BuildScene(Button("OK", func() { clicked = true }), canvas, theme.Default, 800, 600, &hitMap, nil)
 
 	// Button is at framePadding (24) position, with buttonMinWidth (180) and some height.
 	target := hitMap.HitTest(float32(framePadding+10), float32(framePadding+5))
@@ -243,5 +243,57 @@ func TestThemeColorsUsed(t *testing.T) {
 	label := scene.Glyphs[0]
 	if label.Color != tokens.Colors.OnPrimary {
 		t.Errorf("label color = %v, want OnPrimary %v", label.Color, tokens.Colors.OnPrimary)
+	}
+}
+
+// ── M4 Hover Tests ──────────────────────────────────────────────
+
+func TestBuildSceneWithHoverState(t *testing.T) {
+	// Simulate a fully hovered button: fill color should differ from Primary.
+	var hover HoverState
+	hover.SetHovered(0, 0) // instant
+	hover.Tick(0)          // ensure the anim completes
+
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := BuildScene(Button("OK", nil), canvas, theme.Default, 800, 600, nil, &hover)
+
+	tokens := theme.Default.Tokens()
+
+	// With hover at 1.0, the fill color should be a lightened Primary, not raw Primary.
+	if len(scene.Rects) < 2 {
+		t.Fatal("need at least 2 rects for button")
+	}
+	fill := scene.Rects[1]
+	if fill.Color == tokens.Colors.Primary {
+		t.Error("hovered button fill should differ from raw Primary")
+	}
+}
+
+func TestBuildSceneNilHoverState(t *testing.T) {
+	// nil HoverState should render normally without panic.
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := BuildScene(Button("OK", nil), canvas, theme.Default, 800, 600, nil, nil)
+
+	tokens := theme.Default.Tokens()
+	if len(scene.Rects) < 2 {
+		t.Fatal("need at least 2 rects")
+	}
+	fill := scene.Rects[1]
+	if fill.Color != tokens.Colors.Primary {
+		t.Errorf("non-hovered fill = %v, want Primary %v", fill.Color, tokens.Colors.Primary)
+	}
+}
+
+func TestBuildSceneWithLightTheme(t *testing.T) {
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := BuildScene(Text("HELLO"), canvas, theme.Light, 800, 600, nil, nil)
+
+	if len(scene.Glyphs) != 1 {
+		t.Fatalf("expected 1 glyph, got %d", len(scene.Glyphs))
+	}
+	glyph := scene.Glyphs[0]
+	lightOnSurface := theme.Light.Tokens().Colors.OnSurface
+	if glyph.Color != lightOnSurface {
+		t.Errorf("light theme text color = %v, want %v", glyph.Color, lightOnSurface)
 	}
 }

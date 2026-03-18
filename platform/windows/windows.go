@@ -27,6 +27,7 @@ const (
 	wmSize         = 0x0005
 	wmClose        = 0x0010
 	wmQuit         = 0x0012
+	wmMouseMove    = 0x0200
 	wmLButtonDown  = 0x0201
 	wmRButtonDown  = 0x0204
 	wmMButtonDown  = 0x0207
@@ -257,6 +258,13 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 				width := int(uint32(lParam & 0xFFFF))
 				height := int(uint32((lParam >> 16) & 0xFFFF))
 				p.callbacks.OnResize(width, height)
+			}
+			return 0
+		case wmMouseMove:
+			if p.callbacks.OnMouseMove != nil {
+				x := float32(int16(lParam & 0xFFFF))
+				y := float32(int16((lParam >> 16) & 0xFFFF))
+				p.callbacks.OnMouseMove(x, y)
 			}
 			return 0
 		case wmLButtonDown, wmRButtonDown, wmMButtonDown:

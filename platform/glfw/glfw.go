@@ -87,6 +87,12 @@ func (p *Platform) Run(cb platform.Callbacks) error {
 		})
 	}
 
+	if cb.OnMouseMove != nil {
+		p.window.SetCursorPosCallback(func(_ *glfw.Window, xpos, ypos float64) {
+			cb.OnMouseMove(float32(xpos), float32(ypos))
+		})
+	}
+
 	for !p.window.ShouldClose() {
 		glfw.PollEvents()
 		if cb.OnFrame != nil {

@@ -4,7 +4,11 @@
 // widget rendering.  Themes are composable via a parent chain.
 package theme
 
-import "github.com/timzifer/lux/draw"
+import (
+	"time"
+
+	"github.com/timzifer/lux/draw"
+)
 
 // WidgetKind identifies a built-in widget type for DrawFunc dispatch.
 type WidgetKind uint16
@@ -41,12 +45,21 @@ type Theme interface {
 	Parent() Theme
 }
 
+// MotionSpec defines animation duration presets (RFC §12.6).
+// Widgets use these to stay theme-conformant.
+type MotionSpec struct {
+	Standard   time.Duration // 200ms — standard transitions
+	Emphasized time.Duration // 400ms — emphasized transitions
+	Quick      time.Duration // 100ms — fast reactions (hover, ripple)
+}
+
 // TokenSet holds all design tokens for a theme.
 type TokenSet struct {
 	Colors     ColorScheme
 	Typography TypographyScale
 	Spacing    SpacingScale
 	Radii      RadiusScale
+	Motion     MotionSpec
 }
 
 // ColorScheme defines the colour slots of a theme.
@@ -134,8 +147,71 @@ func (d *defaultTheme) Tokens() TokenSet {
 		},
 		Spacing: SpacingScale{XS: 4, SM: 8, MD: 16, LG: 24, XL: 32},
 		Radii:   RadiusScale{None: 0, Small: 4, Medium: 8, Large: 16, Full: 9999},
+		Motion: MotionSpec{
+			Standard:   200 * time.Millisecond,
+			Emphasized: 400 * time.Millisecond,
+			Quick:      100 * time.Millisecond,
+		},
 	}
 }
 
 func (d *defaultTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
 func (d *defaultTheme) Parent() Theme                { return nil }
+
+// ── Light Theme ─────────────────────────────────────────────────
+
+// Light is the built-in light theme (M4).
+var Light Theme = &lightTheme{}
+
+type lightTheme struct{}
+
+func (l *lightTheme) Tokens() TokenSet {
+	return TokenSet{
+		Colors: ColorScheme{
+			Background: draw.RGBA(250, 250, 252, 255),
+			Surface:    draw.RGBA(235, 235, 240, 255),
+			Primary:    draw.RGBA(52, 120, 246, 255),
+			Secondary:  draw.RGBA(80, 140, 240, 255),
+			OnPrimary:  draw.RGBA(255, 255, 255, 255),
+			OnSurface:  draw.RGBA(28, 28, 32, 255),
+			Error:      draw.RGBA(207, 54, 54, 255),
+			Outline:    draw.RGBA(80, 140, 240, 255),
+		},
+		Typography: TypographyScale{
+			DisplayLarge: draw.TextStyle{
+				FontFamily: "Bitmap5x7",
+				Size:       21,
+				Weight:     draw.FontWeightRegular,
+				LineHeight: 1.2,
+			},
+			HeadlineLarge: draw.TextStyle{
+				FontFamily: "Bitmap5x7",
+				Size:       21,
+				Weight:     draw.FontWeightRegular,
+				LineHeight: 1.2,
+			},
+			BodyMedium: draw.TextStyle{
+				FontFamily: "Bitmap5x7",
+				Size:       21,
+				Weight:     draw.FontWeightRegular,
+				LineHeight: 1.2,
+			},
+			LabelSmall: draw.TextStyle{
+				FontFamily: "Bitmap5x7",
+				Size:       21,
+				Weight:     draw.FontWeightRegular,
+				LineHeight: 1.2,
+			},
+		},
+		Spacing: SpacingScale{XS: 4, SM: 8, MD: 16, LG: 24, XL: 32},
+		Radii:   RadiusScale{None: 0, Small: 4, Medium: 8, Large: 16, Full: 9999},
+		Motion: MotionSpec{
+			Standard:   200 * time.Millisecond,
+			Emphasized: 400 * time.Millisecond,
+			Quick:      100 * time.Millisecond,
+		},
+	}
+}
+
+func (l *lightTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
+func (l *lightTheme) Parent() Theme                { return nil }

@@ -37,6 +37,16 @@ func (m *Map) Reset() {
 	m.targets = m.targets[:0]
 }
 
+// HitTestIndex returns the index of the top-most target containing (x, y), or -1.
+func (m *Map) HitTestIndex(x, y float32) int {
+	for i := len(m.targets) - 1; i >= 0; i-- {
+		if m.targets[i].Bounds.Contains(draw.Pt(x, y)) {
+			return i
+		}
+	}
+	return -1
+}
+
 // Len returns the number of registered targets.
 func (m *Map) Len() int {
 	return len(m.targets)

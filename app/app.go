@@ -22,6 +22,12 @@ import (
 // Msg is any value sent through the app loop. Every type is a valid Msg.
 type Msg = any
 
+// SetThemeMsg switches the active theme at runtime (RFC §5.5).
+type SetThemeMsg struct{ Theme theme.Theme }
+
+// SetDarkModeMsg toggles between the built-in dark and light themes (RFC §5.5).
+type SetDarkModeMsg struct{ Dark bool }
+
 // UpdateFunc is the signature for the update function (RFC §3.1).
 type UpdateFunc[M any] func(M, Msg) M
 
