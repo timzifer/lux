@@ -230,7 +230,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			cursorX += sg.Advance
 			continue
 		}
-		c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, draw.TexturedGlyph{
+		tg := draw.TexturedGlyph{
 			DstX: dstX,
 			DstY: dstY,
 			DstW: float32(entry.W),
@@ -238,7 +238,39 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			SrcX: entry.X, SrcY: entry.Y,
 			SrcW: entry.W, SrcH: entry.H,
 			Color: color,
-		})
+		}
+		// Clamp glyph quad to clip rect so glyphs at scroll
+		// boundaries don't bleed past the viewport.
+		if len(c.clips) > 0 {
+			clip := c.clips[len(c.clips)-1]
+			if tg.DstX < clip.X {
+				d := clip.X - tg.DstX
+				tg.SrcX += int(d)
+				tg.SrcW -= int(d)
+				tg.DstW -= d
+				tg.DstX = clip.X
+			}
+			if tg.DstY < clip.Y {
+				d := clip.Y - tg.DstY
+				tg.SrcY += int(d)
+				tg.SrcH -= int(d)
+				tg.DstH -= d
+				tg.DstY = clip.Y
+			}
+			if tg.DstX+tg.DstW > clip.X+clip.W {
+				tg.DstW = clip.X + clip.W - tg.DstX
+				tg.SrcW = int(tg.DstW)
+			}
+			if tg.DstY+tg.DstH > clip.Y+clip.H {
+				tg.DstH = clip.Y + clip.H - tg.DstY
+				tg.SrcH = int(tg.DstH)
+			}
+			if tg.DstW <= 0 || tg.DstH <= 0 {
+				cursorX += sg.Advance
+				continue
+			}
+		}
+		c.scene.TexturedGlyphs = append(c.scene.TexturedGlyphs, tg)
 
 		cursorX += sg.Advance
 	}

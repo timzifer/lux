@@ -127,6 +127,26 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 
 	contentH := float32(len(flat) * nodeH)
 
+	// The tree grows to fit its content, capped at viewportH.
+	// Only scroll when content exceeds the viewport.
+	needsScroll := contentH > float32(viewportH)
+	actualH := viewportH
+	if !needsScroll {
+		actualH = int(contentH)
+		if actualH <= 0 {
+			actualH = nodeH
+		}
+	}
+
+	// Determine scrollbar width so we can reserve space inside the clip.
+	scrollbarW := 0
+	if needsScroll {
+		scrollbarW = int(tokens.Scroll.TrackWidth)
+		if scrollbarW <= 0 {
+			scrollbarW = 8
+		}
+	}
+
 	var offset float32
 	if node.State != nil {
 		offset = node.State.Scroll.Offset
@@ -137,19 +157,27 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 	if firstVisible < 0 {
 		firstVisible = 0
 	}
-	lastVisible := (int(offset) + viewportH) / nodeH
+	lastVisible := (int(offset) + actualH) / nodeH
 	if lastVisible >= len(flat) {
 		lastVisible = len(flat) - 1
 	}
 
-	// Clip to viewport.
-	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(viewportH)))
+	// Content width excluding the scrollbar.
+	contentW := area.W - scrollbarW
+
+	// Clip to the viewport (including scrollbar space).
+	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(actualH)))
 
 	indicatorStyle := draw.TextStyle{
 		FontFamily: "Phosphor",
 		Size:       float32(nodeH - 8),
 		Weight:     draw.FontWeightRegular,
 	}
+
+	// Compute vertical centering offset for node content.
+	bodyMetrics := canvas.MeasureText("Ag", tokens.Typography.Body)
+	textH := int(bodyMetrics.Ascent + 0.5)
+	centerY := (nodeH - textH) / 2
 
 	for i := firstVisible; i <= lastVisible; i++ {
 		fn := flat[i]
@@ -160,7 +188,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		selected := node.State != nil && node.State.Selected == fn.ID
 		if selected {
 			canvas.FillRect(
-				draw.R(float32(area.X), float32(rowY), float32(area.W), float32(nodeH)),
+				draw.R(float32(area.X), float32(rowY), float32(contentW), float32(nodeH)),
 				draw.SolidPaint(tokens.Colors.Surface.Hovered))
 		}
 
@@ -189,9 +217,9 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 			}
 		}
 
-		// Node content.
+		// Node content — vertically centered within the row.
 		nodeX := area.X + indent + indicatorW + 4
-		nodeArea := bounds{X: nodeX, Y: rowY, W: area.W - indent - indicatorW - 4, H: nodeH}
+		nodeArea := bounds{X: nodeX, Y: rowY + centerY, W: contentW - indent - indicatorW - 4, H: nodeH}
 		layoutElement(node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected), nodeArea, canvas, tokens, hitMap, hover, overlays, focus)
 
 		// Row hit target for selection.
@@ -203,7 +231,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 				hover.nextButtonHoverOpacity()
 			}
 			hitMap.Add(
-				draw.R(float32(area.X+indent+indicatorW), float32(rowY), float32(area.W-indent-indicatorW), float32(nodeH)),
+				draw.R(float32(area.X+indent+indicatorW), float32(rowY), float32(contentW-indent-indicatorW), float32(nodeH)),
 				func() {
 					if ts != nil {
 						ts.SetSelected(id)
@@ -214,11 +242,16 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		}
 	}
 
+	// Draw scrollbar INSIDE the clip so it's visible even within a parent ScrollView.
+	if needsScroll && node.State != nil {
+		drawScrollbar(canvas, tokens, hitMap, &node.State.Scroll, area.X+contentW, area.Y, actualH, contentH, offset)
+	}
+
 	canvas.PopClip()
 
 	// Clamp scroll state.
 	if node.State != nil {
-		maxScroll := contentH - float32(viewportH)
+		maxScroll := contentH - float32(actualH)
 		if maxScroll < 0 {
 			maxScroll = 0
 		}
@@ -230,24 +263,17 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, tokens theme.
 		}
 	}
 
-	w := area.W
-
 	// Register scroll target.
-	if hitMap != nil && node.State != nil && contentH > float32(viewportH) {
+	if hitMap != nil && node.State != nil && needsScroll {
 		state := &node.State.Scroll
 		cH := contentH
-		vH := float32(viewportH)
+		vH := float32(actualH)
 		hitMap.AddScroll(
-			draw.R(float32(area.X), float32(area.Y), float32(w), float32(viewportH)),
+			draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(actualH)),
 			cH, vH,
 			func(deltaY float32) { state.ScrollBy(deltaY, cH, vH) },
 		)
 	}
 
-	// Draw scrollbar.
-	if contentH > float32(viewportH) && node.State != nil {
-		w += drawScrollbar(canvas, tokens, hitMap, &node.State.Scroll, area.X+w, area.Y, viewportH, contentH, offset)
-	}
-
-	return bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
+	return bounds{X: area.X, Y: area.Y, W: area.W, H: actualH}
 }
