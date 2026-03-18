@@ -41,7 +41,7 @@ type richTextElement struct {
 
 func (richTextElement) isElement() {}
 
-func layoutRichText(node richTextElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet) bounds {
+func layoutRichText(node richTextElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet) bounds {
 	if len(node.Paragraphs) == 0 {
 		return bounds{X: area.X, Y: area.Y}
 	}
