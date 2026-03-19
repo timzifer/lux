@@ -1,17 +1,17 @@
-//go:build !nogui && !windows && !wayland && !x11 && !cocoa && !drm
+//go:build drm && !nogui
 
 package app
 
 import (
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/platform"
-	glfwplatform "github.com/timzifer/lux/platform/glfw"
+	drmplatform "github.com/timzifer/lux/platform/drm"
 )
 
 func defaultPlatformFactory() platform.Platform {
-	return glfwplatform.New()
+	return drmplatform.New()
 }
 
 func defaultRendererFactory() gpu.Renderer {
-	return gpu.NewOpenGL()
+	return gpu.NewWGPU()
 }

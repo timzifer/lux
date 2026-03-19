@@ -61,20 +61,35 @@ var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 
-	procCreateWindowExW = user32.NewProc("CreateWindowExW")
-	procDefWindowProcW  = user32.NewProc("DefWindowProcW")
-	procDestroyWindow   = user32.NewProc("DestroyWindow")
-	procDispatchMessage = user32.NewProc("DispatchMessageW")
-	procGetClientRect   = user32.NewProc("GetClientRect")
-	procLoadCursorW     = user32.NewProc("LoadCursorW")
-	procSetCursor       = user32.NewProc("SetCursor")
-	procPeekMessageW    = user32.NewProc("PeekMessageW")
-	procPostQuitMessage = user32.NewProc("PostQuitMessage")
-	procRegisterClassEx = user32.NewProc("RegisterClassExW")
-	procSetWindowTextW  = user32.NewProc("SetWindowTextW")
-	procShowWindow      = user32.NewProc("ShowWindow")
-	procTranslateMsg    = user32.NewProc("TranslateMessage")
-	procUpdateWindow    = user32.NewProc("UpdateWindow")
+	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
+	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
+	procDestroyWindow    = user32.NewProc("DestroyWindow")
+	procDispatchMessage  = user32.NewProc("DispatchMessageW")
+	procGetClientRect    = user32.NewProc("GetClientRect")
+	procLoadCursorW      = user32.NewProc("LoadCursorW")
+	procSetCursor        = user32.NewProc("SetCursor")
+	procPeekMessageW     = user32.NewProc("PeekMessageW")
+	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
+	procRegisterClassEx  = user32.NewProc("RegisterClassExW")
+	procSetWindowTextW   = user32.NewProc("SetWindowTextW")
+	procShowWindow       = user32.NewProc("ShowWindow")
+	procTranslateMsg     = user32.NewProc("TranslateMessage")
+	procUpdateWindow     = user32.NewProc("UpdateWindow")
+	procSetWindowPos     = user32.NewProc("SetWindowPos")
+	procSetWindowLongW   = user32.NewProc("SetWindowLongW")
+	procGetWindowLongW   = user32.NewProc("GetWindowLongW")
+	procGetWindowRect    = user32.NewProc("GetWindowRect")
+	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
+	procOpenClipboard    = user32.NewProc("OpenClipboard")
+	procCloseClipboard   = user32.NewProc("CloseClipboard")
+	procEmptyClipboard   = user32.NewProc("EmptyClipboard")
+	procSetClipboardData = user32.NewProc("SetClipboardData")
+	procGetClipboardData = user32.NewProc("GetClipboardData")
+	procInvalidateRect   = user32.NewProc("InvalidateRect")
+
+	procGlobalAlloc  = kernel32.NewProc("GlobalAlloc")
+	procGlobalLock   = kernel32.NewProc("GlobalLock")
+	procGlobalUnlock = kernel32.NewProc("GlobalUnlock")
 
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
 
@@ -92,12 +107,16 @@ func init() {
 
 // Platform implements the Win32 desktop backend.
 type Platform struct {
-	hwnd        uintptr
-	config      platform.Config
-	callbacks   platform.Callbacks
-	shouldClose bool
-	cursorKind  input.CursorKind
-	cursors     map[input.CursorKind]uintptr
+	hwnd           uintptr
+	config         platform.Config
+	callbacks      platform.Callbacks
+	shouldClose    bool
+	cursorKind     input.CursorKind
+	cursors        map[input.CursorKind]uintptr
+	fullscreen     bool
+	savedStyle     uintptr
+	savedRect      rect
+	frameRequested bool
 }
 
 // New creates a new Win32 platform instance.
@@ -264,6 +283,133 @@ func (p *Platform) SetCursor(kind input.CursorKind) {
 // TODO: Implement via ImmSetCompositionWindow when IMM32 integration is added.
 func (p *Platform) SetIMECursorRect(x, y, w, h int) {
 	// Win32 IMM32 integration not yet implemented.
+}
+
+// SetSize resizes the window to the given dimensions in screen coordinates (RFC §7.1).
+func (p *Platform) SetSize(w, h int) {
+	if p.hwnd == 0 {
+		return
+	}
+	const swpNoMove = 0x0002
+	const swpNoZOrder = 0x0004
+	procSetWindowPos.Call(p.hwnd, 0, 0, 0, uintptr(w), uintptr(h), swpNoMove|swpNoZOrder)
+}
+
+// SetFullscreen toggles fullscreen mode (RFC §7.1).
+func (p *Platform) SetFullscreen(fullscreen bool) {
+	if p.hwnd == 0 || fullscreen == p.fullscreen {
+		return
+	}
+	p.fullscreen = fullscreen
+
+	const gwlStyle = -16
+	const swpFrameChanged = 0x0020
+	const swpNoZOrder = 0x0004
+	const smCXScreen = 0
+	const smCYScreen = 1
+
+	if fullscreen {
+		// Save current style and window rect.
+		style, _, _ := procGetWindowLongW.Call(p.hwnd, uintptr(uint32(gwlStyle)))
+		p.savedStyle = style
+		procGetWindowRect.Call(p.hwnd, uintptr(unsafe.Pointer(&p.savedRect)))
+
+		// Remove borders (WS_OVERLAPPEDWINDOW bits) and make popup.
+		const wsPopup = 0x80000000
+		procSetWindowLongW.Call(p.hwnd, uintptr(uint32(gwlStyle)), wsPopup|wsVisible)
+
+		// Resize to full screen.
+		screenW, _, _ := procGetSystemMetrics.Call(smCXScreen)
+		screenH, _, _ := procGetSystemMetrics.Call(smCYScreen)
+		procSetWindowPos.Call(p.hwnd, 0, 0, 0, screenW, screenH, swpFrameChanged|swpNoZOrder)
+	} else {
+		// Restore saved style and rect.
+		procSetWindowLongW.Call(p.hwnd, uintptr(uint32(gwlStyle)), p.savedStyle)
+		w := int(p.savedRect.Right - p.savedRect.Left)
+		h := int(p.savedRect.Bottom - p.savedRect.Top)
+		procSetWindowPos.Call(p.hwnd, 0,
+			uintptr(p.savedRect.Left), uintptr(p.savedRect.Top),
+			uintptr(w), uintptr(h),
+			swpFrameChanged|swpNoZOrder)
+	}
+}
+
+// RequestFrame requests a new frame to be rendered (RFC §7.1).
+func (p *Platform) RequestFrame() {
+	if p.hwnd == 0 {
+		return
+	}
+	p.frameRequested = true
+	procInvalidateRect.Call(p.hwnd, 0, 0)
+}
+
+// SetClipboard sets the system clipboard text (RFC §7.1).
+func (p *Platform) SetClipboard(text string) error {
+	const cfUnicodeText = 13
+	const gmemMoveable = 0x0002
+
+	utf16 := syscall.StringToUTF16(text)
+	size := len(utf16) * 2
+
+	ok, _, err := procOpenClipboard.Call(p.hwnd)
+	if ok == 0 {
+		return fmt.Errorf("open clipboard: %w", err)
+	}
+	defer procCloseClipboard.Call()
+	procEmptyClipboard.Call()
+
+	hMem, _, err := procGlobalAlloc.Call(gmemMoveable, uintptr(size))
+	if hMem == 0 {
+		return fmt.Errorf("global alloc: %w", err)
+	}
+
+	pMem, _, _ := procGlobalLock.Call(hMem)
+	if pMem == 0 {
+		return fmt.Errorf("global lock failed")
+	}
+
+	// Copy UTF-16 data.
+	src := unsafe.Pointer(&utf16[0])
+	dst := unsafe.Pointer(pMem)
+	for i := 0; i < size; i++ {
+		*(*byte)(unsafe.Add(dst, i)) = *(*byte)(unsafe.Add(src, i))
+	}
+
+	procGlobalUnlock.Call(hMem)
+	procSetClipboardData.Call(cfUnicodeText, hMem)
+	return nil
+}
+
+// GetClipboard returns the current system clipboard text (RFC §7.1).
+func (p *Platform) GetClipboard() (string, error) {
+	const cfUnicodeText = 13
+
+	ok, _, err := procOpenClipboard.Call(p.hwnd)
+	if ok == 0 {
+		return "", fmt.Errorf("open clipboard: %w", err)
+	}
+	defer procCloseClipboard.Call()
+
+	hData, _, _ := procGetClipboardData.Call(cfUnicodeText)
+	if hData == 0 {
+		return "", nil
+	}
+
+	pData, _, _ := procGlobalLock.Call(hData)
+	if pData == 0 {
+		return "", nil
+	}
+	defer procGlobalUnlock.Call(hData)
+
+	return syscall.UTF16PtrToString((*uint16)(unsafe.Pointer(pData))), nil
+}
+
+// CreateWGPUSurface creates a wgpu surface for this window (RFC §7.1).
+// Returns the HWND as a handle that wgpu-native can use to create a surface.
+func (p *Platform) CreateWGPUSurface(instance uintptr) uintptr {
+	// The HWND is passed directly — wgpu-native uses it to create a
+	// WGPUSurfaceDescriptorFromWindowsHWND.
+	return p.hwnd
 }
 
 func (p *Platform) initCursors() {

@@ -68,6 +68,15 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	}
 	defer plat.Destroy()
 
+	// Make platform accessible for package-level clipboard functions (RFC §7.1).
+	activePlatform = plat
+	defer func() { activePlatform = nil }()
+
+	// Apply initial fullscreen setting (RFC §7.1).
+	if cfg.fullscreen {
+		plat.SetFullscreen(true)
+	}
+
 	renderer := cfg.rendererFactory()
 	fbW, fbH := plat.FramebufferSize()
 
@@ -189,6 +198,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				case SetLocaleMsg:
 					applyLocale(m.Locale)
 					modelDirty = true // triggers full layout invalidation
+
+				case SetSizeMsg:
+					plat.SetSize(m.Width, m.Height)
+				case SetFullscreenMsg:
+					plat.SetFullscreen(m.Fullscreen)
 
 				case ui.RequestFocusMsg:
 					oldUID := fm.FocusedUID()

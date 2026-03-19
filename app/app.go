@@ -100,6 +100,7 @@ type options struct {
 	globalHandlers  []globalHandlerEntry
 	persistence     *persistenceHooks
 	storagePath     string
+	fullscreen      bool
 }
 
 // Batch combines multiple Cmds into a single Cmd.
@@ -212,4 +213,36 @@ func WithGlobalHandler(h GlobalHandler) Option {
 	return func(o *options) {
 		o.globalHandlers = append(o.globalHandlers, globalHandlerEntry{handler: h})
 	}
+}
+
+// ── Phase 5 — Platform Extension (RFC §7.1) ─────────────────────
+
+// SetSizeMsg requests a window resize.
+type SetSizeMsg struct{ Width, Height int }
+
+// SetFullscreenMsg requests fullscreen toggle.
+type SetFullscreenMsg struct{ Fullscreen bool }
+
+// WithFullscreen starts the application in fullscreen mode (RFC §7.1).
+func WithFullscreen(fullscreen bool) Option {
+	return func(o *options) { o.fullscreen = fullscreen }
+}
+
+// activePlatform holds the platform for clipboard access from package-level functions.
+var activePlatform platform.Platform
+
+// SetClipboard sets the system clipboard text. Thread-safe.
+func SetClipboard(text string) error {
+	if activePlatform != nil {
+		return activePlatform.SetClipboard(text)
+	}
+	return nil
+}
+
+// GetClipboard returns the system clipboard text. Thread-safe.
+func GetClipboard() (string, error) {
+	if activePlatform != nil {
+		return activePlatform.GetClipboard()
+	}
+	return "", nil
 }
