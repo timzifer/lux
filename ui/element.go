@@ -1101,6 +1101,8 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		return layoutMenuBar(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case contextMenuElement:
 		return layoutContextMenu(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
+	case splitViewElement:
+		return layoutSplitView(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 	case Overlay:
 		return layoutOverlay(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
 
