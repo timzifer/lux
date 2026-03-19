@@ -113,7 +113,19 @@ func TestSlateSpacing(t *testing.T) {
 
 func TestSlateMotion(t *testing.T) {
 	tokens := Slate.Tokens()
-	if tokens.Motion.Quick.Milliseconds() != 100 {
-		t.Errorf("Slate Motion.Quick = %v, want 100ms", tokens.Motion.Quick)
+	if tokens.Motion.Quick.Duration.Milliseconds() != 100 {
+		t.Errorf("Slate Motion.Quick.Duration = %v, want 100ms", tokens.Motion.Quick.Duration)
+	}
+	if tokens.Motion.Standard.Duration.Milliseconds() != 250 {
+		t.Errorf("Slate Motion.Standard.Duration = %v, want 250ms", tokens.Motion.Standard.Duration)
+	}
+	if tokens.Motion.Emphasized.Duration.Milliseconds() != 400 {
+		t.Errorf("Slate Motion.Emphasized.Duration = %v, want 400ms", tokens.Motion.Emphasized.Duration)
+	}
+	if tokens.Motion.Quick.Easing == nil {
+		t.Error("Slate Motion.Quick.Easing should not be nil")
+	}
+	if tokens.Motion.Standard.Easing == nil {
+		t.Error("Slate Motion.Standard.Easing should not be nil")
 	}
 }

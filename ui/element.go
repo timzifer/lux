@@ -1145,9 +1145,93 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 	case Overlay:
 		return layoutOverlay(node, area, canvas, th, tokens, ix, overlays, fs)
 
+	case customLayoutElement:
+		return layoutCustom(node, area, canvas, th, tokens, ix, overlays, fs)
+
 	default:
 		return bounds{X: area.X, Y: area.Y}
 	}
+}
+
+// layoutCustom implements the custom layout protocol (RFC-002 §4.3).
+// It delegates measurement and placement to the user-provided Layout.
+func layoutCustom(node customLayoutElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, fs *FocusManager) bounds {
+	if node.Layout == nil || len(node.Children) == 0 {
+		return bounds{X: area.X, Y: area.Y}
+	}
+
+	nc := nullCanvas{delegate: canvas}
+
+	// Track placements: child index → offset.
+	type placement struct {
+		offset draw.Point
+		placed bool
+	}
+	placements := make([]placement, len(node.Children))
+
+	// Measure callback: layout children with nullCanvas to get their size.
+	measureFn := func(child Element, c Constraints) Size {
+		measureArea := bounds{X: 0, Y: 0, W: int(c.MaxWidth), H: int(c.MaxHeight)}
+		cb := layoutElement(child, measureArea, nc, th, tokens, nil, nil)
+		return Size{Width: float32(cb.W), Height: float32(cb.H)}
+	}
+
+	// Place callback: record offset for later painting.
+	placeFn := func(child Element, offset draw.Point) {
+		for i, ch := range node.Children {
+			if ch == child {
+				placements[i] = placement{offset: offset, placed: true}
+				return
+			}
+		}
+	}
+
+	ctx := LayoutCtx{
+		Constraints: Constraints{
+			MaxWidth:  float32(area.W),
+			MaxHeight: float32(area.H),
+		},
+		Measure: measureFn,
+		Place:   placeFn,
+		Theme:   th,
+	}
+
+	size := node.Layout.LayoutChildren(ctx, node.Children)
+
+	// Paint pass: draw each placed child at its offset.
+	maxW, maxH := 0, 0
+	for i, child := range node.Children {
+		p := placements[i]
+		if !p.placed {
+			continue
+		}
+		childArea := bounds{
+			X: area.X + int(p.offset.X),
+			Y: area.Y + int(p.offset.Y),
+			W: area.W,
+			H: area.H,
+		}
+		cb := layoutElement(child, childArea, canvas, th, tokens, ix, overlays, fs)
+		endX := int(p.offset.X) + cb.W
+		endY := int(p.offset.Y) + cb.H
+		if endX > maxW {
+			maxW = endX
+		}
+		if endY > maxH {
+			maxH = endY
+		}
+	}
+
+	w := int(size.Width)
+	h := int(size.Height)
+	if w == 0 {
+		w = maxW
+	}
+	if h == 0 {
+		h = maxH
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
 // hoverHighlight returns a lightened version of c for hover feedback.
