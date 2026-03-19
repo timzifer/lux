@@ -4359,4 +4359,115 @@ Diese Grenze explizit zu ziehen verhindert Scope-Creep in der ersten Implementie
 
 ---
 
+---
+
+## Appendix A: Browser-Engine-Evaluierung für Surface-Slots (§8)
+
+Dieser Appendix bewertet Browser-Engines als `SurfaceProvider`-Implementierung für den Surface-Slot-Mechanismus (§8). Ziel: **welche Engine passt mittelfristig (2–5 Jahre) am besten zur Lux-Architektur?**
+
+### A.1 Anforderungen aus §8
+
+| Anforderung | Detail |
+|---|---|
+| OSR (Off-Screen Rendering) | Engine rendert in Textur/Buffer, nicht in eigenes Fenster |
+| Zero-Copy | DMA-buf (Linux), IOSurface (macOS), DXGI (Windows) |
+| Input-Injection | Programmatische Maus/Tastatur/Touch-Events |
+| Go-Integration | Über CGo (C-API) oder IPC aufrufbar |
+| Cross-Platform | Linux, macOS, Windows |
+
+### A.2 Kandidaten
+
+#### CEF (Chromium Embedded Framework)
+
+| Eigenschaft | Bewertung |
+|---|---|
+| OSR | `OnAcceleratedPaint()` — GPU-Texturen direkt, stabil |
+| Zero-Copy | DXGI (Windows, stabil), IOSurface (macOS), DMA-buf/GBM (Linux, experimentell) |
+| Web-Kompatibilität | 5/5 — es *ist* Chromium |
+| Go-Integration | C-API (`cef_capi.h`) → CGo direkt möglich |
+| Binary-Größe | ~150–200 MB pro Plattform |
+| RAM | ~100–150 MB Minimum (Multi-Prozess) |
+| Lizenz | BSD-3-Clause |
+
+Bekannte Probleme: Linux Shared-Texture-OSR erfordert ANGLE/EGL, Nvidia-GBM-Inkompatibilitäten. `OnAcceleratedPaint()` liefert keine Dirty-Rects.
+
+#### Servo
+
+| Eigenschaft | Bewertung |
+|---|---|
+| OSR | Unterstützt, wgpu-intern — potentiell bester Zero-Copy-Pfad |
+| Zero-Copy | wgpu ↔ wgpu = Shared TextureView ohne OS-Level Texture-Sharing möglich |
+| Web-Kompatibilität | 2/5 — viele CSS/JS-Features noch unvollständig |
+| Go-Integration | Kein stabiles C-FFI. `libservo` experimentell |
+| Binary-Größe | ~50–80 MB |
+| Lizenz | MPL-2.0 |
+
+Architektonisch der beste Fit (gleiche GPU-Abstraktion), aber Embedding-API (v0.0.4) und Web-Kompatibilität noch nicht produktionsreif. Neues Delegate-basiertes WebView-API seit Feb 2025 in aktiver Entwicklung.
+
+#### WPE WebKit
+
+| Eigenschaft | Bewertung |
+|---|---|
+| OSR | Ja, DMA-buf Zero-Copy als First-Class-Feature |
+| Zero-Copy | GPU Texture Atlas + DMA-buf Worker-Thread-Upload, produktionsreif |
+| Web-Kompatibilität | 4/5 — Safari/WebKit-Level |
+| Go-Integration | GObject C-API → CGo möglich |
+| Binary-Größe | ~60–100 MB |
+| Cross-Platform | **Nur Linux** — kein nativer macOS/Windows-Support |
+| Lizenz | LGPLv2.1 |
+
+Exzellent für Linux. Real-World-Referenz: Neomacs nutzt WPE + DMA-buf für Zero-Copy-Embedding. Neue WPEPlatform-API (Richtung 1.0) in Entwicklung.
+
+#### Ultralight — **Ausgeschlossen**
+
+Proprietäre Lizenz für kommerzielle Nutzung. Inkompatibel mit Open-Source-Projekt.
+
+#### go-webview / System-WebView — **Ausgeschlossen**
+
+Kein OSR, kein Textur-Export, keine Input-Injection. Unbrauchbar für Surface-Slot-Architektur.
+
+### A.3 Bewertungsmatrix
+
+| Kriterium (Gewicht) | CEF | Servo | WPE WebKit |
+|---|---|---|---|
+| OSR-Fähigkeit (20%) | 5/5 | 4/5 | 5/5 |
+| Zero-Copy Texture-Sharing (20%) | 4/5 | 5/5 | 5/5 (Linux) |
+| Web-Kompatibilität (15%) | 5/5 | 2/5 | 4/5 |
+| Go-Integration (10%) | 4/5 | 2/5 | 3/5 |
+| Cross-Platform (10%) | 5/5 | 4/5 | 2/5 |
+| Binary-Größe/RAM (10%) | 1/5 | 3/5 | 3/5 |
+| Lizenz (5%) | 5/5 | 5/5 | 5/5 |
+| Langzeit-Viabilität (10%) | 5/5 | 4/5 | 4/5 |
+| **Gewichtet** | **4.05** | **3.45** | **3.75** |
+
+### A.4 Empfehlung: Zwei-Stufen-Strategie
+
+**Mittelfristig (jetzt → 2028): CEF**
+
+CEF ist die einzige Engine die heute stabiles OSR + Shared Textures + Cross-Platform + vollständige Web-Kompatibilität bietet. Der Integrationspfad:
+
+```
+CEF OnAcceleratedPaint() → Shared Handle (DXGI/IOSurface/DMA-buf)
+    → wgpu Import External Memory
+    → wgpu.TextureView
+    → SurfaceProvider.AcquireFrame() return
+```
+
+CEF wird als **optionales Modul** (`lux/surface/cef`) eingebunden — nicht Teil des Core. Lazy-Loading verhindert RAM-Overhead wenn kein Browser benötigt wird. Linux nutzt den §8.2 Fallback-Pfad (OSR → CPU-Copy → Upload) bis DMA-buf stabil ist.
+
+**Langfristig (2027+ beobachten): Servo**
+
+Servo's wgpu-interne Architektur ermöglicht potentiell Zero-Copy ohne OS-Level Texture-Sharing — der architektonisch sauberste Pfad. Beobachtungs-Meilensteine:
+
+- Stabile C-FFI (`libservo` als stable API)
+- CSS Grid + Flexbox vollständig
+- Servo 1.0 Release
+- Produktions-Embedding-Referenzen
+
+**Linux-First Alternative: WPE WebKit**
+
+Falls Lux zunächst Linux-first deployed wird, ist WPE WebKit mit produktionsreifem DMA-buf Zero-Copy eine leichtgewichtigere Alternative zu CEF. Für Cross-Platform müsste ein Split-Ansatz (WPE/Linux, WebKit/macOS, CEF/Windows) evaluiert werden.
+
+---
+
 *RFC-001 — Draft. Feedback und Änderungsvorschläge bitte als Issue gegen dieses Dokument.*
