@@ -36,6 +36,26 @@ type Platform interface {
 	// so the IME candidate window can be placed near the insertion point
 	// (RFC-002 §2.2). x, y, w, h are in screen coordinates.
 	SetIMECursorRect(x, y, w, h int)
+
+	// SetSize resizes the window to the given dimensions in screen coordinates (RFC §7.1).
+	SetSize(w, h int)
+
+	// SetFullscreen toggles fullscreen mode (RFC §7.1).
+	SetFullscreen(fullscreen bool)
+
+	// RequestFrame requests a new frame to be rendered as soon as possible (RFC §7.1).
+	RequestFrame()
+
+	// SetClipboard sets the system clipboard text (RFC §7.1).
+	SetClipboard(text string) error
+
+	// GetClipboard returns the current system clipboard text (RFC §7.1).
+	GetClipboard() (string, error)
+
+	// CreateWGPUSurface creates a wgpu surface for GPU rendering (RFC §7.1).
+	// The instance parameter is a wgpu.Instance handle (passed as uintptr to avoid circular imports).
+	// Returns a wgpu.Surface handle, or 0 if not supported.
+	CreateWGPUSurface(instance uintptr) uintptr
 }
 
 // Config holds platform initialization parameters.

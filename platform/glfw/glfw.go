@@ -20,10 +20,13 @@ func init() {
 
 // Platform implements platform.Platform using GLFW.
 type Platform struct {
-	window      *glfw.Window
-	config      platform.Config
-	cursors     map[input.CursorKind]*glfw.Cursor
-	cursorKind  input.CursorKind
+	window       *glfw.Window
+	config       platform.Config
+	cursors      map[input.CursorKind]*glfw.Cursor
+	cursorKind   input.CursorKind
+	fullscreen   bool
+	savedX, savedY, savedW, savedH int // saved window geometry before fullscreen
+	frameRequested bool
 }
 
 // New creates a new GLFW platform instance.
@@ -227,6 +230,66 @@ func (p *Platform) ShouldClose() bool {
 		return true
 	}
 	return p.window.ShouldClose()
+}
+
+// SetSize resizes the window to the given dimensions in screen coordinates (RFC §7.1).
+func (p *Platform) SetSize(w, h int) {
+	if p.window != nil {
+		p.window.SetSize(w, h)
+	}
+}
+
+// SetFullscreen toggles fullscreen mode (RFC §7.1).
+func (p *Platform) SetFullscreen(fullscreen bool) {
+	if p.window == nil || fullscreen == p.fullscreen {
+		return
+	}
+	p.fullscreen = fullscreen
+	if fullscreen {
+		// Save current window position and size.
+		p.savedX, p.savedY = p.window.GetPos()
+		p.savedW, p.savedH = p.window.GetSize()
+		// Switch to primary monitor's fullscreen mode.
+		monitor := glfw.GetPrimaryMonitor()
+		mode := monitor.GetVideoMode()
+		p.window.SetMonitor(monitor, 0, 0, mode.Width, mode.Height, mode.RefreshRate)
+	} else {
+		// Restore windowed mode with saved geometry.
+		p.window.SetMonitor(nil, p.savedX, p.savedY, p.savedW, p.savedH, 0)
+	}
+}
+
+// RequestFrame requests a new frame to be rendered as soon as possible (RFC §7.1).
+func (p *Platform) RequestFrame() {
+	p.frameRequested = true
+	if p.window != nil {
+		glfw.PostEmptyEvent()
+	}
+}
+
+// SetClipboard sets the system clipboard text (RFC §7.1).
+func (p *Platform) SetClipboard(text string) error {
+	if p.window != nil {
+		p.window.SetClipboardString(text)
+	}
+	return nil
+}
+
+// GetClipboard returns the current system clipboard text (RFC §7.1).
+func (p *Platform) GetClipboard() (string, error) {
+	if p.window == nil {
+		return "", nil
+	}
+	return p.window.GetClipboardString(), nil
+}
+
+// CreateWGPUSurface creates a wgpu surface for this window (RFC §7.1).
+// Returns 0 — wgpu surface creation requires wgpu-native integration
+// which will use GLFW's native window handle.
+func (p *Platform) CreateWGPUSurface(instance uintptr) uintptr {
+	// TODO: Implement via wgpu-native's wgpuInstanceCreateSurface with
+	// platform-specific GLFW native access (glfwGetX11Window, glfwGetCocoaWindow, etc.)
+	return 0
 }
 
 // Window returns the underlying GLFW window.

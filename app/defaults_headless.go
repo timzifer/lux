@@ -61,6 +61,7 @@ type headlessPlatform struct {
 	scrolls    []scrollEvent
 	keyEvents  []keyEvent
 	charEvents []charEvent
+	clipboard  string       // simulated clipboard for testing
 }
 
 type mouseClick struct {
@@ -156,6 +157,14 @@ func (p *headlessPlatform) FramebufferSize() (int, int)  { return p.w, p.h }
 func (p *headlessPlatform) ShouldClose() bool            { return true }
 func (p *headlessPlatform) SetCursor(_ input.CursorKind)    {}
 func (p *headlessPlatform) SetIMECursorRect(_, _, _, _ int) {}
+
+// Phase 5 — Platform Extension (RFC §7.1).
+func (p *headlessPlatform) SetSize(w, h int)                     { p.w = w; p.h = h }
+func (p *headlessPlatform) SetFullscreen(_ bool)                 {}
+func (p *headlessPlatform) RequestFrame()                        {}
+func (p *headlessPlatform) SetClipboard(text string) error       { p.clipboard = text; return nil }
+func (p *headlessPlatform) GetClipboard() (string, error)        { return p.clipboard, nil }
+func (p *headlessPlatform) CreateWGPUSurface(_ uintptr) uintptr  { return 0 }
 
 // WithHeadlessFrames sets how many frames the headless platform runs.
 func WithHeadlessFrames(n int) Option {
