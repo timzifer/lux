@@ -178,10 +178,10 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 		return
 	}
 
-	// If we have an atlas and an sfnt shaper, use the textured glyph path.
+	// If we have an atlas and a glyph rasterizer, use the textured glyph path.
 	if c.atlas != nil {
-		if sfntShaper, ok := c.shaper.(*text.SfntShaper); ok {
-			c.drawTextTextured(txt, origin, style, color, sfntShaper)
+		if rasterizer, ok := c.shaper.(text.GlyphRasterizer); ok {
+			c.drawTextTextured(txt, origin, style, color, rasterizer)
 			return
 		}
 	}
@@ -201,7 +201,7 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 
 // drawTextTextured shapes text and emits TexturedGlyphs (or MSDFGlyphs) from the atlas.
 // origin.Y is the top-left of the text bounding box (not the baseline).
-func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw.TextStyle, color draw.Color, shaper *text.SfntShaper) {
+func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw.TextStyle, color draw.Color, shaper text.GlyphRasterizer) {
 	shaped := shaper.Shape(txt, style)
 	cursorX := origin.X
 

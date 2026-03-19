@@ -163,20 +163,20 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ## Phase 4 — Text-Stack & Fonts
 
-### 4.1 go-text/typesetting Integration (RFC-003 §3.2)
-- [ ] `GoTextShaper` als Shaper-Implementierung (ersetzt internen sfnt_shaper)
-- [ ] Vollständiges GSUB/GPOS (Arabisch, Devanagari, CJK etc.)
+### 4.1 go-text/typesetting Integration (RFC-003 §3.2) ✅
+- [x] `GoTextShaper` als Shaper-Implementierung (ersetzt internen sfnt_shaper)
+- [x] Vollständiges GSUB/GPOS (Arabisch, Devanagari, CJK etc.)
 - **Abhängig von:** nichts
 
-### 4.2 Shaper-Interface (RFC-003 §3.3)
-- [ ] `Shaper` Interface definieren: `Shape(run ShapingRun, font *Font, size float32) []ShapedGlyph`
-- [ ] `ShapingRun`, `ShapedGlyph`, `TextDirection` Typen
+### 4.2 Shaper-Interface (RFC-003 §3.3) ✅
+- [x] `Shaper` Interface definieren: `Shape(run ShapingRun, font *Font, size float32) []ShapedGlyph`
+- [x] `ShapingRun`, `ShapedGlyph`, `TextDirection` Typen
 - **Abhängig von:** 4.1
 
-### 4.3 FontFamily & Fallback-Chain (RFC-003 §3.4)
-- [ ] `FontFamily` mit `Name`, `Faces map[FontFaceKey]*Font`, `Fallback []*FontFamily`
-- [ ] Glyph-Fallback pro Glyph (Primary → Fallback-Chain → Embedded → U+FFFD)
-- [ ] Eingebettetes Noto-Sans Fallback-Font-Subset
+### 4.3 FontFamily & Fallback-Chain (RFC-003 §3.4) ✅
+- [x] `FontFamily` mit `Name`, `Faces map[FontFaceKey]*Font`, `Fallback []*FontFamily`
+- [x] Glyph-Fallback pro Glyph (Primary → Fallback-Chain → Embedded → U+FFFD)
+- [x] Eingebettetes Noto-Sans Fallback-Font-Subset
 - **Abhängig von:** 4.1
 
 ### 4.4 BiDi-Unterstützung (RFC-003 §3.5)
