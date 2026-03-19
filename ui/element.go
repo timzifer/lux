@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
@@ -136,6 +137,64 @@ type SurfaceKeyMsg struct {
 	Key       input.Key
 	Action    input.KeyAction
 	Mods      input.ModifierSet
+}
+
+// ── Surface Semantics (RFC-006 §5) ───────────────────────────────
+
+// SemanticProvider is an optional interface for surfaces that export
+// accessibility semantics. Surfaces that do not implement it remain
+// black boxes with a generic fallback AccessNode.
+//
+// Implementation is progressive: surfaces may implement only
+// SnapshotSemantics initially and add HitTest, Focus, and Action
+// support incrementally.
+type SemanticProvider interface {
+	// SnapshotSemantics returns an immutable snapshot of the semantic
+	// subtree relative to the current surface bounds.
+	SnapshotSemantics(bounds draw.Rect) SurfaceSemantics
+
+	// HitTestSemantics returns the semantic node at a position relative
+	// to the surface bounds. Used for explore-by-touch and focus routing.
+	HitTestSemantics(p draw.Point) (SurfaceNodeID, bool)
+
+	// FocusSemanticNode requests focus on a specific semantic node.
+	// Returns true if the surface accepted the focus change.
+	FocusSemanticNode(id SurfaceNodeID) bool
+
+	// PerformSemanticAction executes a semantic action on the given node
+	// (e.g. "activate", "increment", "scrollForward").
+	// Returns true if the action was handled.
+	PerformSemanticAction(id SurfaceNodeID, action string) bool
+}
+
+// SurfaceNodeID identifies a node within a surface's semantic subtree.
+// IDs must be stable across frames for the same logical element.
+type SurfaceNodeID uint64
+
+// SurfaceSemantics is an immutable snapshot of a surface's semantic subtree.
+type SurfaceSemantics struct {
+	// Roots contains the top-level semantic nodes of the surface.
+	Roots []SurfaceAccessNode
+
+	// Version is an optional monotonically increasing version number.
+	// Facilitates diffing, caching, and bridge optimizations.
+	Version uint64
+}
+
+// SurfaceAccessNode represents a single node in a surface's semantic subtree.
+// Bounds are relative to the surface origin in dp.
+type SurfaceAccessNode struct {
+	ID          SurfaceNodeID
+	Parent      SurfaceNodeID // 0 = root within the surface.
+	Role        a11y.AccessRole
+	Label       string
+	Description string
+	Value       string
+	Bounds      draw.Rect // Relative to the surface in dp.
+	Lang        string    // BCP 47 language tag (e.g. "de", "ar-EG"). Empty inherits from parent.
+	States      a11y.AccessStates
+	Actions     []a11y.AccessActionDesc
+	Relations   []a11y.AccessRelationDesc
 }
 
 // ── Element Types (RFC §4.3) ─────────────────────────────────────
