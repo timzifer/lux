@@ -984,8 +984,13 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		}
 
 		// Register hit target for click handling (M3).
+		// Always register so hover index stays in sync, even for nil onClick.
 		if hitMap != nil {
-			hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)), node.OnClick)
+			onClick := node.OnClick
+			if onClick == nil {
+				onClick = func() {}
+			}
+			hitMap.Add(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)), onClick)
 		}
 
 		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: buttonPadY + cb.Baseline}
@@ -1027,6 +1032,13 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 
 	case scrollViewElement:
 		return layoutScrollView(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)
+
+	case themedElement:
+		// Switch theme and tokens for this subtree.
+		subTh := node.Theme
+		subTokens := subTh.Tokens()
+		box := boxElement{Axis: AxisColumn, Children: node.Children}
+		return layoutBox(box, area, canvas, subTh, subTokens, hitMap, hover, overlays, fs)
 
 	case boxElement:
 		return layoutBox(node, area, canvas, th, tokens, hitMap, hover, overlays, fs)

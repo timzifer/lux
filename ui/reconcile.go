@@ -232,7 +232,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		for i, c := range node.Children {
 			children[i] = r.resolveTree(c, parentUID, i, seen, sub, send, dispatcher, fm)
 		}
-		return boxElement{Axis: AxisColumn, Children: children}
+		return themedElement{Theme: sub, Children: children}
 
 	default:
 		// Leaf elements (text, button, divider, virtualList, tree, richText, etc.) pass through unchanged.
@@ -380,6 +380,17 @@ func treeEqual(a, b Element) bool {
 				if pa.Spans[j].Text != pb.Spans[j].Text || pa.Spans[j].Style != pb.Spans[j].Style {
 					return false
 				}
+			}
+		}
+		return true
+	case themedElement:
+		nb, ok := b.(themedElement)
+		if !ok || na.Theme != nb.Theme || len(na.Children) != len(nb.Children) {
+			return false
+		}
+		for i := range na.Children {
+			if !treeEqual(na.Children[i], nb.Children[i]) {
+				return false
 			}
 		}
 		return true

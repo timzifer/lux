@@ -187,12 +187,14 @@ func TestBuildSceneCollectsHitTargets(t *testing.T) {
 }
 
 func TestBuildSceneHitTargetNilOnClick(t *testing.T) {
+	// Buttons with nil onClick still register a hit target (no-op) so the
+	// hover index stays in sync with the hit-map index.
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
 	BuildScene(ButtonText("X", nil), canvas, theme.Default, 800, 600, &hitMap, nil)
 
-	if hitMap.Len() != 0 {
-		t.Errorf("nil OnClick should not register hit target, got %d", hitMap.Len())
+	if hitMap.Len() != 1 {
+		t.Errorf("nil OnClick should still register hit target for hover sync, got %d", hitMap.Len())
 	}
 }
 

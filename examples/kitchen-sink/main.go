@@ -957,6 +957,8 @@ func scopedThemesSection() ui.Element {
 			),
 			ui.ButtonText("Normal", nil),
 		),
+	)
+}
 func textShapingSection() ui.Element {
 	return ui.Column(
 		sectionHeader("Text Shaping (Phase 4)"),
