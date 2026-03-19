@@ -10,20 +10,55 @@ import (
 	"github.com/timzifer/lux/fonts"
 )
 
+// ── RFC-003 §3.3 Types ─────────────────────────────────────────────
+
+// TextDirection indicates the directionality of a text run.
+type TextDirection uint8
+
+const (
+	TextDirectionLTR  TextDirection = iota // Left-to-Right
+	TextDirectionRTL                       // Right-to-Left
+	TextDirectionAuto                      // Derived from first strong directional character
+)
+
+// GlyphID identifies a specific glyph within a font (OpenType glyph index).
+type GlyphID uint32
+
+// ShapingRun describes a segment of text with uniform script, direction, and font.
+type ShapingRun struct {
+	Text      string
+	Direction TextDirection
+	Script    string // ISO 15924 tag (e.g. "Latn", "Arab")
+	Language  string // BCP 47 tag (e.g. "en", "ar")
+}
+
 // ShapedGlyph describes a single positioned glyph produced by shaping.
 type ShapedGlyph struct {
 	Rune     rune
+	GlyphID  GlyphID // glyph index in the font (from OpenType shaping)
 	Advance  float32 // horizontal advance in dp
+	OffsetX  float32 // kerning/positioning offset in dp
+	OffsetY  float32 // vertical positioning offset in dp
 	BearingX float32 // left-side bearing in dp
 	BearingY float32 // top bearing from baseline in dp
 	Width    float32 // glyph bounding box width in dp
 	Height   float32 // glyph bounding box height in dp
+	Cluster  int     // index in input string (for cursor positioning)
 }
 
 // Shaper shapes a run of text into positioned glyphs (RFC-003 §3.3).
 type Shaper interface {
 	Measure(text string, style draw.TextStyle) draw.TextMetrics
 	Shape(text string, style draw.TextStyle) []ShapedGlyph
+}
+
+// GlyphRasterizer can rasterize individual glyphs for atlas insertion.
+// Both SfntShaper and GoTextShaper implement this interface.
+type GlyphRasterizer interface {
+	Shaper
+	ResolveFont(style draw.TextStyle) *fonts.Font
+	RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedGlyph
+	RasterizeMSDFGlyph(r rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph
 }
 
 // BitmapShaper implements Shaper using the embedded 5×7 bitmap font.

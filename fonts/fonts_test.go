@@ -56,3 +56,62 @@ func TestBitmapGlyphStillWorks(t *testing.T) {
 		t.Errorf("BitmapGlyph('A')[0] = %q, want %q", g[0], "01110")
 	}
 }
+
+// ── Phase 4.1 go-text/typesetting tests ──────────────────────────
+
+func TestFontGoTextFace(t *testing.T) {
+	f := DefaultFont()
+	if f == nil {
+		t.Fatal("DefaultFont() should not be nil")
+	}
+	if f.GoTextFace() == nil {
+		t.Fatal("GoTextFace() should be non-nil for loaded font")
+	}
+}
+
+func TestFontHasGlyph(t *testing.T) {
+	f := DefaultFont()
+	if f == nil {
+		t.Fatal("DefaultFont() should not be nil")
+	}
+	if !f.HasGlyph('A') {
+		t.Error("HasGlyph('A') should return true for Noto Sans")
+	}
+	if !f.HasGlyph('0') {
+		t.Error("HasGlyph('0') should return true for Noto Sans")
+	}
+}
+
+func TestFontHasGlyphMissing(t *testing.T) {
+	f := DefaultFont()
+	if f == nil {
+		t.Fatal("DefaultFont() should not be nil")
+	}
+	// U+E000 is a Private Use Area codepoint — unlikely in Noto Sans.
+	if f.HasGlyph('\uE000') {
+		t.Error("HasGlyph(U+E000) should return false for Noto Sans")
+	}
+}
+
+func TestFindGlyphFont(t *testing.T) {
+	f := Fallback.FindGlyphFont('A', 400)
+	if f == nil {
+		t.Fatal("FindGlyphFont('A', 400) should return non-nil")
+	}
+}
+
+func TestFindGlyphFontMissing(t *testing.T) {
+	// U+FFFF is permanently unassigned — no font should have it.
+	f := Fallback.FindGlyphFont('\uFFFF', 400)
+	if f != nil {
+		t.Errorf("FindGlyphFont(U+FFFF) should return nil, got %q", f.Name())
+	}
+}
+
+func TestFindGlyphFontNilFamily(t *testing.T) {
+	var ff *FontFamily
+	f := ff.FindGlyphFont('A', 400)
+	if f != nil {
+		t.Error("FindGlyphFont on nil family should return nil")
+	}
+}

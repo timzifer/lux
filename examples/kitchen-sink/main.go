@@ -25,7 +25,7 @@ var sectionIDs = []string{
 	"typography", "buttons", "form-controls", "range-progress",
 	"selection", "layout", "rich-text", "virtual-list", "tree",
 	"cards", "tabs", "accordion", "badges-chips", "menus",
-	"shortcuts", "overlays", "canvas-paints",
+	"shortcuts", "overlays", "canvas-paints", "text-shaping",
 }
 
 func sectionLabel(id string) string {
@@ -64,6 +64,8 @@ func sectionLabel(id string) string {
 		return "Overlays"
 	case "canvas-paints":
 		return "Canvas & Paints"
+	case "text-shaping":
+		return "Text Shaping"
 	default:
 		return id
 	}
@@ -271,6 +273,8 @@ func sectionContent(m Model) ui.Element {
 		return overlaysSection(m)
 	case "canvas-paints":
 		return canvasPaintsSection()
+	case "text-shaping":
+		return textShapingSection()
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -840,6 +844,45 @@ func canvasPaintsSection() ui.Element {
 		ui.Text("  CachedTheme wraps Theme with lazy resolution"),
 		ui.Text("  Auto-invalidation on SetThemeMsg / SetDarkModeMsg"),
 		ui.Text("  Warm-up before first frame in app.Run"),
+	)
+}
+
+func textShapingSection() ui.Element {
+	return ui.Column(
+		sectionHeader("Text Shaping (Phase 4)"),
+
+		ui.Text("GoTextShaper — go-text/typesetting with full OpenType GSUB/GPOS:"),
+		ui.Spacer(8),
+
+		// Size comparison: MSDF vs bitmap threshold at 24px
+		ui.Text("Size Rendering (MSDF >= 24px, Bitmap < 24px):"),
+		ui.Spacer(4),
+		ui.TextStyled("12px — bitmap rasterized, hinted", draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular}),
+		ui.TextStyled("18px — bitmap rasterized, hinted", draw.TextStyle{Size: 18, Weight: draw.FontWeightRegular}),
+		ui.TextStyled("24px — MSDF rendered, scalable", draw.TextStyle{Size: 24, Weight: draw.FontWeightRegular}),
+		ui.TextStyled("32px — MSDF rendered, scalable", draw.TextStyle{Size: 32, Weight: draw.FontWeightRegular}),
+
+		ui.Spacer(12),
+		ui.Text("Font Fallback Chain (RFC-003 §3.4):"),
+		ui.Spacer(4),
+		ui.Text("Latin: The quick brown fox jumps over the lazy dog"),
+		ui.Text("Digits & Symbols: 0123456789 @#$%&*()[]{}"),
+		ui.Text("Punctuation: .,;:!? - — ' \" ... /"),
+
+		ui.Spacer(12),
+		ui.Text("Per-Glyph Fallback:"),
+		ui.Spacer(4),
+		ui.Text("Primary font -> Fallback chain -> Embedded Noto Sans -> U+FFFD"),
+		ui.Text("Missing glyphs are individually resolved, not entire runs."),
+
+		ui.Spacer(12),
+		ui.Text("Shaper Details:"),
+		ui.Spacer(4),
+		ui.Text("  Implementation: GoTextShaper (go-text/typesetting v0.3.4)"),
+		ui.Text("  Shaping: HarfBuzz-compatible, pure Go"),
+		ui.Text("  Scripts: Latin, Arabic, Devanagari, CJK (GSUB/GPOS)"),
+		ui.Text("  Fallback: Noto Sans (embedded)"),
+		ui.Text("  Rasterization: MSDF (>=24px) / Hinted Bitmap (<24px)"),
 	)
 }
 
