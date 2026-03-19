@@ -2079,7 +2079,7 @@ func surfacesSection(pyramid *PyramidSurface) ui.Element {
 		ui.Text("  • Fallback: OSR → CPU-Copy → Upload"),
 		ui.Spacer(12),
 
-		ui.Text("OpenGL Pyramid (drag to rotate):"),
+		ui.Text("OpenGL RGB Cube (drag to rotate):"),
 		ui.Spacer(4),
 		ui.Surface(1, pyramid, 400, 300),
 		ui.Spacer(12),

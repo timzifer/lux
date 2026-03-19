@@ -1858,9 +1858,46 @@ func layoutSurface(node surfaceElement, area bounds, canvas draw.Canvas, tokens 
 		canvas.StrokeRect(r, draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Divider), Width: 1})
 	}
 
-	// Register hit target for input routing to surface.
+	// Register draggable hit target for input routing to surface.
+	// The drag callback fires on initial press and every move.
+	// The release callback fires once when the mouse button is released.
+	// Both forward SurfaceMouseMsg to the SurfaceProvider (RFC §8.3).
 	if ix != nil && node.Provider != nil {
-		ix.RegisterHit(r, nil)
+		provider := node.Provider
+		surfID := node.ID
+		origin := draw.Pt(r.X, r.Y)
+		pressed := false
+		ix.RegisterSurfaceDrag(r,
+			func(x, y float32) {
+				localPos := draw.Pt(x-origin.X, y-origin.Y)
+				if !pressed {
+					// First call = press.
+					pressed = true
+					provider.HandleMsg(SurfaceMouseMsg{
+						SurfaceID: surfID,
+						Pos:       localPos,
+						Button:    input.MouseButtonLeft,
+						Action:    input.MousePress,
+					})
+				} else {
+					provider.HandleMsg(SurfaceMouseMsg{
+						SurfaceID: surfID,
+						Pos:       localPos,
+						Button:    input.MouseButtonLeft,
+						Action:    input.MouseMove,
+					})
+				}
+			},
+			func(x, y float32) {
+				pressed = false
+				provider.HandleMsg(SurfaceMouseMsg{
+					SurfaceID: surfID,
+					Pos:       draw.Pt(x-origin.X, y-origin.Y),
+					Button:    input.MouseButtonLeft,
+					Action:    input.MouseRelease,
+				})
+			},
+		)
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}

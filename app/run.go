@@ -158,6 +158,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var hoverState ui.HoverState
 	var mouseX, mouseY float32
 	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
+	var dragRelease  func(x, y float32) // called once when drag ends
 	var currentCursor input.CursorKind
 	var dynamicHandlers []globalHandlerEntry
 
@@ -452,6 +453,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 							target.OnClickAt(x, y)
 							if target.Draggable {
 								dragCallback = target.OnClickAt
+								dragRelease = target.OnRelease
 							}
 						} else if target.OnClick != nil {
 							target.OnClick()
@@ -459,7 +461,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					}
 				} else {
 					// Release ends any active drag.
+					if dragRelease != nil {
+						dragRelease(x, y)
+					}
 					dragCallback = nil
+					dragRelease = nil
 				}
 			}
 		},

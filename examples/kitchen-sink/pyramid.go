@@ -13,28 +13,31 @@ import (
 	"github.com/timzifer/lux/ui"
 )
 
-// PyramidSurface renders a rotating color pyramid via OpenGL FBO.
+// PyramidSurface renders a rotating RGB cube via OpenGL FBO.
+// The cube's vertex colors correspond to their (R,G,B) corner positions,
+// inspired by https://github.com/c2d7fa/opengl-cube.
 // Implements ui.SurfaceProvider.
 type PyramidSurface struct {
 	// OpenGL resources (lazy-init).
 	fbo, colorTex, depthRBO uint32
 	program                 uint32
-	vao, vbo                uint32
+	vao, vbo, ebo           uint32
 	mvpUniform              int32
 	texW, texH              int
 	inited                  bool
 
 	// Rotation state.
-	angleX, angleY, angleZ float32 // auto-rotation (radians)
-	dragX, dragY           float32 // accumulated drag rotation
-	dragging               bool
-	lastMouseX, lastMouseY float32
-	lastTime               time.Time
+	angleX, angleY float32 // auto-rotation (radians)
+	dragX, dragY   float32 // accumulated drag rotation
+	dragging       bool
+	lastMouseX     float32
+	lastMouseY     float32
+	lastTime       time.Time
 
 	nextToken ui.FrameToken
 }
 
-// NewPyramidSurface creates a new pyramid surface provider.
+// NewPyramidSurface creates a new RGB cube surface provider.
 func NewPyramidSurface() *PyramidSurface {
 	return &PyramidSurface{lastTime: time.Now()}
 }
@@ -44,7 +47,6 @@ func (p *PyramidSurface) Tick(dt time.Duration) {
 	sec := float32(dt.Seconds())
 	p.angleX += 0.3 * sec
 	p.angleY += 0.5 * sec
-	p.angleZ += 0.2 * sec
 }
 
 // ── SurfaceProvider implementation ──────────────────────────────
@@ -78,7 +80,7 @@ func (p *PyramidSurface) AcquireFrame(bounds draw.Rect) (draw.TextureID, ui.Fram
 	gl.Enable(gl.DEPTH_TEST)
 	gl.DepthFunc(gl.LESS)
 
-	gl.ClearColor(0.1, 0.1, 0.15, 1.0)
+	gl.ClearColor(0.08, 0.08, 0.12, 1.0)
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 	gl.UseProgram(p.program)
@@ -88,13 +90,12 @@ func (p *PyramidSurface) AcquireFrame(bounds draw.Rect) (draw.TextureID, ui.Fram
 	proj := perspectiveMatrix(45.0*math.Pi/180.0, aspect, 0.1, 100.0)
 	view := translationMatrix(0, 0, -4)
 	model := matMul4(rotationX(p.angleX+p.dragX), rotationY(p.angleY+p.dragY))
-	model = matMul4(model, rotationZ(p.angleZ))
 	mvp := matMul4(proj, matMul4(view, model))
 
 	gl.UniformMatrix4fv(p.mvpUniform, 1, false, &mvp[0])
 
 	gl.BindVertexArray(p.vao)
-	gl.DrawArrays(gl.TRIANGLES, 0, 12) // 4 faces * 3 vertices
+	gl.DrawElements(gl.TRIANGLES, 36, gl.UNSIGNED_INT, nil) // 6 faces * 2 tris * 3 verts
 	gl.BindVertexArray(0)
 
 	gl.UseProgram(0)
@@ -147,7 +148,7 @@ func (p *PyramidSurface) HandleMsg(msg any) bool {
 
 // ── OpenGL initialization ───────────────────────────────────────
 
-const pyramidVertShader = `#version 330 core
+const cubeVertShader = `#version 330 core
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aColor;
 
@@ -161,7 +162,7 @@ void main() {
 }
 ` + "\x00"
 
-const pyramidFragShader = `#version 330 core
+const cubeFragShader = `#version 330 core
 in vec3 vColor;
 out vec4 fragColor;
 
@@ -176,50 +177,75 @@ func (p *PyramidSurface) initGL(w, h int) {
 	}
 
 	// Compile shaders.
-	prog, err := compilePyramidProgram(pyramidVertShader, pyramidFragShader)
+	prog, err := compilePyramidProgram(cubeVertShader, cubeFragShader)
 	if err != nil {
 		return
 	}
 	p.program = prog
 	p.mvpUniform = gl.GetUniformLocation(prog, gl.Str("uMVP\x00"))
 
-	// Tetrahedron vertices: 4 faces, each with a distinct color.
-	// Vertices of a regular tetrahedron centered at origin.
-	top := [3]float32{0, 1.2, 0}
-	frontLeft := [3]float32{-1, -0.6, 1}
-	frontRight := [3]float32{1, -0.6, 1}
-	back := [3]float32{0, -0.6, -1.2}
+	// RGB Cube: 8 vertices at unit cube corners.
+	// Each vertex color = its (x,y,z) position mapped to (R,G,B).
+	//
+	//     (0,1,0)────(1,1,0)
+	//       /│          /│
+	//      / │         / │
+	// (0,1,1)────(1,1,1) │
+	//     │(0,0,0)───│(1,0,0)
+	//     │ /         │ /
+	//     │/          │/
+	// (0,0,1)────(1,0,1)
+	//
+	// Centered at origin: positions shifted by -0.5, colors stay 0..1.
+	type vert struct {
+		x, y, z float32 // position (centered)
+		r, g, b float32 // color = original corner
+	}
 
-	red := [3]float32{1, 0.2, 0.2}
-	green := [3]float32{0.2, 1, 0.2}
-	blue := [3]float32{0.2, 0.4, 1}
-	yellow := [3]float32{1, 0.95, 0.3}
+	verts := []vert{
+		{-0.5, -0.5, -0.5, 0, 0, 0}, // 0: (0,0,0) — black
+		{+0.5, -0.5, -0.5, 1, 0, 0}, // 1: (1,0,0) — red
+		{+0.5, +0.5, -0.5, 1, 1, 0}, // 2: (1,1,0) — yellow
+		{-0.5, +0.5, -0.5, 0, 1, 0}, // 3: (0,1,0) — green
+		{-0.5, -0.5, +0.5, 0, 0, 1}, // 4: (0,0,1) — blue
+		{+0.5, -0.5, +0.5, 1, 0, 1}, // 5: (1,0,1) — magenta
+		{+0.5, +0.5, +0.5, 1, 1, 1}, // 6: (1,1,1) — white
+		{-0.5, +0.5, +0.5, 0, 1, 1}, // 7: (0,1,1) — cyan
+	}
 
-	vertices := []float32{
-		// Front face (red)
-		top[0], top[1], top[2], red[0], red[1], red[2],
-		frontLeft[0], frontLeft[1], frontLeft[2], red[0], red[1], red[2],
-		frontRight[0], frontRight[1], frontRight[2], red[0], red[1], red[2],
-		// Right face (green)
-		top[0], top[1], top[2], green[0], green[1], green[2],
-		frontRight[0], frontRight[1], frontRight[2], green[0], green[1], green[2],
-		back[0], back[1], back[2], green[0], green[1], green[2],
-		// Left face (blue)
-		top[0], top[1], top[2], blue[0], blue[1], blue[2],
-		back[0], back[1], back[2], blue[0], blue[1], blue[2],
-		frontLeft[0], frontLeft[1], frontLeft[2], blue[0], blue[1], blue[2],
-		// Bottom face (yellow)
-		frontLeft[0], frontLeft[1], frontLeft[2], yellow[0], yellow[1], yellow[2],
-		back[0], back[1], back[2], yellow[0], yellow[1], yellow[2],
-		frontRight[0], frontRight[1], frontRight[2], yellow[0], yellow[1], yellow[2],
+	// Flatten to float32 slice.
+	vertices := make([]float32, 0, len(verts)*6)
+	for _, v := range verts {
+		vertices = append(vertices, v.x, v.y, v.z, v.r, v.g, v.b)
+	}
+
+	// 12 triangles (6 faces × 2 tris), wound CCW when viewed from outside.
+	indices := []uint32{
+		// Front face (z = +0.5)
+		4, 5, 6, 6, 7, 4,
+		// Back face (z = -0.5)
+		1, 0, 3, 3, 2, 1,
+		// Right face (x = +0.5)
+		5, 1, 2, 2, 6, 5,
+		// Left face (x = -0.5)
+		0, 4, 7, 7, 3, 0,
+		// Top face (y = +0.5)
+		7, 6, 2, 2, 3, 7,
+		// Bottom face (y = -0.5)
+		0, 1, 5, 5, 4, 0,
 	}
 
 	gl.GenVertexArrays(1, &p.vao)
 	gl.GenBuffers(1, &p.vbo)
+	gl.GenBuffers(1, &p.ebo)
 
 	gl.BindVertexArray(p.vao)
+
 	gl.BindBuffer(gl.ARRAY_BUFFER, p.vbo)
 	gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices), gl.STATIC_DRAW)
+
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.ebo)
+	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices)*4, gl.Ptr(indices), gl.STATIC_DRAW)
 
 	stride := int32(6 * 4) // 3 pos + 3 color floats
 	gl.EnableVertexAttribArray(0)
@@ -273,7 +299,7 @@ func (p *PyramidSurface) resizeFBO(w, h int) {
 	p.texH = h
 }
 
-// ── Shader compilation (local to pyramid) ───────────────────────
+// ── Shader compilation (local to cube) ──────────────────────────
 
 func compilePyramidProgram(vertSrc, fragSrc string) (uint32, error) {
 	vert := gl.CreateShader(gl.VERTEX_SHADER)
@@ -315,7 +341,7 @@ func compilePyramidProgram(vertSrc, fragSrc string) (uint32, error) {
 	return prog, nil
 }
 
-// ── Matrix math ─────────────────────────────────────────────────
+// ── Matrix math (column-major for OpenGL) ────────────────────────
 
 func perspectiveMatrix(fovY, aspect, near, far float32) [16]float32 {
 	f := float32(1.0 / math.Tan(float64(fovY/2)))
@@ -359,23 +385,14 @@ func rotationY(a float32) [16]float32 {
 	}
 }
 
-func rotationZ(a float32) [16]float32 {
-	c := float32(math.Cos(float64(a)))
-	s := float32(math.Sin(float64(a)))
-	return [16]float32{
-		c, s, 0, 0,
-		-s, c, 0, 0,
-		0, 0, 1, 0,
-		0, 0, 0, 1,
-	}
-}
-
 func matMul4(a, b [16]float32) [16]float32 {
+	// Column-major multiplication: R = A * B
+	// Storage: mat[col*4 + row], so R[col_i, row_j] = Σ_k A[col_k, row_j] * B[col_i, row_k]
 	var r [16]float32
 	for i := 0; i < 4; i++ {
 		for j := 0; j < 4; j++ {
 			for k := 0; k < 4; k++ {
-				r[i*4+j] += a[i*4+k] * b[k*4+j]
+				r[i*4+j] += a[k*4+j] * b[i*4+k]
 			}
 		}
 	}
