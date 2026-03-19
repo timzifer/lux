@@ -37,6 +37,8 @@ var sectionIDs = []string{
 	"rtl-layout", "locale", "ime-compose",
 	// Phase 5
 	"platform-info", "window-controls", "clipboard", "gpu-backend",
+	// Phase 6
+	"surfaces",
 }
 
 func sectionLabel(id string) string {
@@ -114,6 +116,9 @@ func sectionLabel(id string) string {
 		return "Clipboard"
 	case "gpu-backend":
 		return "GPU Backend"
+	// Phase 6
+	case "surfaces":
+		return "Surfaces"
 	default:
 		return id
 	}
@@ -611,6 +616,9 @@ func sectionContent(m Model) ui.Element {
 		return clipboardSection(m)
 	case "gpu-backend":
 		return gpuBackendSection()
+	// Phase 6
+	case "surfaces":
+		return surfacesSection()
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -2038,6 +2046,43 @@ func gpuBackendSection() ui.Element {
 		ui.Text("  • glScissor → wgpu RenderPass Clipping"),
 		ui.Text("  • glDrawArraysInstanced → wgpu DrawInstanced"),
 		ui.Text("  • glBufferData → wgpu Queue.WriteBuffer"),
+	)
+}
+
+// ── Phase 6 Section Views ──────────────────────────────────────────
+
+func surfacesSection() ui.Element {
+	return ui.Column(
+		sectionHeader("External Surfaces (Phase 6)"),
+		ui.Text("Surface Slots — RFC §8: Externe Surfaces"),
+		ui.Spacer(8),
+
+		ui.Text("SurfaceProvider Interface:"),
+		ui.Spacer(4),
+		ui.Text("  AcquireFrame(bounds) → (TextureID, FrameToken)"),
+		ui.Text("  ReleaseFrame(token)"),
+		ui.Text("  HandleMsg(msg) → consumed"),
+		ui.Spacer(12),
+
+		ui.Text("Zero-Copy Paths:"),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("  Preferred mode on this platform: %d", ui.PreferredZeroCopyMode())),
+		ui.Spacer(4),
+		ui.Text("  • macOS: IOSurface → wgpu Shared Texture"),
+		ui.Text("  • Linux: DMA-buf → wgpu External Memory"),
+		ui.Text("  • Windows: DXGI Shared Handle"),
+		ui.Text("  • Fallback: OSR → CPU-Copy → Upload"),
+		ui.Spacer(12),
+
+		ui.Text("Demo Surface (nil provider — placeholder):"),
+		ui.Spacer(4),
+		ui.Surface(1, nil, 300, 100),
+		ui.Spacer(12),
+
+		ui.Text("Input Routing:"),
+		ui.Spacer(4),
+		ui.Text("  Mouse/Key events in surface area → SurfaceMouseMsg/SurfaceKeyMsg"),
+		ui.Text("  Routed via SurfaceProvider.HandleMsg()"),
 	)
 }
 

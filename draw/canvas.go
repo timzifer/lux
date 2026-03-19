@@ -113,6 +113,16 @@ type ImageID uint64
 // TextureID is a handle to a GPU texture (for Surface slots).
 type TextureID uint64
 
+// SurfaceID identifies a surface slot in the widget tree (RFC §8).
+type SurfaceID uint64
+
+// DrawSurface is a GPU texture blit for an external surface (RFC §8).
+type DrawSurface struct {
+	X, Y, W, H int
+	TextureID   TextureID
+	SurfaceID   SurfaceID
+}
+
 // ImageSlice describes a 9-slice image for scalable borders/backgrounds.
 type ImageSlice struct {
 	Image  ImageID
@@ -163,6 +173,9 @@ type Scene struct {
 	Glyphs         []DrawGlyph      // legacy bitmap glyphs
 	TexturedGlyphs []TexturedGlyph  // atlas-based glyphs
 	MSDFGlyphs     []TexturedGlyph  // MSDF atlas-based glyphs
+
+	// External surface texture blits (RFC §8).
+	Surfaces []DrawSurface
 
 	// Overlay draw lists — rendered after main content so overlays
 	// (tooltips, dropdowns, context menus) fully cover underlying text.

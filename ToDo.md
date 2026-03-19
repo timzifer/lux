@@ -261,10 +261,10 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ## Phase 6 — Erweiterte Features
 
-### 6.1 Externe Surfaces (RFC-001 §8)
-- [ ] `Surface`-Element und `SurfaceProvider`-Interface
-- [ ] Zero-Copy-Pfade (IOSurface, DMA-buf, DXGI)
-- [ ] Input-Routing an Surfaces
+### 6.1 Externe Surfaces (RFC-001 §8) ✅
+- [x] `Surface`-Element und `SurfaceProvider`-Interface
+- [x] Zero-Copy-Pfade (IOSurface, DMA-buf, DXGI)
+- [x] Input-Routing an Surfaces
 - **Abhängig von:** 5.1
 
 ### 6.2 Accessibility (RFC-001 §11)

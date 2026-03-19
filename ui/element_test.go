@@ -5,6 +5,7 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/internal/text"
@@ -1536,5 +1537,122 @@ func TestSelectClosedStateNoOverlay(t *testing.T) {
 	// No overlay content when closed.
 	if len(scene.OverlayRects) != 0 || len(scene.OverlayGlyphs) != 0 {
 		t.Error("closed Select should not produce overlay content")
+	}
+}
+
+// ── Surface Tests (RFC §8) ──────────────────────────────────────
+
+// fakeSurfaceProvider is a test helper implementing SurfaceProvider.
+type fakeSurfaceProvider struct {
+	textureID draw.TextureID
+	acquired  bool
+	released  bool
+}
+
+func (f *fakeSurfaceProvider) AcquireFrame(bounds draw.Rect) (draw.TextureID, FrameToken) {
+	f.acquired = true
+	return f.textureID, 1
+}
+
+func (f *fakeSurfaceProvider) ReleaseFrame(token FrameToken) {
+	f.released = true
+}
+
+func (f *fakeSurfaceProvider) HandleMsg(msg any) bool {
+	_, ok := msg.(SurfaceMouseMsg)
+	return ok
+}
+
+func TestBuildSceneSurfaceNilProvider(t *testing.T) {
+	scene := buildTestScene(Surface(1, nil, 200, 150), 800, 600)
+	// Nil provider should produce a placeholder rect (fill + stroke = 2).
+	if len(scene.Rects) < 1 {
+		t.Errorf("nil-provider surface should produce placeholder rect(s), got %d rects", len(scene.Rects))
+	}
+	// No surface textures should be recorded.
+	if len(scene.Surfaces) != 0 {
+		t.Errorf("nil-provider surface should produce 0 surface entries, got %d", len(scene.Surfaces))
+	}
+}
+
+func TestBuildSceneSurfaceWithProvider(t *testing.T) {
+	provider := &fakeSurfaceProvider{textureID: 42}
+	scene := buildTestScene(Surface(1, provider, 200, 150), 800, 600)
+	if !provider.acquired {
+		t.Error("AcquireFrame was not called")
+	}
+	if !provider.released {
+		t.Error("ReleaseFrame was not called")
+	}
+	if len(scene.Surfaces) != 1 {
+		t.Fatalf("expected 1 surface entry, got %d", len(scene.Surfaces))
+	}
+	if scene.Surfaces[0].TextureID != 42 {
+		t.Errorf("surface TextureID = %d, want 42", scene.Surfaces[0].TextureID)
+	}
+}
+
+func TestBuildSceneSurfaceConstrainsToBounds(t *testing.T) {
+	provider := &fakeSurfaceProvider{textureID: 1}
+	// Request 2000x2000 but canvas is only 800x600 (minus framePadding*2).
+	scene := buildTestScene(Surface(1, provider, 2000, 2000), 800, 600)
+	if len(scene.Surfaces) != 1 {
+		t.Fatalf("expected 1 surface entry, got %d", len(scene.Surfaces))
+	}
+	s := scene.Surfaces[0]
+	maxW := 800 - framePadding*2
+	maxH := 600 - framePadding*2
+	if s.W > maxW || s.H > maxH {
+		t.Errorf("surface %dx%d exceeds available area %dx%d", s.W, s.H, maxW, maxH)
+	}
+}
+
+func TestSurfaceHitTarget(t *testing.T) {
+	provider := &fakeSurfaceProvider{textureID: 1}
+	hitMap := hit.Map{}
+	hover := HoverState{}
+	ix := NewInteractor(&hitMap, &hover)
+
+	canvas := render.NewSceneCanvas(800, 600)
+	BuildScene(Surface(1, provider, 200, 150), canvas, theme.Default, 800, 600, ix)
+
+	// Surface with a provider should register a hit target.
+	if hitMap.Len() < 1 {
+		t.Error("surface with provider should register at least 1 hit target")
+	}
+}
+
+func TestSurfaceInputRouting(t *testing.T) {
+	provider := &fakeSurfaceProvider{}
+	msg := SurfaceMouseMsg{
+		SurfaceID: 1,
+		Pos:       draw.Pt(100, 75),
+		Button:    input.MouseButtonLeft,
+		Action:    input.MousePress,
+	}
+	consumed := provider.HandleMsg(msg)
+	if !consumed {
+		t.Error("SurfaceProvider should consume SurfaceMouseMsg")
+	}
+	// Non-surface messages should not be consumed.
+	if provider.HandleMsg("not a surface msg") {
+		t.Error("SurfaceProvider should not consume non-SurfaceMouseMsg")
+	}
+}
+
+func TestZeroCopyModeConstants(t *testing.T) {
+	// Verify zero-copy mode constants are distinct.
+	modes := []ZeroCopyMode{ZeroCopyNone, ZeroCopyIOSurface, ZeroCopyDMABuf, ZeroCopyDXGI}
+	seen := map[ZeroCopyMode]bool{}
+	for _, m := range modes {
+		if seen[m] {
+			t.Errorf("duplicate ZeroCopyMode value: %d", m)
+		}
+		seen[m] = true
+	}
+	// On Linux, preferred mode should be DMA-buf.
+	mode := PreferredZeroCopyMode()
+	if mode != ZeroCopyDMABuf {
+		t.Errorf("PreferredZeroCopyMode() = %d, want %d (DMA-buf on Linux)", mode, ZeroCopyDMABuf)
 	}
 }

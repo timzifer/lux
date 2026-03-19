@@ -102,6 +102,42 @@ type Cursable interface {
 	Cursor(state WidgetState) input.CursorKind
 }
 
+// ── External Surfaces (RFC §8) ───────────────────────────────────
+
+// SurfaceID identifies a surface slot (RFC §8).
+type SurfaceID = draw.SurfaceID
+
+// FrameToken is an opaque token returned by AcquireFrame, passed to ReleaseFrame.
+type FrameToken uint64
+
+// SurfaceProvider provides GPU textures for external surface rendering (RFC §8).
+// External renderers (browser engines, video decoders, 3D engines) implement
+// this interface to embed their content in the widget tree.
+type SurfaceProvider interface {
+	// AcquireFrame returns the current GPU texture for the given bounds.
+	AcquireFrame(bounds draw.Rect) (draw.TextureID, FrameToken)
+	// ReleaseFrame signals that the framework is done with the texture.
+	ReleaseFrame(token FrameToken)
+	// HandleMsg receives input events routed to this surface. Returns true if consumed.
+	HandleMsg(msg any) bool
+}
+
+// SurfaceMouseMsg is sent when a mouse event occurs inside a surface area (RFC §8.3).
+type SurfaceMouseMsg struct {
+	SurfaceID SurfaceID
+	Pos       draw.Point
+	Button    input.MouseButton
+	Action    input.MouseAction
+}
+
+// SurfaceKeyMsg is sent when a key event occurs while a surface has focus.
+type SurfaceKeyMsg struct {
+	SurfaceID SurfaceID
+	Key       input.Key
+	Action    input.KeyAction
+	Mods      input.ModifierSet
+}
+
 // ── Element Types (RFC §4.3) ─────────────────────────────────────
 
 // Element is the base interface for all virtual-tree nodes.
@@ -223,6 +259,15 @@ func ScrollView(child Element, maxHeight float32, state ...*ScrollState) Element
 		s = state[0]
 	}
 	return scrollViewElement{Child: child, MaxHeight: maxHeight, State: s}
+}
+
+// ── External Surfaces (RFC §8) ───────────────────────────────────
+
+// Surface creates a surface slot element that renders GPU content from a
+// SurfaceProvider (RFC §8). The width and height specify the desired size
+// in dp. If provider is nil, a placeholder rectangle is rendered.
+func Surface(id SurfaceID, provider SurfaceProvider, width, height float32) Element {
+	return surfaceElement{ID: id, Provider: provider, Width: width, Height: height}
 }
 
 // ── Tier 2 Constructors (RFC-003 §4.1) ──────────────────────────
@@ -477,6 +522,15 @@ type scrollViewElement struct {
 }
 
 func (scrollViewElement) isElement() {}
+
+type surfaceElement struct {
+	ID       SurfaceID
+	Provider SurfaceProvider
+	Width    float32
+	Height   float32
+}
+
+func (surfaceElement) isElement() {}
 
 type paddingElement struct {
 	Insets draw.Insets
@@ -1076,6 +1130,9 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 
 	case scrollViewElement:
 		return layoutScrollView(node, area, canvas, th, tokens, ix, overlays, fs)
+
+	case surfaceElement:
+		return layoutSurface(node, area, canvas, tokens, ix)
 
 	case themedElement:
 		// Switch theme and tokens for this subtree.
@@ -1774,6 +1831,39 @@ func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Th
 		firstBaseline = maxH
 	}
 	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
+}
+
+// layoutSurface renders an external surface slot (RFC §8).
+// If the provider is non-nil, AcquireFrame/ReleaseFrame are called to
+// obtain and release the GPU texture. Otherwise a placeholder is drawn.
+func layoutSurface(node surfaceElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+	w := int(node.Width)
+	h := int(node.Height)
+	if w > area.W {
+		w = area.W
+	}
+	if h > area.H {
+		h = area.H
+	}
+
+	r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+
+	if node.Provider != nil {
+		texID, token := node.Provider.AcquireFrame(r)
+		canvas.DrawTexture(texID, r)
+		node.Provider.ReleaseFrame(token)
+	} else {
+		// Fallback: render placeholder rectangle for surface slot.
+		canvas.FillRect(r, draw.SolidPaint(tokens.Colors.Surface.Base))
+		canvas.StrokeRect(r, draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Divider), Width: 1})
+	}
+
+	// Register hit target for input routing to surface.
+	if ix != nil && node.Provider != nil {
+		ix.RegisterHit(r, nil)
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 }
 
 func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
