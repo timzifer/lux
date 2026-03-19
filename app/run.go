@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
 	"github.com/timzifer/lux/input"
@@ -52,6 +53,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	appLoop := loop.New(loopOpts...)
 	globalLoop = appLoop
 	defer func() { globalLoop = nil }()
+
+	// Wire anim.SendFunc so AnimationEnded msgs reach the app loop (RFC-002 §1.8).
+	anim.SendFunc = func(msg any) { Send(msg) }
+	defer func() { anim.SendFunc = nil }()
 
 	plat := cfg.platformFactory()
 	if err := plat.Init(platform.Config{
@@ -348,7 +353,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 			// 3. Update hover target from previous frame's hitMap.
 			hoveredIdx := hitMap.HitTestIndex(mouseX, mouseY)
-			hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick)
+			hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick.Duration)
 
 			// 4. Tick hover animations (RFC §12.2: AnimationTick before paint).
 			hoverState.Tick(dt)

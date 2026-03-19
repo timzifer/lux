@@ -14,16 +14,16 @@
 
 | Abschnitt | Status | Anmerkung |
 |-----------|--------|-----------|
-| §1 Animations-System | 🔶 Teilweise | Kern vorhanden; fehlt: SpringAnim, AnimGroup/Seq, CubicBezier |
+| §1 Animations-System | ✅ Integriert | Kern + SpringAnim, AnimGroup/Seq, CubicBezier, AnimationID |
 | §1.3 Animator-Interface | ✅ Integriert | `Animator` Interface + `Reconciler.TickAnimators` |
 | §1.4 `Anim[T]` | ✅ Integriert | `anim/anim.go` — `float32`/`float64` + `LerpAnim[T]` für alle draw-Typen |
 | §1.4 `Interpolatable` Constraint | ✅ Integriert | `LerpFunc[T]`/`LerpAnim[T]` Pattern; `LerpColor`, `LerpPoint`, `LerpSize`, `LerpRect`, `LerpCornerRadii` in `draw/lerp.go` |
-| §1.5 `SpringAnim[T]` | ⏳ Wartend | |
-| §1.6 `MotionSpec` im Theme | 🔶 Teilweise | Durations vorhanden, kein Easing pro Preset (nur `DurationEasing` → nur `Duration`) |
-| §1.7 Easing-Funktionen | ✅ Integriert | Linear, OutCubic, InCubic, InOutCubic, OutExpo |
-| §1.8 AnimationID / SetTargetWithID | ⏳ Wartend | |
-| §1.9 AnimGroup / AnimSeq | ⏳ Wartend | |
-| §1.10 CubicBezier | ⏳ Wartend | |
+| §1.5 `SpringAnim[T]` | ✅ Integriert | `anim/spring.go` — Feder-Dämpfer mit SpringSpec, Presets: Gentle, Snappy, Bouncy |
+| §1.6 `MotionSpec` im Theme | ✅ Integriert | `DurationEasing{Duration, Easing}` pro Slot: Standard (250ms OutCubic), Emphasized (400ms InOutCubic), Quick (100ms OutExpo) |
+| §1.7 Easing-Funktionen | ✅ Integriert | Linear, OutCubic, InCubic, InOutCubic, OutExpo, CubicBezier |
+| §1.8 AnimationID / SetTargetWithID | ✅ Integriert | `AnimationID`, `AnimationEnded`, `SetTargetWithID()`, `anim.SendFunc` Wiring |
+| §1.9 AnimGroup / AnimSeq | ✅ Integriert | `anim/group.go` — `AnimGroup` (parallel), `AnimSeq` (sequential mit onDone-Hooks) |
+| §1.10 CubicBezier | ✅ Integriert | `CubicBezier(x1,y1,x2,y2)` CSS-kompatibel mit Newton-Raphson |
 | §2 Input-System | ✅ Integriert | Typisierter `Key uint32`, `ModifierSet` Bitfield, Touch, MouseEnter/Leave |
 | §2.2 KeyMsg, MouseMsg, ScrollMsg | ✅ Integriert | Typisiert: `Key uint32`, `ModifierSet`, `ScrollMsg.Precise` |
 | §2.2 TouchMsg | ✅ Integriert | `TouchMsg` mit TouchID, Phase, Force |
@@ -44,9 +44,9 @@
 | §4.5 Grid-Layout | ✅ Integriert | `ui/grid.go` |
 | §4.5 Stack | ✅ Integriert | |
 | §4.5 Padding/SizedBox/Expanded | ✅ Integriert | |
-| §4.3 Layout-Interface (Custom Layouts) | ⏳ Wartend | |
+| §4.3 Layout-Interface (Custom Layouts) | ✅ Integriert | `ui/layout.go` — `Layout`, `LayoutCtx`, `CustomLayout()`, `Size` |
 | §4.6 RTL-Layout-Spiegelung (i18n) | ⏳ Wartend | `Start`/`End` statt `Left`/`Right`, `LayoutDirection` |
-| §4.9 Layout-Cache | ⏳ Wartend | |
+| §4.9 Layout-Cache | ✅ Integriert | `ui/layout_cache.go` — `LayoutCache` mit Store/IsValid/Invalidate |
 | §4.10 Insets-Typ (Start/End) | ⏳ Wartend | Logische Richtungen statt physische |
 | §5 Datenbasierte Widgets | 🔶 Teilweise | |
 | §5.2 Tree-Widget | ✅ Integriert | `ui/tree.go` mit Expand/Collapse, Animation, Selection |

@@ -7,6 +7,7 @@ package theme
 import (
 	"time"
 
+	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 )
 
@@ -70,11 +71,17 @@ type Theme interface {
 
 // ── Token Types (RFC-003 §1.2) ──────────────────────────────────
 
-// MotionSpec defines animation duration presets (RFC §12.6).
+// DurationEasing pairs a duration with an easing function (RFC-002 §1.6).
+type DurationEasing struct {
+	Duration time.Duration
+	Easing   anim.EasingFunc
+}
+
+// MotionSpec defines animation presets with duration and easing (RFC-002 §1.6).
 type MotionSpec struct {
-	Standard   time.Duration // 200ms — standard transitions
-	Emphasized time.Duration // 400ms — emphasized transitions
-	Quick      time.Duration // 100ms — fast reactions (hover, ripple)
+	Standard   DurationEasing // 250ms OutCubic — standard transitions
+	Emphasized DurationEasing // 400ms InOutCubic — emphasized transitions
+	Quick      DurationEasing // 100ms OutExpo — fast reactions (hover, ripple)
 }
 
 // ElevationScale defines shadow presets for different elevation levels.
@@ -255,9 +262,9 @@ var slateTokens = TokenSet{
 	Spacing: SpacingScale{XS: 4, S: 8, M: 16, L: 24, XL: 32, XXL: 48},
 	Radii:   RadiusScale{Input: 4, Button: 6, Card: 8, Pill: 999},
 	Motion: MotionSpec{
-		Standard:   200 * time.Millisecond,
-		Emphasized: 400 * time.Millisecond,
-		Quick:      100 * time.Millisecond,
+		Standard:   DurationEasing{250 * time.Millisecond, anim.OutCubic},
+		Emphasized: DurationEasing{400 * time.Millisecond, anim.InOutCubic},
+		Quick:      DurationEasing{100 * time.Millisecond, anim.OutExpo},
 	},
 	Scroll: ScrollSpec{
 		Friction:          0.95,

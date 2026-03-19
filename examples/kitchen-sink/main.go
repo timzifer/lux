@@ -13,6 +13,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
@@ -29,6 +30,9 @@ var sectionIDs = []string{
 	"cards", "tabs", "accordion", "badges-chips", "menus",
 	"shortcuts", "overlays", "canvas-paints", "scoped-themes", "text-shaping",
 	"commands", "sub-models",
+	// Phase 2
+	"spring-anim", "cubic-bezier", "motion-spec",
+	"animation-id", "anim-group-seq", "custom-layout",
 }
 
 func sectionLabel(id string) string {
@@ -75,6 +79,19 @@ func sectionLabel(id string) string {
 		return "Commands"
 	case "sub-models":
 		return "Sub-Models"
+	// Phase 2
+	case "spring-anim":
+		return "Spring Animation"
+	case "cubic-bezier":
+		return "Cubic Bezier"
+	case "motion-spec":
+		return "Motion Spec"
+	case "animation-id":
+		return "Animation ID"
+	case "anim-group-seq":
+		return "AnimGroup & Seq"
+	case "custom-layout":
+		return "Custom Layout"
 	default:
 		return id
 	}
@@ -120,6 +137,23 @@ type Model struct {
 	AsyncLoading bool
 	// Sub-Models
 	SubCounter int
+	// Phase 2 — Animation & Layout
+	SpringVal      anim.SpringAnim[float32]
+	SpringPreset   string
+	AnimIDResult   string
+	FadeOpacity    anim.Anim[float32]
+	FadeActive     bool
+	GroupSeqStatus string
+	GroupA         anim.Anim[float32]
+	GroupB         anim.Anim[float32]
+	SeqA           anim.Anim[float32]
+	SeqB           anim.Anim[float32]
+	SeqRunning     bool
+	BezierAnim     anim.Anim[float32]
+	BezierPreset   string
+	MotionAnim     anim.Anim[float32]
+	MotionPreset   string
+	LayoutGap      float32
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -147,6 +181,18 @@ type StartAsyncMsg struct{}
 type AsyncDoneMsg struct{ Result string }
 type SubCounterIncrMsg struct{}
 type SubCounterDecrMsg struct{}
+
+// Phase 2 messages
+type SetSpringPresetMsg struct{ Preset string }
+type StartSpringMsg struct{}
+type StartFadeMsg struct{}
+type StartGroupMsg struct{}
+type StartSeqMsg struct{}
+type SetBezierPresetMsg struct{ Preset string }
+type StartBezierMsg struct{}
+type SetMotionPresetMsg struct{ Preset string }
+type StartMotionMsg struct{}
+type SetLayoutGapMsg struct{ Value float32 }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -232,6 +278,90 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 	case SubCounterIncrMsg, SubCounterDecrMsg:
 		m = app.Delegate(subCounterModel, m, msg)
 
+	// Phase 2: Spring Animation
+	case SetSpringPresetMsg:
+		m.SpringPreset = msg.Preset
+	case StartSpringMsg:
+		spec := anim.SpringGentle
+		switch m.SpringPreset {
+		case "snappy":
+			spec = anim.SpringSnappy
+		case "bouncy":
+			spec = anim.SpringBouncy
+		}
+		target := float32(1.0)
+		if m.SpringVal.Value() > 0.5 {
+			target = 0.0
+		}
+		m.SpringVal.SetTargetWithSpec(target, spec)
+
+	// Phase 2: Animation ID
+	case StartFadeMsg:
+		m.FadeActive = true
+		m.FadeOpacity.SetTargetWithID(0.0, 500*time.Millisecond, anim.OutCubic, "fade-demo")
+	case anim.AnimationEnded:
+		m.AnimIDResult = fmt.Sprintf("AnimationEnded: %s", msg.ID)
+		if msg.ID == "fade-demo" {
+			m.FadeActive = false
+			m.FadeOpacity.SetImmediate(1.0)
+		}
+
+	// Phase 2: AnimGroup & Seq
+	case StartGroupMsg:
+		m.GroupA.SetTarget(1.0, 300*time.Millisecond, anim.OutCubic)
+		m.GroupB.SetTarget(1.0, 500*time.Millisecond, anim.OutCubic)
+		m.GroupSeqStatus = "Group running..."
+	case StartSeqMsg:
+		m.SeqA.SetTarget(1.0, 300*time.Millisecond, anim.OutCubic)
+		m.SeqB.SetImmediate(0.0)
+		m.SeqRunning = true
+		m.GroupSeqStatus = "Seq step 1..."
+
+	// Phase 2: Cubic Bezier
+	case SetBezierPresetMsg:
+		m.BezierPreset = msg.Preset
+	case StartBezierMsg:
+		var easing anim.EasingFunc
+		switch m.BezierPreset {
+		case "ease":
+			easing = anim.CubicBezier(0.25, 0.1, 0.25, 1.0)
+		case "ease-in":
+			easing = anim.CubicBezier(0.42, 0, 1.0, 1.0)
+		case "ease-out":
+			easing = anim.CubicBezier(0, 0, 0.58, 1.0)
+		case "ease-in-out":
+			easing = anim.CubicBezier(0.42, 0, 0.58, 1.0)
+		default:
+			easing = anim.CubicBezier(0.25, 0.1, 0.25, 1.0)
+		}
+		target := float32(1.0)
+		if m.BezierAnim.Value() > 0.5 {
+			target = 0.0
+		}
+		m.BezierAnim.SetTarget(target, 600*time.Millisecond, easing)
+
+	// Phase 2: Motion Spec
+	case SetMotionPresetMsg:
+		m.MotionPreset = msg.Preset
+	case StartMotionMsg:
+		tokens := theme.Default.Tokens()
+		de := tokens.Motion.Standard
+		switch m.MotionPreset {
+		case "emphasized":
+			de = tokens.Motion.Emphasized
+		case "quick":
+			de = tokens.Motion.Quick
+		}
+		target := float32(1.0)
+		if m.MotionAnim.Value() > 0.5 {
+			target = 0.0
+		}
+		m.MotionAnim.SetTarget(target, de.Duration, de.Easing)
+
+	// Phase 2: Custom Layout gap
+	case SetLayoutGapMsg:
+		m.LayoutGap = msg.Value
+
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
 		m.AnimTime += dt
@@ -241,6 +371,32 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.DemoTree.Tick(msg.DeltaTime)
 		if m.KineticScroll != nil {
 			m.KineticScroll.Tick(msg.DeltaTime)
+		}
+		// Phase 2 animations
+		m.SpringVal.Tick(msg.DeltaTime)
+		m.FadeOpacity.Tick(msg.DeltaTime)
+		m.BezierAnim.Tick(msg.DeltaTime)
+		m.MotionAnim.Tick(msg.DeltaTime)
+		m.GroupA.Tick(msg.DeltaTime)
+		m.GroupB.Tick(msg.DeltaTime)
+		if m.GroupA.IsDone() && m.GroupB.IsDone() && m.GroupSeqStatus == "Group running..." {
+			m.GroupSeqStatus = "Group done!"
+			m.GroupA.SetImmediate(0)
+			m.GroupB.SetImmediate(0)
+		}
+		if m.SeqRunning {
+			m.SeqA.Tick(msg.DeltaTime)
+			if m.SeqA.IsDone() && m.SeqB.Value() == 0 && m.GroupSeqStatus == "Seq step 1..." {
+				m.SeqB.SetTarget(1.0, 300*time.Millisecond, anim.OutCubic)
+				m.GroupSeqStatus = "Seq step 2..."
+			}
+			m.SeqB.Tick(msg.DeltaTime)
+			if m.SeqB.IsDone() && m.GroupSeqStatus == "Seq step 2..." {
+				m.GroupSeqStatus = "Seq done!"
+				m.SeqRunning = false
+				m.SeqA.SetImmediate(0)
+				m.SeqB.SetImmediate(0)
+			}
 		}
 	}
 	return m, nil
@@ -329,6 +485,19 @@ func sectionContent(m Model) ui.Element {
 		return commandsSection(m)
 	case "sub-models":
 		return subModelsSection(m)
+	// Phase 2
+	case "spring-anim":
+		return springAnimSection(m)
+	case "cubic-bezier":
+		return cubicBezierSection(m)
+	case "motion-spec":
+		return motionSpecSection(m)
+	case "animation-id":
+		return animationIDSection(m)
+	case "anim-group-seq":
+		return animGroupSeqSection(m)
+	case "custom-layout":
+		return customLayoutSection(m)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -1186,6 +1355,209 @@ func subModelsSection(m Model) ui.Element {
 	)
 }
 
+// ── Phase 2 Section Views ──────────────────────────────────────────
+
+func springAnimSection(m Model) ui.Element {
+	presetLabel := "gentle"
+	if m.SpringPreset != "" {
+		presetLabel = m.SpringPreset
+	}
+
+	return ui.Column(
+		sectionHeader("Spring Animation (Phase 2)"),
+		ui.Text("SpringAnim[T] — physics-based spring-damper system."),
+		ui.Text("No fixed duration — converges asymptotically."),
+		ui.Spacer(8),
+
+		ui.Text("Select preset:"),
+		ui.Row(
+			ui.Radio("Gentle", presetLabel == "gentle", func() { app.Send(SetSpringPresetMsg{"gentle"}) }),
+			ui.Radio("Snappy", presetLabel == "snappy", func() { app.Send(SetSpringPresetMsg{"snappy"}) }),
+			ui.Radio("Bouncy", presetLabel == "bouncy", func() { app.Send(SetSpringPresetMsg{"bouncy"}) }),
+		),
+		ui.Spacer(8),
+
+		ui.ButtonText("Animate Spring", func() { app.Send(StartSpringMsg{}) }),
+		ui.Spacer(8),
+		ui.Text(fmt.Sprintf("Value: %.3f", m.SpringVal.Value())),
+		ui.ProgressBar(m.SpringVal.Value()),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("Done: %v", m.SpringVal.IsDone())),
+	)
+}
+
+func cubicBezierSection(m Model) ui.Element {
+	preset := m.BezierPreset
+	if preset == "" {
+		preset = "ease"
+	}
+
+	return ui.Column(
+		sectionHeader("Cubic Bezier Easing (Phase 2)"),
+		ui.Text("CubicBezier(x1, y1, x2, y2) — CSS-compatible easing."),
+		ui.Spacer(8),
+
+		ui.Text("Select CSS preset:"),
+		ui.Row(
+			ui.Radio("ease", preset == "ease", func() { app.Send(SetBezierPresetMsg{"ease"}) }),
+			ui.Radio("ease-in", preset == "ease-in", func() { app.Send(SetBezierPresetMsg{"ease-in"}) }),
+			ui.Radio("ease-out", preset == "ease-out", func() { app.Send(SetBezierPresetMsg{"ease-out"}) }),
+			ui.Radio("ease-in-out", preset == "ease-in-out", func() { app.Send(SetBezierPresetMsg{"ease-in-out"}) }),
+		),
+		ui.Spacer(8),
+
+		ui.ButtonText("Animate", func() { app.Send(StartBezierMsg{}) }),
+		ui.Spacer(8),
+		ui.Text(fmt.Sprintf("Value: %.3f (preset: %s)", m.BezierAnim.Value(), preset)),
+		ui.ProgressBar(m.BezierAnim.Value()),
+	)
+}
+
+func motionSpecSection(m Model) ui.Element {
+	tokens := theme.Default.Tokens()
+	preset := m.MotionPreset
+	if preset == "" {
+		preset = "standard"
+	}
+
+	return ui.Column(
+		sectionHeader("Motion Spec (Phase 2)"),
+		ui.Text("DurationEasing — theme tokens pair duration with easing."),
+		ui.Spacer(8),
+		ui.Text(fmt.Sprintf("Standard:   %v + OutCubic", tokens.Motion.Standard.Duration)),
+		ui.Text(fmt.Sprintf("Emphasized: %v + InOutCubic", tokens.Motion.Emphasized.Duration)),
+		ui.Text(fmt.Sprintf("Quick:      %v + OutExpo", tokens.Motion.Quick.Duration)),
+		ui.Spacer(12),
+
+		ui.Text("Select preset:"),
+		ui.Row(
+			ui.Radio("Standard", preset == "standard", func() { app.Send(SetMotionPresetMsg{"standard"}) }),
+			ui.Radio("Emphasized", preset == "emphasized", func() { app.Send(SetMotionPresetMsg{"emphasized"}) }),
+			ui.Radio("Quick", preset == "quick", func() { app.Send(SetMotionPresetMsg{"quick"}) }),
+		),
+		ui.Spacer(8),
+
+		ui.ButtonText("Animate", func() { app.Send(StartMotionMsg{}) }),
+		ui.Spacer(8),
+		ui.Text(fmt.Sprintf("Value: %.3f", m.MotionAnim.Value())),
+		ui.ProgressBar(m.MotionAnim.Value()),
+	)
+}
+
+func animationIDSection(m Model) ui.Element {
+	children := []ui.Element{
+		sectionHeader("Animation ID (Phase 2)"),
+		ui.Text("SetTargetWithID — fires AnimationEnded{ID} on completion."),
+		ui.Text("The user update loop receives the message — no callbacks."),
+		ui.Spacer(8),
+		ui.ButtonText("Start Fade (500ms)", func() { app.Send(StartFadeMsg{}) }),
+	}
+
+	if m.FadeActive {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text(fmt.Sprintf("Fading... opacity: %.2f", m.FadeOpacity.Value())),
+			ui.ProgressBar(m.FadeOpacity.Value()),
+		)
+	}
+
+	if m.AnimIDResult != "" {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text(fmt.Sprintf("Received: %s", m.AnimIDResult)),
+		)
+	}
+
+	return ui.Column(children...)
+}
+
+func animGroupSeqSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("AnimGroup & AnimSeq (Phase 2)"),
+		ui.Text("AnimGroup — parallel animations. AnimSeq — sequential."),
+		ui.Spacer(8),
+
+		ui.Text("Parallel (AnimGroup):"),
+		ui.Row(
+			ui.ButtonText("Run Group", func() { app.Send(StartGroupMsg{}) }),
+		),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("  A: %.2f  B: %.2f", m.GroupA.Value(), m.GroupB.Value())),
+		ui.Spacer(8),
+
+		ui.Text("Sequential (AnimSeq):"),
+		ui.Row(
+			ui.ButtonText("Run Seq", func() { app.Send(StartSeqMsg{}) }),
+		),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("  A: %.2f  B: %.2f", m.SeqA.Value(), m.SeqB.Value())),
+		ui.Spacer(8),
+
+		ui.Text(fmt.Sprintf("Status: %s", m.GroupSeqStatus)),
+	)
+}
+
+// stairLayout is a demo custom layout that arranges children in a stair pattern.
+type stairLayout struct {
+	Gap float32
+}
+
+func (s stairLayout) LayoutChildren(ctx ui.LayoutCtx, children []ui.Element) ui.Size {
+	x, y := float32(0), float32(0)
+	maxW, maxH := float32(0), float32(0)
+
+	for _, child := range children {
+		size := ctx.Measure(child, ui.LooseConstraints(ctx.Constraints.MaxWidth, ctx.Constraints.MaxHeight))
+		ctx.Place(child, draw.Pt(x, y))
+		endX := x + size.Width
+		endY := y + size.Height
+		if endX > maxW {
+			maxW = endX
+		}
+		if endY > maxH {
+			maxH = endY
+		}
+		x += s.Gap
+		y += s.Gap
+	}
+
+	return ui.Size{Width: maxW, Height: maxH}
+}
+
+func customLayoutSection(m Model) ui.Element {
+	gap := m.LayoutGap
+	if gap == 0 {
+		gap = 30
+	}
+
+	return ui.Column(
+		sectionHeader("Custom Layout (Phase 2)"),
+		ui.Text("Layout interface — user-defined layout algorithms."),
+		ui.Text("LayoutCtx provides Measure/Place callbacks."),
+		ui.Spacer(8),
+
+		ui.Text(fmt.Sprintf("Stair gap: %.0f dp", gap)),
+		ui.Slider(gap/100, func(v float32) { app.Send(SetLayoutGapMsg{v * 100}) }),
+		ui.Spacer(8),
+
+		ui.Text("Stair layout demo:"),
+		ui.Spacer(4),
+		ui.CustomLayout(stairLayout{Gap: gap},
+			ui.ButtonText("Step 1", nil),
+			ui.ButtonText("Step 2", nil),
+			ui.ButtonText("Step 3", nil),
+			ui.ButtonText("Step 4", nil),
+		),
+
+		ui.Spacer(16),
+		ui.Text("Layout Cache:"),
+		ui.Spacer(4),
+		ui.Text("  LayoutCache stores constraints + size + childRects"),
+		ui.Text("  Invalidated when props or constraints change"),
+		ui.Text("  O(dirty subtree) re-layout, not O(n)"),
+	)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
@@ -1204,7 +1576,12 @@ func main() {
 		AccordionState: ui.NewAccordionState(),
 		MenuBarState:   ui.NewMenuBarState(),
 		KineticScroll:  ui.NewKineticScroll(theme.Default.Tokens().Scroll),
+		SpringPreset:   "gentle",
+		BezierPreset:   "ease",
+		MotionPreset:   "standard",
+		LayoutGap:      30,
 	}
+	initial.FadeOpacity.SetImmediate(1.0)
 
 	// Global handler that logs key events (Phase 1: §2.8).
 	keyLogger := func(ev ui.InputEvent) bool {

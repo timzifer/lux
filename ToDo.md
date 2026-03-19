@@ -83,42 +83,42 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ---
 
-## Phase 2 — Animation & Layout erweitern
+## Phase 2 — Animation & Layout erweitern ✅
 
-### 2.1 SpringAnim[T] (RFC-002 §1.5)
-- [ ] Feder-Dämpfer-System implementieren
-- [ ] `SpringSpec` mit Stiffness, Damping, Mass, SettlingThreshold
-- [ ] Preset-Springs: Gentle, Snappy, Bouncy
+### 2.1 SpringAnim[T] (RFC-002 §1.5) ✅
+- [x] Feder-Dämpfer-System implementieren
+- [x] `SpringSpec` mit Stiffness, Damping, Mass, SettlingThreshold
+- [x] Preset-Springs: Gentle, Snappy, Bouncy
 - **Abhängig von:** 0.5
 
-### 2.2 AnimationID / SetTargetWithID (RFC-002 §1.8)
-- [ ] `AnimationID string` Typ
-- [ ] `Anim[T].SetTargetWithID()` — sendet `AnimationEnded{ID}` via app.Send
-- [ ] Framework flush von AnimationEnd-Msgs nach Tick-Pass
+### 2.2 AnimationID / SetTargetWithID (RFC-002 §1.8) ✅
+- [x] `AnimationID string` Typ
+- [x] `Anim[T].SetTargetWithID()` — sendet `AnimationEnded{ID}` via app.Send
+- [x] Framework flush von AnimationEnd-Msgs nach Tick-Pass
 - **Abhängig von:** 0.4
 
-### 2.3 AnimGroup / AnimSeq (RFC-002 §1.9)
-- [ ] `AnimGroup` — parallele Animationen
-- [ ] `AnimSeq` — sequentielle Animationen mit onDone-Hooks
+### 2.3 AnimGroup / AnimSeq (RFC-002 §1.9) ✅
+- [x] `AnimGroup` — parallele Animationen
+- [x] `AnimSeq` — sequentielle Animationen mit onDone-Hooks
 - **Abhängig von:** 0.5
 
-### 2.4 CubicBezier Easing (RFC-002 §1.10)
-- [ ] `CubicBezier(x1, y1, x2, y2 float32) EasingFunc` (CSS-kompatibel)
+### 2.4 CubicBezier Easing (RFC-002 §1.10) ✅
+- [x] `CubicBezier(x1, y1, x2, y2 float32) EasingFunc` (CSS-kompatibel)
 - **Abhängig von:** nichts
 
-### 2.5 MotionSpec mit Easing pro Preset (RFC-002 §1.6)
-- [ ] `MotionSpec` Slots von `time.Duration` auf `DurationEasing{Duration, EasingFunc}` umstellen
-- [ ] Theme-Tokens anpassen: Standard (250ms OutCubic), Emphasized (400ms InOutCubic), Quick (100ms OutExpo)
+### 2.5 MotionSpec mit Easing pro Preset (RFC-002 §1.6) ✅
+- [x] `MotionSpec` Slots von `time.Duration` auf `DurationEasing{Duration, EasingFunc}` umstellen
+- [x] Theme-Tokens anpassen: Standard (250ms OutCubic), Emphasized (400ms InOutCubic), Quick (100ms OutExpo)
 - **Abhängig von:** 2.4
 
-### 2.6 Custom Layout-Interface (RFC-002 §4.3)
-- [ ] `Layout`-Interface: `LayoutChildren(ctx LayoutCtx, children []Widget) Size`
-- [ ] `LayoutCtx` mit `Measure`, `Place`, `Constraints`, `Theme`
+### 2.6 Custom Layout-Interface (RFC-002 §4.3) ✅
+- [x] `Layout`-Interface: `LayoutChildren(ctx LayoutCtx, children []Element) Size`
+- [x] `LayoutCtx` mit `Measure`, `Place`, `Constraints`, `Theme`
 - **Abhängig von:** nichts
 
-### 2.7 Layout-Cache & Invalidierung (RFC-002 §4.8)
-- [ ] `layoutCache` pro VNode (Constraints + Size + ChildRects)
-- [ ] Dirty-Propagation: Props geändert → Layout-Dirty aufwärts
+### 2.7 Layout-Cache & Invalidierung (RFC-002 §4.8) ✅
+- [x] `LayoutCache` Typ (Constraints + Size + ChildRects)
+- [x] Invalidierung: `Invalidate()`, `IsValid(Constraints)`, `Store()`
 - **Abhängig von:** 2.6
 
 ---
