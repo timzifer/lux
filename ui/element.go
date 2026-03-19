@@ -1696,17 +1696,34 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 		offset = node.State.Offset
 	}
 
+	// Reserve scrollbar width inside the allocated area so clipped
+	// parents (e.g. SplitView) don't cut it off.
+	scrollbarW := int(tokens.Scroll.TrackWidth)
+	if scrollbarW <= 0 {
+		scrollbarW = 8
+	}
+	contentW := area.W // width available for child content
+
+	// Pre-measure to detect whether scrollbar is needed.
+	nc := nullCanvas{delegate: canvas}
+	measureArea := bounds{X: area.X, Y: area.Y, W: contentW, H: area.H}
+	mb := layoutElement(node.Child, measureArea, nc, th, tokens, nil, nil, nil)
+	needsScroll := mb.H > viewportH
+
+	if needsScroll {
+		contentW = max(area.W-scrollbarW, 0)
+	}
+
 	// Clip to viewport.
-	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(viewportH)))
+	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(contentW), float32(viewportH)))
 
 	// Render child offset by -offset in Y so content scrolls upward.
-	childArea := bounds{X: area.X, Y: area.Y - int(offset), W: area.W, H: area.H + int(offset)}
+	childArea := bounds{X: area.X, Y: area.Y - int(offset), W: contentW, H: area.H + int(offset)}
 	childBounds := layoutElement(node.Child, childArea, canvas, th, tokens, ix, overlays, fs)
 
 	canvas.PopClip()
 
 	contentH := childBounds.H
-	w := max(childBounds.W, area.W)
 
 	// Clamp state if provided (ensures offset stays valid after content changes).
 	if node.State != nil {
@@ -1724,12 +1741,12 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 
 	// Register the viewport as a scroll target so the framework can
 	// route mouse-wheel events directly to the ScrollState.
-	if node.State != nil && contentH > viewportH {
+	if node.State != nil && needsScroll {
 		state := node.State
 		cH := float32(contentH)
 		vH := float32(viewportH)
 		ix.RegisterScroll(
-			draw.R(float32(area.X), float32(area.Y), float32(w), float32(viewportH)),
+			draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(viewportH)),
 			cH, vH,
 			func(deltaY float32) {
 				state.ScrollBy(deltaY, cH, vH)
@@ -1737,9 +1754,12 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 		)
 	}
 
-	// Draw scrollbar if content exceeds viewport.
-	if contentH > viewportH {
-		w += drawScrollbar(canvas, tokens, ix, node.State, area.X+w, area.Y, viewportH, float32(contentH), offset)
+	// Draw scrollbar inside allocated area.
+	w := area.W
+	if needsScroll {
+		drawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
+	} else {
+		w = max(childBounds.W, area.W)
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
@@ -2267,6 +2287,14 @@ func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th th
 	}
 	w := int(node.Width)
 	h := int(node.Height)
+	// Zero means "inherit from parent area" so callers can constrain
+	// only one dimension (e.g. SizedBox(0, 120, child) for height-only).
+	if w == 0 {
+		w = area.W
+	}
+	if h == 0 {
+		h = area.H
+	}
 	var baseline int
 	if node.Child != nil {
 		childArea := bounds{X: area.X, Y: area.Y, W: w, H: h}

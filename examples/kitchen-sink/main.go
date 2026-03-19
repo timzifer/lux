@@ -25,7 +25,7 @@ import (
 
 var sectionIDs = []string{
 	"typography", "buttons", "form-controls", "range-progress",
-	"selection", "layout", "rich-text", "virtual-list", "tree",
+	"selection", "layout", "split-view", "rich-text", "virtual-list", "tree",
 	"cards", "tabs", "accordion", "badges-chips", "menus",
 	"shortcuts", "overlays", "canvas-paints", "scoped-themes", "text-shaping",
 	"commands", "sub-models",
@@ -45,6 +45,8 @@ func sectionLabel(id string) string {
 		return "Selection"
 	case "layout":
 		return "Layout"
+	case "split-view":
+		return "SplitView"
 	case "rich-text":
 		return "RichText"
 	case "virtual-list":
@@ -110,8 +112,16 @@ type Model struct {
 	ChipDismissed  bool
 	LastMenuAction string
 	MenuBarState   *ui.MenuBarState
+	// SplitView
+	NavSplitRatio      float32
+	SplitHorizontal    float32
+	SplitVertical      float32
+	SplitNested1       float32
+	SplitNested2       float32
+	SplitThreeColLeft  float32
+	SplitThreeColRight float32
 	// Phase 1 features
-	ShortcutLog   string
+	ShortcutLog string
 	OverlayOpen   bool
 	HandlerLog    string
 	KineticScroll *ui.KineticScroll
@@ -145,6 +155,13 @@ type DismissOverlayMsg struct{}
 type SetHandlerLogMsg struct{ Text string }
 type StartAsyncMsg struct{}
 type AsyncDoneMsg struct{ Result string }
+type SetNavSplitMsg struct{ Ratio float32 }
+type SetSplitHorizontalMsg struct{ Ratio float32 }
+type SetSplitVerticalMsg struct{ Ratio float32 }
+type SetSplitNested1Msg struct{ Ratio float32 }
+type SetSplitNested2Msg struct{ Ratio float32 }
+type SetSplitThreeColLeftMsg struct{ Ratio float32 }
+type SetSplitThreeColRightMsg struct{ Ratio float32 }
 type SubCounterIncrMsg struct{}
 type SubCounterDecrMsg struct{}
 
@@ -216,6 +233,20 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.OverlayOpen = false
 	case SetHandlerLogMsg:
 		m.HandlerLog = msg.Text
+	case SetNavSplitMsg:
+		m.NavSplitRatio = msg.Ratio
+	case SetSplitHorizontalMsg:
+		m.SplitHorizontal = msg.Ratio
+	case SetSplitVerticalMsg:
+		m.SplitVertical = msg.Ratio
+	case SetSplitNested1Msg:
+		m.SplitNested1 = msg.Ratio
+	case SetSplitNested2Msg:
+		m.SplitNested2 = msg.Ratio
+	case SetSplitThreeColLeftMsg:
+		m.SplitThreeColLeft = msg.Ratio
+	case SetSplitThreeColRightMsg:
+		m.SplitThreeColRight = msg.Ratio
 
 	// Commands section
 	case StartAsyncMsg:
@@ -271,11 +302,12 @@ func view(m Model) ui.Element {
 	content := ui.ScrollView(sectionContent(m), 500, m.Scroll)
 
 	return ui.Padding(ui.UniformInsets(16), ui.Column(
-		// Nav + content side by side
-		ui.Row(
-			ui.SizedBox(200, 500, nav),
-			ui.Spacer(16),
+		// SplitView: nav on the left, content on the right
+		ui.SplitView(
+			nav,
 			content,
+			m.NavSplitRatio,
+			func(r float32) { app.Send(SetNavSplitMsg{r}) },
 		),
 		// Footer
 		ui.Spacer(12),
@@ -299,6 +331,8 @@ func sectionContent(m Model) ui.Element {
 		return selectionSection(m)
 	case "layout":
 		return layoutSection()
+	case "split-view":
+		return splitViewSection(m)
 	case "rich-text":
 		return richTextSection()
 	case "virtual-list":
@@ -569,6 +603,124 @@ func layoutSection() ui.Element {
 		// SizedBox
 		ui.Text("SizedBox (100x50):"),
 		ui.SizedBox(100, 50, ui.Text("Sized")),
+	)
+}
+
+func splitViewSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("SplitView"),
+		ui.Text("Draggable split panes — resize by dragging the divider."),
+
+		// 1. Horizontal (side-by-side)
+		ui.Spacer(12),
+		ui.Text("Horizontal split (default):"),
+		ui.Spacer(4),
+		ui.SizedBox(0, 120, ui.SplitView(
+			ui.Padding(ui.UniformInsets(8), ui.Column(
+				ui.TextStyled("Left Pane", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				ui.Spacer(4),
+				ui.Text("This panel resizes"),
+				ui.Text("when you drag the divider."),
+			)),
+			ui.Padding(ui.UniformInsets(8), ui.Column(
+				ui.TextStyled("Right Pane", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				ui.Spacer(4),
+				ui.Text("Content is clipped"),
+				ui.Text("at the pane boundary."),
+			)),
+			m.SplitHorizontal,
+			func(r float32) { app.Send(SetSplitHorizontalMsg{r}) },
+		)),
+
+		// 2. Vertical (stacked)
+		ui.Spacer(12),
+		ui.Text("Vertical split (stacked, WithSplitAxis):"),
+		ui.Spacer(4),
+		ui.SizedBox(0, 160, ui.SplitView(
+			ui.Padding(ui.UniformInsets(8), ui.Column(
+				ui.TextStyled("Top", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				ui.Spacer(4),
+				ui.Text("Vertical divider splits top/bottom."),
+			)),
+			ui.Padding(ui.UniformInsets(8), ui.Column(
+				ui.TextStyled("Bottom", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				ui.Spacer(4),
+				ui.Text("Drag the horizontal bar to resize."),
+			)),
+			m.SplitVertical,
+			func(r float32) { app.Send(SetSplitVerticalMsg{r}) },
+			ui.WithSplitAxis(ui.AxisColumn),
+		)),
+
+		// 3. Nested splits (editor-like layout)
+		ui.Spacer(12),
+		ui.Text("Nested splits (IDE-style layout):"),
+		ui.Spacer(4),
+		ui.SizedBox(0, 180, ui.SplitView(
+			ui.Padding(ui.UniformInsets(8), ui.Column(
+				ui.Row(ui.Icon(icons.Folder), ui.Text(" Explorer")),
+				ui.Spacer(4),
+				ui.Text("  src/"),
+				ui.Text("  docs/"),
+				ui.Text("  tests/"),
+			)),
+			ui.SplitView(
+				ui.Padding(ui.UniformInsets(8), ui.Column(
+					ui.Row(ui.Icon(icons.FileText), ui.Text(" main.go")),
+					ui.Spacer(4),
+					ui.Text("  func main() {"),
+					ui.Text("    // ..."),
+					ui.Text("  }"),
+				)),
+				ui.Padding(ui.UniformInsets(8), ui.Column(
+					ui.Row(ui.Icon(icons.Play), ui.Text(" Terminal")),
+					ui.Spacer(4),
+					ui.Text("  $ go run ."),
+				)),
+				m.SplitNested2,
+				func(r float32) { app.Send(SetSplitNested2Msg{r}) },
+				ui.WithSplitAxis(ui.AxisColumn),
+			),
+			m.SplitNested1,
+			func(r float32) { app.Send(SetSplitNested1Msg{r}) },
+		)),
+
+		// 4. Three-column layout
+		ui.Spacer(12),
+		ui.Text("Three columns (nested horizontal):"),
+		ui.Spacer(4),
+		ui.SizedBox(0, 120, ui.SplitView(
+			ui.Padding(ui.UniformInsets(8), ui.Column(
+				ui.TextStyled("Nav", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				ui.Text("Home"),
+				ui.Text("Settings"),
+			)),
+			ui.SplitView(
+				ui.Padding(ui.UniformInsets(8), ui.Column(
+					ui.TextStyled("Content", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+					ui.Text("Main area"),
+				)),
+				ui.Padding(ui.UniformInsets(8), ui.Column(
+					ui.TextStyled("Details", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+					ui.Text("Inspector"),
+				)),
+				m.SplitThreeColRight,
+				func(r float32) { app.Send(SetSplitThreeColRightMsg{r}) },
+			),
+			m.SplitThreeColLeft,
+			func(r float32) { app.Send(SetSplitThreeColLeftMsg{r}) },
+		)),
+
+		// 5. Fixed (non-draggable)
+		ui.Spacer(12),
+		ui.Text("Fixed split (no drag — nil onResize):"),
+		ui.Spacer(4),
+		ui.SizedBox(0, 80, ui.SplitView(
+			ui.Padding(ui.UniformInsets(8), ui.Text("Fixed left (30%)")),
+			ui.Padding(ui.UniformInsets(8), ui.Text("Fixed right (70%)")),
+			0.3,
+			nil,
+		)),
 	)
 }
 
@@ -1190,20 +1342,27 @@ func subModelsSection(m Model) ui.Element {
 
 func main() {
 	initial := Model{
-		Dark:           true,
-		RadioChoice:    "alpha",
-		SliderVal:      0.5,
-		Progress:       0.0,
-		SelectVal:      "Option 1",
-		Scroll:         &ui.ScrollState{},
-		ToggleAnim:     ui.NewToggleState(),
-		NavTree:        ui.NewTreeState(),
-		ActiveSection:  "typography",
-		VListScroll:    &ui.ScrollState{},
-		DemoTree:       ui.NewTreeState(),
-		AccordionState: ui.NewAccordionState(),
-		MenuBarState:   ui.NewMenuBarState(),
-		KineticScroll:  ui.NewKineticScroll(theme.Default.Tokens().Scroll),
+		Dark:               true,
+		RadioChoice:        "alpha",
+		SliderVal:          0.5,
+		Progress:           0.0,
+		SelectVal:          "Option 1",
+		Scroll:             &ui.ScrollState{},
+		ToggleAnim:         ui.NewToggleState(),
+		NavTree:            ui.NewTreeState(),
+		ActiveSection:      "typography",
+		VListScroll:        &ui.ScrollState{},
+		DemoTree:           ui.NewTreeState(),
+		AccordionState:     ui.NewAccordionState(),
+		MenuBarState:       ui.NewMenuBarState(),
+		KineticScroll:      ui.NewKineticScroll(theme.Default.Tokens().Scroll),
+		NavSplitRatio:      0.25,
+		SplitHorizontal:    0.5,
+		SplitVertical:      0.5,
+		SplitNested1:       0.25,
+		SplitNested2:       0.65,
+		SplitThreeColLeft:  0.2,
+		SplitThreeColRight: 0.5,
 	}
 
 	// Global handler that logs key events (Phase 1: §2.8).

@@ -6,7 +6,9 @@
       "Bash(go test:*)",
       "Bash(go vet:*)",
       "Bash(wc -l /g/golang/lux/ui/*.go)",
-      "Bash(grep -r \"func.*ScrollView\\\\|type.*ScrollView\\\\|func layoutScroll\" /g/golang/lux/ui --include=*.go)"
+      "Bash(grep -r \"func.*ScrollView\\\\|type.*ScrollView\\\\|func layoutScroll\" /g/golang/lux/ui --include=*.go)",
+      "Bash(grep:*)",
+      "Bash(ls -la /g/golang/lux/ui/*.go)"
     ]
   }
 }

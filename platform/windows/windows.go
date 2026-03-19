@@ -43,6 +43,17 @@ const (
 	pmRemove      = 0x0001
 	swShowDefault = 10
 	idcArrow      = 32512
+	idcIBeam      = 32513
+	idcCross      = 32515
+	idcHand       = 32649
+	idcSizeNS     = 32645
+	idcSizeEW     = 32644
+	idcSizeNESW   = 32643
+	idcSizeNWSE   = 32642
+	idcSizeAll    = 32646
+	idcNo         = 32648
+	idcWait       = 32514
+	idcAppStarting = 32650
 	colorWindow   = 5
 )
 
@@ -56,6 +67,7 @@ var (
 	procDispatchMessage = user32.NewProc("DispatchMessageW")
 	procGetClientRect   = user32.NewProc("GetClientRect")
 	procLoadCursorW     = user32.NewProc("LoadCursorW")
+	procSetCursor       = user32.NewProc("SetCursor")
 	procPeekMessageW    = user32.NewProc("PeekMessageW")
 	procPostQuitMessage = user32.NewProc("PostQuitMessage")
 	procRegisterClassEx = user32.NewProc("RegisterClassExW")
@@ -84,6 +96,8 @@ type Platform struct {
 	config      platform.Config
 	callbacks   platform.Callbacks
 	shouldClose bool
+	cursorKind  input.CursorKind
+	cursors     map[input.CursorKind]uintptr
 }
 
 // New creates a new Win32 platform instance.
@@ -231,8 +245,43 @@ func (p *Platform) NativeHandle() uintptr {
 }
 
 // SetCursor changes the system cursor shape (RFC-002 §2.7).
-// TODO: Implement Win32 cursor mapping via SetCursor/LoadCursor.
-func (p *Platform) SetCursor(_ input.CursorKind) {}
+func (p *Platform) SetCursor(kind input.CursorKind) {
+	if kind == p.cursorKind {
+		return
+	}
+	p.cursorKind = kind
+	if p.cursors == nil {
+		p.initCursors()
+	}
+	h, ok := p.cursors[kind]
+	if !ok {
+		h = p.cursors[input.CursorDefault]
+	}
+	procSetCursor.Call(h)
+}
+
+func (p *Platform) initCursors() {
+	load := func(id uintptr) uintptr {
+		h, _, _ := procLoadCursorW.Call(0, id)
+		return h
+	}
+	p.cursors = map[input.CursorKind]uintptr{
+		input.CursorDefault:    load(idcArrow),
+		input.CursorText:       load(idcIBeam),
+		input.CursorPointer:    load(idcHand),
+		input.CursorCrosshair:  load(idcCross),
+		input.CursorMove:       load(idcSizeAll),
+		input.CursorResizeNS:   load(idcSizeNS),
+		input.CursorResizeEW:   load(idcSizeEW),
+		input.CursorResizeNESW: load(idcSizeNESW),
+		input.CursorResizeNWSE: load(idcSizeNWSE),
+		input.CursorNotAllowed: load(idcNo),
+		input.CursorWait:       load(idcWait),
+		input.CursorProgress:   load(idcAppStarting),
+		input.CursorGrab:       load(idcHand),
+		input.CursorGrabbing:   load(idcHand),
+	}
+}
 
 func ensureWindowClass() error {
 	registerClassOnce.Do(func() {

@@ -186,9 +186,20 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 		}
 	}
 
-	// Legacy bitmap path.
-	if c.isClipped(origin.X, origin.Y, style.Size*float32(len(txt)), style.Size) {
+	// Legacy bitmap path — strict clip-cull (no per-pixel clipping available).
+	approxW := style.Size * float32(len(txt))
+	if c.isClipped(origin.X, origin.Y, approxW, style.Size) {
 		return
+	}
+	// Skip glyphs whose top edge is at or below the clip bottom.
+	// Legacy glyphs can't be pixel-clipped, so we cull runs that start
+	// outside the visible region. Runs that partially overlap are kept
+	// (minor bleed at the boundary is acceptable for the legacy path).
+	if len(c.clips) > 0 {
+		clip := c.clips[len(c.clips)-1]
+		if origin.Y >= clip.Y+clip.H || origin.Y+style.Size <= clip.Y {
+			return
+		}
 	}
 	scale := text.BitmapScale(style.Size)
 	glyph := draw.DrawGlyph{X: int(origin.X), Y: int(origin.Y), Scale: scale, Text: txt, Color: color}
@@ -369,6 +380,11 @@ func (c *SceneCanvas) DrawShadow(_ draw.Rect, _ draw.Shadow) {}
 // ── Clipping & Transform ─────────────────────────────────────────
 
 func (c *SceneCanvas) PushClip(r draw.Rect) {
+	// Intersect with the current clip so nested clips accumulate correctly.
+	if len(c.clips) > 0 {
+		parent := c.clips[len(c.clips)-1]
+		r = intersectRect(parent, r)
+	}
 	c.clips = append(c.clips, r)
 }
 
@@ -376,6 +392,37 @@ func (c *SceneCanvas) PopClip() {
 	if len(c.clips) > 0 {
 		c.clips = c.clips[:len(c.clips)-1]
 	}
+}
+
+// intersectRect returns the intersection of two rects (zero-area if disjoint).
+func intersectRect(a, b draw.Rect) draw.Rect {
+	x := max32(a.X, b.X)
+	y := max32(a.Y, b.Y)
+	x2 := min32(a.X+a.W, b.X+b.W)
+	y2 := min32(a.Y+a.H, b.Y+b.H)
+	w := x2 - x
+	h := y2 - y
+	if w < 0 {
+		w = 0
+	}
+	if h < 0 {
+		h = 0
+	}
+	return draw.R(x, y, w, h)
+}
+
+func max32(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min32(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // clipRect returns the current clip rect, or the full canvas if none.

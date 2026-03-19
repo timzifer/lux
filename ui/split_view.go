@@ -118,9 +118,20 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 		secondW := int(secondSize)
 		divX := float32(area.X) + firstSize
 
-		firstArea = bounds{X: area.X, Y: area.Y, W: firstW, H: area.H}
-		secondArea = bounds{X: area.X + firstW + int(divPx), Y: area.Y, W: secondW, H: area.H}
-		divRect = draw.R(divX, float32(area.Y), divPx, float32(area.H))
+		// Measure children to determine actual height.
+		nc := nullCanvas{delegate: canvas}
+		m1 := layoutElement(node.First, bounds{X: area.X, Y: area.Y, W: firstW, H: area.H}, nc, th, tokens, nil, nil, nil)
+		m2 := layoutElement(node.Second, bounds{X: area.X + firstW + int(divPx), Y: area.Y, W: secondW, H: area.H}, nc, th, tokens, nil, nil, nil)
+		paneH := max(m1.H, m2.H)
+		if paneH <= 0 {
+			paneH = area.H // children have no intrinsic height — use available space
+		} else if paneH > area.H {
+			paneH = area.H
+		}
+
+		firstArea = bounds{X: area.X, Y: area.Y, W: firstW, H: paneH}
+		secondArea = bounds{X: area.X + firstW + int(divPx), Y: area.Y, W: secondW, H: paneH}
+		divRect = draw.R(divX, float32(area.Y), divPx, float32(paneH))
 	} else {
 		firstH := int(firstSize)
 		secondH := int(secondSize)
@@ -131,8 +142,10 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 		divRect = draw.R(float32(area.X), divY, float32(area.W), divPx)
 	}
 
-	// Layout first child.
-	layoutElement(node.First, firstArea, canvas, th, tokens, ix, overlays, focus)
+	// Layout first child (clipped to its pane).
+	canvas.PushClip(draw.R(float32(firstArea.X), float32(firstArea.Y), float32(firstArea.W), float32(firstArea.H)))
+	firstBounds := layoutElement(node.First, firstArea, canvas, th, tokens, ix, overlays, focus)
+	canvas.PopClip()
 
 	// Draw divider line (centered within the drag area).
 	lineColor := tokens.Colors.Stroke.Divider
@@ -144,8 +157,10 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 		canvas.FillRect(draw.R(divRect.X, lineY, divRect.W, splitDividerLine), draw.SolidPaint(lineColor))
 	}
 
-	// Layout second child.
-	layoutElement(node.Second, secondArea, canvas, th, tokens, ix, overlays, focus)
+	// Layout second child (clipped to its pane).
+	canvas.PushClip(draw.R(float32(secondArea.X), float32(secondArea.Y), float32(secondArea.W), float32(secondArea.H)))
+	secondBounds := layoutElement(node.Second, secondArea, canvas, th, tokens, ix, overlays, focus)
+	canvas.PopClip()
 
 	// Register drag target for divider.
 	if ix != nil && ix.hitMap != nil && node.OnResize != nil {
@@ -182,5 +197,14 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 		})
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: area.W, H: area.H}
+	// Compute actual size from children.
+	var resultW, resultH int
+	if horizontal {
+		resultW = area.W
+		resultH = max(firstBounds.H, secondBounds.H)
+	} else {
+		resultW = max(firstBounds.W, secondBounds.W)
+		resultH = int(firstSize) + int(divPx) + int(secondSize)
+	}
+	return bounds{X: area.X, Y: area.Y, W: resultW, H: resultH}
 }
