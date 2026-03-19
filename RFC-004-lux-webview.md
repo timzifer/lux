@@ -1,4 +1,4 @@
-# RFC-003 — lux/surface/webview: Browser-Engine-Integration via Surface-Slots
+# RFC-004 — lux/surface/webview: Browser-Engine-Integration via Surface-Slots
 
 **Repository:** `github.com/timzifer/lux`
 
