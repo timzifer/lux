@@ -138,7 +138,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var hitMap hit.Map
 	var hoverState ui.HoverState
 	var mouseX, mouseY float32
-	var dragTarget *hit.Target // active drag target (non-nil while dragging)
+	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
 	var currentCursor input.CursorKind
 	var dynamicHandlers []globalHandlerEntry
 
@@ -400,7 +400,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 						if target.OnClickAt != nil {
 							target.OnClickAt(x, y)
 							if target.Draggable {
-								dragTarget = target
+								dragCallback = target.OnClickAt
 							}
 						} else if target.OnClick != nil {
 							target.OnClick()
@@ -408,7 +408,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					}
 				} else {
 					// Release ends any active drag.
-					dragTarget = nil
+					dragCallback = nil
 				}
 			}
 		},
@@ -418,8 +418,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			mouseY = y
 			Send(input.MouseMsg{X: x, Y: y, Action: input.MouseMove})
 			// Continue firing positional callback while dragging.
-			if dragTarget != nil && dragTarget.OnClickAt != nil {
-				dragTarget.OnClickAt(x, y)
+			if dragCallback != nil {
+				dragCallback(x, y)
 			}
 			// Update cursor based on hovered hit target (RFC-002 §2.7).
 			newCursor := input.CursorDefault

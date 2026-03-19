@@ -30,8 +30,11 @@ const (
 	wmQuit         = 0x0012
 	wmMouseMove    = 0x0200
 	wmLButtonDown  = 0x0201
+	wmLButtonUp    = 0x0202
 	wmRButtonDown  = 0x0204
+	wmRButtonUp    = 0x0205
 	wmMButtonDown  = 0x0207
+	wmMButtonUp    = 0x0208
 	wmMouseWheel   = 0x020A
 	wmKeyDown      = 0x0100
 	wmKeyUp        = 0x0101
@@ -287,6 +290,19 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 					button = 2
 				}
 				p.callbacks.OnMouseButton(x, y, button, true)
+			}
+			return 0
+		case wmLButtonUp, wmRButtonUp, wmMButtonUp:
+			if p.callbacks.OnMouseButton != nil {
+				x := float32(int16(lParam & 0xFFFF))
+				y := float32(int16((lParam >> 16) & 0xFFFF))
+				button := 0
+				if msg == wmRButtonUp {
+					button = 1
+				} else if msg == wmMButtonUp {
+					button = 2
+				}
+				p.callbacks.OnMouseButton(x, y, button, false)
 			}
 			return 0
 		case wmMouseWheel:
