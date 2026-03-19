@@ -636,6 +636,23 @@ func (selectElement) isElement() {}
 
 // widgetElement wraps a Widget for embedding in element trees.
 // It is expanded by the Reconciler before layout.
+// themedElement overrides the theme for its child subtree (scoped theme).
+// The Reconciler replaces the active theme before resolving children,
+// so all descendants inherit the overridden tokens and draw functions.
+type themedElement struct {
+	Theme    theme.Theme
+	Children []Element
+}
+
+func (themedElement) isElement() {}
+
+// Themed creates a scoped theme override. All children inherit the given
+// theme instead of the ambient one. Combine with theme.Override() to
+// create partial overrides (e.g. danger-colored buttons).
+func Themed(th theme.Theme, children ...Element) Element {
+	return themedElement{Theme: th, Children: children}
+}
+
 type widgetElement struct {
 	W   Widget
 	Key string

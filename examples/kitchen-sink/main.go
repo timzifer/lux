@@ -25,7 +25,7 @@ var sectionIDs = []string{
 	"typography", "buttons", "form-controls", "range-progress",
 	"selection", "layout", "rich-text", "virtual-list", "tree",
 	"cards", "tabs", "accordion", "badges-chips", "menus",
-	"shortcuts", "overlays", "canvas-paints",
+	"shortcuts", "overlays", "canvas-paints", "scoped-themes",
 }
 
 func sectionLabel(id string) string {
@@ -64,6 +64,8 @@ func sectionLabel(id string) string {
 		return "Overlays"
 	case "canvas-paints":
 		return "Canvas & Paints"
+	case "scoped-themes":
+		return "Scoped Themes"
 	default:
 		return id
 	}
@@ -271,6 +273,8 @@ func sectionContent(m Model) ui.Element {
 		return overlaysSection(m)
 	case "canvas-paints":
 		return canvasPaintsSection()
+	case "scoped-themes":
+		return scopedThemesSection()
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -840,6 +844,115 @@ func canvasPaintsSection() ui.Element {
 		ui.Text("  CachedTheme wraps Theme with lazy resolution"),
 		ui.Text("  Auto-invalidation on SetThemeMsg / SetDarkModeMsg"),
 		ui.Text("  Warm-up before first frame in app.Run"),
+	)
+}
+
+// ── Scoped Themes Section ─────────────────────────────────────────
+
+// Pre-built theme overrides for the scoped-themes demo.
+var (
+	dangerTheme = theme.Override(theme.Default, theme.OverrideSpec{
+		Colors: &theme.ColorScheme{
+			Surface: theme.Default.Tokens().Colors.Surface,
+			Accent: theme.AccentColors{
+				Primary:         draw.Hex("#dc2626"), // Red-600
+				PrimaryContrast: draw.Hex("#ffffff"),
+				Secondary:       draw.Hex("#f87171"), // Red-400
+			},
+			Stroke: theme.Default.Tokens().Colors.Stroke,
+			Text:   theme.Default.Tokens().Colors.Text,
+			Status: theme.Default.Tokens().Colors.Status,
+		},
+	})
+
+	successTheme = theme.Override(theme.Default, theme.OverrideSpec{
+		Colors: &theme.ColorScheme{
+			Surface: theme.Default.Tokens().Colors.Surface,
+			Accent: theme.AccentColors{
+				Primary:         draw.Hex("#16a34a"), // Green-600
+				PrimaryContrast: draw.Hex("#ffffff"),
+				Secondary:       draw.Hex("#4ade80"), // Green-400
+			},
+			Stroke: theme.Default.Tokens().Colors.Stroke,
+			Text:   theme.Default.Tokens().Colors.Text,
+			Status: theme.Default.Tokens().Colors.Status,
+		},
+	})
+
+	warningTheme = theme.Override(theme.Default, theme.OverrideSpec{
+		Colors: &theme.ColorScheme{
+			Surface: theme.Default.Tokens().Colors.Surface,
+			Accent: theme.AccentColors{
+				Primary:         draw.Hex("#d97706"), // Amber-600
+				PrimaryContrast: draw.Hex("#ffffff"),
+				Secondary:       draw.Hex("#fbbf24"), // Amber-400
+			},
+			Stroke: theme.Default.Tokens().Colors.Stroke,
+			Text:   theme.Default.Tokens().Colors.Text,
+			Status: theme.Default.Tokens().Colors.Status,
+		},
+	})
+)
+
+func scopedThemesSection() ui.Element {
+	return ui.Column(
+		sectionHeader("Scoped Themes"),
+		ui.Text("ui.Themed() overrides the theme for a subtree."),
+		ui.Text("Buttons below inherit their accent color from scoped themes:"),
+		ui.Spacer(12),
+
+		// Default (no override)
+		ui.Text("Default theme:"),
+		ui.Spacer(4),
+		ui.Row(
+			ui.ButtonText("Save", nil),
+			ui.ButtonText("Submit", nil),
+		),
+		ui.Spacer(12),
+
+		// Danger theme
+		ui.Text("Danger theme (red accent):"),
+		ui.Spacer(4),
+		ui.Themed(dangerTheme,
+			ui.Row(
+				ui.ButtonText("Delete", nil),
+				ui.ButtonText("Reset All", nil),
+			),
+		),
+		ui.Spacer(12),
+
+		// Success theme
+		ui.Text("Success theme (green accent):"),
+		ui.Spacer(4),
+		ui.Themed(successTheme,
+			ui.Row(
+				ui.ButtonText("Confirm", nil),
+				ui.ButtonText("Approve", nil),
+			),
+		),
+		ui.Spacer(12),
+
+		// Warning theme
+		ui.Text("Warning theme (amber accent):"),
+		ui.Spacer(4),
+		ui.Themed(warningTheme,
+			ui.Row(
+				ui.ButtonText("Proceed", nil),
+				ui.ButtonText("Override", nil),
+			),
+		),
+		ui.Spacer(12),
+
+		// Mixed: default and themed side by side
+		ui.Text("Mixed — default and danger in one row:"),
+		ui.Spacer(4),
+		ui.Row(
+			ui.ButtonText("Normal", nil),
+			ui.Themed(dangerTheme,
+				ui.ButtonText("Danger", nil),
+			),
+			ui.ButtonText("Normal", nil),
+		),
 	)
 }
 
