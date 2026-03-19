@@ -15,8 +15,10 @@ import (
 
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/app"
+	"github.com/timzifer/lux/dialog"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/icons"
@@ -39,6 +41,8 @@ var sectionIDs = []string{
 	"platform-info", "window-controls", "clipboard", "gpu-backend",
 	// Phase 6
 	"surfaces",
+	// Phase 7 — Dialogs
+	"dialogs",
 }
 
 func sectionLabel(id string) string {
@@ -119,6 +123,9 @@ func sectionLabel(id string) string {
 	// Phase 6
 	case "surfaces":
 		return "Surfaces"
+	// Phase 7
+	case "dialogs":
+		return "Dialogs"
 	default:
 		return id
 	}
@@ -197,6 +204,13 @@ type Model struct {
 	IsFullscreen  bool
 	// Phase 6 — Surfaces
 	Pyramid *PyramidSurface
+	// Phase 7 — Dialogs
+	ShowMsgDialog     bool
+	ShowConfirmDialog bool
+	ShowInputDialog   bool
+	InputDialogValue  string
+	DialogResult      string
+	DialogMsgKind     platform.DialogKind
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -254,6 +268,15 @@ type CopyToClipboardMsg struct{}
 type PasteFromClipboardMsg struct{}
 type ClipboardResultMsg struct{ Text string }
 type SetClipboardTextMsg struct{ Text string }
+
+// Phase 7 — Dialog messages
+type ShowMsgDialogMsg struct{ Kind platform.DialogKind }
+type ShowConfirmDialogMsg struct{}
+type ShowInputDialogMsg struct{}
+type DismissDialogMsg struct{}
+type DialogConfirmedMsg struct{}
+type DialogInputChangedMsg struct{ Value string }
+type NativeConfirmMsg struct{}
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -463,6 +486,33 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 	case SetClipboardTextMsg:
 		m.ClipboardText = msg.Text
 
+	// Phase 7 — Dialogs
+	case ShowMsgDialogMsg:
+		m.ShowMsgDialog = true
+		m.DialogMsgKind = msg.Kind
+	case ShowConfirmDialogMsg:
+		m.ShowConfirmDialog = true
+	case ShowInputDialogMsg:
+		m.ShowInputDialog = true
+		m.InputDialogValue = ""
+	case DismissDialogMsg:
+		m.ShowMsgDialog = false
+		m.ShowConfirmDialog = false
+		m.ShowInputDialog = false
+	case DialogConfirmedMsg:
+		m.ShowConfirmDialog = false
+		m.ShowInputDialog = false
+		m.DialogResult = fmt.Sprintf("Confirmed (input: %q)", m.InputDialogValue)
+	case DialogInputChangedMsg:
+		m.InputDialogValue = msg.Value
+	case NativeConfirmMsg:
+		return m, dialog.ShowConfirm("Native Confirm", "Do you want to proceed?")
+	case dialog.ConfirmResultMsg:
+		m.DialogResult = fmt.Sprintf("Native: confirmed=%v", msg.Confirmed)
+	case dialog.ShowFallbackConfirmMsg:
+		m.ShowConfirmDialog = true
+		m.DialogResult = "(native unavailable, using fallback)"
+
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
 		m.AnimTime += dt
@@ -624,6 +674,9 @@ func sectionContent(m Model) ui.Element {
 	// Phase 6
 	case "surfaces":
 		return surfacesSection(m.Pyramid)
+	// Phase 7
+	case "dialogs":
+		return dialogsSection(m)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -2089,6 +2142,72 @@ func surfacesSection(pyramid *PyramidSurface) ui.Element {
 		ui.Text("  Mouse/Key events in surface area → SurfaceMouseMsg/SurfaceKeyMsg"),
 		ui.Text("  Routed via SurfaceProvider.HandleMsg()"),
 	)
+}
+
+// ── Dialogs Section (Phase 7) ────────────────────────────────────
+
+func dialogsSection(m Model) ui.Element {
+	children := []ui.Element{
+		sectionHeader("Modal Dialogs"),
+		ui.Text("Framework-rendered dialog overlays with backdrop scrim:"),
+		ui.Spacer(8),
+		ui.Row(
+			ui.ButtonText("Info", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogInfo}) }),
+			ui.Spacer(8),
+			ui.ButtonText("Warning", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogWarning}) }),
+			ui.Spacer(8),
+			ui.ButtonText("Error", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogError}) }),
+		),
+		ui.Spacer(8),
+		ui.Row(
+			ui.ButtonText("Confirm", func() { app.Send(ShowConfirmDialogMsg{}) }),
+			ui.Spacer(8),
+			ui.ButtonText("Input", func() { app.Send(ShowInputDialogMsg{}) }),
+			ui.Spacer(8),
+			ui.ButtonOutlinedText("Native Confirm", func() { app.Send(NativeConfirmMsg{}) }),
+		),
+	}
+
+	if m.DialogResult != "" {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text(fmt.Sprintf("Result: %s", m.DialogResult)),
+		)
+	}
+
+	// Render active dialog overlays.
+	if m.ShowMsgDialog {
+		children = append(children, ui.MessageDialog(
+			"demo-msg-dialog",
+			"Message",
+			"This is a sample message dialog.",
+			m.DialogMsgKind,
+			func() { app.Send(DismissDialogMsg{}) },
+		))
+	}
+	if m.ShowConfirmDialog {
+		children = append(children, ui.ConfirmDialog(
+			"demo-confirm-dialog",
+			"Confirm Action",
+			"Are you sure you want to proceed?",
+			func() { app.Send(DialogConfirmedMsg{}) },
+			func() { app.Send(DismissDialogMsg{}) },
+		))
+	}
+	if m.ShowInputDialog {
+		children = append(children, ui.InputDialog(
+			"demo-input-dialog",
+			"Enter Value",
+			"Please provide a value:",
+			m.InputDialogValue,
+			"Type here...",
+			func(v string) { app.Send(DialogInputChangedMsg{Value: v}) },
+			func() { app.Send(DialogConfirmedMsg{}) },
+			func() { app.Send(DismissDialogMsg{}) },
+		))
+	}
+
+	return ui.Column(children...)
 }
 
 // ── Main ─────────────────────────────────────────────────────────

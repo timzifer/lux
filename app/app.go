@@ -231,6 +231,18 @@ func WithFullscreen(fullscreen bool) Option {
 // activePlatform holds the platform for clipboard access from package-level functions.
 var activePlatform platform.Platform
 
+// ActivePlatform returns the active platform backend.
+// Used by the dialog package to detect NativeDialogProvider support.
+func ActivePlatform() platform.Platform {
+	return activePlatform
+}
+
+// SetActivePlatformForTest sets the active platform for testing purposes.
+// This should only be used in tests.
+func SetActivePlatformForTest(p platform.Platform) {
+	activePlatform = p
+}
+
 // SetClipboard sets the system clipboard text. Thread-safe.
 func SetClipboard(text string) error {
 	if activePlatform != nil {

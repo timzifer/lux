@@ -63,6 +63,10 @@ type Overlay struct {
 	// OnDismiss is called when a dismissable overlay's backdrop is clicked.
 	// Required for dismiss-on-click-outside to work when Dismissable is true.
 	OnDismiss func()
+
+	// Backdrop draws a semi-transparent scrim behind the overlay when true.
+	// Used by modal dialogs to dim the background content.
+	Backdrop bool
 }
 
 // isElement marks Overlay as an Element.
