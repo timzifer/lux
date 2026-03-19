@@ -120,3 +120,31 @@ void main() {
     fragColor = vec4(vColor.rgb, vColor.a * alpha);
 }
 ` + "\x00"
+
+// GLSL 330 core shaders for surface texture blitting (RFC §8).
+
+const surfaceVertexShader = `#version 330 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aUV;
+
+uniform mat4 uProj;
+
+out vec2 vUV;
+
+void main() {
+    gl_Position = uProj * vec4(aPos, 0.0, 1.0);
+    vUV = aUV;
+}
+` + "\x00"
+
+const surfaceFragmentShader = `#version 330 core
+in vec2 vUV;
+
+uniform sampler2D uTex;
+
+out vec4 fragColor;
+
+void main() {
+    fragColor = texture(uTex, vUV);
+}
+` + "\x00"

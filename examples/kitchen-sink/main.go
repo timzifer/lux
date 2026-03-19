@@ -195,6 +195,8 @@ type Model struct {
 	// Phase 5 — Platform Extension
 	ClipboardText string
 	IsFullscreen  bool
+	// Phase 6 — Surfaces
+	Pyramid *PyramidSurface
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -467,6 +469,9 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.Progress = float32(math.Mod(m.AnimTime*0.15, 1.0))
 		m.ToggleAnim.Tick(msg.DeltaTime)
 		m.NavTree.Tick(msg.DeltaTime)
+		if m.Pyramid != nil {
+			m.Pyramid.Tick(msg.DeltaTime)
+		}
 		m.DemoTree.Tick(msg.DeltaTime)
 		if m.KineticScroll != nil {
 			m.KineticScroll.Tick(msg.DeltaTime)
@@ -618,7 +623,7 @@ func sectionContent(m Model) ui.Element {
 		return gpuBackendSection()
 	// Phase 6
 	case "surfaces":
-		return surfacesSection()
+		return surfacesSection(m.Pyramid)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -2051,7 +2056,7 @@ func gpuBackendSection() ui.Element {
 
 // ── Phase 6 Section Views ──────────────────────────────────────────
 
-func surfacesSection() ui.Element {
+func surfacesSection(pyramid *PyramidSurface) ui.Element {
 	return ui.Column(
 		sectionHeader("External Surfaces (Phase 6)"),
 		ui.Text("Surface Slots — RFC §8: Externe Surfaces"),
@@ -2074,9 +2079,9 @@ func surfacesSection() ui.Element {
 		ui.Text("  • Fallback: OSR → CPU-Copy → Upload"),
 		ui.Spacer(12),
 
-		ui.Text("Demo Surface (nil provider — placeholder):"),
+		ui.Text("OpenGL Pyramid (drag to rotate):"),
 		ui.Spacer(4),
-		ui.Surface(1, nil, 300, 100),
+		ui.Surface(1, pyramid, 400, 300),
 		ui.Spacer(12),
 
 		ui.Text("Input Routing:"),
@@ -2116,6 +2121,7 @@ func main() {
 		MotionPreset:   "standard",
 		LayoutGap:      30,
 		CurrentLocale:  "en",
+		Pyramid:        NewPyramidSurface(),
 	}
 	initial.FadeOpacity.SetImmediate(1.0)
 
