@@ -93,6 +93,7 @@ type options struct {
 	height          int
 	maxFrameDelta   time.Duration
 	theme           theme.Theme
+	locale          string // BCP 47 language tag (RFC-003 §3.8)
 	platformFactory func() platform.Platform
 	rendererFactory func() gpu.Renderer
 	shortcuts       []shortcutEntry

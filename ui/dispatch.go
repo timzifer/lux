@@ -31,12 +31,14 @@ type EventDispatcher struct {
 	nextBounds map[UID]draw.Rect
 
 	// Per-frame raw event buffers.
-	keyEvents    []input.KeyMsg
-	charEvents   []input.CharMsg
-	textEvents   []input.TextInputMsg
-	mouseEvents  []input.MouseMsg
-	scrollEvents []input.ScrollMsg
-	touchEvents  []input.TouchMsg
+	keyEvents        []input.KeyMsg
+	charEvents       []input.CharMsg
+	textEvents       []input.TextInputMsg
+	mouseEvents      []input.MouseMsg
+	scrollEvents     []input.ScrollMsg
+	touchEvents      []input.TouchMsg
+	imeComposeEvents []input.IMEComposeMsg
+	imeCommitEvents  []input.IMECommitMsg
 
 	// Computed per-UID event buffers (populated by Dispatch).
 	events map[UID][]InputEvent
@@ -84,6 +86,10 @@ func (d *EventDispatcher) Collect(msg any) {
 		d.scrollEvents = append(d.scrollEvents, m)
 	case input.TouchMsg:
 		d.touchEvents = append(d.touchEvents, m)
+	case input.IMEComposeMsg:
+		d.imeComposeEvents = append(d.imeComposeEvents, m)
+	case input.IMECommitMsg:
+		d.imeCommitEvents = append(d.imeCommitEvents, m)
 	}
 }
 
@@ -119,6 +125,12 @@ func (d *EventDispatcher) Dispatch() {
 		}
 		for i := range d.textEvents {
 			d.appendEvent(focusedUID, TextInputEvent(d.textEvents[i]))
+		}
+		for i := range d.imeComposeEvents {
+			d.appendEvent(focusedUID, IMEComposeEvent(d.imeComposeEvents[i]))
+		}
+		for i := range d.imeCommitEvents {
+			d.appendEvent(focusedUID, IMECommitEvent(d.imeCommitEvents[i]))
 		}
 	}
 
@@ -186,6 +198,8 @@ func (d *EventDispatcher) ResetEvents() {
 	d.mouseEvents = d.mouseEvents[:0]
 	d.scrollEvents = d.scrollEvents[:0]
 	d.touchEvents = d.touchEvents[:0]
+	d.imeComposeEvents = d.imeComposeEvents[:0]
+	d.imeCommitEvents = d.imeCommitEvents[:0]
 
 	for uid := range d.focusGained {
 		delete(d.focusGained, uid)

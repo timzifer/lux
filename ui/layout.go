@@ -37,6 +37,10 @@ type LayoutCtx struct {
 
 	// Theme for layout-relevant tokens (spacing, etc.)
 	Theme theme.Theme
+
+	// Direction is the inline layout direction (LTR or RTL) propagated
+	// from the application locale (RFC-002 §4.6).
+	Direction draw.LayoutDirection
 }
 
 // CustomLayout creates an Element that uses a user-provided Layout

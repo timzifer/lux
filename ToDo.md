@@ -204,29 +204,29 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ---
 
-## Phase 4b — i18n & Layout-Spiegelung
+## Phase 4b — i18n & Layout-Spiegelung ✅
 
-### 4b.1 RTL-Layout-Spiegelung (RFC-002 §4.6)
-- [ ] `Insets` auf `Start`/`End` statt `Left`/`Right` umstellen
-- [ ] `LayoutDirection` (LTR/RTL) in `LayoutCtx` propagieren
-- [ ] `FlexRow` bei RTL automatisch spiegeln
-- [ ] `JustifyStart`/`AlignStart` bei RTL korrekt auflösen
-- [ ] Convenience-Konstruktoren: `InlineInsets`, `BlockInsets`
+### 4b.1 RTL-Layout-Spiegelung (RFC-002 §4.6) ✅
+- [x] `Insets` auf `Start`/`End` statt `Left`/`Right` umstellen
+- [x] `LayoutDirection` (LTR/RTL) in `LayoutCtx` propagieren
+- [x] `FlexRow` bei RTL automatisch spiegeln
+- [x] `JustifyStart`/`AlignStart` bei RTL korrekt auflösen
+- [x] Convenience-Konstruktoren: `InlineInsets`, `BlockInsets`, `LogicalInsets`
 - **Abhängig von:** nichts (API-Design-Entscheidung — je früher desto besser)
 - **Hinweis:** Nachrüsten ist extrem teuer — betrifft die gesamte Layout-API
 
-### 4b.2 Locale-Propagation (RFC-003 §3.8)
-- [ ] `App.Locale` Feld (`language.Tag`, BCP 47)
-- [ ] `app.WithLocale()` Option + `SetLocaleMsg` für Laufzeit-Wechsel
-- [ ] Locale → `LayoutDirection` Ableitung (Arabisch/Hebräisch → RTL)
-- [ ] Layout-Invalidierung bei Locale-Wechsel
+### 4b.2 Locale-Propagation (RFC-003 §3.8) ✅
+- [x] `App.Locale` Feld (BCP 47 string)
+- [x] `app.WithLocale()` Option + `SetLocaleMsg` für Laufzeit-Wechsel
+- [x] Locale → `LayoutDirection` Ableitung (Arabisch/Hebräisch → RTL)
+- [x] Layout-Invalidierung bei Locale-Wechsel
 - **Abhängig von:** 4b.1
 
-### 4b.3 IME Compose-Window (RFC-002 §2.2)
-- [ ] `IMEComposeMsg` und `IMECommitMsg` Typen
-- [ ] `Platform.SetIMECursorRect()` für Kandidaten-Fenster-Positionierung
-- [ ] GLFW `glfwSetPreeditCallback` Integration
-- [ ] TextField/RichTextEditor: Kompositions-Text visuell unterscheidbar rendern
+### 4b.3 IME Compose-Window (RFC-002 §2.2) ✅
+- [x] `IMEComposeMsg` und `IMECommitMsg` Typen
+- [x] `Platform.SetIMECursorRect()` für Kandidaten-Fenster-Positionierung
+- [x] GLFW `glfwSetPreeditCallback` Integration (Stub für 3.3, voll ab 3.4)
+- [x] TextField/RichTextEditor: Kompositions-Text visuell unterscheidbar rendern (`InputState.ComposeText`)
 - **Abhängig von:** 0.1 (Input-System)
 
 ---
