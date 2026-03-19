@@ -371,7 +371,15 @@ func (c *SceneCanvas) DrawTextLayout(layout draw.TextLayout, origin draw.Point, 
 
 func (c *SceneCanvas) DrawImage(_ draw.ImageID, _ draw.Rect, _ draw.ImageOptions)       {}
 func (c *SceneCanvas) DrawImageSlice(_ draw.ImageSlice, _ draw.Rect, _ draw.ImageOptions) {}
-func (c *SceneCanvas) DrawTexture(_ draw.TextureID, _ draw.Rect)                          {}
+func (c *SceneCanvas) DrawTexture(tex draw.TextureID, dst draw.Rect) {
+	if c.isClipped(dst.X, dst.Y, dst.W, dst.H) {
+		return
+	}
+	c.scene.Surfaces = append(c.scene.Surfaces, draw.DrawSurface{
+		X: int(dst.X), Y: int(dst.Y), W: int(dst.W), H: int(dst.H),
+		TextureID: tex,
+	})
+}
 
 // ── Shadows ──────────────────────────────────────────────────────
 
