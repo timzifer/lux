@@ -6,7 +6,15 @@ github.com/go-text/typesetting v0.3.4 h1:YYurUOtEb9kGSOz4uE3k4OpBGsp1dDL8+fjCeaF
 github.com/go-text/typesetting v0.3.4/go.mod h1:4qZCQphq4KSgGTAeI0uMEkVbROgfah8BuyF5LRYr7XY=
 github.com/pierrec/msdf v0.0.0-20260126203608-76b1ee18a962 h1:i2dq5gsyG+rydaF2KuSn+VVuoPtIByZ4G+VvU3CV74w=
 github.com/pierrec/msdf v0.0.0-20260126203608-76b1ee18a962/go.mod h1:Ru62drpHXoOpgcFpNJ/KVvrGgA5NXoFvwGTLu33CzOA=
+github.com/zzl/go-com v1.5.0 h1:ANiyOsvP1XfUugoZBIvCbvqh+Ns1DLSJ9lBF1zgHSak=
+github.com/zzl/go-com v1.5.0/go.mod h1:Q0gh9d2jtlY//GbUXVPD+dzc0te32p3cetGM6am2Ooo=
+github.com/zzl/go-webview2 v0.0.0-20230129130204-9df4a7d166d5 h1:Mm+0i/j1ox9c8kdXiD5DVzIjJyeh8P4muSqhBLowDxk=
+github.com/zzl/go-webview2 v0.0.0-20230129130204-9df4a7d166d5/go.mod h1:qAmcqRFYi+H7bJj+KzuQM3Vm453/6c1IqgmvzyUFCXA=
+github.com/zzl/go-win32api/v2 v2.0.1 h1:SHeKZMcYqQNIxbZefuUffM3K+YuJ/WMhd8ZHr40M0OM=
+github.com/zzl/go-win32api/v2 v2.0.1/go.mod h1:doi6ewHPdh9tDmqe837Ro7IwqtB9yE+1fC8suK/Ssj0=
 golang.org/x/image v0.29.0 h1:HcdsyR4Gsuys/Axh0rDEmlBmB68rW1U9BUdB3UVHsas=
 golang.org/x/image v0.29.0/go.mod h1:RVJROnf3SLK8d26OW91j4FrIHGbsJ8QnbEocVTOWQDA=
+golang.org/x/sys v0.0.0-20220330033206-e17cdc41300f h1:rlezHXNlxYWvBCzNses9Dlc7nGFaNMJeqLolcmQSSZY=
+golang.org/x/sys v0.0.0-20220330033206-e17cdc41300f/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/text v0.27.0 h1:4fGWRpyh641NLlecmyl4LOe6yDdfaYNrGb2zdfo4JV4=
 golang.org/x/text v0.27.0/go.mod h1:1D28KMCvyooCX9hBiosv5Tz/+YLxj0j7XhWjpSUF7CU=
