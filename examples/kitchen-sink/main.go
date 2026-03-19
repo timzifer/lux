@@ -152,8 +152,8 @@ type SubCounterDecrMsg struct{}
 
 // subCounterModel defines a SubModel for the embedded counter demo.
 var subCounterModel = app.SubModel[Model, int]{
-	Get:    func(m Model) int { return m.SubCounter },
-	Set:    func(m Model, c int) Model { m.SubCounter = c; return m },
+	Get: func(m Model) int { return m.SubCounter },
+	Set: func(m Model, c int) Model { m.SubCounter = c; return m },
 	Update: func(c int, msg app.Msg) int {
 		switch msg.(type) {
 		case SubCounterIncrMsg:
@@ -271,7 +271,7 @@ func view(m Model) ui.Element {
 	content := ui.ScrollView(sectionContent(m), 500, m.Scroll)
 
 	return ui.Padding(ui.UniformInsets(16), ui.Column(
-		// Split view: nav + content
+		// Nav + content side by side
 		ui.Row(
 			ui.SizedBox(200, 500, nav),
 			ui.Spacer(16),
@@ -362,13 +362,99 @@ func typographySection() ui.Element {
 }
 
 func buttonsSection(m Model) ui.Element {
+	noop := func() {}
 	return ui.Column(
 		sectionHeader("Buttons & Icons"),
+
+		// Counter
 		ui.Text(fmt.Sprintf("Counter: %d", m.Count)),
 		ui.Row(
 			ui.ButtonText("-", func() { app.Send(DecrMsg{}) }),
 			ui.ButtonText("+", func() { app.Send(IncrMsg{}) }),
 		),
+
+		// Filled Buttons
+		ui.Spacer(8),
+		ui.Text("Filled (default):"),
+		ui.Row(
+			ui.ButtonText("Action", noop),
+			ui.ButtonText("Save", noop),
+			ui.Button(ui.Row(ui.Icon(icons.Download), ui.Text("Download")), noop),
+		),
+
+		// Outlined Buttons
+		ui.Spacer(8),
+		ui.Text("Outlined:"),
+		ui.Row(
+			ui.ButtonOutlinedText("Cancel", noop),
+			ui.ButtonOutlinedText("Details", noop),
+			ui.ButtonVariantOf(ui.ButtonOutlined, ui.Row(ui.Icon(icons.Share), ui.Text("Share")), noop),
+		),
+
+		// Text (Ghost) Buttons
+		ui.Spacer(8),
+		ui.Text("Text (chromeless):"),
+		ui.Row(
+			ui.ButtonGhostText("Learn more", noop),
+			ui.ButtonGhostText("Skip", noop),
+			ui.ButtonVariantOf(ui.ButtonGhost, ui.Row(ui.Icon(icons.ArrowRight), ui.Text("Next")), noop),
+		),
+
+		// Tonal Buttons
+		ui.Spacer(8),
+		ui.Text("Tonal:"),
+		ui.Row(
+			ui.ButtonTonalText("Draft", noop),
+			ui.ButtonTonalText("Archive", noop),
+			ui.ButtonVariantOf(ui.ButtonTonal, ui.Row(ui.Icon(icons.Copy), ui.Text("Duplicate")), noop),
+		),
+
+		// Icon Buttons
+		ui.Spacer(8),
+		ui.Text("Icon Buttons:"),
+		ui.Row(
+			ui.IconButton(icons.Heart, noop),
+			ui.IconButton(icons.Star, noop),
+			ui.IconButton(icons.Trash, noop),
+			ui.IconButtonVariant(ui.ButtonOutlined, icons.Pencil, noop),
+			ui.IconButtonVariant(ui.ButtonOutlined, icons.Share, noop),
+			ui.IconButtonVariant(ui.ButtonGhost, icons.DotsThreeVertical, noop),
+			ui.IconButtonVariant(ui.ButtonTonal, icons.Play, noop),
+		),
+
+		// Split Button
+		ui.Spacer(8),
+		ui.Text("Split Button:"),
+		ui.Row(
+			ui.SplitButton("Merge", noop, noop, []ui.SplitButtonItem{
+				{Label: "Merge commit", OnClick: noop},
+				{Label: "Squash and merge", OnClick: noop},
+				{Label: "Rebase and merge", OnClick: noop},
+			}),
+		),
+
+		// Segmented Buttons
+		ui.Spacer(8),
+		ui.Text("Segmented Buttons:"),
+		ui.SegmentedButtons([]ui.SegmentedItem{
+			{Label: "Day", OnClick: noop},
+			{Label: "Week", OnClick: noop},
+			{Label: "Month", OnClick: noop},
+			{Label: "Year", OnClick: noop},
+		}, 1),
+		ui.Spacer(4),
+		ui.SegmentedButtons([]ui.SegmentedItem{
+			{Icon: icons.SortAscending, Label: "Sort", OnClick: noop},
+			{Icon: icons.FunnelSimple, Label: "Filter", OnClick: noop},
+			{Icon: icons.MagnifyingGlass, Label: "Search", OnClick: noop},
+		}, 0),
+		ui.Spacer(4),
+		ui.SegmentedButtons([]ui.SegmentedItem{
+			{Icon: icons.Play, OnClick: noop},
+			{Icon: icons.Pause, OnClick: noop},
+		}, 0),
+
+		// Icons
 		ui.Spacer(8),
 		ui.Text("Icons (Phosphor):"),
 		ui.Row(
@@ -379,6 +465,15 @@ func buttonsSection(m Model) ui.Element {
 			ui.Icon(icons.Eye),
 			ui.Icon(icons.Sun),
 			ui.Icon(icons.Moon),
+		),
+		ui.Row(
+			ui.Icon(icons.Download),
+			ui.Icon(icons.Upload),
+			ui.Icon(icons.Share),
+			ui.Icon(icons.Copy),
+			ui.Icon(icons.Link),
+			ui.Icon(icons.Play),
+			ui.Icon(icons.Pause),
 		),
 	)
 }

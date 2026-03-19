@@ -103,6 +103,14 @@ func (m *Map) AddDrag(bounds draw.Rect, onClick func(x, y float32)) {
 	m.targets = append(m.targets, Target{Bounds: bounds, OnClickAt: onClick, Draggable: true})
 }
 
+// AddDragCursor registers a draggable region with a custom hover cursor.
+func (m *Map) AddDragCursor(bounds draw.Rect, cursor input.CursorKind, onClick func(x, y float32)) {
+	if onClick == nil {
+		return
+	}
+	m.targets = append(m.targets, Target{Bounds: bounds, OnClickAt: onClick, Draggable: true, Cursor: cursor})
+}
+
 // Len returns the number of registered targets.
 func (m *Map) Len() int {
 	return len(m.targets)

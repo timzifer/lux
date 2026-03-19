@@ -2057,6 +2057,12 @@ Diese Grenze explizit zu ziehen verhindert Scope-Creep in der ersten Implementie
 
 ---
 
+---
+
+> **Browser-Engine-Integration:** Siehe [RFC-003 — lux/surface/webview](RFC-003-lux-webview.md) für die vollständige Evaluierung und Spezifikation der Browser-Engine-Integration via Surface-Slots.
+
+---
+
 *RFC-001 — Draft. Feedback und Änderungsvorschläge bitte als Issue gegen dieses Dokument.*
 
 ---

@@ -31,6 +31,25 @@ const (
 	File       = "\uE230"
 	FileText   = "\uE23A"
 
+	// Media
+	Play  = "\uE3CA"
+	Pause = "\uE3A0"
+
+	// Communication / Sharing
+	Share        = "\uE43C"
+	Copy         = "\uE1A6"
+	Download     = "\uE1E2"
+	Upload       = "\uE4BA"
+	Link         = "\uE2DE"
+	EnvelopeSimple = "\uE1F6"
+
+	// Misc
+	DotsThreeVertical = "\uE1D4"
+	FunnelSimple      = "\uE268"
+	SortAscending     = "\uE458"
+	Warning           = "\uE4DA"
+	Info              = "\uE2CC"
+
 	// UI / Symbols
 	Star        = "\uE46A"
 	Heart       = "\uE2A8"

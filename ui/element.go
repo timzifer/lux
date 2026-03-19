@@ -129,14 +129,54 @@ func TextStyled(content string, style draw.TextStyle) Element {
 	return textElement{Content: content, Style: style}
 }
 
-// Button creates a button element with arbitrary Element content and an optional click callback.
+// Button creates a filled button element with arbitrary Element content.
 func Button(content Element, onClick func()) Element {
-	return buttonElement{Content: content, OnClick: onClick}
+	return buttonElement{Content: content, OnClick: onClick, Variant: ButtonFilled}
 }
 
-// ButtonText is a convenience constructor for text-only buttons.
+// ButtonText is a convenience constructor for text-only filled buttons.
 func ButtonText(label string, onClick func()) Element {
-	return buttonElement{Content: textElement{Content: label}, OnClick: onClick}
+	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonFilled}
+}
+
+// ButtonVariantOf creates a button with the given variant and arbitrary content.
+func ButtonVariantOf(variant ButtonVariant, content Element, onClick func()) Element {
+	return buttonElement{Content: content, OnClick: onClick, Variant: variant}
+}
+
+// ButtonOutlinedText creates an outlined button with a text label.
+func ButtonOutlinedText(label string, onClick func()) Element {
+	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonOutlined}
+}
+
+// ButtonGhostText creates a text-only (chromeless) button.
+func ButtonGhostText(label string, onClick func()) Element {
+	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonGhost}
+}
+
+// ButtonTonalText creates a tonal button with a text label.
+func ButtonTonalText(label string, onClick func()) Element {
+	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonTonal}
+}
+
+// IconButton creates a compact icon-only button.
+func IconButton(icon string, onClick func()) Element {
+	return iconButtonElement{Icon: icon, OnClick: onClick, Variant: ButtonFilled}
+}
+
+// IconButtonVariant creates an icon-only button with a specific variant.
+func IconButtonVariant(variant ButtonVariant, icon string, onClick func()) Element {
+	return iconButtonElement{Icon: icon, OnClick: onClick, Variant: variant}
+}
+
+// SplitButton creates a button with a main action and a dropdown menu trigger.
+func SplitButton(label string, onClick func(), onMenu func(), items []SplitButtonItem) Element {
+	return splitButtonElement{Label: label, OnClick: onClick, MenuItems: items, OnMenu: onMenu}
+}
+
+// SegmentedButtons creates a group of connected buttons with one selected.
+func SegmentedButtons(items []SegmentedItem, selected int) Element {
+	return segmentedButtonsElement{Items: items, Selected: selected}
 }
 
 // Column stacks children vertically.
@@ -337,12 +377,65 @@ type textElement struct {
 
 func (textElement) isElement() {}
 
+// ButtonVariant controls the visual style of a button.
+type ButtonVariant int
+
+const (
+	// ButtonFilled is the default prominent button style (accent background).
+	ButtonFilled ButtonVariant = iota
+	// ButtonOutlined renders with a border and transparent background.
+	ButtonOutlined
+	// ButtonGhost renders with no border and transparent background.
+	ButtonGhost
+	// ButtonTonal renders with a tinted, semi-transparent background.
+	ButtonTonal
+)
+
 type buttonElement struct {
 	Content Element
 	OnClick func()
+	Variant ButtonVariant
 }
 
 func (buttonElement) isElement() {}
+
+// SegmentedItem describes one segment in a SegmentedButtons group.
+type SegmentedItem struct {
+	Label   string
+	Icon    string // optional icon (from icons package)
+	OnClick func()
+}
+
+type segmentedButtonsElement struct {
+	Items    []SegmentedItem
+	Selected int
+}
+
+func (segmentedButtonsElement) isElement() {}
+
+// SplitButtonItem describes a dropdown menu entry for SplitButton.
+type SplitButtonItem struct {
+	Label   string
+	OnClick func()
+}
+
+type splitButtonElement struct {
+	Label     string
+	OnClick   func()
+	MenuItems []SplitButtonItem
+	OnMenu    func() // fires when dropdown arrow is clicked
+}
+
+func (splitButtonElement) isElement() {}
+
+type iconButtonElement struct {
+	Icon    string
+	OnClick func()
+	Variant ButtonVariant
+	Size    float32 // 0 = default
+}
+
+func (iconButtonElement) isElement() {}
 
 type boxElement struct {
 	Axis     LayoutAxis
@@ -838,10 +931,13 @@ const (
 	framePadding   = 24
 	columnGap      = 16
 	rowGap         = 12
-	buttonPadX     = 18
-	buttonPadY     = 12
-	buttonMinWidth = 180
-	buttonBorder   = 1
+	buttonPadX      = 18
+	buttonPadY      = 12
+	buttonBorder    = 1
+	iconButtonPad   = 10
+	splitArrowWidth = 36
+	segmentPadX     = 16
+	segmentPadY     = 10
 )
 
 // BuildScene lays out the element tree and paints it to the canvas.
@@ -927,58 +1023,16 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
 	case buttonElement:
-		// Pass 1: measure content via nullCanvas.
-		nc := nullCanvas{delegate: canvas}
-		cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
+		return layoutButton(node, area, canvas, th, tokens, ix, overlays, fs)
 
-		contentW := cb.W
-		contentH := cb.H
-		w := max(buttonMinWidth, contentW+(buttonPadX*2))
-		h := contentH + (buttonPadY * 2)
+	case iconButtonElement:
+		return layoutIconButton(node, area, canvas, tokens, ix)
 
-		// Register hit target and get hover opacity atomically.
-		buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
-		hoverOpacity := ix.RegisterHit(buttonRect, node.OnClick)
+	case splitButtonElement:
+		return layoutSplitButton(node, area, canvas, tokens, ix)
 
-		// Custom theme DrawFunc dispatch (RFC §5.3).
-		if df := th.DrawFunc(theme.WidgetKindButton); df != nil {
-			df(theme.DrawCtx{
-				Canvas:  canvas,
-				Bounds:  buttonRect,
-				Hovered: hoverOpacity > 0,
-			}, tokens, node)
-		} else {
-			// Edge (border)
-			canvas.FillRoundRect(buttonRect,
-				tokens.Radii.Button, draw.SolidPaint(tokens.Colors.Stroke.Border))
-
-			// Fill — blend with hover overlay (M4).
-			fillColor := tokens.Colors.Accent.Primary
-			if hoverOpacity > 0 {
-				fillColor = lerpColor(fillColor, hoverHighlight(fillColor), hoverOpacity)
-			}
-			canvas.FillRoundRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
-				float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
-				maxf(tokens.Radii.Button-float32(buttonBorder), 0), draw.SolidPaint(fillColor))
-
-			// Pass 2: render content centered.
-			// For text-only content, render with OnAccent color for backward compat.
-			if txt, ok := node.Content.(textElement); ok {
-				style := tokens.Typography.Label
-				metrics := canvas.MeasureText(txt.Content, style)
-				labelW := int(math.Ceil(float64(metrics.Width)))
-				labelH := int(math.Ceil(float64(metrics.Ascent)))
-				canvas.DrawText(txt.Content,
-					draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
-					style, tokens.Colors.Text.OnAccent)
-			} else {
-				contentX := area.X + (w-contentW)/2
-				contentY := area.Y + (h-contentH)/2
-				layoutElement(node.Content, bounds{X: contentX, Y: contentY, W: contentW, H: contentH}, canvas, th, tokens, ix, overlays, fs)
-			}
-		}
-
-		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: buttonPadY + cb.Baseline}
+	case segmentedButtonsElement:
+		return layoutSegmentedButtons(node, area, canvas, tokens, ix)
 
 	case dividerElement:
 		h := 1
@@ -1086,6 +1140,8 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		return layoutMenuBar(node, area, canvas, th, tokens, ix, overlays, fs)
 	case contextMenuElement:
 		return layoutContextMenu(node, area, canvas, th, tokens, ix, overlays, fs)
+	case splitViewElement:
+		return layoutSplitView(node, area, canvas, th, tokens, ix, overlays, fs)
 	case Overlay:
 		return layoutOverlay(node, area, canvas, th, tokens, ix, overlays, fs)
 
@@ -1112,6 +1168,380 @@ func lerpColor(a, b draw.Color, t float32) draw.Color {
 		B: a.B + (b.B-a.B)*t,
 		A: a.A + (b.A-a.A)*t,
 	}
+}
+
+// ── Button layout functions ────────────────────────────────────
+
+// buttonVariantColors returns fill, border, and text colors for a button variant.
+func buttonVariantColors(variant ButtonVariant, tokens theme.TokenSet, hoverOpacity float32) (fill, border, textCol draw.Color) {
+	switch variant {
+	case ButtonOutlined:
+		fill = draw.Color{A: 0} // transparent
+		if hoverOpacity > 0 {
+			fill = lerpColor(fill, tokens.Colors.Surface.Hovered, hoverOpacity)
+		}
+		border = tokens.Colors.Accent.Primary
+		textCol = tokens.Colors.Accent.Primary
+	case ButtonGhost:
+		fill = draw.Color{A: 0} // transparent
+		if hoverOpacity > 0 {
+			fill = lerpColor(fill, tokens.Colors.Surface.Hovered, hoverOpacity)
+		}
+		border = draw.Color{A: 0} // no border
+		textCol = tokens.Colors.Accent.Primary
+	case ButtonTonal:
+		// Blend accent into surface at 15% to produce an opaque tonal fill.
+		accent := tokens.Colors.Accent.Primary
+		base := tokens.Colors.Surface.Base
+		fill = draw.Color{
+			R: base.R + (accent.R-base.R)*0.15,
+			G: base.G + (accent.G-base.G)*0.15,
+			B: base.B + (accent.B-base.B)*0.15,
+			A: 1,
+		}
+		if hoverOpacity > 0 {
+			hoverFill := draw.Color{
+				R: base.R + (accent.R-base.R)*0.25,
+				G: base.G + (accent.G-base.G)*0.25,
+				B: base.B + (accent.B-base.B)*0.25,
+				A: 1,
+			}
+			fill = lerpColor(fill, hoverFill, hoverOpacity)
+		}
+		border = draw.Color{A: 0}
+		textCol = tokens.Colors.Accent.Primary
+	default: // ButtonFilled
+		fill = tokens.Colors.Accent.Primary
+		if hoverOpacity > 0 {
+			fill = lerpColor(fill, hoverHighlight(fill), hoverOpacity)
+		}
+		border = tokens.Colors.Stroke.Border
+		textCol = tokens.Colors.Text.OnAccent
+	}
+	return
+}
+
+func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, fs *FocusManager) bounds {
+	// Pass 1: measure content via nullCanvas.
+	nc := nullCanvas{delegate: canvas}
+	cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
+
+	contentW := cb.W
+	contentH := cb.H
+	w := contentW + (buttonPadX * 2)
+	h := contentH + (buttonPadY * 2)
+
+	// Register hit target and get hover opacity atomically.
+	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+	hoverOpacity := ix.RegisterHit(buttonRect, node.OnClick)
+
+	// Custom theme DrawFunc dispatch (RFC §5.3).
+	if df := th.DrawFunc(theme.WidgetKindButton); df != nil {
+		df(theme.DrawCtx{
+			Canvas:  canvas,
+			Bounds:  buttonRect,
+			Hovered: hoverOpacity > 0,
+		}, tokens, node)
+	} else {
+		fillColor, borderColor, textColor := buttonVariantColors(node.Variant, tokens, hoverOpacity)
+
+		if node.Variant == ButtonFilled {
+			// Filled: border as background fill, opaque fill on top (2-rect approach).
+			canvas.FillRoundRect(buttonRect,
+				tokens.Radii.Button, draw.SolidPaint(borderColor))
+			canvas.FillRoundRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
+				float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
+				maxf(tokens.Radii.Button-float32(buttonBorder), 0), draw.SolidPaint(fillColor))
+		} else {
+			// Non-filled: fill first, then stroke outline on top.
+			if fillColor.A > 0 {
+				canvas.FillRoundRect(buttonRect, tokens.Radii.Button, draw.SolidPaint(fillColor))
+			}
+			if borderColor.A > 0 {
+				canvas.StrokeRoundRect(buttonRect, tokens.Radii.Button, draw.Stroke{
+					Paint: draw.SolidPaint(borderColor),
+					Width: float32(buttonBorder),
+				})
+			}
+		}
+
+		// Pass 2: render content centered.
+		if txt, ok := node.Content.(textElement); ok {
+			style := tokens.Typography.Label
+			metrics := canvas.MeasureText(txt.Content, style)
+			labelW := int(math.Ceil(float64(metrics.Width)))
+			labelH := int(math.Ceil(float64(metrics.Ascent)))
+			canvas.DrawText(txt.Content,
+				draw.Pt(float32(area.X+(w-labelW)/2), float32(area.Y+(h-labelH)/2)),
+				style, textColor)
+		} else {
+			contentX := area.X + (w-contentW)/2
+			contentY := area.Y + (h-contentH)/2
+			// For non-filled variants, override theme text/icon colors so
+			// child elements (Text, Icon inside a Row) use the variant color.
+			contentTh := th
+			contentTokens := tokens
+			if node.Variant != ButtonFilled {
+				contentTokens.Colors.Text.Primary = textColor
+				contentTokens.Colors.Text.OnAccent = textColor
+			}
+			layoutElement(node.Content, bounds{X: contentX, Y: contentY, W: contentW, H: contentH}, canvas, contentTh, contentTokens, ix, overlays, fs)
+		}
+	}
+
+	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: buttonPadY + cb.Baseline}
+}
+
+func layoutIconButton(node iconButtonElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+	size := node.Size
+	if size == 0 {
+		size = tokens.Typography.Label.Size * 2
+	}
+	cellSize := int(math.Ceil(float64(size)))
+	w := cellSize + iconButtonPad*2
+	h := w // square
+
+	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+	hoverOpacity := ix.RegisterHit(buttonRect, node.OnClick)
+
+	fillColor, borderColor, iconColor := buttonVariantColors(node.Variant, tokens, hoverOpacity)
+
+	if node.Variant == ButtonFilled {
+		canvas.FillRoundRect(buttonRect,
+			tokens.Radii.Button, draw.SolidPaint(borderColor))
+		canvas.FillRoundRect(draw.R(float32(area.X+buttonBorder), float32(area.Y+buttonBorder),
+			float32(max(w-buttonBorder*2, 0)), float32(max(h-buttonBorder*2, 0))),
+			maxf(tokens.Radii.Button-float32(buttonBorder), 0), draw.SolidPaint(fillColor))
+	} else {
+		if fillColor.A > 0 {
+			canvas.FillRoundRect(buttonRect, tokens.Radii.Button, draw.SolidPaint(fillColor))
+		}
+		if borderColor.A > 0 {
+			canvas.StrokeRoundRect(buttonRect, tokens.Radii.Button, draw.Stroke{
+				Paint: draw.SolidPaint(borderColor),
+				Width: float32(buttonBorder),
+			})
+		}
+	}
+
+	// Render icon centered.
+	style := draw.TextStyle{
+		FontFamily: "Phosphor",
+		Size:       size,
+		Weight:     draw.FontWeightRegular,
+		LineHeight: 1.0,
+		Raster:     true,
+	}
+	metrics := canvas.MeasureText(node.Icon, style)
+	offsetX := (float32(w) - metrics.Width) / 2
+	offsetY := (float32(h) - metrics.Ascent) / 2
+	canvas.DrawText(node.Icon, draw.Pt(float32(area.X)+offsetX, float32(area.Y)+offsetY), style, iconColor)
+
+	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+}
+
+func layoutSplitButton(node splitButtonElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+	// Measure label.
+	style := tokens.Typography.Label
+	metrics := canvas.MeasureText(node.Label, style)
+	labelW := int(math.Ceil(float64(metrics.Width)))
+	labelH := int(math.Ceil(float64(metrics.Ascent)))
+
+	mainW := labelW + buttonPadX*2
+	arrowW := splitArrowWidth
+	totalW := mainW + arrowW
+	h := labelH + buttonPadY*2
+
+	radius := tokens.Radii.Button
+
+	// Main button hit target.
+	mainRect := draw.R(float32(area.X), float32(area.Y), float32(mainW), float32(h))
+	mainHover := ix.RegisterHit(mainRect, node.OnClick)
+
+	// Arrow button hit target.
+	arrowRect := draw.R(float32(area.X+mainW), float32(area.Y), float32(arrowW), float32(h))
+	arrowHover := ix.RegisterHit(arrowRect, node.OnMenu)
+
+	// Draw main button (left rounded corners).
+	mainFill := tokens.Colors.Accent.Primary
+	if mainHover > 0 {
+		mainFill = lerpColor(mainFill, hoverHighlight(mainFill), mainHover)
+	}
+	// Full rounded rect, then overlay the right half to square off right corners.
+	canvas.FillRoundRect(draw.R(float32(area.X), float32(area.Y), float32(mainW+1), float32(h)),
+		radius, draw.SolidPaint(mainFill))
+	// Square off right side.
+	canvas.FillRect(draw.R(float32(area.X+mainW-int(radius)), float32(area.Y), float32(int(radius)+1), float32(h)),
+		draw.SolidPaint(mainFill))
+
+	// Draw arrow button (right rounded corners).
+	arrowFill := tokens.Colors.Accent.Primary
+	if arrowHover > 0 {
+		arrowFill = lerpColor(arrowFill, hoverHighlight(arrowFill), arrowHover)
+	}
+	canvas.FillRoundRect(draw.R(float32(area.X+mainW), float32(area.Y), float32(arrowW), float32(h)),
+		radius, draw.SolidPaint(arrowFill))
+	// Square off left side.
+	canvas.FillRect(draw.R(float32(area.X+mainW), float32(area.Y), float32(int(radius)), float32(h)),
+		draw.SolidPaint(arrowFill))
+
+	// Divider line between main and arrow.
+	divX := float32(area.X + mainW)
+	canvas.FillRect(draw.R(divX, float32(area.Y+4), 1, float32(h-8)),
+		draw.SolidPaint(draw.Color{R: 1, G: 1, B: 1, A: 0.3}))
+
+	// Label text centered in main area.
+	canvas.DrawText(node.Label,
+		draw.Pt(float32(area.X+(mainW-labelW)/2), float32(area.Y+(h-labelH)/2)),
+		style, tokens.Colors.Text.OnAccent)
+
+	// Caret icon centered in arrow area.
+	iconStyle := draw.TextStyle{
+		FontFamily: "Phosphor",
+		Size:       tokens.Typography.Label.Size * 1.5,
+		Weight:     draw.FontWeightRegular,
+		LineHeight: 1.0,
+		Raster:     true,
+	}
+	caretDown := "\uE136" // icons.CaretDown
+	caretMetrics := canvas.MeasureText(caretDown, iconStyle)
+	caretX := float32(area.X+mainW) + (float32(arrowW)-caretMetrics.Width)/2
+	caretY := float32(area.Y) + (float32(h)-caretMetrics.Ascent)/2
+	canvas.DrawText(caretDown, draw.Pt(caretX, caretY), iconStyle, tokens.Colors.Text.OnAccent)
+
+	return bounds{X: area.X, Y: area.Y, W: totalW, H: h, Baseline: buttonPadY + labelH}
+}
+
+func layoutSegmentedButtons(node segmentedButtonsElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+	n := len(node.Items)
+	if n == 0 {
+		return bounds{X: area.X, Y: area.Y}
+	}
+
+	style := tokens.Typography.Label
+	iconStyle := draw.TextStyle{
+		FontFamily: "Phosphor",
+		Size:       tokens.Typography.Label.Size * 1.5,
+		Weight:     draw.FontWeightRegular,
+		LineHeight: 1.0,
+		Raster:     true,
+	}
+
+	// Pass 1: measure each segment.
+	type segInfo struct {
+		labelW, labelH int
+		iconW          int
+		totalW         int
+	}
+	infos := make([]segInfo, n)
+	maxH := 0
+	for i, item := range node.Items {
+		var info segInfo
+		if item.Label != "" {
+			m := canvas.MeasureText(item.Label, style)
+			info.labelW = int(math.Ceil(float64(m.Width)))
+			info.labelH = int(math.Ceil(float64(m.Ascent)))
+		}
+		if item.Icon != "" {
+			m := canvas.MeasureText(item.Icon, iconStyle)
+			info.iconW = int(math.Ceil(float64(m.Width)))
+			if info.labelH == 0 {
+				info.labelH = int(math.Ceil(float64(m.Ascent)))
+			}
+		}
+		info.totalW = segmentPadX*2 + info.labelW
+		if item.Icon != "" {
+			info.totalW += info.iconW
+			if item.Label != "" {
+				info.totalW += 6 // gap between icon and label
+			}
+		}
+		infos[i] = info
+		h := info.labelH + segmentPadY*2
+		if h > maxH {
+			maxH = h
+		}
+	}
+
+	radius := tokens.Radii.Button
+
+	// Pass 2: render segments.
+	cursorX := area.X
+	for i, item := range node.Items {
+		info := infos[i]
+		w := info.totalW
+
+		segRect := draw.R(float32(cursorX), float32(area.Y), float32(w), float32(maxH))
+		hoverOpacity := ix.RegisterHit(segRect, item.OnClick)
+
+		selected := i == node.Selected
+
+		// Determine colors.
+		var fillColor, textColor draw.Color
+		if selected {
+			fillColor = tokens.Colors.Accent.Primary
+			if hoverOpacity > 0 {
+				fillColor = lerpColor(fillColor, hoverHighlight(fillColor), hoverOpacity)
+			}
+			textColor = tokens.Colors.Text.OnAccent
+		} else {
+			fillColor = tokens.Colors.Surface.Elevated
+			if hoverOpacity > 0 {
+				fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+			}
+			textColor = tokens.Colors.Text.Primary
+		}
+
+		// Draw segment background with appropriate corner rounding.
+		var segRadius float32
+		if n == 1 {
+			segRadius = radius
+		}
+		// For first/last, draw rounded; for middle, draw square.
+		if i == 0 && n > 1 {
+			// Left-rounded segment.
+			canvas.FillRoundRect(segRect, radius, draw.SolidPaint(fillColor))
+			// Square off right side.
+			canvas.FillRect(draw.R(float32(cursorX+w-int(radius)), float32(area.Y), float32(int(radius)), float32(maxH)),
+				draw.SolidPaint(fillColor))
+		} else if i == n-1 && n > 1 {
+			// Right-rounded segment.
+			canvas.FillRoundRect(segRect, radius, draw.SolidPaint(fillColor))
+			// Square off left side.
+			canvas.FillRect(draw.R(float32(cursorX), float32(area.Y), float32(int(radius)), float32(maxH)),
+				draw.SolidPaint(fillColor))
+		} else if n == 1 {
+			canvas.FillRoundRect(segRect, segRadius, draw.SolidPaint(fillColor))
+		} else {
+			// Middle segment — no rounding.
+			canvas.FillRect(segRect, draw.SolidPaint(fillColor))
+		}
+
+		// Draw border between segments (not after last).
+		if i < n-1 {
+			canvas.FillRect(draw.R(float32(cursorX+w), float32(area.Y+2), 1, float32(maxH-4)),
+				draw.SolidPaint(tokens.Colors.Stroke.Border))
+		}
+
+		// Render content centered.
+		contentX := cursorX + segmentPadX
+		centerY := area.Y + (maxH-info.labelH)/2
+		if item.Icon != "" {
+			canvas.DrawText(item.Icon, draw.Pt(float32(contentX), float32(centerY)), iconStyle, textColor)
+			contentX += info.iconW
+			if item.Label != "" {
+				contentX += 6
+			}
+		}
+		if item.Label != "" {
+			canvas.DrawText(item.Label, draw.Pt(float32(contentX), float32(centerY)), style, textColor)
+		}
+
+		cursorX += w
+	}
+
+	totalW := cursorX - area.X
+	return bounds{X: area.X, Y: area.Y, W: totalW, H: maxH, Baseline: segmentPadY + maxH/2}
 }
 
 func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
