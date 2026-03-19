@@ -3147,10 +3147,17 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 	placement := node.Placement
 	dismissable := node.Dismissable
 	onDismiss := node.OnDismiss
+	backdrop := node.Backdrop
 	winW, winH := overlays.windowW, overlays.windowH
 
 	overlays.push(overlayEntry{
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
+			// Draw semi-transparent scrim behind the overlay for modal dialogs.
+			if backdrop {
+				canvas.FillRect(draw.R(0, 0, float32(winW), float32(winH)),
+					draw.SolidPaint(tokens.Colors.Surface.Scrim))
+			}
+
 			// If dismissable, register a full-window backdrop hit target.
 			// Added BEFORE content targets so content takes priority (hitMap is LIFO).
 			if dismissable && onDismiss != nil {

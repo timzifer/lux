@@ -41,6 +41,7 @@ const (
 	WidgetKindMenuBar
 	WidgetKindContextMenu
 	WidgetKindSplitView
+	WidgetKindDialog
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).
@@ -122,6 +123,7 @@ type SurfaceColors struct {
 	Elevated draw.Color // Cards, overlays — one level above
 	Hovered  draw.Color // Widget hover state
 	Pressed  draw.Color // Widget active/pressed state
+	Scrim    draw.Color // Semi-transparent backdrop for modal dialogs
 }
 
 // AccentColors defines primary interaction color tokens.
@@ -222,6 +224,7 @@ var slateTokens = TokenSet{
 			Elevated: draw.Hex("#18181b"), // Zinc-900
 			Hovered:  draw.Hex("#27272a"), // Zinc-800
 			Pressed:  draw.Hex("#3f3f46"), // Zinc-700
+			Scrim:    draw.Color{R: 0, G: 0, B: 0, A: 0.5},
 		},
 		Accent: AccentColors{
 			Primary:         draw.Hex("#3b82f6"), // Blue-500
@@ -296,6 +299,7 @@ var slateLightTokens = func() TokenSet {
 		Elevated: draw.Hex("#f4f4f5"), // Zinc-100
 		Hovered:  draw.Hex("#e4e4e7"), // Zinc-200
 		Pressed:  draw.Hex("#d4d4d8"), // Zinc-300
+		Scrim:    draw.Color{R: 0, G: 0, B: 0, A: 0.4},
 	}
 	t.Colors.Stroke = StrokeColors{
 		Border:  draw.Color{R: 0, G: 0, B: 0, A: 0.10}, // 10% black
