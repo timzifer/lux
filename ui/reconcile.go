@@ -20,6 +20,7 @@ type Reconciler struct {
 	widgets     map[UID]Widget  // previous widget instance per UID (for Equatable)
 	resolvedSub map[UID]Element // previous resolved subtree per UID (for Equatable skip)
 	prevTree    Element
+	themeCache  map[theme.Theme]*theme.CachedTheme // reuse CachedTheme across frames
 }
 
 // NewReconciler creates a ready-to-use Reconciler.
@@ -28,6 +29,7 @@ func NewReconciler() *Reconciler {
 		states:      make(map[UID]WidgetState),
 		widgets:     make(map[UID]Widget),
 		resolvedSub: make(map[UID]Element),
+		themeCache:  make(map[theme.Theme]*theme.CachedTheme),
 	}
 }
 
@@ -216,6 +218,21 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
 		return gridElement{Columns: node.Columns, RowGap: node.RowGap, ColGap: node.ColGap, Children: children}
+
+	case themedElement:
+		// Replace the active theme for this subtree.
+		// Cache the CachedTheme wrapper so repeated frames reuse it.
+		sub, ok := r.themeCache[node.Theme]
+		if !ok {
+			sub = theme.NewCachedTheme(node.Theme)
+			sub.WarmUp()
+			r.themeCache[node.Theme] = sub
+		}
+		children := make([]Element, len(node.Children))
+		for i, c := range node.Children {
+			children[i] = r.resolveTree(c, parentUID, i, seen, sub, send, dispatcher, fm)
+		}
+		return boxElement{Axis: AxisColumn, Children: children}
 
 	default:
 		// Leaf elements (text, button, divider, virtualList, tree, richText, etc.) pass through unchanged.
