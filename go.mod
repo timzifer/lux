@@ -11,5 +11,9 @@ require (
 )
 
 require (
+	github.com/zzl/go-com v1.5.0 // indirect
+	github.com/zzl/go-webview2 v0.0.0-20230129130204-9df4a7d166d5 // indirect
+	github.com/zzl/go-win32api/v2 v2.0.1 // indirect
+	golang.org/x/sys v0.0.0-20220330033206-e17cdc41300f // indirect
 	golang.org/x/text v0.27.0 // indirect
 )

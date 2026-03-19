@@ -11,7 +11,25 @@ import (
 type Option func(*config)
 
 type config struct {
-	title string
+	title        string
+	parentWindow uintptr
+	userDataDir  string
+}
+
+// WithTitle sets the initial page title metadata.
+func WithTitle(title string) Option {
+	return func(cfg *config) { cfg.title = title }
+}
+
+// WithParentWindow sets the host HWND required by the Windows
+// ICoreWebView2CompositionController path.
+func WithParentWindow(hwnd uintptr) Option {
+	return func(cfg *config) { cfg.parentWindow = hwnd }
+}
+
+// WithUserDataDir overrides the WebView2 user-data folder.
+func WithUserDataDir(dir string) Option {
+	return func(cfg *config) { cfg.userDataDir = dir }
 }
 
 // WebView is a ui.SurfaceProvider that renders web content.
@@ -237,6 +255,13 @@ func (w *WebView) setCurrentURL(url string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.currentURL = url
+}
+
+func (w *WebView) setHistoryAvailability(canGoBack, canGoForward bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.canGoBack = canGoBack
+	w.canGoForward = canGoForward
 }
 
 func (w *WebView) currentTextureTokenLocked() ui.FrameToken {
