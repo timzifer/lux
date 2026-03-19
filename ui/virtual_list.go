@@ -207,5 +207,28 @@ func drawScrollbar(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor, st
 		)
 	}
 
+	// Thumb-drag hit target — allows dragging the scrollbar thumb.
+	// Registered AFTER the track-click so it wins in hit-testing
+	// (HitTest iterates last-to-first).
+	if state != nil && thumbTravel > 0 {
+		st := state
+		ms := maxScroll
+		tY := float32(trackY)
+		tH := float32(thumbH)
+		tt := thumbTravel
+		thumbRect := draw.R(float32(trackX), thumbY, float32(trackW), float32(thumbH))
+		ix.RegisterDrag(thumbRect, func(_, y float32) {
+			// Map mouse Y to scroll offset; treat y as centre of thumb.
+			frac := (y - tY - tH/2) / tt
+			if frac < 0 {
+				frac = 0
+			}
+			if frac > 1 {
+				frac = 1
+			}
+			st.Offset = frac * ms
+		})
+	}
+
 	return trackW
 }

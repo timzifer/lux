@@ -1047,8 +1047,8 @@ func TestBuildSceneCardColors(t *testing.T) {
 	}
 	border := scene.Rects[0]
 	fill := scene.Rects[1]
-	if border.Color != tokens.Colors.Stroke.Border {
-		t.Errorf("card border color = %v, want Stroke.Border", border.Color)
+	if border.Color != tokens.Colors.Surface.Pressed {
+		t.Errorf("card border color = %v, want Surface.Pressed %v", border.Color, tokens.Colors.Surface.Pressed)
 	}
 	if fill.Color != tokens.Colors.Surface.Elevated {
 		t.Errorf("card fill color = %v, want Surface.Elevated", fill.Color)

@@ -2465,7 +2465,7 @@ func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Them
 	// Border
 	canvas.FillRoundRect(
 		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-		tokens.Radii.Card, draw.SolidPaint(tokens.Colors.Stroke.Border))
+		tokens.Radii.Card, draw.SolidPaint(tokens.Colors.Surface.Pressed))
 
 	// Fill
 	canvas.FillRoundRect(
@@ -2746,7 +2746,7 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 		borderColor = tokens.Colors.Accent.Primary
 	} else {
 		bgColor = tokens.Colors.Surface.Hovered
-		borderColor = draw.Color{R: 1, G: 1, B: 1, A: 0.20} // 20% white — visible border
+		borderColor = tokens.Colors.Surface.Pressed
 	}
 	if hoverOpacity > 0 {
 		bgColor = lerpColor(bgColor, hoverHighlight(bgColor), hoverOpacity)
