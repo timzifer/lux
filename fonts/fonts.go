@@ -7,11 +7,13 @@
 package fonts
 
 import (
+	"bytes"
 	"io/fs"
 	"os"
 	"strings"
 	"unicode"
 
+	gotextfont "github.com/go-text/typesetting/font"
 	"golang.org/x/image/font/sfnt"
 )
 
@@ -34,9 +36,11 @@ type FontFaceKey struct {
 // When sfnt is non-nil the font was loaded from a TTF/OTF file;
 // when nil the legacy 5×7 bitmap fallback is used.
 type Font struct {
-	id   uint64 // unique ID, assigned at load time
-	name string
-	sfnt *sfnt.Font
+	id         uint64 // unique ID, assigned at load time
+	name       string
+	sfnt       *sfnt.Font
+	goTextFace *gotextfont.Face // go-text/typesetting face for OpenType shaping
+	rawData    []byte           // retained for go-text parsing (Face holds reference)
 }
 
 var nextFontID uint64 = 1
@@ -53,6 +57,19 @@ func (f *Font) SfntFont() *sfnt.Font { return f.sfnt }
 // IsBitmap reports whether this font uses the legacy bitmap glyphs.
 func (f *Font) IsBitmap() bool { return f.sfnt == nil }
 
+// GoTextFace returns the go-text/typesetting Face for OpenType shaping,
+// or nil if the font could not be parsed by go-text.
+func (f *Font) GoTextFace() *gotextfont.Face { return f.goTextFace }
+
+// HasGlyph reports whether this font contains a glyph for the given rune.
+func (f *Font) HasGlyph(r rune) bool {
+	if f.goTextFace == nil {
+		return false
+	}
+	_, ok := f.goTextFace.NominalGlyph(r)
+	return ok
+}
+
 // ── Loading API (RFC-003 §3.4) ──────────────────────────────────
 
 // LoadBytes parses a TTF or OTF font from raw bytes.
@@ -63,7 +80,16 @@ func LoadBytes(data []byte) (*Font, error) {
 	}
 	id := nextFontID
 	nextFontID++
-	return &Font{id: id, sfnt: parsed}, nil
+
+	f := &Font{id: id, sfnt: parsed, rawData: data}
+
+	// Also parse with go-text/typesetting for OpenType shaping.
+	// Failure here is non-fatal — the font will still work with sfnt.
+	if gtFace, err := gotextfont.ParseTTF(bytes.NewReader(data)); err == nil {
+		f.goTextFace = gtFace
+	}
+
+	return f, nil
 }
 
 // LoadFile loads a TTF or OTF font from a file path.
@@ -89,6 +115,40 @@ type FontFamily struct {
 	Name     string
 	Faces    map[FontFaceKey]*Font
 	Fallback []*FontFamily
+}
+
+// FindGlyphFont searches this family's faces (preferring the given weight),
+// then walks the Fallback chain recursively, returning the first Font that
+// contains a glyph for the given rune. Returns nil if no font has the glyph.
+func (ff *FontFamily) FindGlyphFont(r rune, weight int) *Font {
+	if ff == nil {
+		return nil
+	}
+	// Try exact weight first.
+	key := FontFaceKey{Weight: weight, Style: StyleNormal}
+	if f, ok := ff.Faces[key]; ok && f.HasGlyph(r) {
+		return f
+	}
+	// Try regular weight.
+	if weight != 400 {
+		key.Weight = 400
+		if f, ok := ff.Faces[key]; ok && f.HasGlyph(r) {
+			return f
+		}
+	}
+	// Try any face in this family.
+	for _, f := range ff.Faces {
+		if f.HasGlyph(r) {
+			return f
+		}
+	}
+	// Walk fallback chain.
+	for _, fb := range ff.Fallback {
+		if f := fb.FindGlyphFont(r, weight); f != nil {
+			return f
+		}
+	}
+	return nil
 }
 
 // ── Embedded 5×7 bitmap fallback ─────────────────────────────────

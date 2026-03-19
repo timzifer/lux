@@ -145,7 +145,7 @@ func (a *GlyphAtlas) grow() {
 }
 
 // LookupOrInsert looks up a glyph in the atlas, inserting it via the shaper if missing.
-func (a *GlyphAtlas) LookupOrInsert(key GlyphKey, shaper *SfntShaper, style draw.TextStyle) (AtlasEntry, bool) {
+func (a *GlyphAtlas) LookupOrInsert(key GlyphKey, shaper GlyphRasterizer, style draw.TextStyle) (AtlasEntry, bool) {
 	if entry, ok := a.Lookup(key); ok {
 		return entry, true
 	}
@@ -224,7 +224,7 @@ func (a *GlyphAtlas) growMSDF() {
 }
 
 // LookupOrInsertMSDF looks up an MSDF glyph, rasterizing it via the shaper if missing.
-func (a *GlyphAtlas) LookupOrInsertMSDF(key GlyphKey, shaper *SfntShaper, f *fonts.Font) (AtlasEntry, bool) {
+func (a *GlyphAtlas) LookupOrInsertMSDF(key GlyphKey, shaper GlyphRasterizer, f *fonts.Font) (AtlasEntry, bool) {
 	if entry, ok := a.Lookup(key); ok {
 		return entry, true
 	}
