@@ -42,18 +42,95 @@ var (
 	}
 )
 
+// CubicBezier returns a CSS-compatible cubic-bezier easing function.
+// The two control points (x1,y1) and (x2,y2) define the curve shape,
+// just like CSS transition-timing-function: cubic-bezier(x1,y1,x2,y2).
+// Uses Newton-Raphson iteration to solve for the parametric t given input x.
+func CubicBezier(x1, y1, x2, y2 float32) EasingFunc {
+	return func(x float32) float32 {
+		if x <= 0 {
+			return 0
+		}
+		if x >= 1 {
+			return 1
+		}
+		// Newton-Raphson: find parametric t where bezierX(t) == x.
+		t := x // initial guess
+		for i := 0; i < 8; i++ {
+			bx := cubicBezierSample(t, x1, x2) - x
+			if bx > -1e-6 && bx < 1e-6 {
+				break
+			}
+			dx := cubicBezierDerivative(t, x1, x2)
+			if dx < 1e-6 && dx > -1e-6 {
+				break
+			}
+			t -= bx / dx
+		}
+		// Clamp t to [0,1].
+		if t < 0 {
+			t = 0
+		} else if t > 1 {
+			t = 1
+		}
+		return cubicBezierSample(t, y1, y2)
+	}
+}
+
+// cubicBezierSample evaluates a 1D cubic bezier at parameter t.
+// Control points: P0=0, P1=p1, P2=p2, P3=1.
+func cubicBezierSample(t, p1, p2 float32) float32 {
+	// B(t) = 3(1-t)^2*t*p1 + 3(1-t)*t^2*p2 + t^3
+	omt := 1 - t
+	return 3*omt*omt*t*p1 + 3*omt*t*t*p2 + t*t*t
+}
+
+// cubicBezierDerivative returns dB/dt for the 1D cubic bezier.
+func cubicBezierDerivative(t, p1, p2 float32) float32 {
+	// B'(t) = 3(1-t)^2*p1 + 6(1-t)*t*(p2-p1) + 3*t^2*(1-p2)
+	omt := 1 - t
+	return 3*omt*omt*p1 + 6*omt*t*(p2-p1) + 3*t*t*(1-p2)
+}
+
+// ── Tickable Interface ────────────────────────────────────────
+//
+// Tickable is the common interface for anything that can be ticked
+// by the animation system (Anim, SpringAnim, AnimGroup, AnimSeq).
+
+// Tickable is implemented by all animation types.
+type Tickable interface {
+	Tick(dt time.Duration) bool
+	IsDone() bool
+}
+
+// ── AnimationID (RFC-002 §1.8) ──────────────────────────────────
+
+// AnimationID is a typed string for user-initiated animation completion events.
+type AnimationID string
+
+// AnimationEnded is sent via SendFunc when a Tier-2 animation completes.
+type AnimationEnded struct {
+	ID AnimationID
+}
+
+// SendFunc is set by the app package to enable anim → app.Send
+// without circular imports. Nil until the app loop starts.
+var SendFunc func(msg any)
+
 // ── Anim[T] ────────────────────────────────────────────────────
 
 // Anim is a deterministic, interpolated animation value (RFC §12.4).
 // The zero value is immediately done with the zero value of T.
 type Anim[T Interpolatable] struct {
-	from     T
-	current  T
-	to       T
-	elapsed  time.Duration
-	duration time.Duration
-	easing   EasingFunc
-	running  bool
+	from        T
+	current     T
+	to          T
+	elapsed     time.Duration
+	duration    time.Duration
+	easing      EasingFunc
+	running     bool
+	animID      AnimationID
+	notifyOnEnd bool
 }
 
 // Value returns the current interpolated value.
@@ -72,6 +149,15 @@ func (a *Anim[T]) SetTarget(to T, dur time.Duration, easing EasingFunc) {
 	a.duration = dur
 	a.easing = easing
 	a.running = true
+}
+
+// SetTargetWithID starts a new animation and sends AnimationEnded{ID}
+// via SendFunc when the animation completes (RFC-002 §1.8).
+// Re-calling with the same ID replaces the pending notification.
+func (a *Anim[T]) SetTargetWithID(to T, dur time.Duration, easing EasingFunc, id AnimationID) {
+	a.SetTarget(to, dur, easing)
+	a.animID = id
+	a.notifyOnEnd = true
 }
 
 // SetImmediate snaps the value without animation (RFC §12.4).
@@ -102,6 +188,10 @@ func (a *Anim[T]) Tick(dt time.Duration) bool {
 		// Snap to exact target — no floating-point drift.
 		a.current = a.to
 		a.running = false
+		if a.notifyOnEnd && SendFunc != nil {
+			a.notifyOnEnd = false
+			SendFunc(AnimationEnded{ID: a.animID})
+		}
 		return false
 	}
 

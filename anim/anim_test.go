@@ -191,3 +191,138 @@ func TestAnimWithNilEasing(t *testing.T) {
 		t.Errorf("nil easing should default to linear, got %v", v)
 	}
 }
+
+// ── CubicBezier tests ───────────────────────────────────────────
+
+func TestCubicBezierEndpoints(t *testing.T) {
+	ease := CubicBezier(0.25, 0.1, 0.25, 1.0)
+	if v := ease(0); v != 0 {
+		t.Errorf("CubicBezier(0) = %v, want 0", v)
+	}
+	if v := ease(1); v != 1 {
+		t.Errorf("CubicBezier(1) = %v, want 1", v)
+	}
+}
+
+func TestCubicBezierEaseOut(t *testing.T) {
+	// CSS "ease": faster than linear at midpoint.
+	ease := CubicBezier(0.25, 0.1, 0.25, 1.0)
+	v := ease(0.5)
+	if v <= 0.5 {
+		t.Errorf("CSS ease at 0.5 should be > 0.5, got %v", v)
+	}
+}
+
+func TestCubicBezierEaseInOut(t *testing.T) {
+	// CSS "ease-in-out": symmetric, ~0.5 at midpoint.
+	easeInOut := CubicBezier(0.42, 0, 0.58, 1.0)
+	v := easeInOut(0.5)
+	if v < 0.45 || v > 0.55 {
+		t.Errorf("CSS ease-in-out at 0.5 should be ~0.5, got %v", v)
+	}
+}
+
+func TestCubicBezierLinearEquivalent(t *testing.T) {
+	// (0,0,1,1) should approximate Linear.
+	linear := CubicBezier(0, 0, 1, 1)
+	for _, x := range []float32{0.0, 0.25, 0.5, 0.75, 1.0} {
+		v := linear(x)
+		if v < x-0.02 || v > x+0.02 {
+			t.Errorf("CubicBezier(0,0,1,1)(%v) = %v, want ~%v", x, v, x)
+		}
+	}
+}
+
+func TestCubicBezierMonotonic(t *testing.T) {
+	ease := CubicBezier(0.25, 0.1, 0.25, 1.0)
+	prev := float32(0)
+	for i := 1; i <= 100; i++ {
+		x := float32(i) / 100
+		v := ease(x)
+		if v < prev-0.001 {
+			t.Errorf("CubicBezier should be monotonic, but f(%v)=%v < f(%v)=%v", x, v, float32(i-1)/100, prev)
+		}
+		prev = v
+	}
+}
+
+// ── AnimationID / SetTargetWithID tests ─────────────────────────
+
+func TestSetTargetWithIDFiresOnComplete(t *testing.T) {
+	var received AnimationEnded
+	SendFunc = func(msg any) {
+		if ended, ok := msg.(AnimationEnded); ok {
+			received = ended
+		}
+	}
+	defer func() { SendFunc = nil }()
+
+	var a Anim[float32]
+	a.SetTargetWithID(1.0, 100*time.Millisecond, Linear, "test-anim")
+
+	// Not yet complete.
+	a.Tick(50 * time.Millisecond)
+	if received.ID != "" {
+		t.Error("should not fire before completion")
+	}
+
+	// Complete.
+	a.Tick(100 * time.Millisecond)
+	if received.ID != "test-anim" {
+		t.Errorf("expected AnimationEnded{test-anim}, got %v", received)
+	}
+}
+
+func TestSetTargetWithIDNoDoubleFire(t *testing.T) {
+	count := 0
+	SendFunc = func(msg any) {
+		if _, ok := msg.(AnimationEnded); ok {
+			count++
+		}
+	}
+	defer func() { SendFunc = nil }()
+
+	var a Anim[float32]
+	a.SetTargetWithID(1.0, 100*time.Millisecond, Linear, "once")
+	a.Tick(200 * time.Millisecond) // completes and fires
+	a.Tick(200 * time.Millisecond) // should not fire again
+
+	if count != 1 {
+		t.Errorf("expected 1 fire, got %d", count)
+	}
+}
+
+func TestSetTargetWithIDReplacesNotification(t *testing.T) {
+	var received AnimationEnded
+	SendFunc = func(msg any) {
+		if ended, ok := msg.(AnimationEnded); ok {
+			received = ended
+		}
+	}
+	defer func() { SendFunc = nil }()
+
+	var a Anim[float32]
+	a.SetTargetWithID(1.0, 200*time.Millisecond, Linear, "first")
+	a.Tick(50 * time.Millisecond)
+
+	// Retarget with new ID.
+	a.SetTargetWithID(2.0, 100*time.Millisecond, Linear, "second")
+	a.Tick(200 * time.Millisecond)
+
+	if received.ID != "second" {
+		t.Errorf("expected AnimationEnded{second}, got %v", received)
+	}
+}
+
+func TestSetTargetWithIDNilSendFunc(t *testing.T) {
+	SendFunc = nil
+
+	var a Anim[float32]
+	a.SetTargetWithID(1.0, 100*time.Millisecond, Linear, "safe")
+	// Should not panic when SendFunc is nil.
+	a.Tick(200 * time.Millisecond)
+
+	if !a.IsDone() {
+		t.Error("animation should be done")
+	}
+}
