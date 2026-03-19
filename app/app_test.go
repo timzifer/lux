@@ -596,7 +596,7 @@ func TestReconcilerPreservesWidgetStateThroughFrames(t *testing.T) {
 
 	// Simulate 3 frames.
 	for i := 0; i < 3; i++ {
-		r.Reconcile(tree, th, func(_ any) {})
+		r.Reconcile(tree, th, func(_ any) {}, nil, nil)
 	}
 
 	uid := ui.MakeUID(0, "tick", 0)
@@ -614,11 +614,11 @@ func TestReconcilerResetsStateOnKeyChange(t *testing.T) {
 	r := ui.NewReconciler()
 	th := theme.Default
 
-	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {})
-	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {})
+	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {}, nil, nil)
+	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {}, nil, nil)
 
 	// Switch key — state should be fresh.
-	r.Reconcile(ui.ComponentWithKey("new", tickWidget{}), th, func(_ any) {})
+	r.Reconcile(ui.ComponentWithKey("new", tickWidget{}), th, func(_ any) {}, nil, nil)
 
 	uid := ui.MakeUID(0, "new", 0)
 	raw := r.StateFor(uid)
@@ -894,5 +894,138 @@ func TestTextInputMsgNotForwardedToUserland(t *testing.T) {
 	}
 	if receivedTextInput {
 		t.Error("TextInputMsg should not reach userland update")
+	}
+}
+
+// ── Cmd Tests ───────────────────────────────────────────────────
+
+type cmdResultMsg struct{ Value string }
+
+func TestRunWithCmdExecutesCommand(t *testing.T) {
+	// Test that Cmd returns a message and that UpdateWithCmd receives it.
+	// Use a synchronous Cmd that returns immediately — the goroutine sends
+	// the result back into the loop, picked up by the next frame.
+	var result string
+	update := func(m testModel, msg Msg) (testModel, Cmd) {
+		switch msg := msg.(type) {
+		case incrMsg:
+			m.Count++
+			return m, func() Msg {
+				return cmdResultMsg{Value: "async-done"}
+			}
+		case cmdResultMsg:
+			result = msg.Value
+		}
+		return m, nil
+	}
+
+	sentOnce := false
+	view := func(m testModel) ui.Element {
+		if !sentOnce {
+			sentOnce = true
+			Send(incrMsg{})
+		}
+		return ui.Empty()
+	}
+
+	err := RunWithCmd(testModel{}, update, view,
+		WithTitle("cmd-exec test"),
+		WithHeadlessFrames(10),
+	)
+	if err != nil {
+		t.Fatalf("RunWithCmd returned error: %v", err)
+	}
+	if result != "async-done" {
+		t.Errorf("result = %q, want async-done", result)
+	}
+}
+
+func TestRunWithCmdNilCommandSafe(t *testing.T) {
+	update := func(m testModel, msg Msg) (testModel, Cmd) {
+		return m, nil
+	}
+
+	err := RunWithCmd(testModel{}, update, testView,
+		WithTitle("cmd-nil test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("RunWithCmd returned error: %v", err)
+	}
+}
+
+func TestBatchCombinesCommands(t *testing.T) {
+	c1 := func() Msg { return nil }
+	var r2 bool
+	c2 := func() Msg { r2 = true; return nil }
+
+	batch := Batch(c1, c2)
+	if batch == nil {
+		t.Fatal("Batch should return non-nil Cmd")
+	}
+	batch()
+	// c2 runs inline (last cmd), c1 runs in goroutine.
+	if !r2 {
+		t.Error("second command should have run inline")
+	}
+}
+
+func TestBatchNilsFiltered(t *testing.T) {
+	ran := false
+	c := func() Msg { ran = true; return nil }
+
+	batch := Batch(nil, c, nil)
+	if batch == nil {
+		t.Fatal("Batch with one live cmd should return non-nil")
+	}
+	batch()
+	if !ran {
+		t.Error("single live command should have run")
+	}
+}
+
+func TestBatchAllNilReturnsNil(t *testing.T) {
+	batch := Batch(nil, nil, nil)
+	if batch != nil {
+		t.Error("Batch of all nils should return nil")
+	}
+}
+
+func TestNoneSentinel(t *testing.T) {
+	if None != nil {
+		t.Error("None should be nil")
+	}
+}
+
+func TestRunBackwardsCompatible(t *testing.T) {
+	// Run (without Cmd) should still work exactly as before.
+	var finalCount int
+	update := func(m testModel, msg Msg) testModel {
+		switch msg.(type) {
+		case incrMsg:
+			m.Count++
+		}
+		finalCount = m.Count
+		return m
+	}
+
+	sentOnce := false
+	view := func(m testModel) ui.Element {
+		if !sentOnce {
+			sentOnce = true
+			Send(incrMsg{})
+		}
+		return ui.Empty()
+	}
+
+	err := Run(testModel{Count: 0}, update, view,
+		WithTitle("compat test"),
+		WithHeadlessFrames(3),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if finalCount != 1 {
+		t.Errorf("finalCount = %d, want 1", finalCount)
 	}
 }

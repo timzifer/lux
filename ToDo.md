@@ -1,6 +1,6 @@
 # lux — Offene Aufgaben (nach Abhängigkeit geordnet)
 
-**Stand:** 2026-03-18
+**Stand:** 2026-03-19
 **Abgeleitet aus:** RFC-001, RFC-002, RFC-003
 
 Die Aufgaben sind in Phasen gegliedert. Jede Phase baut auf den vorherigen auf — innerhalb einer Phase sind die Aufgaben weitgehend unabhängig und parallelisierbar.
@@ -284,21 +284,23 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [ ] `renderToAccessTree()` Test-Helper für A11y-Unit-Tests in CI
 - **Abhängig von:** 0.2, 0.3 (Focus-Management), 4b.2 (Locale für `Lang`-Feld)
 
-### 6.3 State Persistence (RFC-001 §3.4)
-- [ ] `app.WithPersistence(PersistenceConfig[Model])` Option
-- [ ] Encode/Decode Hooks
+### 6.3 State Persistence (RFC-001 §3.4) ✅
+- [x] `app.WithPersistence(PersistenceConfig[Model])` Option
+- [x] Encode/Decode Hooks
 - [ ] Plattformspezifische Storage-Pfade
 - **Abhängig von:** nichts
 
-### 6.4 Commands (`Cmd`) (RFC-001 §3.6)
-- [ ] `type Cmd func() Msg` definieren
-- [ ] `UpdateWithCmd[M]` Signatur: `func(M, Msg) (M, Cmd)`
-- [ ] `app.Run` für beide Signaturen erweitern
+### 6.4 Commands (`Cmd`) (RFC-001 §3.6) ✅
+- [x] `type Cmd func() Msg` definieren
+- [x] `UpdateWithCmd[M]` Signatur: `func(M, Msg) (M, Cmd)`
+- [x] `app.Run` für beide Signaturen erweitern
+- [x] `Batch` für kombinierte Commands
 - **Abhängig von:** nichts
 
-### 6.5 Sub-Models (RFC-001 §3.5)
-- [ ] `SubModel[Parent, Child]` mit Get/Set/Update
-- [ ] Delegation im Haupt-Loop
+### 6.5 Sub-Models (RFC-001 §3.5) ✅
+- [x] `SubModel[Parent, Child]` mit Get/Set/Update
+- [x] Delegation im Haupt-Loop
+- [x] `SubModelWithCmd` / `DelegateWithCmd` Variante
 - **Abhängig von:** nichts
 
 ### 6.6 DynamicDataset (RFC-002 §6)

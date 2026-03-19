@@ -2,7 +2,6 @@ package ui
 
 import (
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -86,7 +85,7 @@ type flexElement struct {
 func (flexElement) isElement() {}
 
 // layoutFlex performs a two-pass layout: measure with nullCanvas, then paint.
-func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
 	n := len(node.Children)
 	if n == 0 {
 		return bounds{X: area.X, Y: area.Y}
@@ -120,7 +119,7 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 			totalGrow += exp.Grow
 		} else {
 			// Measure with nullCanvas (no paint).
-			cb := layoutElement(child, area, nc, th, tokens, nil, nil, nil)
+			cb := layoutElement(child, area, nc, th, tokens, nil, nil)
 			if isRow {
 				infos[i] = childInfo{mainSize: cb.W, crossSize: cb.H}
 			} else {
@@ -157,7 +156,7 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 			} else {
 				measureArea = bounds{X: 0, Y: 0, W: area.W, H: infos[i].mainSize}
 			}
-			cb := layoutElement(exp.Child, measureArea, nc, th, tokens, nil, nil, nil)
+			cb := layoutElement(exp.Child, measureArea, nc, th, tokens, nil, nil)
 			if isRow {
 				infos[i].crossSize = cb.H
 			} else {
@@ -254,7 +253,7 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 		if info.expanded {
 			actualChild = child.(expandedElement).Child
 		}
-		cb := layoutElement(actualChild, childArea, canvas, th, tokens, hitMap, hover, overlays, focus)
+		cb := layoutElement(actualChild, childArea, canvas, th, tokens, ix, overlays, focus)
 
 		if isRow {
 			if cb.H > maxCrossActual {

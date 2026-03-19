@@ -6,7 +6,6 @@ import (
 
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui/icons"
 )
@@ -160,7 +159,7 @@ type flatNode struct {
 	HeightFraction float32 // 0..1, animated expand progress for children-of-animating-parent
 }
 
-func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
 	if len(node.RootIDs) == 0 || node.BuildNode == nil {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -277,12 +276,12 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 
 		// Skip rows outside the viewport.
 		if rowYBottom < float32(area.Y) || rowY >= float32(area.Y+actualH) {
-			// Still need to consume hover indices for hit targets.
-			if fn.HasKids && hover != nil {
-				hover.nextButtonHoverOpacity()
+			// Still need to consume hover/hit slots for off-screen targets.
+			if fn.HasKids {
+				ix.RegisterHit(draw.Rect{}, nil)
 			}
-			if node.OnSelect != nil && hover != nil {
-				hover.nextButtonHoverOpacity()
+			if node.OnSelect != nil {
+				ix.RegisterHit(draw.Rect{}, nil)
 			}
 			continue
 		}
@@ -315,15 +314,17 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 				indicatorStyle, tokens.Colors.Text.Secondary)
 
 			// Hit target for expand/collapse toggle.
-			if hitMap != nil && node.State != nil {
+			if node.State != nil {
 				id := fn.ID
 				ts := node.State
-				if hover != nil {
-					hover.nextButtonHoverOpacity()
-				}
-				hitMap.Add(
+				ix.RegisterHit(
 					draw.R(float32(area.X+indent), rowY, float32(indicatorW), effectiveH),
 					func() { ts.Toggle(id) },
+				)
+			} else {
+				ix.RegisterHit(
+					draw.R(float32(area.X+indent), rowY, float32(indicatorW), effectiveH),
+					nil,
 				)
 			}
 		}
@@ -332,19 +333,16 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 		nodeX := area.X + indent + indicatorW + 4
 		nodeW := contentW - indent - indicatorW - 4
 		nodeContent := node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected)
-		cb := layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY), W: nodeW, H: nodeH}, nc, th, tokens, nil, nil, nil)
+		cb := layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY), W: nodeW, H: nodeH}, nc, th, tokens, nil, nil)
 		nodeOffsetY := (nodeH - cb.H) / 2
-		layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY) + nodeOffsetY, W: nodeW, H: nodeH}, canvas, th, tokens, hitMap, hover, overlays, focus)
+		layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY) + nodeOffsetY, W: nodeW, H: nodeH}, canvas, th, tokens, ix, overlays, focus)
 
 		// Row hit target for selection.
-		if hitMap != nil && node.OnSelect != nil {
+		if node.OnSelect != nil {
 			id := fn.ID
 			onSelect := node.OnSelect
 			ts := node.State
-			if hover != nil {
-				hover.nextButtonHoverOpacity()
-			}
-			hitMap.Add(
+			ix.RegisterHit(
 				draw.R(float32(area.X+indent+indicatorW), rowY, float32(contentW-indent-indicatorW), effectiveH),
 				func() {
 					if ts != nil {
@@ -362,7 +360,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 
 	// Draw scrollbar INSIDE the clip so it's visible even within a parent ScrollView.
 	if needsScroll && node.State != nil {
-		drawScrollbar(canvas, tokens, hitMap, &node.State.Scroll, area.X+contentW, area.Y, actualH, contentH, offset)
+		drawScrollbar(canvas, tokens, ix, &node.State.Scroll, area.X+contentW, area.Y, actualH, contentH, offset)
 	}
 
 	canvas.PopClip()
@@ -382,11 +380,11 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 	}
 
 	// Register scroll target.
-	if hitMap != nil && node.State != nil && needsScroll {
+	if node.State != nil && needsScroll {
 		state := &node.State.Scroll
 		cH := contentH
 		vH := float32(actualH)
-		hitMap.AddScroll(
+		ix.RegisterScroll(
 			draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(actualH)),
 			cH, vH,
 			func(deltaY float32) { state.ScrollBy(deltaY, cH, vH) },

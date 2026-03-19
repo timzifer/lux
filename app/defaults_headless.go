@@ -3,6 +3,8 @@
 package app
 
 import (
+	"runtime"
+
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/platform"
@@ -107,6 +109,9 @@ func (p *headlessPlatform) Run(cb platform.Callbacks) error {
 		nFrames = 1
 	}
 	for f := 0; f < nFrames; f++ {
+		// Yield to allow goroutines (e.g. Cmd dispatch) to run.
+		runtime.Gosched()
+
 		// Inject mouse moves scheduled for this frame.
 		for _, m := range p.mouseMoves {
 			if m.frame == f && cb.OnMouseMove != nil {

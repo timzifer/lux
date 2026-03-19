@@ -26,6 +26,20 @@ import (
 //
 // Both update and view run exclusively on the calling goroutine.
 func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option) error {
+	return runInternal(model, func(m M, msg Msg) (M, Cmd) {
+		return update(m, msg), nil
+	}, view, opts...)
+}
+
+// RunWithCmd starts the application with an update function that returns commands (RFC §3.6).
+// Commands are side-effect functions dispatched asynchronously after each update.
+func RunWithCmd[M any](model M, update UpdateWithCmd[M], view ViewFunc[M], opts ...Option) error {
+	return runInternal(model, update, view, opts...)
+}
+
+// runInternal contains the full run-loop logic, parameterized over an update
+// function that returns (M, Cmd).
+func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M], opts ...Option) error {
 	cfg := defaultOptions()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -97,7 +111,28 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 	reconciler := ui.NewReconciler()
 	currentModel := model
+
+	// State persistence: load persisted model on startup (RFC §3.4).
+	var persistPath string
+	if cfg.persistence != nil {
+		persistPath = storagePath(cfg.title, cfg.persistence.key, cfg.storagePath)
+		if restored, err := loadPersistedModel(cfg.persistence, persistPath); err == nil {
+			currentModel = restored.(M)
+		}
+	}
+
 	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil)
+
+	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
+	dispatchCmd := func(cmd Cmd) {
+		if cmd != nil {
+			go func() {
+				if result := cmd(); result != nil {
+					appLoop.Send(result)
+				}
+			}()
+		}
+	}
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
@@ -106,6 +141,13 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 	var dragTarget *hit.Target // active drag target (non-nil while dragging)
 	var currentCursor input.CursorKind
 	var dynamicHandlers []globalHandlerEntry
+
+	// State persistence: save persisted model on shutdown (RFC §3.4).
+	if cfg.persistence != nil {
+		defer func() {
+			_ = savePersistedModel(cfg.persistence, any(currentModel), persistPath)
+		}()
+	}
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
@@ -168,11 +210,12 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
 						for _, sc := range cfg.shortcuts {
 							if m.Key == sc.shortcut.Key && m.Modifiers == sc.shortcut.Modifiers {
-								newModel := update(currentModel, input.ShortcutMsg{Shortcut: sc.shortcut, ID: sc.id})
+								newModel, cmd := update(currentModel, input.ShortcutMsg{Shortcut: sc.shortcut, ID: sc.id})
 								if modelChanged(any(newModel), any(currentModel)) {
 									modelDirty = true
 								}
 								currentModel = newModel
+								dispatchCmd(cmd)
 								return true // consumed
 							}
 						}
@@ -247,11 +290,12 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 				case input.TouchMsg:
 					dispatcher.Collect(m)
 				}
-				newModel := update(currentModel, msg)
+				newModel, cmd := update(currentModel, msg)
 				if modelChanged(any(newModel), any(currentModel)) {
 					modelDirty = true
 				}
 				currentModel = newModel
+				dispatchCmd(cmd)
 				return true
 			})
 
@@ -273,9 +317,10 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 
 			// Deliver TickMsg directly — always call update, but only
 			// force a rebuild if the model is modified.
-			tickModel := update(currentModel, TickMsg{DeltaTime: dt})
+			tickModel, tickCmd := update(currentModel, TickMsg{DeltaTime: dt})
 			tickDirty := modelChanged(any(tickModel), any(currentModel))
 			currentModel = tickModel
+			dispatchCmd(tickCmd)
 			modelDirty = modelDirty || tickDirty || animDirty || stateDirty
 
 			// Re-run view and reconcile only when the model changed.
@@ -312,7 +357,8 @@ func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option)
 			w, h := plat.FramebufferSize()
 			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 			hitMap.Reset()
-			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, &hitMap, &hoverState, fm)
+			ix := ui.NewInteractor(&hitMap, &hoverState)
+			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)

@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.2.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-18
+**Zuletzt abgeglichen:** 2026-03-19
 **Folge-RFCs:** RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme)
 
 ---
@@ -16,19 +16,19 @@
 | §1 Motivation & Abgrenzung | — | Kontext, kein Code |
 | §2 Architektur-Überblick | ✅ Integriert | Alle Layer vorhanden (app, ui, draw, theme, platform, internal) |
 | §3 Elm-Architektur & App-Loop | ✅ Integriert | `Run[M]`, `Send`/`TrySend`, `TickMsg`, dt-Clamping |
-| §3.4 State Persistence | ⏳ Wartend | `WithPersistence` nicht implementiert |
-| §3.5 Sub-Models | ⏳ Wartend | `SubModel[Parent, Child]` nicht implementiert |
-| §3.6 Commands (`Cmd`) | ⏳ Wartend | `UpdateWithCmd`-Signatur nicht implementiert |
+| §3.4 State Persistence | ✅ Integriert | `WithPersistence`, `PersistenceConfig[M]`, Encode/Decode Hooks |
+| §3.5 Sub-Models | ✅ Integriert | `SubModel[Parent, Child]`, `Delegate`, `SubModelWithCmd` |
+| §3.6 Commands (`Cmd`) | ✅ Integriert | `Cmd`, `UpdateWithCmd[M]`, `Batch`, `None` |
 | §4 Widget-System | ✅ Integriert | `Widget`, `WidgetState`, `RenderCtx`, `AdoptState[S]`, `Element`, `UID`, `WithKey` |
-| §4 RenderCtx.Events | ⏳ Wartend | Input-Events werden nicht via `RenderCtx.Events` an Widgets dispatched |
-| §4 Equatable Interface | ⏳ Wartend | |
-| §4 DirtyTracker Interface | ⏳ Wartend | |
+| §4 RenderCtx.Events | ✅ Integriert | Input-Dispatch via `Dispatcher` an Widgets |
+| §4 Equatable Interface | ✅ Integriert | `ui/element.go` |
+| §4 DirtyTracker Interface | ✅ Integriert | `ui/element.go` |
 | §5 Theming-System | ✅ Integriert | `Theme`-Interface, `TokenSet`, `DrawFunc`, `DrawCtx`, `Override` |
 | §5 Slate Dark + Light | ✅ Integriert | Vollständige Token-Werte wie spezifiziert |
-| §5.4 Resolved-Cache | ⏳ Wartend | Kein Theme-Lookup-Cache implementiert |
+| §5.4 Resolved-Cache | ✅ Integriert | `CachedTheme` in `theme/cache.go` |
 | §6 Rendering-Pipeline | 🔶 Teilweise | OpenGL 3.3+ statt wgpu; Scene-Graph vorhanden |
-| §6.2 Canvas-API | 🔶 Teilweise | Kern-Primitives vorhanden; fehlt: Blur, Gradients, Layer, ArcTo, DrawTextLayout, DrawImageSlice, DrawTexture, PushScale, PushClipRoundRect, PushClipPath |
-| §6.3 SDF-Text | 🔶 Teilweise | Glyph-Atlas vorhanden, kein MSDF |
+| §6.2 Canvas-API | ✅ Integriert | Alle Primitives: Blur, Gradients, Layer, ArcTo, DrawTextLayout, DrawImageSlice, DrawTexture, PushScale, PushClipRoundRect, PushClipPath |
+| §6.3 SDF-Text | ✅ Integriert | MSDF-Atlas (NRGBA, 32px Range), Dual-Path (MSDF ≥24px, Bitmap <24px) |
 | §6.4 VTree-Diff / Reconcile | ✅ Integriert | `ui/reconcile.go` |
 | §6.4 VirtualList | ✅ Integriert | `ui/virtual_list.go` |
 | §7 Platform-Abstraktion | 🔶 Teilweise | Interface + GLFW-Backend; Wayland/X11/DRM/Win32/Cocoa fehlen |

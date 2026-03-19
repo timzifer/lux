@@ -33,8 +33,18 @@ type SetDarkModeMsg struct{ Dark bool }
 // Use this to drive animations, timers, or physics.
 type TickMsg struct{ DeltaTime time.Duration }
 
+// Cmd is a function that performs a side effect and optionally returns a Msg (RFC §3.6).
+// A nil Cmd means "no command".
+type Cmd func() Msg
+
+// None is a readable nil-Cmd sentinel.
+var None Cmd
+
 // UpdateFunc is the signature for the update function (RFC §3.1).
 type UpdateFunc[M any] func(M, Msg) M
+
+// UpdateWithCmd is the signature for update functions that return commands (RFC §3.6).
+type UpdateWithCmd[M any] func(M, Msg) (M, Cmd)
 
 // ViewFunc is the signature for the view function (RFC §3.1).
 type ViewFunc[M any] func(M) ui.Element
@@ -87,6 +97,35 @@ type options struct {
 	rendererFactory func() gpu.Renderer
 	shortcuts       []shortcutEntry
 	globalHandlers  []globalHandlerEntry
+	persistence     *persistenceHooks
+	storagePath     string
+}
+
+// Batch combines multiple Cmds into a single Cmd.
+// Nil commands are filtered out. If no live commands remain, nil is returned.
+func Batch(cmds ...Cmd) Cmd {
+	var live []Cmd
+	for _, c := range cmds {
+		if c != nil {
+			live = append(live, c)
+		}
+	}
+	if len(live) == 0 {
+		return nil
+	}
+	if len(live) == 1 {
+		return live[0]
+	}
+	return func() Msg {
+		for _, c := range live[:len(live)-1] {
+			go func(cmd Cmd) {
+				if r := cmd(); r != nil {
+					Send(r)
+				}
+			}(c)
+		}
+		return live[len(live)-1]()
+	}
 }
 
 func defaultOptions() options {

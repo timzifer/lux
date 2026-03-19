@@ -7,9 +7,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"time"
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
@@ -26,6 +28,7 @@ var sectionIDs = []string{
 	"selection", "layout", "rich-text", "virtual-list", "tree",
 	"cards", "tabs", "accordion", "badges-chips", "menus",
 	"shortcuts", "overlays", "canvas-paints", "scoped-themes", "text-shaping",
+	"commands", "sub-models",
 }
 
 func sectionLabel(id string) string {
@@ -68,6 +71,10 @@ func sectionLabel(id string) string {
 		return "Scoped Themes"
 	case "text-shaping":
 		return "Text Shaping"
+	case "commands":
+		return "Commands"
+	case "sub-models":
+		return "Sub-Models"
 	default:
 		return id
 	}
@@ -108,6 +115,11 @@ type Model struct {
 	OverlayOpen   bool
 	HandlerLog    string
 	KineticScroll *ui.KineticScroll
+	// Commands
+	AsyncResult  string
+	AsyncLoading bool
+	// Sub-Models
+	SubCounter int
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -131,10 +143,29 @@ type MenuActionMsg struct{ Action string }
 type ToggleOverlayMsg struct{}
 type DismissOverlayMsg struct{}
 type SetHandlerLogMsg struct{ Text string }
+type StartAsyncMsg struct{}
+type AsyncDoneMsg struct{ Result string }
+type SubCounterIncrMsg struct{}
+type SubCounterDecrMsg struct{}
 
 // ── Update ───────────────────────────────────────────────────────
 
-func update(m Model, msg app.Msg) Model {
+// subCounterModel defines a SubModel for the embedded counter demo.
+var subCounterModel = app.SubModel[Model, int]{
+	Get:    func(m Model) int { return m.SubCounter },
+	Set:    func(m Model, c int) Model { m.SubCounter = c; return m },
+	Update: func(c int, msg app.Msg) int {
+		switch msg.(type) {
+		case SubCounterIncrMsg:
+			c++
+		case SubCounterDecrMsg:
+			c--
+		}
+		return c
+	},
+}
+
+func update(m Model, msg app.Msg) (Model, app.Cmd) {
 	switch msg := msg.(type) {
 	case IncrMsg:
 		m.Count++
@@ -186,6 +217,21 @@ func update(m Model, msg app.Msg) Model {
 	case SetHandlerLogMsg:
 		m.HandlerLog = msg.Text
 
+	// Commands section
+	case StartAsyncMsg:
+		m.AsyncLoading = true
+		return m, func() app.Msg {
+			time.Sleep(500 * time.Millisecond)
+			return AsyncDoneMsg{Result: "Async operation completed!"}
+		}
+	case AsyncDoneMsg:
+		m.AsyncLoading = false
+		m.AsyncResult = msg.Result
+
+	// Sub-Models section: delegate to SubModel
+	case SubCounterIncrMsg, SubCounterDecrMsg:
+		m = app.Delegate(subCounterModel, m, msg)
+
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
 		m.AnimTime += dt
@@ -197,7 +243,7 @@ func update(m Model, msg app.Msg) Model {
 			m.KineticScroll.Tick(msg.DeltaTime)
 		}
 	}
-	return m
+	return m, nil
 }
 
 // ── View ─────────────────────────────────────────────────────────
@@ -279,6 +325,10 @@ func sectionContent(m Model) ui.Element {
 		return scopedThemesSection()
 	case "text-shaping":
 		return textShapingSection()
+	case "commands":
+		return commandsSection(m)
+	case "sub-models":
+		return subModelsSection(m)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -998,6 +1048,49 @@ func textShapingSection() ui.Element {
 	)
 }
 
+// ── Commands Section ──────────────────────────────────────────────
+
+func commandsSection(m Model) ui.Element {
+	children := []ui.Element{
+		sectionHeader("Commands (Async Side Effects)"),
+		ui.Text("Commands let your update function trigger async work."),
+		ui.Text("The result is sent back as a message when done."),
+		ui.Spacer(12),
+		ui.ButtonText("Run Async", func() { app.Send(StartAsyncMsg{}) }),
+	}
+
+	if m.AsyncLoading {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text("Loading..."),
+		)
+	}
+	if m.AsyncResult != "" {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text(fmt.Sprintf("Result: %s", m.AsyncResult)),
+		)
+	}
+
+	return ui.Column(children...)
+}
+
+// ── Sub-Models Section ───────────────────────────────────────────
+
+func subModelsSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Sub-Models (Delegated State)"),
+		ui.Text("SubModel delegates messages to a child model."),
+		ui.Text("The counter below is managed by a separate update function:"),
+		ui.Spacer(12),
+		ui.Text(fmt.Sprintf("Sub-Counter: %d", m.SubCounter)),
+		ui.Row(
+			ui.ButtonText("-", func() { app.Send(SubCounterDecrMsg{}) }),
+			ui.ButtonText("+", func() { app.Send(SubCounterIncrMsg{}) }),
+		),
+	)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
@@ -1026,7 +1119,39 @@ func main() {
 		return false // don't consume — let events pass through
 	}
 
-	if err := app.Run(initial, update, view,
+	// Persistence config: save/restore selected fields as JSON.
+	type persistedState struct {
+		Dark          bool   `json:"dark"`
+		Count         int    `json:"count"`
+		ActiveSection string `json:"active_section"`
+		SubCounter    int    `json:"sub_counter"`
+	}
+	persistence := app.WithPersistence(app.PersistenceConfig[Model]{
+		StorageKey: "kitchen-sink-state",
+		Encode: func(m Model) ([]byte, error) {
+			return json.Marshal(persistedState{
+				Dark:          m.Dark,
+				Count:         m.Count,
+				ActiveSection: m.ActiveSection,
+				SubCounter:    m.SubCounter,
+			})
+		},
+		Decode: func(data []byte) (Model, error) {
+			var ps persistedState
+			if err := json.Unmarshal(data, &ps); err != nil {
+				return Model{}, err
+			}
+			// Restore into a fresh model with proper widget states.
+			restored := initial
+			restored.Dark = ps.Dark
+			restored.Count = ps.Count
+			restored.ActiveSection = ps.ActiveSection
+			restored.SubCounter = ps.SubCounter
+			return restored, nil
+		},
+	})
+
+	if err := app.RunWithCmd(initial, update, view,
 		app.WithTheme(theme.Default),
 		app.WithTitle("Lux Kitchen Sink"),
 		app.WithSize(900, 700),
@@ -1035,6 +1160,8 @@ func main() {
 		app.WithShortcut(input.Shortcut{Key: input.KeyD, Modifiers: input.ModCtrl}, "decr"),
 		// Phase 1: Global Handler Layer (RFC-002 §2.8)
 		app.WithGlobalHandler(keyLogger),
+		// Phase 2: State Persistence (RFC §3.4)
+		persistence,
 	); err != nil {
 		log.Fatal(err)
 	}

@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-18
+**Zuletzt abgeglichen:** 2026-03-19
 **Abhängig von:** RFC-001 (Core Architecture)
 **Folge-RFC:** RFC-003 (Widget Catalogue & Theme)
 
@@ -14,29 +14,29 @@
 
 | Abschnitt | Status | Anmerkung |
 |-----------|--------|-----------|
-| §1 Animations-System | 🔶 Teilweise | |
-| §1.3 Animator-Interface | ⏳ Wartend | Framework tickt WidgetStates nicht automatisch |
-| §1.4 `Anim[T]` | ✅ Integriert | `anim/anim.go` — `float32`/`float64`; fehlt: Color, Point, Size, Rect |
-| §1.4 `Interpolatable` Constraint | 🔶 Teilweise | Nur `~float32 | ~float64`, keine `draw`-Typen |
+| §1 Animations-System | 🔶 Teilweise | Kern vorhanden; fehlt: SpringAnim, AnimGroup/Seq, CubicBezier |
+| §1.3 Animator-Interface | ✅ Integriert | `Animator` Interface + `Reconciler.TickAnimators` |
+| §1.4 `Anim[T]` | ✅ Integriert | `anim/anim.go` — `float32`/`float64` + `LerpAnim[T]` für alle draw-Typen |
+| §1.4 `Interpolatable` Constraint | ✅ Integriert | `LerpFunc[T]`/`LerpAnim[T]` Pattern; `LerpColor`, `LerpPoint`, `LerpSize`, `LerpRect`, `LerpCornerRadii` in `draw/lerp.go` |
 | §1.5 `SpringAnim[T]` | ⏳ Wartend | |
 | §1.6 `MotionSpec` im Theme | 🔶 Teilweise | Durations vorhanden, kein Easing pro Preset (nur `DurationEasing` → nur `Duration`) |
 | §1.7 Easing-Funktionen | ✅ Integriert | Linear, OutCubic, InCubic, InOutCubic, OutExpo |
 | §1.8 AnimationID / SetTargetWithID | ⏳ Wartend | |
 | §1.9 AnimGroup / AnimSeq | ⏳ Wartend | |
 | §1.10 CubicBezier | ⏳ Wartend | |
-| §2 Input-System | 🔶 Teilweise | |
-| §2.2 KeyMsg, MouseMsg, ScrollMsg | ✅ Integriert | Vereinfachte Typen (string Key, keine ModifierSet-Bitfield) |
-| §2.2 TouchMsg | ⏳ Wartend | |
+| §2 Input-System | ✅ Integriert | Typisierter `Key uint32`, `ModifierSet` Bitfield, Touch, MouseEnter/Leave |
+| §2.2 KeyMsg, MouseMsg, ScrollMsg | ✅ Integriert | Typisiert: `Key uint32`, `ModifierSet`, `ScrollMsg.Precise` |
+| §2.2 TouchMsg | ✅ Integriert | `TouchMsg` mit TouchID, Phase, Force |
 | §2.2 TextInputMsg → CharMsg | ✅ Integriert | Als `CharMsg` statt `TextInputMsg` |
 | §2.2 IME Compose-Window | ⏳ Wartend | `IMEComposeMsg`, `SetIMECursorRect` |
-| §2.3 Focus-Management | 🔶 Teilweise | `FocusState` existiert, aber kein Focusable-Interface, kein Tab-Order |
-| §2.3 FocusGainedMsg/FocusLostMsg | ⏳ Wartend | |
-| §2.4 Hit-Testing | ✅ Integriert | `internal/hit/hit.go` |
-| §2.5 Keyboard-Shortcuts | ⏳ Wartend | |
-| §2.6 Input-Dispatch via RenderCtx.Events | ⏳ Wartend | |
-| §2.7 Cursor-Management | ⏳ Wartend | |
-| §2.8 Global Handler Layer | ⏳ Wartend | |
-| §3 Scroll & Kinetic Scrolling | 🔶 Teilweise | `ScrollState` vorhanden, kein `KineticScroll` mit Friction/Rubber-Band |
+| §2.3 Focus-Management | ✅ Integriert | `FocusManager`, `Focusable`-Interface, Tab-Order aus Layout |
+| §2.3 FocusGainedMsg/FocusLostMsg | ✅ Integriert | `ui/focus.go` |
+| §2.4 Hit-Testing | ✅ Integriert | `internal/hit/hit.go` + `Interactor` (index-safe) |
+| §2.5 Keyboard-Shortcuts | ✅ Integriert | `Shortcut`, `ShortcutMsg`, `WithShortcut`, `PlatformShortcut` |
+| §2.6 Input-Dispatch via RenderCtx.Events | ✅ Integriert | `Dispatcher` in `ui/dispatch.go` |
+| §2.7 Cursor-Management | ✅ Integriert | `CursorKind`, `Cursable`-Interface, `SetCursor` in Platform |
+| §2.8 Global Handler Layer | ✅ Integriert | `GlobalHandler`, `WithGlobalHandler`, `RegisterHandlerMsg` |
+| §3 Scroll & Kinetic Scrolling | ✅ Integriert | `KineticScroll` mit Friction, Rubber-Band, Velocity-Tracking |
 | §3.4 ScrollSpec im Theme | ✅ Integriert | Friction, Overscroll, TrackWidth, ThumbRadius |
 | §4 Layout-System | 🔶 Teilweise | |
 | §4.2 Constraints-Modell | ✅ Integriert | `ui/constraints.go` |
@@ -50,7 +50,7 @@
 | §4.10 Insets-Typ (Start/End) | ⏳ Wartend | Logische Richtungen statt physische |
 | §5 Datenbasierte Widgets | 🔶 Teilweise | |
 | §5.2 Tree-Widget | ✅ Integriert | `ui/tree.go` mit Expand/Collapse, Animation, Selection |
-| §5.3 Overlay-System | ⏳ Wartend | |
+| §5.3 Overlay-System | ✅ Integriert | `Overlay` Element mit Anchor, Placement, Dismissable, Animation |
 | §6 DynamicDataset | ⏳ Wartend | |
 
 ---

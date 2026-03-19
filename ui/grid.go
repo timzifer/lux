@@ -2,7 +2,6 @@ package ui
 
 import (
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -41,7 +40,7 @@ type gridElement struct {
 
 func (gridElement) isElement() {}
 
-func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
 	n := len(node.Children)
 	if n == 0 || node.Columns < 1 {
 		return bounds{X: area.X, Y: area.Y}
@@ -69,7 +68,7 @@ func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Them
 		col := i % cols
 		cellX := area.X + col*(cellW+colGap)
 		cellY := 0 // doesn't matter for measurement
-		cb := layoutElement(child, bounds{X: cellX, Y: cellY, W: cellW, H: area.H}, nc, th, tokens, nil, nil, nil)
+		cb := layoutElement(child, bounds{X: cellX, Y: cellY, W: cellW, H: area.H}, nc, th, tokens, nil, nil)
 		if cb.H > rowHeights[row] {
 			rowHeights[row] = cb.H
 		}
@@ -86,7 +85,7 @@ func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Them
 			}
 			cellX := area.X + col*(cellW+colGap)
 			childArea := bounds{X: cellX, Y: cursorY, W: cellW, H: rowHeights[row]}
-			layoutElement(node.Children[idx], childArea, canvas, th, tokens, hitMap, hover, overlays, focus)
+			layoutElement(node.Children[idx], childArea, canvas, th, tokens, ix, overlays, focus)
 		}
 		rowW := cols*cellW + totalColGaps
 		if rowW > maxW {

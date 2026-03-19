@@ -13,7 +13,7 @@ import (
 
 func buildTestScene(root Element, w, h int) draw.Scene {
 	canvas := render.NewSceneCanvas(w, h)
-	return BuildScene(root, canvas, theme.Default, w, h, nil, nil)
+	return BuildScene(root, canvas, theme.Default, w, h, nil)
 }
 
 // buildTestSceneSfnt builds a scene using the sfnt shaper and glyph atlas.
@@ -21,7 +21,7 @@ func buildTestSceneSfnt(root Element, w, h int) draw.Scene {
 	atlas := text.NewGlyphAtlas(512, 512)
 	shaper := text.NewSfntShaper(fonts.Fallback)
 	canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
-	return BuildScene(root, canvas, theme.Default, w, h, nil, nil)
+	return BuildScene(root, canvas, theme.Default, w, h, nil)
 }
 
 func TestBuildSceneEmpty(t *testing.T) {
@@ -179,7 +179,7 @@ func TestBuildSceneCollectsHitTargets(t *testing.T) {
 	BuildScene(Column(
 		Text("Label"),
 		ButtonText("OK", func() {}),
-	), canvas, theme.Default, 800, 600, &hitMap, nil)
+	), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 
 	if hitMap.Len() != 1 {
 		t.Fatalf("expected 1 hit target, got %d", hitMap.Len())
@@ -191,7 +191,7 @@ func TestBuildSceneHitTargetNilOnClick(t *testing.T) {
 	// hover index stays in sync with the hit-map index.
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(ButtonText("X", nil), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(ButtonText("X", nil), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 
 	if hitMap.Len() != 1 {
 		t.Errorf("nil OnClick should still register hit target for hover sync, got %d", hitMap.Len())
@@ -204,7 +204,7 @@ func TestBuildSceneMultipleHitTargets(t *testing.T) {
 	BuildScene(Row(
 		ButtonText("A", func() {}),
 		ButtonText("B", func() {}),
-	), canvas, theme.Default, 800, 600, &hitMap, nil)
+	), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 
 	if hitMap.Len() != 2 {
 		t.Fatalf("expected 2 hit targets, got %d", hitMap.Len())
@@ -215,7 +215,7 @@ func TestHitTargetClickable(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
 	clicked := false
-	BuildScene(ButtonText("OK", func() { clicked = true }), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(ButtonText("OK", func() { clicked = true }), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 
 	// Button is at framePadding (24) position, with buttonMinWidth (180) and some height.
 	target := hitMap.HitTest(float32(framePadding+10), float32(framePadding+5))
@@ -267,7 +267,7 @@ func TestBuildSceneWithHoverState(t *testing.T) {
 	hover.Tick(0)          // ensure the anim completes
 
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := BuildScene(ButtonText("OK", nil), canvas, theme.Default, 800, 600, nil, &hover)
+	scene := BuildScene(ButtonText("OK", nil), canvas, theme.Default, 800, 600, NewInteractor(nil, &hover))
 
 	tokens := theme.Default.Tokens()
 
@@ -284,7 +284,7 @@ func TestBuildSceneWithHoverState(t *testing.T) {
 func TestBuildSceneNilHoverState(t *testing.T) {
 	// nil HoverState should render normally without panic.
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := BuildScene(ButtonText("OK", nil), canvas, theme.Default, 800, 600, nil, nil)
+	scene := BuildScene(ButtonText("OK", nil), canvas, theme.Default, 800, 600, nil)
 
 	tokens := theme.Default.Tokens()
 	if len(scene.Rects) < 2 {
@@ -298,7 +298,7 @@ func TestBuildSceneNilHoverState(t *testing.T) {
 
 func TestBuildSceneWithLightTheme(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := BuildScene(Text("HELLO"), canvas, theme.Light, 800, 600, nil, nil)
+	scene := BuildScene(Text("HELLO"), canvas, theme.Light, 800, 600, nil)
 
 	if len(scene.Glyphs) != 1 {
 		t.Fatalf("expected 1 glyph, got %d", len(scene.Glyphs))
@@ -503,17 +503,17 @@ func TestBuildSceneCheckboxHitTarget(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
 
 	// With callback
-	BuildScene(Checkbox("A", false, func(bool) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Checkbox("A", false, func(bool) {}), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 1 {
 		t.Errorf("Checkbox with onToggle should register 1 hit target, got %d", hitMap.Len())
 	}
 
-	// Without callback
+	// Without callback — still registers a noop target to keep hover indices in sync.
 	hitMap.Reset()
 	canvas = render.NewSceneCanvas(800, 600)
-	BuildScene(Checkbox("B", false, nil), canvas, theme.Default, 800, 600, &hitMap, nil)
-	if hitMap.Len() != 0 {
-		t.Errorf("Checkbox with nil onToggle should register 0 targets, got %d", hitMap.Len())
+	BuildScene(Checkbox("B", false, nil), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
+	if hitMap.Len() != 1 {
+		t.Errorf("Checkbox with nil onToggle should register 1 noop target, got %d", hitMap.Len())
 	}
 }
 
@@ -521,7 +521,7 @@ func TestBuildSceneCheckboxToggle(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
 	var received bool
-	BuildScene(Checkbox("X", false, func(v bool) { received = v }), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Checkbox("X", false, func(v bool) { received = v }), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 
 	target := hitMap.HitTest(float32(framePadding+5), float32(framePadding+5))
 	if target == nil {
@@ -554,7 +554,7 @@ func TestBuildSceneRadioSelected(t *testing.T) {
 func TestBuildSceneRadioHitTarget(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Radio("A", false, func() {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Radio("A", false, func() {}), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 1 {
 		t.Errorf("Radio with onSelect should register 1 hit target, got %d", hitMap.Len())
 	}
@@ -586,7 +586,7 @@ func TestBuildSceneToggle(t *testing.T) {
 func TestBuildSceneToggleHitTarget(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Toggle(false, func(bool) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Toggle(false, func(bool) {}), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 1 {
 		t.Errorf("Toggle with onToggle should register 1 hit target, got %d", hitMap.Len())
 	}
@@ -603,7 +603,7 @@ func TestBuildSceneSlider(t *testing.T) {
 func TestBuildSceneSliderHitTarget(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Slider(0.5, func(float32) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Slider(0.5, func(float32) {}), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 1 {
 		t.Errorf("Slider with onChange should register 1 hit target, got %d", hitMap.Len())
 	}
@@ -660,7 +660,7 @@ func TestBuildSceneTextFieldPlaceholder(t *testing.T) {
 func TestBuildSceneTextFieldNoHitTarget(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(TextField("x", ""), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(TextField("x", ""), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 0 {
 		t.Errorf("TextField should not register hit targets, got %d", hitMap.Len())
 	}
@@ -678,11 +678,12 @@ func TestBuildSceneSelect(t *testing.T) {
 }
 
 func TestBuildSceneSelectNoHitTarget(t *testing.T) {
+	// Select with nil State still registers a noop target to keep hover indices in sync.
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Select("x", nil), canvas, theme.Default, 800, 600, &hitMap, nil)
-	if hitMap.Len() != 0 {
-		t.Errorf("Select should not register hit targets, got %d", hitMap.Len())
+	BuildScene(Select("x", nil), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
+	if hitMap.Len() != 1 {
+		t.Errorf("Select should register 1 noop hit target, got %d", hitMap.Len())
 	}
 }
 
@@ -843,7 +844,7 @@ func TestScrollViewOffsetShiftsContent(t *testing.T) {
 	// so the first visible glyph changes.
 	state := &ScrollState{Offset: 20}
 	canvas := render.NewSceneCanvas(800, 600)
-	sceneWithScroll := BuildScene(ScrollView(content, 50, state), canvas, theme.Default, 800, 600, nil, nil)
+	sceneWithScroll := BuildScene(ScrollView(content, 50, state), canvas, theme.Default, 800, 600, nil)
 
 	if len(sceneNoScroll.Glyphs) == 0 {
 		t.Fatal("non-scrolled scene should produce glyphs")
@@ -881,7 +882,7 @@ func TestScrollViewRegistersScrollTarget(t *testing.T) {
 	scroll := &ScrollState{}
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(ScrollView(content, 40, scroll), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(ScrollView(content, 40, scroll), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 
 	// The scroll target should be registered.
 	target := hitMap.HitTestScroll(30, 30)
@@ -905,12 +906,12 @@ func TestScrollViewThumbPositionReflectsOffset(t *testing.T) {
 	// No offset — thumb at top.
 	state0 := &ScrollState{Offset: 0}
 	canvas0 := render.NewSceneCanvas(800, 600)
-	scene0 := BuildScene(ScrollView(content, 40, state0), canvas0, theme.Default, 800, 600, nil, nil)
+	scene0 := BuildScene(ScrollView(content, 40, state0), canvas0, theme.Default, 800, 600, nil)
 
 	// Large offset — thumb should be lower.
 	state1 := &ScrollState{Offset: 100}
 	canvas1 := render.NewSceneCanvas(800, 600)
-	scene1 := BuildScene(ScrollView(content, 40, state1), canvas1, theme.Default, 800, 600, nil, nil)
+	scene1 := BuildScene(ScrollView(content, 40, state1), canvas1, theme.Default, 800, 600, nil)
 
 	// Both scenes should have a scrollbar (track + thumb = 2+ rects).
 	if len(scene0.Rects) < 2 || len(scene1.Rects) < 2 {
@@ -948,7 +949,7 @@ func TestTextFieldFocusBorderHighlight(t *testing.T) {
 	// First pass to assign element UIDs.
 	BuildScene(
 		TextField("hi", "", WithOnChange(func(string) {}), WithFocus(fm)),
-		canvas, theme.Default, 800, 600, nil, nil, fm,
+		canvas, theme.Default, 800, 600, nil, fm,
 	)
 	// Focus the first element UID.
 	fm.FocusNext()
@@ -958,7 +959,7 @@ func TestTextFieldFocusBorderHighlight(t *testing.T) {
 	fm.ResetOrder()
 	BuildScene(
 		TextField("hi", "", WithOnChange(func(string) {}), WithFocus(fm)),
-		canvas, theme.Default, 800, 600, nil, nil, fm,
+		canvas, theme.Default, 800, 600, nil, fm,
 	)
 	scene := canvas.Scene()
 	tokens := theme.Default.Tokens()
@@ -978,7 +979,7 @@ func TestTextFieldUnfocusedBorder(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
 	BuildScene(
 		TextField("hi", "", WithOnChange(func(string) {}), WithFocus(fm)),
-		canvas, theme.Default, 800, 600, nil, nil, fm,
+		canvas, theme.Default, 800, 600, nil, fm,
 	)
 	scene := canvas.Scene()
 	tokens := theme.Default.Tokens()
@@ -998,7 +999,7 @@ func TestTextFieldClickSetsFocus(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
 	BuildScene(
 		TextField("", "type here", WithOnChange(func(string) {}), WithFocus(fm)),
-		canvas, theme.Default, 800, 600, &hitMap, nil, fm,
+		canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil), fm,
 	)
 
 	if hitMap.Len() != 1 {
@@ -1126,7 +1127,7 @@ func TestBuildSceneChipSelected(t *testing.T) {
 func TestBuildSceneChipHitTarget(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Chip(Text("Tag"), false, func() {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Chip(Text("Tag"), false, func() {}), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 1 {
 		t.Errorf("Chip with onClick should register 1 hit target, got %d", hitMap.Len())
 	}
@@ -1135,18 +1136,19 @@ func TestBuildSceneChipHitTarget(t *testing.T) {
 func TestBuildSceneChipDismissible(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(ChipDismissible(Text("Tag"), false, func() {}, func() {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(ChipDismissible(Text("Tag"), false, func() {}, func() {}), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 2 {
 		t.Errorf("Dismissible Chip should register 2 hit targets (click + dismiss), got %d", hitMap.Len())
 	}
 }
 
 func TestBuildSceneChipNoCallbackNoHitTarget(t *testing.T) {
+	// Chip with nil onClick still registers a noop target to keep hover indices in sync.
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Chip(Text("Tag"), false, nil), canvas, theme.Default, 800, 600, &hitMap, nil)
-	if hitMap.Len() != 0 {
-		t.Errorf("Chip with nil onClick should register 0 hit targets, got %d", hitMap.Len())
+	BuildScene(Chip(Text("Tag"), false, nil), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
+	if hitMap.Len() != 1 {
+		t.Errorf("Chip with nil onClick should register 1 noop hit target, got %d", hitMap.Len())
 	}
 }
 
@@ -1181,7 +1183,7 @@ func TestBuildSceneTabsHitTarget(t *testing.T) {
 		{Header: Text("A"), Content: Text("CA")},
 		{Header: Text("B"), Content: Text("CB")},
 	}
-	BuildScene(Tabs(items, 0, func(int) {}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Tabs(items, 0, func(int) {}), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 2 {
 		t.Errorf("Tabs with 2 items + onSelect should register 2 hit targets, got %d", hitMap.Len())
 	}
@@ -1242,7 +1244,7 @@ func TestBuildSceneAccordionHitTarget(t *testing.T) {
 	}
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	BuildScene(Accordion(sections, state), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(Accordion(sections, state), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 2 {
 		t.Errorf("Accordion with 2 sections should register 2 hit targets, got %d", hitMap.Len())
 	}
@@ -1313,7 +1315,7 @@ func TestBuildSceneMenuBarHitTarget(t *testing.T) {
 		{Label: Text("File"), OnClick: func() {}},
 		{Label: Text("Edit"), OnClick: func() {}},
 	}
-	BuildScene(MenuBar(items, NewMenuBarState()), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(MenuBar(items, NewMenuBarState()), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 2 {
 		t.Errorf("MenuBar with 2 items should register 2 hit targets, got %d", hitMap.Len())
 	}
@@ -1362,7 +1364,7 @@ func TestBuildSceneContextMenuHitTargets(t *testing.T) {
 		{Label: Text("Cut"), OnClick: func() {}},
 		{Label: Text("Copy"), OnClick: func() {}},
 	}
-	BuildScene(ContextMenu(items, true, 100, 100), canvas, theme.Default, 800, 600, &hitMap, nil)
+	BuildScene(ContextMenu(items, true, 100, 100), canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 	if hitMap.Len() != 2 {
 		t.Errorf("ContextMenu with 2 items should register 2 hit targets, got %d", hitMap.Len())
 	}
@@ -1425,7 +1427,7 @@ func TestCustomThemeDrawFuncButtonText(t *testing.T) {
 	canvas := render.NewSceneCanvas(800, 600)
 	scene := BuildScene(
 		ButtonText("Custom", nil),
-		canvas, customTheme, 800, 600, nil, nil,
+		canvas, customTheme, 800, 600, nil,
 	)
 
 	if !customCalled {
@@ -1492,7 +1494,7 @@ func TestSelectOpenStateRendersOverlay(t *testing.T) {
 
 	canvas := render.NewSceneCanvas(800, 600)
 	var hitMap hit.Map
-	scene := BuildScene(el, canvas, theme.Default, 800, 600, &hitMap, nil)
+	scene := BuildScene(el, canvas, theme.Default, 800, 600, NewInteractor(&hitMap, nil))
 
 	// When open, overlay items should be rendered (3 items = 3 text entries + value + arrow).
 	optionCount := 0
@@ -1522,7 +1524,7 @@ func TestSelectClosedStateNoOverlay(t *testing.T) {
 	el := Select("Apple", []string{"Apple", "Banana", "Cherry"}, WithSelectState(state))
 
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := BuildScene(el, canvas, theme.Default, 800, 600, nil, nil)
+	scene := BuildScene(el, canvas, theme.Default, 800, 600, nil)
 
 	// No overlay content when closed.
 	if len(scene.OverlayRects) != 0 || len(scene.OverlayGlyphs) != 0 {

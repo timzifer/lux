@@ -2,7 +2,6 @@ package ui
 
 import (
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -39,7 +38,7 @@ func (virtualListElement) isElement() {}
 
 const virtualListOverscan = 3
 
-func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, hitMap *hit.Map, hover *HoverState, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
 	if node.ItemCount <= 0 || node.BuildItem == nil {
 		return bounds{X: area.X, Y: area.Y}
 	}
@@ -108,12 +107,12 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 		itemY := area.Y + i*itemH - int(offset)
 		child := node.BuildItem(i)
 		childArea := bounds{X: area.X, Y: itemY, W: contentW, H: itemH}
-		layoutElement(child, childArea, canvas, th, tokens, hitMap, hover, overlays, focus)
+		layoutElement(child, childArea, canvas, th, tokens, ix, overlays, focus)
 	}
 
 	// Draw scrollbar INSIDE the clip so it's visible even within a parent ScrollView.
 	if needsScroll && node.State != nil {
-		drawScrollbar(canvas, tokens, hitMap, node.State, area.X+contentW, area.Y, actualH, contentH, offset)
+		drawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, actualH, contentH, offset)
 	}
 
 	canvas.PopClip()
@@ -133,11 +132,11 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 	}
 
 	// Register scroll target.
-	if hitMap != nil && node.State != nil && needsScroll {
+	if node.State != nil && needsScroll {
 		state := node.State
 		cH := contentH
 		vH := float32(actualH)
-		hitMap.AddScroll(
+		ix.RegisterScroll(
 			draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(actualH)),
 			cH, vH,
 			func(deltaY float32) { state.ScrollBy(deltaY, cH, vH) },
@@ -149,7 +148,7 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 
 // drawScrollbar renders a scrollbar track and thumb, returning the track width consumed.
 // Shared by ScrollView, VirtualList, and Tree.
-func drawScrollbar(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, state *ScrollState, trackX, trackY, viewportH int, contentH, offset float32) int {
+func drawScrollbar(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor, state *ScrollState, trackX, trackY, viewportH int, contentH, offset float32) int {
 	trackW := int(tokens.Scroll.TrackWidth)
 	if trackW <= 0 {
 		trackW = 8
@@ -188,12 +187,12 @@ func drawScrollbar(canvas draw.Canvas, tokens theme.TokenSet, hitMap *hit.Map, s
 		thumbR, draw.SolidPaint(thumbColor))
 
 	// Track-click hit target.
-	if hitMap != nil && state != nil {
+	if state != nil {
 		st := state
 		ms := maxScroll
 		tY := float32(trackY)
 		vH := float32(viewportH)
-		hitMap.AddAt(
+		ix.RegisterClickAt(
 			draw.R(float32(trackX), float32(trackY), float32(trackW), float32(viewportH)),
 			func(_, y float32) {
 				frac := (y - tY) / vH

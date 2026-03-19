@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-18
+**Zuletzt abgeglichen:** 2026-03-19
 **Abhängig von:** RFC-001, RFC-002
 
 ---
@@ -17,15 +17,15 @@
 | §1.1 Theme-Interface | ✅ Integriert | `Tokens()`, `DrawFunc()`, `Parent()` |
 | §1.2 TokenSet | ✅ Integriert | Alle Token-Gruppen vorhanden |
 | §1.3 DrawFunc & Custom Rendering | ✅ Integriert | `DrawFunc`, `DrawCtx` |
-| §1.4 Theme-Lookup-Cache | ⏳ Wartend | Kein Resolved-Cache |
+| §1.4 Theme-Lookup-Cache | ✅ Integriert | `CachedTheme` in `theme/cache.go` |
 | §1.5 Theme-Wechsel (`SetThemeMsg`) | ✅ Integriert | `app.SetThemeMsg`, `app.SetDarkModeMsg` |
 | §1.6 `theme.Override` | ✅ Integriert | `OverrideSpec` mit Pointer-Feldern |
 | §2 theme.Slate Dark + Light | ✅ Integriert | Alle Token-Werte wie spezifiziert |
-| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | |
+| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | Kern vorhanden; fehlt: BiDi, UAX#14, Grapheme-Cluster, i18n |
 | §3.1 CGo-Strategie | 🔶 Teilweise | Aktuell: OpenGL+GLFW (CGo); wgpu/gogpu noch nicht integriert |
-| §3.2 go-text/typesetting | ⏳ Wartend | Aktuell: eigener `sfnt_shaper`; kein vollständiges OpenType-Shaping |
-| §3.3 Shaper-Interface | ⏳ Wartend | |
-| §3.4 Font-Loading & Fallback-Chain | 🔶 Teilweise | `fonts` Package mit Embedded-Fonts; kein vollständiges FontFamily/Fallback |
+| §3.2 go-text/typesetting | ✅ Integriert | `GoTextShaper` mit vollständigem GSUB/GPOS |
+| §3.3 Shaper-Interface | ✅ Integriert | `Shaper` Interface, `ShapingRun`, `ShapedGlyph` in `internal/text/` |
+| §3.4 Font-Loading & Fallback-Chain | ✅ Integriert | `FontFamily` mit `Fallback`-Chain, `FindGlyphFont` pro Glyph |
 | §3.5 BiDi | ⏳ Wartend | |
 | §3.6 Unicode Line-Breaking (UAX #14) | ⏳ Wartend | |
 | §3.7 Grapheme-Cluster & Cursor-Navigation | ⏳ Wartend | |
