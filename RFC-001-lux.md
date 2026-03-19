@@ -4440,33 +4440,129 @@ Kein OSR, kein Textur-Export, keine Input-Injection. Unbrauchbar für Surface-Sl
 | Langzeit-Viabilität (10%) | 5/5 | 4/5 | 4/5 |
 | **Gewichtet** | **4.05** | **3.45** | **3.75** |
 
-### A.4 Empfehlung: Zwei-Stufen-Strategie
+### A.4 Empfehlung: Plattform-nativer OS-Shim
 
-**Mittelfristig (jetzt → 2028): CEF**
+Statt einer einzigen Cross-Platform-Engine (CEF) wird ein **OS-Shim** empfohlen, der pro Plattform die jeweils beste Engine nutzt. Gemeinsames Interface, plattformspezifische Implementierung via Build-Tags — konsistent mit dem Platform-Ansatz in §7.
 
-CEF ist die einzige Engine die heute stabiles OSR + Shared Textures + Cross-Platform + vollständige Web-Kompatibilität bietet. Der Integrationspfad:
+#### A.4.1 Architektur
 
 ```
-CEF OnAcceleratedPaint() → Shared Handle (DXGI/IOSurface/DMA-buf)
-    → wgpu Import External Memory
+lux/surface/webview/
+├── webview.go           // SurfaceProvider-Interface + gemeinsame Typen
+├── webview_linux.go     // → WPE WebKit + DMA-buf
+├── webview_windows.go   // → WebView2 + DXGI
+└── webview_darwin.go    // → Servo + wgpu (⚠ WIP)
+```
+
+```go
+// webview.go — gemeinsames Interface
+type WebViewSurface struct {
+    surface.Base                    // Einbettung von SurfaceProvider
+    url     string
+}
+
+// Jede Plattform implementiert:
+//   NewWebViewSurface(url string) *WebViewSurface
+//   AcquireFrame(bounds Rect) (wgpu.TextureView, FrameToken)
+//   ReleaseFrame(token FrameToken)
+//   HandleMsg(msg Msg) bool
+```
+
+#### A.4.2 Linux: WPE WebKit
+
+| Aspekt | Detail |
+|---|---|
+| Engine | WPE WebKit (via WPEPlatform-API) |
+| Zero-Copy | DMA-buf → wgpu External Memory — **produktionsreif** |
+| Go-Anbindung | GObject C-API → CGo |
+| Web-Kompatibilität | Safari/WebKit-Level (4/5) |
+| Binary-Overhead | ~60–100 MB |
+| Status | **Stabil.** Referenz-Implementierung: Neomacs (WPE + DMA-buf Zero-Copy). Igalia pflegt WPE aktiv, neue WPEPlatform-API Richtung 1.0. |
+
+Integrationspfad:
+```
+WPE WebKit Render → DMA-buf fd
+    → wgpu Import External Memory (VK_EXT_external_memory_dma_buf)
     → wgpu.TextureView
     → SurfaceProvider.AcquireFrame() return
 ```
 
-CEF wird als **optionales Modul** (`lux/surface/cef`) eingebunden — nicht Teil des Core. Lazy-Loading verhindert RAM-Overhead wenn kein Browser benötigt wird. Linux nutzt den §8.2 Fallback-Pfad (OSR → CPU-Copy → Upload) bis DMA-buf stabil ist.
+#### A.4.3 Windows: WebView2
 
-**Langfristig (2027+ beobachten): Servo**
+| Aspekt | Detail |
+|---|---|
+| Engine | WebView2 (Edge/Chromium, Microsoft) |
+| Zero-Copy | `ICoreWebView2CompositionController` → DXGI Shared Handle |
+| Go-Anbindung | COM-API → CGo (oder go-ole) |
+| Web-Kompatibilität | Chromium-Level (5/5) |
+| Binary-Overhead | ~0 MB — WebView2 Runtime ist ab Windows 11 vorinstalliert, Windows 10 via Evergreen-Runtime |
+| Status | **Stabil.** Microsoft pflegt aktiv, automatische Updates über Edge-Kanal. |
 
-Servo's wgpu-interne Architektur ermöglicht potentiell Zero-Copy ohne OS-Level Texture-Sharing — der architektonisch sauberste Pfad. Beobachtungs-Meilensteine:
+Integrationspfad:
+```
+WebView2 CompositionController → DXGI Shared Handle
+    → wgpu Import External Memory (ID3D12Resource)
+    → wgpu.TextureView
+    → SurfaceProvider.AcquireFrame() return
+```
 
-- Stabile C-FFI (`libservo` als stable API)
-- CSS Grid + Flexbox vollständig
-- Servo 1.0 Release
-- Produktions-Embedding-Referenzen
+Vorteil gegenüber CEF auf Windows: kein eigener Chromium-Build nötig, kein ~200 MB Binary-Overhead, Updates über OS/Edge.
 
-**Linux-First Alternative: WPE WebKit**
+#### A.4.4 macOS: Servo (⚠ experimentell)
 
-Falls Lux zunächst Linux-first deployed wird, ist WPE WebKit mit produktionsreifem DMA-buf Zero-Copy eine leichtgewichtigere Alternative zu CEF. Für Cross-Platform müsste ein Split-Ansatz (WPE/Linux, WebKit/macOS, CEF/Windows) evaluiert werden.
+> **Achtung:** Servo ist ein aktives Forschungs-/Entwicklungsprojekt. Die Embedding-API (`libservo`) ist **nicht stabil** (v0.0.4), die Web-Kompatibilität ist **lückenhaft**, und es existiert noch kein stabiles C-FFI. Die Integration auf macOS ist bewusst als **experimentell / best-effort** einzustufen. Produktionskritische Anwendungen sollten auf den §8.2 Fallback-Pfad (CPU-Copy) zurückfallen können.
+
+| Aspekt | Detail |
+|---|---|
+| Engine | Servo (via `libservo` / C-FFI, sobald stabil) |
+| Zero-Copy | wgpu ↔ wgpu = **Shared TextureView direkt** — kein OS-Level Texture-Sharing nötig |
+| Go-Anbindung | C-FFI → CGo (sobald `libservo` stabil). Alternativ: IPC als Brücke |
+| Web-Kompatibilität | 2/5 — viele CSS/JS-Features unvollständig |
+| Binary-Overhead | ~50–80 MB |
+| Status | **WIP.** Neues Delegate-basiertes WebView-API seit Feb 2025. Aktive Entwicklung, Linux Foundation Projekt. |
+
+Integrationspfad (Ziel):
+```
+Servo (wgpu-intern) → wgpu.TextureView direkt
+    → SurfaceProvider.AcquireFrame() return
+    // Kein DMA-buf/IOSurface nötig — gleiche wgpu-Instanz
+```
+
+**Warum Servo auf macOS (und nicht CEF)?**
+
+1. wgpu → wgpu ist der architektonisch sauberste Pfad — Zero-Copy ohne OS-Primitiv
+2. Servo ist ~50 MB statt ~200 MB (CEF)
+3. macOS hat keine leichtgewichtige OSR-Alternative (`WKWebView` bietet kein Texture-Sharing)
+4. Servo auf macOS investiert früh in die langfristig beste Engine
+5. Der §8.2 Fallback-Pfad (CPU-Copy) fängt Servo-Lücken auf
+
+**Beobachtungs-Meilensteine** (Upgrade von "experimentell" auf "stabil"):
+
+- [ ] Stabile C-FFI (`libservo` als versionierte API)
+- [ ] CSS Grid + Flexbox vollständig
+- [ ] Servo 1.0 Release
+- [ ] Mindestens eine produktive Embedding-Referenz
+
+#### A.4.5 Fallback-Strategie
+
+Auf allen Plattformen gilt: wenn die primäre Engine nicht verfügbar ist oder ein Feature nicht unterstützt, greift der §8.2 Fallback-Pfad:
+
+```
+Engine OSR → Shared Memory Buffer → CPU-Copy → wgpu Upload → TextureView
+```
+
+Dies ist langsamer (kein Zero-Copy), aber universell und stellt sicher, dass Surface-Slots auch bei Engine-Problemen funktionieren. Auf macOS ist dieser Fallback besonders relevant, solange Servo's Embedding-API reift.
+
+#### A.4.6 Vergleich: OS-Shim vs. CEF-Monolith
+
+| Aspekt | OS-Shim (WPE/WebView2/Servo) | CEF überall |
+|---|---|---|
+| Binary-Größe | ~0 MB (Win) / ~60 MB (Linux) / ~50 MB (macOS) | ~200 MB pro Plattform |
+| Zero-Copy-Qualität | Produktionsreif (Linux, Windows), experimentell (macOS) | Stabil (Win/macOS), fragil (Linux) |
+| Wartung | Plattform-Updates automatisch (Win), Igalia (Linux), Community (macOS) | Chromium-Release-Zyklus, eigener Build |
+| Web-Kompatibilität | Konsistent auf Win/Linux (Chromium/WebKit), eingeschränkt macOS | Konsistent überall (Chromium) |
+| Komplexität | Drei Backends pflegen | Ein Backend, aber Chromium-Build-System |
+| Philosophie | Passt zu Lux §7 (Build-Tags pro Plattform) | Monolithischer Fremdkörper |
 
 ---
 
