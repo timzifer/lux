@@ -469,7 +469,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 // modelChanged reports whether two model values differ.
 // It uses == for comparable types and conservatively assumes changed
 // for non-comparable types (slices, maps, funcs) to avoid panics.
-func modelChanged(a, b any) bool {
+func modelChanged(a, b any) (changed bool) {
+	changed = true // default: assume changed for non-comparable types
 	defer func() { recover() }()
 	return a != b
 }

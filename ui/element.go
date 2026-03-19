@@ -1177,9 +1177,11 @@ func layoutCustom(node customLayoutElement, area bounds, canvas draw.Canvas, th 
 	}
 
 	// Place callback: record offset for later painting.
+	// We use treeEqual instead of == to avoid panics on uncomparable
+	// element types (e.g. buttonElement contains func fields).
 	placeFn := func(child Element, offset draw.Point) {
 		for i, ch := range node.Children {
-			if ch == child {
+			if treeEqual(ch, child) {
 				placements[i] = placement{offset: offset, placed: true}
 				return
 			}

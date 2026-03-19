@@ -8,7 +8,12 @@
       "Bash(wc -l /g/golang/lux/ui/*.go)",
       "Bash(grep -r \"func.*ScrollView\\\\|type.*ScrollView\\\\|func layoutScroll\" /g/golang/lux/ui --include=*.go)",
       "Bash(grep:*)",
-      "Bash(ls -la /g/golang/lux/ui/*.go)"
+      "Bash(ls -la /g/golang/lux/ui/*.go)",
+      "Bash(find /g/golang/lux -type f -name *itchensink* -o -name *itchen*sink*)",
+      "Bash(find G:/golang/lux -name \"*.go\" -type f -exec grep -l \"== .*\\\\|!= .*\" {})",
+      "Bash(while read:*)",
+      "Bash(do grep:*)",
+      "Bash(done)"
     ]
   }
 }
