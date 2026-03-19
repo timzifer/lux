@@ -158,8 +158,8 @@ func drawScrollbar(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor, st
 		thumbR = 4
 	}
 
-	trackColor := tokens.Colors.Stroke.Divider
-	thumbColor := tokens.Colors.Text.Secondary
+	trackColor := tokens.Colors.Surface.Hovered
+	thumbColor := tokens.Colors.Surface.Pressed
 
 	// Track
 	canvas.FillRoundRect(

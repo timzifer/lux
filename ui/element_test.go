@@ -236,10 +236,17 @@ func TestThemeColorsUsed(t *testing.T) {
 		t.Fatal("need at least 2 rects")
 	}
 
-	// Edge should use Stroke.Border color.
+	// Edge should use accent-derived border color (accent * 0.7).
+	accent := tokens.Colors.Accent.Primary
+	wantBorder := draw.Color{
+		R: accent.R * 0.7,
+		G: accent.G * 0.7,
+		B: accent.B * 0.7,
+		A: 1,
+	}
 	edge := scene.Rects[0]
-	if edge.Color != tokens.Colors.Stroke.Border {
-		t.Errorf("edge color = %v, want Stroke.Border %v", edge.Color, tokens.Colors.Stroke.Border)
+	if edge.Color != wantBorder {
+		t.Errorf("edge color = %v, want accent-derived border %v", edge.Color, wantBorder)
 	}
 
 	// Fill should use Accent.Primary color.

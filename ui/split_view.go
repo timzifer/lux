@@ -9,8 +9,8 @@ import (
 // ── SplitView constants ─────────────────────────────────────────
 
 const (
-	splitDividerDefault = 6  // dp — drag hit area width
-	splitDividerLine    = 1  // dp — visible line thickness
+	splitDividerDefault = 10 // dp — drag hit area width
+	splitDividerLine    = 2  // dp — visible line thickness
 	splitMinPane        = 32 // dp — minimum pane size
 )
 
@@ -148,7 +148,7 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 	canvas.PopClip()
 
 	// Draw divider line (centered within the drag area).
-	lineColor := tokens.Colors.Stroke.Divider
+	lineColor := tokens.Colors.Surface.Hovered
 	if horizontal {
 		lineX := divRect.X + (divPx-splitDividerLine)/2
 		canvas.FillRect(draw.R(lineX, divRect.Y, splitDividerLine, divRect.H), draw.SolidPaint(lineColor))

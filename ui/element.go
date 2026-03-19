@@ -1306,7 +1306,12 @@ func buttonVariantColors(variant ButtonVariant, tokens theme.TokenSet, hoverOpac
 		if hoverOpacity > 0 {
 			fill = lerpColor(fill, hoverHighlight(fill), hoverOpacity)
 		}
-		border = tokens.Colors.Stroke.Border
+		border = draw.Color{
+			R: fill.R * 0.7,
+			G: fill.G * 0.7,
+			B: fill.B * 0.7,
+			A: 1,
+		}
 		textCol = tokens.Colors.Text.OnAccent
 	}
 	return
