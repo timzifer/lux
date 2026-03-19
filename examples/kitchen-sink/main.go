@@ -504,7 +504,7 @@ func view(m Model) ui.Element {
 		themeLabel = "Dark"
 	}
 
-	// Left panel: Tree navigation
+	// Left panel: Tree navigation (MaxHeight 0 = fill available space)
 	nav := ui.Tree(ui.TreeConfig{
 		RootIDs:  sectionIDs,
 		Children: sectionChildren,
@@ -512,22 +512,22 @@ func view(m Model) ui.Element {
 			return ui.Text(sectionLabel(id))
 		},
 		NodeHeight: 28,
-		MaxHeight:  500,
+		MaxHeight:  0,
 		State:      m.NavTree,
 		OnSelect:   func(id string) { app.Send(SelectSectionMsg{id}) },
 	})
 
-	// Right panel: active section content
-	content := ui.ScrollView(sectionContent(m), 500, m.Scroll)
+	// Right panel: active section content (maxHeight 0 = fill available space)
+	content := ui.ScrollView(sectionContent(m), 0, m.Scroll)
 
 	return ui.Padding(ui.UniformInsets(16), ui.Column(
-		// SplitView: nav on the left, content on the right
-		ui.SplitView(
+		// SplitView: nav on the left, content on the right — Expanded fills window height
+		ui.Expanded(ui.SplitView(
 			nav,
 			content,
 			m.NavSplitRatio,
 			func(r float32) { app.Send(SetNavSplitMsg{r}) },
-		),
+		)),
 		// Footer
 		ui.Spacer(12),
 		ui.Row(

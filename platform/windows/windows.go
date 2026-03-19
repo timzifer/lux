@@ -26,7 +26,11 @@ const (
 
 	wmDestroy      = 0x0002
 	wmSize         = 0x0005
-	wmClose        = 0x0010
+	wmEraseBkgnd     = 0x0014
+	wmClose          = 0x0010
+	wmEnterSizeMove  = 0x0231
+	wmExitSizeMove   = 0x0232
+	wmTimer          = 0x0113
 	wmQuit         = 0x0012
 	wmMouseMove    = 0x0200
 	wmLButtonDown  = 0x0201
@@ -86,6 +90,8 @@ var (
 	procSetClipboardData = user32.NewProc("SetClipboardData")
 	procGetClipboardData = user32.NewProc("GetClipboardData")
 	procInvalidateRect   = user32.NewProc("InvalidateRect")
+	procSetTimer         = user32.NewProc("SetTimer")
+	procKillTimer        = user32.NewProc("KillTimer")
 
 	procGlobalAlloc  = kernel32.NewProc("GlobalAlloc")
 	procGlobalLock   = kernel32.NewProc("GlobalLock")
@@ -302,7 +308,7 @@ func (p *Platform) SetFullscreen(fullscreen bool) {
 	}
 	p.fullscreen = fullscreen
 
-	const gwlStyle = -16
+	const gwlStyle = 0xFFFFFFF0 // GWL_STYLE (-16 as uint32)
 	const swpFrameChanged = 0x0020
 	const swpNoZOrder = 0x0004
 	const smCXScreen = 0
@@ -310,13 +316,13 @@ func (p *Platform) SetFullscreen(fullscreen bool) {
 
 	if fullscreen {
 		// Save current style and window rect.
-		style, _, _ := procGetWindowLongW.Call(p.hwnd, uintptr(uint32(gwlStyle)))
+		style, _, _ := procGetWindowLongW.Call(p.hwnd, uintptr(gwlStyle))
 		p.savedStyle = style
 		procGetWindowRect.Call(p.hwnd, uintptr(unsafe.Pointer(&p.savedRect)))
 
 		// Remove borders (WS_OVERLAPPEDWINDOW bits) and make popup.
 		const wsPopup = 0x80000000
-		procSetWindowLongW.Call(p.hwnd, uintptr(uint32(gwlStyle)), wsPopup|wsVisible)
+		procSetWindowLongW.Call(p.hwnd, uintptr(gwlStyle), wsPopup|wsVisible)
 
 		// Resize to full screen.
 		screenW, _, _ := procGetSystemMetrics.Call(smCXScreen)
@@ -324,7 +330,7 @@ func (p *Platform) SetFullscreen(fullscreen bool) {
 		procSetWindowPos.Call(p.hwnd, 0, 0, 0, screenW, screenH, swpFrameChanged|swpNoZOrder)
 	} else {
 		// Restore saved style and rect.
-		procSetWindowLongW.Call(p.hwnd, uintptr(uint32(gwlStyle)), p.savedStyle)
+		procSetWindowLongW.Call(p.hwnd, uintptr(gwlStyle), p.savedStyle)
 		w := int(p.savedRect.Right - p.savedRect.Left)
 		h := int(p.savedRect.Bottom - p.savedRect.Top)
 		procSetWindowPos.Call(p.hwnd, 0,
@@ -401,7 +407,17 @@ func (p *Platform) GetClipboard() (string, error) {
 	}
 	defer procGlobalUnlock.Call(hData)
 
-	return syscall.UTF16PtrToString((*uint16)(unsafe.Pointer(pData))), nil
+	// Convert UTF-16 pointer to Go string (syscall.UTF16PtrToString is not available).
+	ptr := (*uint16)(unsafe.Pointer(pData))
+	var utf16Chars []uint16
+	for i := 0; ; i++ {
+		ch := *(*uint16)(unsafe.Add(unsafe.Pointer(ptr), uintptr(i)*2))
+		if ch == 0 {
+			break
+		}
+		utf16Chars = append(utf16Chars, ch)
+	}
+	return string(syscall.UTF16ToString(utf16Chars)), nil
 }
 
 // CreateWGPUSurface creates a wgpu surface for this window (RFC §7.1).
@@ -446,11 +462,11 @@ func ensureWindowClass() error {
 		cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
 		wc := wndClassEx{
 			Size:       uint32(unsafe.Sizeof(wndClassEx{})),
-			Style:      csHRedraw | csVRedraw,
+			Style:      0, // no CS_HREDRAW/CS_VREDRAW — app redraws every frame
 			WndProc:    wndProc,
 			Instance:   hInstance,
 			Cursor:     cursor,
-			Background: colorWindow + 1,
+			Background: 0, // NULL brush — prevent GDI background erase flash
 			ClassName:  windowClassName,
 		}
 		atom, _, callErr := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
@@ -466,6 +482,25 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 	if value, ok := platformsByHWND.Load(hwnd); ok {
 		p := value.(*Platform)
 		switch msg {
+		case wmEraseBkgnd:
+			// Suppress GDI background erase to prevent flash during resize/fullscreen toggle.
+			return 1
+		case wmEnterSizeMove:
+			// Windows runs a modal loop during resize/move that blocks our main loop.
+			// Start a 16ms timer so OnFrame keeps ticking inside the modal loop.
+			const resizeTimerID = 1
+			procSetTimer.Call(hwnd, resizeTimerID, 16, 0)
+			return 0
+		case wmExitSizeMove:
+			const resizeTimerID = 1
+			procKillTimer.Call(hwnd, resizeTimerID)
+			return 0
+		case wmTimer:
+			// Fire a frame from inside the modal resize/move loop.
+			if p.callbacks.OnFrame != nil {
+				p.callbacks.OnFrame()
+			}
+			return 0
 		case wmSize:
 			if p.callbacks.OnResize != nil {
 				width := int(uint32(lParam & 0xFFFF))
