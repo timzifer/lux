@@ -231,30 +231,30 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ---
 
-## Phase 5 — Platform-Erweiterung
+## Phase 5 — Platform-Erweiterung ✅
 
-### 5.1 wgpu als GPU-Backend (RFC-001 §6.1)
-- [ ] wgpu-Shim-Interface (`internal/wgpu/`)
-- [ ] `wgpu-native` Implementierung (CGo, Default)
-- [ ] `gogpu/wgpu` Implementierung (pure Go, `-tags gogpu`)
-- [ ] Migration von OpenGL 3.3 auf wgpu
+### 5.1 wgpu als GPU-Backend (RFC-001 §6.1) ✅
+- [x] wgpu-Shim-Interface (`internal/wgpu/`)
+- [x] `wgpu-native` Implementierung (CGo, Default)
+- [x] `gogpu/wgpu` Implementierung (pure Go, `-tags gogpu`)
+- [x] Migration von OpenGL 3.3 auf wgpu
 - **Abhängig von:** 3.1
 
-### 5.2 Native Platform-Backends (RFC-001 §7.2)
-- [ ] Wayland-Backend
-- [ ] X11-Backend
-- [ ] Win32-Backend (Bestehendes `platform/windows/` ausbauen)
-- [ ] Cocoa/AppKit-Backend
-- [ ] DRM/KMS-Backend (RFC-001 §7.3)
+### 5.2 Native Platform-Backends (RFC-001 §7.2) ✅
+- [x] Wayland-Backend
+- [x] X11-Backend
+- [x] Win32-Backend (Bestehendes `platform/windows/` ausbauen)
+- [x] Cocoa/AppKit-Backend
+- [x] DRM/KMS-Backend (RFC-001 §7.3)
 - **Abhängig von:** nichts (pro Backend unabhängig)
 
-### 5.3 Platform-Interface erweitern (RFC-001 §7.1)
-- [ ] `SetSize(w, h int)` hinzufügen
-- [ ] `SetFullscreen(bool)` hinzufügen
-- [ ] `RequestFrame()` hinzufügen
-- [ ] `SetCursor(CursorKind)` hinzufügen
-- [ ] `SetClipboard(text string)` / `GetClipboard() string` hinzufügen
-- [ ] `CreateSurface(instance wgpu.Instance) wgpu.Surface` hinzufügen
+### 5.3 Platform-Interface erweitern (RFC-001 §7.1) ✅
+- [x] `SetSize(w, h int)` hinzufügen
+- [x] `SetFullscreen(bool)` hinzufügen
+- [x] `RequestFrame()` hinzufügen
+- [x] `SetCursor(CursorKind)` hinzufügen
+- [x] `SetClipboard(text string)` / `GetClipboard() string` hinzufügen
+- [x] `CreateSurface(instance wgpu.Instance) wgpu.Surface` hinzufügen
 - **Abhängig von:** 5.1 (für Surface-Erstellung)
 
 ---

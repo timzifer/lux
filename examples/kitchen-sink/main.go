@@ -35,6 +35,8 @@ var sectionIDs = []string{
 	"animation-id", "anim-group-seq", "custom-layout",
 	// Phase 4b
 	"rtl-layout", "locale", "ime-compose",
+	// Phase 5
+	"platform-info", "window-controls", "clipboard", "gpu-backend",
 }
 
 func sectionLabel(id string) string {
@@ -103,6 +105,15 @@ func sectionLabel(id string) string {
 		return "Locale / i18n"
 	case "ime-compose":
 		return "IME Compose"
+	// Phase 5
+	case "platform-info":
+		return "Platform Info"
+	case "window-controls":
+		return "Window Controls"
+	case "clipboard":
+		return "Clipboard"
+	case "gpu-backend":
+		return "GPU Backend"
 	default:
 		return id
 	}
@@ -176,6 +187,9 @@ type Model struct {
 	// Phase 4b — i18n & Layout
 	CurrentLocale  string
 	IMEComposeText string
+	// Phase 5 — Platform Extension
+	ClipboardText string
+	IsFullscreen  bool
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -225,6 +239,14 @@ type SetLayoutGapMsg struct{ Value float32 }
 
 // Phase 4b messages
 type SetLocaleChoiceMsg struct{ Locale string }
+
+// Phase 5 messages
+type ToggleFullscreenMsg struct{}
+type ResizeWindowMsg struct{ W, H int }
+type CopyToClipboardMsg struct{}
+type PasteFromClipboardMsg struct{}
+type ClipboardResultMsg struct{ Text string }
+type SetClipboardTextMsg struct{ Text string }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -413,6 +435,27 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.CurrentLocale = msg.Locale
 		app.Send(app.SetLocaleMsg{Locale: msg.Locale})
 
+	// Phase 5: Platform Extension
+	case ToggleFullscreenMsg:
+		m.IsFullscreen = !m.IsFullscreen
+		app.Send(app.SetFullscreenMsg{Fullscreen: m.IsFullscreen})
+	case ResizeWindowMsg:
+		app.Send(app.SetSizeMsg{Width: msg.W, Height: msg.H})
+	case CopyToClipboardMsg:
+		return m, func() app.Msg {
+			_ = app.SetClipboard(m.ClipboardText)
+			return nil
+		}
+	case PasteFromClipboardMsg:
+		return m, func() app.Msg {
+			text, _ := app.GetClipboard()
+			return ClipboardResultMsg{Text: text}
+		}
+	case ClipboardResultMsg:
+		m.ClipboardText = msg.Text
+	case SetClipboardTextMsg:
+		m.ClipboardText = msg.Text
+
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
 		m.AnimTime += dt
@@ -559,6 +602,15 @@ func sectionContent(m Model) ui.Element {
 		return localeSection(m)
 	case "ime-compose":
 		return imeComposeSection(m)
+	// Phase 5
+	case "platform-info":
+		return platformInfoSection()
+	case "window-controls":
+		return windowControlsSection(m)
+	case "clipboard":
+		return clipboardSection(m)
+	case "gpu-backend":
+		return gpuBackendSection()
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -1851,6 +1903,141 @@ func imeComposeSection(m Model) ui.Element {
 		ui.Text("EventDispatcher routes IME events to focused widget:"),
 		ui.Text("  • EventIMECompose → focused widget via RenderCtx.Events"),
 		ui.Text("  • EventIMECommit → focused widget via RenderCtx.Events"),
+	)
+}
+
+// ── Phase 5 Section Views ──────────────────────────────────────────
+
+func platformInfoSection() ui.Element {
+	return ui.Column(
+		sectionHeader("Platform Info (Phase 5)"),
+		ui.Text("Platform-Interface erweitert (RFC §7.1):"),
+		ui.Spacer(8),
+
+		ui.Text("Neue Methoden:"),
+		ui.Spacer(4),
+		ui.Text("  SetSize(w, h int) — Fenstergröße ändern"),
+		ui.Text("  SetFullscreen(bool) — Vollbildmodus umschalten"),
+		ui.Text("  RequestFrame() — Nächsten Frame anfordern"),
+		ui.Text("  SetClipboard(text) / GetClipboard() — Zwischenablage"),
+		ui.Text("  CreateWGPUSurface(instance) — wgpu Surface erstellen"),
+		ui.Spacer(12),
+
+		ui.Text("Verfügbare Backends:"),
+		ui.Spacer(4),
+		ui.Text("  • GLFW (macOS/Linux, default) — OpenGL 3.3 Core"),
+		ui.Text("  • Win32 (Windows, native) — GDI Software / wgpu"),
+		ui.Text("  • Wayland (Linux, -tags wayland) — Native Wayland + wgpu"),
+		ui.Text("  • X11 (Linux, -tags x11) — Native X11 + wgpu"),
+		ui.Text("  • Cocoa (macOS, -tags cocoa) — Native AppKit + Metal"),
+		ui.Text("  • DRM/KMS (Linux, -tags drm) — Direct framebuffer"),
+		ui.Spacer(12),
+
+		ui.Text("Backend-Auswahl via Build-Tags:"),
+		ui.Spacer(4),
+		ui.Text("  go build -tags wayland ./..."),
+		ui.Text("  go build -tags x11 ./..."),
+		ui.Text("  go build -tags cocoa ./..."),
+		ui.Text("  go build -tags drm ./..."),
+	)
+}
+
+func windowControlsSection(m Model) ui.Element {
+	fsLabel := "Enter Fullscreen"
+	if m.IsFullscreen {
+		fsLabel = "Exit Fullscreen"
+	}
+
+	return ui.Column(
+		sectionHeader("Window Controls (Phase 5)"),
+		ui.Text("SetSize — resize the window programmatically:"),
+		ui.Spacer(8),
+		ui.Row(
+			ui.ButtonText("800×600", func() { app.Send(ResizeWindowMsg{800, 600}) }),
+			ui.ButtonText("1024×768", func() { app.Send(ResizeWindowMsg{1024, 768}) }),
+			ui.ButtonText("1280×720", func() { app.Send(ResizeWindowMsg{1280, 720}) }),
+		),
+		ui.Spacer(12),
+		ui.Text("SetFullscreen — toggle fullscreen mode:"),
+		ui.Spacer(4),
+		ui.ButtonText(fsLabel, func() { app.Send(ToggleFullscreenMsg{}) }),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("Fullscreen: %v", m.IsFullscreen)),
+		ui.Spacer(12),
+		ui.Text("RequestFrame — request immediate repaint:"),
+		ui.Spacer(4),
+		ui.Text("Used internally to trigger repaints outside the normal event loop."),
+	)
+}
+
+func clipboardSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Clipboard (Phase 5)"),
+		ui.Text("SetClipboard / GetClipboard — system clipboard access:"),
+		ui.Spacer(8),
+
+		ui.Text("Text to copy:"),
+		ui.Spacer(4),
+		ui.TextField(m.ClipboardText, "Enter text to copy...",
+			ui.WithOnChange(func(v string) { app.Send(SetClipboardTextMsg{v}) }),
+			ui.WithFocus(app.Focus()),
+		),
+		ui.Spacer(8),
+
+		ui.Row(
+			ui.ButtonText("Copy to Clipboard", func() { app.Send(CopyToClipboardMsg{}) }),
+			ui.ButtonText("Paste from Clipboard", func() { app.Send(PasteFromClipboardMsg{}) }),
+		),
+		ui.Spacer(8),
+		ui.Text(fmt.Sprintf("Current text: %q", m.ClipboardText)),
+		ui.Spacer(12),
+
+		ui.Text("API:"),
+		ui.Spacer(4),
+		ui.Text("  app.SetClipboard(text) — set clipboard (package-level)"),
+		ui.Text("  app.GetClipboard() — get clipboard (package-level)"),
+		ui.Text("  platform.SetClipboard(text) — per-backend implementation"),
+	)
+}
+
+func gpuBackendSection() ui.Element {
+	return ui.Column(
+		sectionHeader("GPU Backend (Phase 5)"),
+		ui.Text("wgpu — WebGPU-basiertes GPU-Backend (RFC §6.1):"),
+		ui.Spacer(8),
+
+		ui.Text("Zwei Implementierungen:"),
+		ui.Spacer(4),
+		ui.Text("  1. wgpu-native (CGo, Default)"),
+		ui.Text("     Wrapper für die C-Library wgpu-native"),
+		ui.Text("     Backends: Vulkan (Linux), Metal (macOS), D3D12 (Windows)"),
+		ui.Spacer(4),
+		ui.Text("  2. gogpu (Pure Go, -tags gogpu)"),
+		ui.Text("     Vollständig in Go, keine CGo-Abhängigkeit"),
+		ui.Text("     Backend: Vulkan via pure-Go Bindings"),
+		ui.Spacer(12),
+
+		ui.Text("Shim-Interface (internal/wgpu/):"),
+		ui.Spacer(4),
+		ui.Text("  Instance, Adapter, Device, Surface, SwapChain"),
+		ui.Text("  RenderPipeline, Buffer, Texture, CommandEncoder"),
+		ui.Text("  RenderPass, ShaderModule, BindGroup, Queue"),
+		ui.Spacer(12),
+
+		ui.Text("wgpu-Renderer (internal/gpu/wgpu_renderer.go):"),
+		ui.Spacer(4),
+		ui.Text("  WGSL-Shader für:"),
+		ui.Text("    • Rounded Rectangles (SDF-basiert, instanced)"),
+		ui.Text("    • Atlas-basierte Bitmap-Glyphen (<24px)"),
+		ui.Text("    • MSDF-Text (>=24px, Chlumsky-Methode)"),
+		ui.Spacer(12),
+
+		ui.Text("Migration von OpenGL 3.3:"),
+		ui.Spacer(4),
+		ui.Text("  • GLSL 330 → WGSL Shader-Konvertierung"),
+		ui.Text("  • glScissor → wgpu RenderPass Clipping"),
+		ui.Text("  • glDrawArraysInstanced → wgpu DrawInstanced"),
+		ui.Text("  • glBufferData → wgpu Queue.WriteBuffer"),
 	)
 }
 

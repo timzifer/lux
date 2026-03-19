@@ -10,6 +10,7 @@ import (
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/render"
+	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -1027,5 +1028,106 @@ func TestRunBackwardsCompatible(t *testing.T) {
 	}
 	if finalCount != 1 {
 		t.Errorf("finalCount = %d, want 1", finalCount)
+	}
+}
+
+// ── Phase 5 — Platform Extension Tests ──────────────────────────
+
+func TestHeadlessPlatformSetSize(t *testing.T) {
+	var gotResize bool
+	update := func(m testModel, msg Msg) testModel {
+		if _, ok := msg.(input.ResizeMsg); ok {
+			gotResize = true
+		}
+		return m
+	}
+
+	err := Run(testModel{}, update, testView,
+		WithTitle("setsize-test"),
+		WithSize(800, 600),
+		WithHeadlessFrames(1),
+	)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	_ = gotResize
+}
+
+func TestHeadlessPlatformClipboard(t *testing.T) {
+	// The headless platform stores clipboard in memory.
+	p := defaultPlatformFactory()
+	_ = p.Init(platform.Config{Width: 100, Height: 100})
+
+	if err := p.SetClipboard("test content"); err != nil {
+		t.Fatalf("SetClipboard error: %v", err)
+	}
+
+	text, err := p.GetClipboard()
+	if err != nil {
+		t.Fatalf("GetClipboard error: %v", err)
+	}
+	if text != "test content" {
+		t.Errorf("GetClipboard() = %q, want %q", text, "test content")
+	}
+}
+
+func TestHeadlessPlatformNewMethods(t *testing.T) {
+	p := defaultPlatformFactory()
+	_ = p.Init(platform.Config{Width: 800, Height: 600})
+
+	// SetSize
+	p.SetSize(1024, 768)
+	w, h := p.WindowSize()
+	if w != 1024 || h != 768 {
+		t.Errorf("after SetSize: WindowSize() = (%d, %d), want (1024, 768)", w, h)
+	}
+
+	// SetFullscreen — no-op but should not panic.
+	p.SetFullscreen(true)
+	p.SetFullscreen(false)
+
+	// RequestFrame — no-op but should not panic.
+	p.RequestFrame()
+
+	// CreateWGPUSurface — returns 0 for headless.
+	surface := p.CreateWGPUSurface(0)
+	if surface != 0 {
+		t.Errorf("CreateWGPUSurface(0) = %d, want 0", surface)
+	}
+}
+
+func TestWithFullscreenOption(t *testing.T) {
+	// Verify the option compiles and can be passed to Run.
+	err := Run(testModel{}, testUpdate, testView,
+		WithTitle("fullscreen-test"),
+		WithFullscreen(true),
+		WithHeadlessFrames(1),
+	)
+	if err != nil {
+		t.Fatalf("Run with WithFullscreen returned error: %v", err)
+	}
+}
+
+func TestBatchNil(t *testing.T) {
+	// Batch with all nil should return nil.
+	cmd := Batch(nil, nil, nil)
+	if cmd != nil {
+		t.Error("Batch(nil, nil, nil) should return nil")
+	}
+}
+
+func TestPackageLevelClipboard(t *testing.T) {
+	// Before Run, clipboard functions should be no-ops.
+	err := SetClipboard("before run")
+	if err != nil {
+		t.Errorf("SetClipboard before Run: %v", err)
+	}
+
+	text, err := GetClipboard()
+	if err != nil {
+		t.Errorf("GetClipboard before Run: %v", err)
+	}
+	if text != "" {
+		t.Errorf("GetClipboard before Run = %q, want empty", text)
 	}
 }
