@@ -154,7 +154,8 @@ func (p *headlessPlatform) SetTitle(title string)        { p.title = title }
 func (p *headlessPlatform) WindowSize() (int, int)       { return p.w, p.h }
 func (p *headlessPlatform) FramebufferSize() (int, int)  { return p.w, p.h }
 func (p *headlessPlatform) ShouldClose() bool            { return true }
-func (p *headlessPlatform) SetCursor(_ input.CursorKind) {}
+func (p *headlessPlatform) SetCursor(_ input.CursorKind)    {}
+func (p *headlessPlatform) SetIMECursorRect(_, _, _, _ int) {}
 
 // WithHeadlessFrames sets how many frames the headless platform runs.
 func WithHeadlessFrames(n int) Option {

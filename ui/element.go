@@ -792,6 +792,11 @@ type InputState struct {
 	Value    string
 	OnChange func(string)
 	FocusUID UID
+
+	// IME composition state (RFC-002 §2.2).
+	ComposeText        string // current pre-edit text (empty when not composing)
+	ComposeCursorStart int    // cursor position within compose text (rune index)
+	ComposeCursorEnd   int    // selection end within compose text (rune index)
 }
 
 // FocusState is a type alias for backward compatibility.
@@ -2352,9 +2357,11 @@ func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th them
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
-	inL := int(node.Insets.Left)
+	// Resolve logical Start/End insets to physical Left/Right (RFC-002 §4.6).
+	left, right := node.Insets.Resolve(globalDirection)
+	inL := int(left)
 	inT := int(node.Insets.Top)
-	inR := int(node.Insets.Right)
+	inR := int(right)
 	inB := int(node.Insets.Bottom)
 	childArea := bounds{
 		X: area.X + inL,

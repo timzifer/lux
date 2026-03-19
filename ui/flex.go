@@ -175,6 +175,30 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 		}
 	}
 
+	// Resolve logical justify/align for RTL (RFC-002 §4.6).
+	// In a FlexRow with RTL, JustifyStart behaves like JustifyEnd and vice versa.
+	justify := node.Justify
+	align := node.Align
+	rtlRow := isRow && globalDirection == draw.DirRTL
+	if rtlRow {
+		switch justify {
+		case JustifyStart:
+			justify = JustifyEnd
+		case JustifyEnd:
+			justify = JustifyStart
+		}
+	}
+	// For cross-axis in a FlexColumn under RTL, mirror AlignStart/AlignEnd.
+	rtlColumn := !isRow && globalDirection == draw.DirRTL
+	if rtlColumn {
+		switch align {
+		case AlignStart:
+			align = AlignEnd
+		case AlignEnd:
+			align = AlignStart
+		}
+	}
+
 	// Apply Justify: compute start offset and extra spacing.
 	freeSpace := mainAvail - totalMain
 	if freeSpace < 0 {
@@ -182,7 +206,7 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 	}
 	startOffset := 0
 	extraGap := 0
-	switch node.Justify {
+	switch justify {
 	case JustifyEnd:
 		startOffset = freeSpace
 	case JustifyCenter:
@@ -203,13 +227,25 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 		}
 	}
 
+	// For RTL rows, reverse the child order so they flow right-to-left.
+	children := node.Children
+	childInfos := infos
+	if rtlRow {
+		children = make([]Element, n)
+		childInfos = make([]childInfo, n)
+		for i := range node.Children {
+			children[i] = node.Children[n-1-i]
+			childInfos[i] = infos[n-1-i]
+		}
+	}
+
 	// Pass 2: paint children at computed positions.
 	mainCursor := startOffset
 	maxCrossActual := 0
 	maxMainActual := 0
 
-	for i, child := range node.Children {
-		info := infos[i]
+	for i, child := range children {
+		info := childInfos[i]
 
 		// Compute cross-axis offset based on Align.
 		crossOffset := 0
@@ -219,7 +255,7 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 		} else {
 			crossAvail = area.W
 		}
-		switch node.Align {
+		switch align {
 		case AlignEnd:
 			crossOffset = crossAvail - info.crossSize
 		case AlignCenter:

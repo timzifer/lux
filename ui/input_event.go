@@ -14,6 +14,8 @@ const (
 	EventTouch
 	EventFocusGained
 	EventFocusLost
+	EventIMECompose // IME composition state changed (RFC-002 §2.2)
+	EventIMECommit  // IME text committed (RFC-002 §2.2)
 )
 
 // InputEvent is a typed union wrapper for all input events delivered to
@@ -31,6 +33,9 @@ type InputEvent struct {
 
 	FocusGained *FocusGainedMsg
 	FocusLost   *FocusLostMsg
+
+	IMECompose *input.IMEComposeMsg // pre-edit composition (RFC-002 §2.2)
+	IMECommit  *input.IMECommitMsg  // final committed text (RFC-002 §2.2)
 }
 
 // KeyEvent constructs an InputEvent from a KeyMsg.
@@ -71,4 +76,14 @@ func FocusGainedEvent(msg FocusGainedMsg) InputEvent {
 // FocusLostEvent constructs an InputEvent for focus loss.
 func FocusLostEvent(msg FocusLostMsg) InputEvent {
 	return InputEvent{Kind: EventFocusLost, FocusLost: &msg}
+}
+
+// IMEComposeEvent constructs an InputEvent from an IMEComposeMsg.
+func IMEComposeEvent(msg input.IMEComposeMsg) InputEvent {
+	return InputEvent{Kind: EventIMECompose, IMECompose: &msg}
+}
+
+// IMECommitEvent constructs an InputEvent from an IMECommitMsg.
+func IMECommitEvent(msg input.IMECommitMsg) InputEvent {
+	return InputEvent{Kind: EventIMECommit, IMECommit: &msg}
 }

@@ -72,12 +72,39 @@ func UniformRadii(r float32) CornerRadii {
 }
 
 // Insets defines padding/margins on all four sides.
+// For RTL-aware layouts, use Start/End instead of Left/Right (RFC-002 §4.6).
+// Start maps to Left in LTR and Right in RTL; End maps to the opposite.
+// If Start or End is non-zero, it takes precedence over Left/Right.
 type Insets struct {
 	Top    float32
 	Right  float32
 	Bottom float32
 	Left   float32
+	Start  float32 // Inline-start (Left in LTR, Right in RTL). Overrides Left/Right when non-zero.
+	End    float32 // Inline-end (Right in LTR, Left in RTL). Overrides Left/Right when non-zero.
 }
+
+// Resolve returns physical Left and Right values given a layout direction.
+// If Start or End are set (non-zero), they override Left/Right respectively.
+func (ins Insets) Resolve(dir LayoutDirection) (left, right float32) {
+	left, right = ins.Left, ins.Right
+	if ins.Start != 0 || ins.End != 0 {
+		if dir == DirRTL {
+			left, right = ins.End, ins.Start
+		} else {
+			left, right = ins.Start, ins.End
+		}
+	}
+	return
+}
+
+// LayoutDirection indicates the inline text/layout direction (RFC-002 §4.6).
+type LayoutDirection uint8
+
+const (
+	DirLTR LayoutDirection = iota // Left-to-right (default)
+	DirRTL                       // Right-to-left (Arabic, Hebrew, etc.)
+)
 
 // Transform is a 2D affine transformation matrix.
 // Layout: [a, b, c, d, tx, ty] representing:

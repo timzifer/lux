@@ -260,6 +260,12 @@ func (p *Platform) SetCursor(kind input.CursorKind) {
 	procSetCursor.Call(h)
 }
 
+// SetIMECursorRect positions the IME candidate window near the text cursor (RFC-002 §2.2).
+// TODO: Implement via ImmSetCompositionWindow when IMM32 integration is added.
+func (p *Platform) SetIMECursorRect(x, y, w, h int) {
+	// Win32 IMM32 integration not yet implemented.
+}
+
 func (p *Platform) initCursors() {
 	load := func(id uintptr) uintptr {
 		h, _, _ := procLoadCursorW.Call(0, id)

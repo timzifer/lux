@@ -31,6 +31,11 @@ type Platform interface {
 
 	// SetCursor changes the system cursor shape (RFC-002 §2.7).
 	SetCursor(kind input.CursorKind)
+
+	// SetIMECursorRect informs the platform of the text cursor position
+	// so the IME candidate window can be placed near the insertion point
+	// (RFC-002 §2.2). x, y, w, h are in screen coordinates.
+	SetIMECursorRect(x, y, w, h int)
 }
 
 // Config holds platform initialization parameters.
@@ -70,4 +75,12 @@ type Callbacks struct {
 
 	// OnChar is called when a Unicode character is input (for text entry).
 	OnChar func(ch rune)
+
+	// OnIMECompose is called when the IME composition state changes (RFC-002 §2.2).
+	// text is the current pre-edit string, cursorStart/cursorEnd define the
+	// cursor range within the pre-edit text (in runes).
+	OnIMECompose func(text string, cursorStart, cursorEnd int)
+
+	// OnIMECommit is called when the IME commits final text (RFC-002 §2.2).
+	OnIMECommit func(text string)
 }

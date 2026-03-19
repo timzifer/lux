@@ -100,6 +100,14 @@ func (p *Platform) SetCursor(kind input.CursorKind) {
 	}
 }
 
+// SetIMECursorRect positions the IME candidate window near the text cursor (RFC-002 §2.2).
+// GLFW 3.3 does not expose glfwSetPreeditCursorRectangle, so this is a no-op.
+// When upgrading to GLFW 3.4+, call glfwSetPreeditCursorRectangle here.
+func (p *Platform) SetIMECursorRect(x, y, w, h int) {
+	// GLFW 3.3 does not support preedit cursor rectangle.
+	// This will be implemented when upgrading to GLFW 3.4.
+}
+
 // Run enters the GLFW event loop.
 func (p *Platform) Run(cb platform.Callbacks) error {
 	if cb.OnResize != nil {

@@ -96,6 +96,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		as.SetAtlas(atlas)
 	}
 
+	// Apply initial locale → layout direction (RFC-003 §3.8).
+	if cfg.locale != "" {
+		applyLocale(cfg.locale)
+	}
+
 	cachedTheme := theme.NewCachedTheme(cfg.theme)
 	cachedTheme.WarmUp()
 	var activeTheme theme.Theme = cachedTheme
@@ -180,6 +185,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					activeTheme = cachedTheme
 					updateBgColor()
 					modelDirty = true
+
+				case SetLocaleMsg:
+					applyLocale(m.Locale)
+					modelDirty = true // triggers full layout invalidation
 
 				case ui.RequestFocusMsg:
 					oldUID := fm.FocusedUID()
@@ -281,6 +290,29 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					dispatcher.Collect(m)
 					// Framework-internal IME input for TextFields.
 					if is := fm.Input; is != nil && m.Text != "" {
+						v := is.Value + m.Text
+						is.Value = v
+						is.OnChange(v)
+						modelDirty = true
+					}
+					return true
+
+				case input.IMEComposeMsg:
+					dispatcher.Collect(m)
+					// Update FocusManager's compose state for TextField rendering.
+					if is := fm.Input; is != nil {
+						is.ComposeText = m.Text
+						is.ComposeCursorStart = m.CursorStart
+						is.ComposeCursorEnd = m.CursorEnd
+						modelDirty = true
+					}
+					return true
+
+				case input.IMECommitMsg:
+					dispatcher.Collect(m)
+					// Insert committed text into focused TextField.
+					if is := fm.Input; is != nil && m.Text != "" {
+						is.ComposeText = "" // clear composition
 						v := is.Value + m.Text
 						is.Value = v
 						is.OnChange(v)
@@ -462,6 +494,14 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 		OnChar: func(ch rune) {
 			Send(input.CharMsg{Char: ch})
+		},
+
+		OnIMECompose: func(text string, cursorStart, cursorEnd int) {
+			Send(input.IMEComposeMsg{Text: text, CursorStart: cursorStart, CursorEnd: cursorEnd})
+		},
+
+		OnIMECommit: func(text string) {
+			Send(input.IMECommitMsg{Text: text})
 		},
 	})
 }

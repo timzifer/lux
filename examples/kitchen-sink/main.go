@@ -33,6 +33,8 @@ var sectionIDs = []string{
 	// Phase 2
 	"spring-anim", "cubic-bezier", "motion-spec",
 	"animation-id", "anim-group-seq", "custom-layout",
+	// Phase 4b
+	"rtl-layout", "locale", "ime-compose",
 }
 
 func sectionLabel(id string) string {
@@ -94,6 +96,13 @@ func sectionLabel(id string) string {
 		return "AnimGroup & Seq"
 	case "custom-layout":
 		return "Custom Layout"
+	// Phase 4b
+	case "rtl-layout":
+		return "RTL Layout"
+	case "locale":
+		return "Locale / i18n"
+	case "ime-compose":
+		return "IME Compose"
 	default:
 		return id
 	}
@@ -164,6 +173,9 @@ type Model struct {
 	MotionAnim     anim.Anim[float32]
 	MotionPreset   string
 	LayoutGap      float32
+	// Phase 4b — i18n & Layout
+	CurrentLocale  string
+	IMEComposeText string
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -210,6 +222,9 @@ type StartBezierMsg struct{}
 type SetMotionPresetMsg struct{ Preset string }
 type StartMotionMsg struct{}
 type SetLayoutGapMsg struct{ Value float32 }
+
+// Phase 4b messages
+type SetLocaleChoiceMsg struct{ Locale string }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -393,6 +408,11 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 	case SetLayoutGapMsg:
 		m.LayoutGap = msg.Value
 
+	// Phase 4b: Locale
+	case SetLocaleChoiceMsg:
+		m.CurrentLocale = msg.Locale
+		app.Send(app.SetLocaleMsg{Locale: msg.Locale})
+
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
 		m.AnimTime += dt
@@ -532,6 +552,13 @@ func sectionContent(m Model) ui.Element {
 		return animGroupSeqSection(m)
 	case "custom-layout":
 		return customLayoutSection(m)
+	// Phase 4b
+	case "rtl-layout":
+		return rtlLayoutSection()
+	case "locale":
+		return localeSection(m)
+	case "ime-compose":
+		return imeComposeSection(m)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -1710,6 +1737,123 @@ func customLayoutSection(m Model) ui.Element {
 	)
 }
 
+// ── Phase 4b Section Views ────────────────────────────────────────
+
+func rtlLayoutSection() ui.Element {
+	return ui.Column(
+		sectionHeader("RTL Layout (Phase 4b)"),
+		ui.Text("Insets now support Start/End for direction-aware spacing."),
+		ui.Spacer(8),
+
+		// Demonstrate InlineInsets — Start=40, End=8
+		ui.Text("InlineInsets(40, 8) — Start has more padding:"),
+		ui.Padding(ui.InlineInsets(40, 8),
+			ui.Card(ui.Column(
+				ui.Text("This card uses logical Start/End insets."),
+				ui.Text("In LTR: Start=Left, End=Right."),
+				ui.Text("In RTL: Start=Right, End=Left."),
+			)),
+		),
+		ui.Spacer(12),
+
+		// Demonstrate LogicalInsets
+		ui.Text("LogicalInsets(8, 40, 8, 16) — top/end/bottom/start:"),
+		ui.Padding(ui.LogicalInsets(8, 40, 8, 16),
+			ui.Card(ui.Text("Four-sided logical insets.")),
+		),
+		ui.Spacer(12),
+
+		// FlexRow automatically mirrors in RTL
+		ui.Text("FlexRow mirrors child order in RTL:"),
+		ui.Spacer(4),
+		ui.Flex([]ui.Element{
+			ui.BadgeText("First"),
+			ui.BadgeText("Second"),
+			ui.BadgeText("Third"),
+		}, ui.WithDirection(ui.FlexRow), ui.WithGap(8)),
+		ui.Spacer(8),
+
+		// JustifyStart resolves to left in LTR, right in RTL
+		ui.Text("JustifyStart — left-aligned in LTR, right-aligned in RTL:"),
+		ui.Spacer(4),
+		ui.Flex([]ui.Element{
+			ui.ButtonText("Start", nil),
+		}, ui.WithDirection(ui.FlexRow), ui.WithJustify(ui.JustifyStart)),
+		ui.Spacer(8),
+
+		ui.Text("Switch to Arabic locale (in 'Locale' section) to see RTL mirroring."),
+	)
+}
+
+func localeSection(m Model) ui.Element {
+	currentLocale := m.CurrentLocale
+	if currentLocale == "" {
+		currentLocale = "en (default)"
+	}
+	return ui.Column(
+		sectionHeader("Locale / i18n (Phase 4b)"),
+		ui.Text("app.WithLocale() sets the BCP 47 locale at startup."),
+		ui.Text("app.SetLocaleMsg switches locale at runtime."),
+		ui.Spacer(8),
+
+		ui.Text(fmt.Sprintf("Current locale: %s", currentLocale)),
+		ui.Spacer(8),
+
+		ui.Text("Switch locale:"),
+		ui.Spacer(4),
+		ui.Row(
+			ui.ButtonText("English (LTR)", func() { app.Send(SetLocaleChoiceMsg{Locale: "en"}) }),
+			ui.ButtonText("العربية (RTL)", func() { app.Send(SetLocaleChoiceMsg{Locale: "ar"}) }),
+			ui.ButtonText("עברית (RTL)", func() { app.Send(SetLocaleChoiceMsg{Locale: "he"}) }),
+			ui.ButtonText("Deutsch (LTR)", func() { app.Send(SetLocaleChoiceMsg{Locale: "de"}) }),
+		),
+		ui.Spacer(12),
+
+		ui.Text("The layout direction is derived from the locale:"),
+		ui.Text("  Arabic (ar) → RTL"),
+		ui.Text("  Hebrew (he) → RTL"),
+		ui.Text("  English (en), German (de) → LTR"),
+		ui.Spacer(8),
+		ui.Text("Switching triggers full layout invalidation."),
+	)
+}
+
+func imeComposeSection(m Model) ui.Element {
+	composeStatus := "No active composition"
+	if m.IMEComposeText != "" {
+		composeStatus = fmt.Sprintf("Composing: [%s]", m.IMEComposeText)
+	}
+
+	return ui.Column(
+		sectionHeader("IME Compose (Phase 4b)"),
+		ui.Text("IME composition support for CJK and other input methods."),
+		ui.Spacer(8),
+
+		ui.Text("New message types:"),
+		ui.Text("  • IMEComposeMsg — pre-edit text (composition in progress)"),
+		ui.Text("  • IMECommitMsg — final committed text"),
+		ui.Spacer(8),
+
+		ui.Text("Platform integration:"),
+		ui.Text("  • Platform.SetIMECursorRect() — positions candidate window"),
+		ui.Text("  • GLFW: awaiting 3.4 for glfwSetPreeditCallback"),
+		ui.Text("  • Win32: IMM32 integration planned"),
+		ui.Spacer(8),
+
+		ui.Text("TextField composition state:"),
+		ui.Text("  • InputState.ComposeText — current pre-edit string"),
+		ui.Text("  • InputState.ComposeCursorStart/End — cursor range"),
+		ui.Spacer(8),
+
+		ui.Text(fmt.Sprintf("Status: %s", composeStatus)),
+		ui.Spacer(8),
+
+		ui.Text("EventDispatcher routes IME events to focused widget:"),
+		ui.Text("  • EventIMECompose → focused widget via RenderCtx.Events"),
+		ui.Text("  • EventIMECommit → focused widget via RenderCtx.Events"),
+	)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
@@ -1739,6 +1883,7 @@ func main() {
 		BezierPreset:   "ease",
 		MotionPreset:   "standard",
 		LayoutGap:      30,
+		CurrentLocale:  "en",
 	}
 	initial.FadeOpacity.SetImmediate(1.0)
 
