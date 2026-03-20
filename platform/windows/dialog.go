@@ -10,7 +10,6 @@ import (
 )
 
 var (
-	user32         = syscall.NewLazyDLL("user32.dll")
 	procMessageBox = user32.NewProc("MessageBoxW")
 )
 
