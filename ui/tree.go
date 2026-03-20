@@ -16,6 +16,8 @@ type TreeState struct {
 	Selected   string
 	Scroll     ScrollState
 	expandAnim map[string]*anim.Anim[float32] // per-node expand animation (0=collapsed, 1=expanded)
+	motionDur  time.Duration                  // cached from theme tokens during layout
+	motionEase anim.EasingFunc                // cached from theme tokens during layout
 }
 
 // NewTreeState creates a ready-to-use TreeState.
@@ -32,17 +34,25 @@ func (ts *TreeState) IsExpanded(id string) bool {
 }
 
 // Toggle flips the expand/collapse state of a node with animation.
+// Uses the cached motion spec from the last layout pass, or a sensible
+// fallback if no layout has occurred yet.
 func (ts *TreeState) Toggle(id string) {
 	if ts == nil {
 		return
 	}
 	ts.Expanded[id] = !ts.Expanded[id]
 
+	dur := ts.motionDur
+	eas := ts.motionEase
+	if dur == 0 {
+		dur = 220 * time.Millisecond // fallback: Lux Standard
+		eas = anim.OutCubic
+	}
 	a := ts.getOrCreateAnim(id)
 	if ts.Expanded[id] {
-		a.SetTarget(1.0, 150*time.Millisecond, anim.OutCubic)
+		a.SetTarget(1.0, dur, eas)
 	} else {
-		a.SetTarget(0.0, 150*time.Millisecond, anim.OutCubic)
+		a.SetTarget(0.0, dur, eas)
 	}
 }
 
@@ -162,6 +172,12 @@ type flatNode struct {
 func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
 	if len(node.RootIDs) == 0 || node.BuildNode == nil {
 		return bounds{X: area.X, Y: area.Y}
+	}
+
+	// Cache motion tokens so Toggle() picks them up (RFC-008 §9.5).
+	if node.State != nil {
+		node.State.motionDur = tokens.Motion.Standard.Duration
+		node.State.motionEase = tokens.Motion.Standard.Easing
 	}
 
 	nodeH := int(node.NodeHeight)

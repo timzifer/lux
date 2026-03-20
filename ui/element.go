@@ -1089,8 +1089,9 @@ type ToggleState struct {
 func NewToggleState() *ToggleState { return &ToggleState{} }
 
 // update returns the current animation progress [0,1] and starts a
-// new transition if the on state has changed.
-func (ts *ToggleState) update(on bool, dur time.Duration) float32 {
+// new transition if the on state has changed. Duration and easing come
+// from the theme's MotionSpec (RFC-008 §9.5).
+func (ts *ToggleState) update(on bool, de theme.DurationEasing) float32 {
 	if !ts.inited {
 		if on {
 			ts.thumbPos.SetImmediate(1.0)
@@ -1104,7 +1105,7 @@ func (ts *ToggleState) update(on bool, dur time.Duration) float32 {
 		if on {
 			target = 1
 		}
-		ts.thumbPos.SetTarget(target, dur, anim.OutCubic)
+		ts.thumbPos.SetTarget(target, de.Duration, de.Easing)
 		ts.lastOn = on
 	}
 	return ts.thumbPos.Value()
@@ -1566,19 +1567,19 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 
 	// Tier 2 widgets
 	case checkboxElement:
-		return layoutCheckbox(node, area, canvas, th, tokens, ix)
+		return layoutCheckbox(node, area, canvas, th, tokens, ix, fs)
 	case radioElement:
-		return layoutRadio(node, area, canvas, th, tokens, ix)
+		return layoutRadio(node, area, canvas, th, tokens, ix, fs)
 	case toggleElement:
-		return layoutToggle(node, area, canvas, th, tokens, ix)
+		return layoutToggle(node, area, canvas, th, tokens, ix, fs)
 	case sliderElement:
-		return layoutSlider(node, area, canvas, th, tokens, ix)
+		return layoutSlider(node, area, canvas, th, tokens, ix, fs)
 	case progressBarElement:
 		return layoutProgressBar(node, area, canvas, th, tokens)
 	case textFieldElement:
 		return layoutTextField(node, area, canvas, th, tokens, ix, fs)
 	case selectElement:
-		return layoutSelect(node, area, canvas, th, tokens, ix, overlays)
+		return layoutSelect(node, area, canvas, th, tokens, ix, overlays, fs)
 
 	// Tier 3 widgets
 	case cardElement:
@@ -1713,6 +1714,21 @@ func lerpColor(a, b draw.Color, t float32) draw.Color {
 	}
 }
 
+// drawFocusRing renders a subtle glow aura + focus stroke around a widget (RFC-008 §9.4).
+func drawFocusRing(canvas draw.Canvas, rect draw.Rect, radius float32, tokens theme.TokenSet) {
+	glowColor := tokens.Colors.Stroke.Focus
+	glowColor.A = 0.45
+	canvas.DrawShadow(rect, draw.Shadow{
+		Color:      glowColor,
+		BlurRadius: 8,
+		Radius:     radius,
+	})
+	canvas.StrokeRoundRect(rect, radius, draw.Stroke{
+		Paint: draw.SolidPaint(tokens.Colors.Stroke.Focus),
+		Width: 1.5,
+	})
+}
+
 // ── Button layout functions ────────────────────────────────────
 
 // buttonVariantColors returns fill, border, and text colors for a button variant.
@@ -1783,12 +1799,21 @@ func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.
 	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 	hoverOpacity := ix.RegisterHit(buttonRect, node.OnClick)
 
+	// Focus management (RFC-008 §9.4).
+	var focused bool
+	if fs != nil {
+		uid := fs.NextElementUID()
+		fs.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = fs.IsElementFocused(uid)
+	}
+
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindButton); df != nil {
 		df(theme.DrawCtx{
 			Canvas:  canvas,
 			Bounds:  buttonRect,
 			Hovered: hoverOpacity > 0,
+			Focused: focused,
 		}, tokens, node)
 	} else {
 		fillColor, borderColor, textColor := buttonVariantColors(node.Variant, tokens, hoverOpacity)
@@ -1811,6 +1836,11 @@ func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.
 					Width: float32(buttonBorder),
 				})
 			}
+		}
+
+		// Focus glow (RFC-008 §9.4).
+		if focused {
+			drawFocusRing(canvas, buttonRect, tokens.Radii.Button, tokens)
 		}
 
 		// Pass 2: render content centered.
@@ -2410,7 +2440,7 @@ const (
 
 // ── Tier 2 Layout Functions ─────────────────────────────────────
 
-func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
@@ -2428,11 +2458,19 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 	}
 	hoverOpacity := ix.RegisterHit(checkboxRect, clickFn)
 
+	// Focus management (RFC-008 §9.4).
+	var focused bool
+	if focus != nil {
+		uid := focus.NextElementUID()
+		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(uid)
+	}
+
 	boxY := area.Y + (totalH-checkboxSize)/2
+	boxRect := draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize))
 
 	// Border
-	canvas.FillRoundRect(
-		draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize)),
+	canvas.FillRoundRect(boxRect,
 		tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
 
 	// Fill
@@ -2447,6 +2485,11 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
 			float32(checkboxSize-checkboxBorder*2), float32(checkboxSize-checkboxBorder*2)),
 		maxf(tokens.Radii.Input-checkboxBorder, 0), draw.SolidPaint(fillColor))
+
+	// Focus glow on the checkbox box (RFC-008 §9.4).
+	if focused {
+		drawFocusRing(canvas, boxRect, tokens.Radii.Input, tokens)
+	}
 
 	// Checkmark
 	if node.Checked {
@@ -2467,7 +2510,7 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
@@ -2479,12 +2522,19 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 	radioRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH))
 	hoverOpacity := ix.RegisterHit(radioRect, node.OnSelect)
 
+	// Focus management (RFC-008 §9.4).
+	var focused bool
+	if focus != nil {
+		uid := focus.NextElementUID()
+		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(uid)
+	}
+
 	boxY := area.Y + (totalH-checkboxSize)/2
+	circleRect := draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize))
 
 	// Outer circle
-	canvas.FillEllipse(
-		draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize)),
-		draw.SolidPaint(tokens.Colors.Stroke.Border))
+	canvas.FillEllipse(circleRect, draw.SolidPaint(tokens.Colors.Stroke.Border))
 
 	// Inner fill
 	fillColor := tokens.Colors.Surface.Elevated
@@ -2495,6 +2545,11 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
 			float32(checkboxSize-checkboxBorder*2), float32(checkboxSize-checkboxBorder*2)),
 		draw.SolidPaint(fillColor))
+
+	// Focus glow on the radio circle (RFC-008 §9.4).
+	if focused {
+		drawFocusRing(canvas, circleRect, float32(checkboxSize)/2, tokens)
+	}
 
 	// Selected dot
 	if node.Selected {
@@ -2513,7 +2568,7 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
 	// Register hit target and get hover opacity atomically.
 	toggleRect := draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH))
 	var toggleClickFn func()
@@ -2524,10 +2579,18 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 	}
 	hoverOpacity := ix.RegisterHit(toggleRect, toggleClickFn)
 
+	// Focus management (RFC-008 §9.4).
+	var focused bool
+	if focus != nil {
+		uid := focus.NextElementUID()
+		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(uid)
+	}
+
 	// Animation progress: 0 = off, 1 = on.
 	var t float32
 	if node.State != nil {
-		t = node.State.update(node.On, 150*time.Millisecond)
+		t = node.State.update(node.On, tokens.Motion.Quick)
 	} else {
 		if node.On {
 			t = 1
@@ -2574,10 +2637,15 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 		draw.R(thumbX, thumbY, float32(toggleThumbD), float32(toggleThumbD)),
 		draw.SolidPaint(thumbColor))
 
+	// Focus glow on the toggle track (RFC-008 §9.4).
+	if focused {
+		drawFocusRing(canvas, toggleRect, float32(toggleTrackH)/2, tokens)
+	}
+
 	return bounds{X: area.X, Y: area.Y, W: toggleTrackW, H: toggleTrackH}
 }
 
-func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
 	trackW := sliderMaxWidth
 	if area.W < trackW {
 		trackW = area.W
@@ -2602,6 +2670,14 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.
 		}
 	}
 	hoverOpacity := ix.RegisterDrag(sliderRect, dragFn)
+
+	// Focus management (RFC-008 §9.4).
+	var focused bool
+	if focus != nil {
+		uid := focus.NextElementUID()
+		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(uid)
+	}
 
 	trackY := area.Y + (sliderHeight-sliderTrackH)/2
 
@@ -2635,9 +2711,13 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.
 		thumbX = area.X
 	}
 	thumbY := area.Y + (sliderHeight-sliderThumbD)/2
-	canvas.FillEllipse(
-		draw.R(float32(thumbX), float32(thumbY), float32(sliderThumbD), float32(sliderThumbD)),
-		draw.SolidPaint(tokens.Colors.Accent.Primary))
+	thumbRect := draw.R(float32(thumbX), float32(thumbY), float32(sliderThumbD), float32(sliderThumbD))
+	canvas.FillEllipse(thumbRect, draw.SolidPaint(tokens.Colors.Accent.Primary))
+
+	// Focus glow on the slider thumb (RFC-008 §9.4).
+	if focused {
+		drawFocusRing(canvas, thumbRect, float32(sliderThumbD)/2, tokens)
+	}
 
 	return bounds{X: area.X, Y: area.Y, W: trackW, H: sliderHeight}
 }
@@ -2718,19 +2798,21 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 			Focused: focused,
 		}, tokens, node)
 	} else {
-		// Border — highlight when focused.
-		borderColor := tokens.Colors.Stroke.Border
-		if focused {
-			borderColor = tokens.Colors.Accent.Primary
-		}
-		canvas.FillRoundRect(
-			draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			tokens.Radii.Input, draw.SolidPaint(borderColor))
+		tfRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+
+		// Border
+		canvas.FillRoundRect(tfRect,
+			tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
 
 		// Fill
 		canvas.FillRoundRect(
 			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
 			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+
+		// Focus glow + ring (RFC-008 §9.4)
+		if focused {
+			drawFocusRing(canvas, tfRect, tokens.Radii.Input, tokens)
+		}
 
 		// Text or placeholder
 		textX := area.X + textFieldPadX
@@ -2771,7 +2853,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack) bounds {
+func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -2791,22 +2873,27 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 
 	isOpen := node.State != nil && node.State.Open
 
+	// Focus management (RFC-008 §9.4).
+	var focused bool
+	if focus != nil {
+		uid := focus.NextElementUID()
+		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(uid)
+	}
+
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindSelect); df != nil {
 		df(theme.DrawCtx{
 			Canvas:  canvas,
 			Bounds:  selectRect,
 			Hovered: hoverOpacity > 0,
+			Focused: focused,
 		}, tokens, node)
 	} else {
-		// Border — highlight when open.
-		borderColor := tokens.Colors.Stroke.Border
-		if isOpen {
-			borderColor = tokens.Colors.Accent.Primary
-		}
+		// Border
 		canvas.FillRoundRect(
 			draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			tokens.Radii.Input, draw.SolidPaint(borderColor))
+			tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
 
 		// Fill
 		canvas.FillRoundRect(
@@ -2824,6 +2911,11 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 		arrowStyle := tokens.Typography.LabelSmall
 		arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
 		canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, tokens.Colors.Text.Secondary)
+
+		// Focus glow (RFC-008 §9.4).
+		if focused || isOpen {
+			drawFocusRing(canvas, selectRect, tokens.Radii.Input, tokens)
+		}
 	}
 
 	// Dropdown overlay when open.
