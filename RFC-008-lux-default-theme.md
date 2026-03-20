@@ -976,23 +976,40 @@ Stand: 2026-03-20
 
 ### Offen
 
-- [ ] **§9.3 Pressed** — Pressed-Zustand wird in Buttons über `Surface.Pressed`
-  gerendert, aber nicht alle Widgets differenzieren visuell zwischen Hover und
-  Pressed (z.B. Checkbox, Toggle, Slider fehlt ein dedizierter Pressed-Zustand)
-- [ ] **§9.6 Disabled** — Kein `Disabled`-Feld auf Widget-Elementen.
-  Semantisches Disabled-Rendering (Text.Disabled, Accent entfernt, Borders
-  abgeschwächt) erfordert API-Erweiterung aller interaktiven Element-Typen
-- [ ] **§9.5 Motion.Emphasized** — Definiert (320ms InOutCubic), aber von keinem
-  Widget konsumiert. Wird relevant für Dialog-Open/Close-Animationen
-- [ ] **§10.5 Noise/Grain** — Kein Grain-Shader oder -Token im Framework.
-  Erfordert GPU-Pipeline-Erweiterung (Noise-Pass als optionaler Post-Effekt)
-- [ ] **§11.4 Cards** — `ElevationCard` existiert, aber Card-Widget verwendet
-  noch keine feine Border als Default (nur Shadow)
-- [ ] **§11.5 Menus/Tooltips** — Tooltip und ContextMenu rendern Floating
-  Surface + Shadow, aber kein optionaler Frosted-Glass-Effekt als Default für
-  Command Palette / Tooltip (muss Widget-seitig verdrahtet werden)
-- [ ] **§11.6 Tabs/Chips/Badges** — Implementiert, aber aktive Elemente nutzen
-  noch vollflächigen Accent statt tonaler Abstufung
+- [x] **§9.3 Pressed** — Zweistufige Hover→Pressed-Differenzierung für
+  Checkbox, Radio, Toggle und Slider implementiert (`hoverOpacity >= 0.9`
+  triggert `Surface.Pressed`-Blend)
+- [x] **§9.6 Disabled** — `Disabled`-Feld auf allen interaktiven Element-Typen
+  (Button, Checkbox, Radio, Toggle, Slider, Chip, TextField, Select).
+  `disabledColor()` mutet Farben 50% Richtung `Surface.Base`;
+  `Text.Disabled` für Labels; Focus und Hover deaktiviert.
+  Convenience-Konstruktoren: `ButtonTextDisabled`, `CheckboxDisabled`,
+  `RadioDisabled`, `ToggleDisabled`, `SliderDisabled`, `ChipDisabled`,
+  `WithTextFieldDisabled()`, `WithSelectDisabled()`.
+  `DrawCtx.Disabled` für Custom-Theme-Dispatch.
+- [x] **§9.5 Motion.Emphasized** — `OverlayAnimFadeScale` nutzt
+  `Motion.Emphasized`; einfachere Animationen nutzen `Motion.Standard`.
+  `overlayEntry` trägt `Animation` + `Duration` für Framework-seitige
+  Enter/Exit-Steuerung.
+- [x] **§10.5 Noise/Grain** — `TokenSet.Grain` als konfigurierbarer
+  Intensitäts-Token (Default 0.03 in LuxDark/LuxLight, 0 in Slate).
+  Shader-Pipeline liest Grain-Wert aus Uniform statt Hardcoded-Konstante.
+  `OverrideSpec.Grain` ermöglicht Theme-Override.
+  WGSL: `uniforms.params.x` in Rect- und Gradient-Shader.
+  GLSL: `uGrain` Uniform im Rect-Fragment-Shader.
+  `draw.Scene.Grain` transportiert Token zum Renderer.
+- [x] **§11.4 Cards** — Card-Widget nutzt `DrawShadow` mit `Elevation.Low`
+  + feine `StrokeRoundRect`-Border als Default statt des alten
+  Doppel-FillRoundRect-Ansatzes
+- [x] **§11.5 Menus/Tooltips** — Opt-in Frosted-Glass-Backdrop für Tooltip
+  (`TooltipBlur`) und ContextMenu (`ContextMenuBlur`) via `PushClipRoundRect` +
+  `PushBlur(8)` + halbtransparenter Tint-Fill. Nicht-Blur-Pfad behält opaken
+  Fill bei. Shared Border-Stroke auf beiden Pfaden.
+- [x] **§11.6 Tabs/Chips/Badges** — Tonal statt vollflächig:
+  Chip-Selected = 15 % Accent über Elevated Surface + 30 % Accent-Border,
+  Tab-Selected-Bg = 8 % Accent über Surface.Base,
+  Badge-Default = 75 % Accent-Blend (lesbar, aber zurückhaltender).
+  Dismiss-Icon auf Selected-Chip nutzt Accent-Textfarbe statt OnAccent.
 - [ ] **§14 Migration** — Kitchen-Sink und Beispiel-Apps referenzieren `Slate`
   statt `lux`; Screenshots und Doku noch nicht aktualisiert
 

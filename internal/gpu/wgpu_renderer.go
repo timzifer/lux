@@ -41,7 +41,8 @@ type WGPURenderer struct {
 	gradPipeline     wgpu.RenderPipeline // gradient rectangle pipeline
 
 	// Shared resources
-	projBuffer     wgpu.Buffer   // 64 bytes: mat4x4 projection
+	projBuffer     wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 params (grain, reserved)
+	grain          float32       // current grain intensity from scene (RFC-008 §10.5)
 	msdfUniBuffer  wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 atlas_size
 	rectVertBuffer wgpu.Buffer   // unit quad shared by rect + text + MSDF
 	rectInstBuffer wgpu.Buffer
@@ -175,10 +176,10 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		})
 	}
 
-	// Create projection uniform buffer (4x4 float32 matrix = 64 bytes).
+	// Create projection uniform buffer (4x4 float32 matrix + vec4 params = 80 bytes).
 	r.projBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: "projection",
-		Size:  64,
+		Size:  80,
 		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
 	})
 
@@ -370,7 +371,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Label:  "proj-bind-group",
 		Layout: projLayout,
 		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
 		},
 	})
 
@@ -378,7 +379,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Label:  "text-bind-group",
 		Layout: r.textLayout,
 		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
 			{Binding: 1, Texture: r.atlasView},
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
@@ -682,6 +683,11 @@ func (r *WGPURenderer) BeginFrame() {
 func (r *WGPURenderer) Draw(scene draw.Scene) {
 	if !r.inited || !r.surfaceOK {
 		return
+	}
+	// Update grain intensity from scene (RFC-008 §10.5).
+	if scene.Grain != r.grain {
+		r.grain = scene.Grain
+		r.updateProjection()
 	}
 	drawStart := time.Now()
 
@@ -1277,7 +1283,7 @@ func (r *WGPURenderer) resizeAtlasTexture() {
 		Label:  "text-bind-group",
 		Layout: r.textLayout,
 		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
 			{Binding: 1, Texture: r.atlasView},
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
@@ -1620,7 +1626,11 @@ func appendGlyphInstance(buf []float32, g draw.TexturedGlyph, atlasW, atlasH flo
 
 func (r *WGPURenderer) updateProjection() {
 	proj := wgpuOrthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
-	r.projBuffer.Write(r.queue, float32SliceToBytes(proj[:]))
+	// 20 floats: mat4x4 (16) + params vec4 (4: grain, reserved, reserved, reserved)
+	var data [20]float32
+	copy(data[:16], proj[:])
+	data[16] = r.grain // RFC-008 §10.5: noise/grain intensity
+	r.projBuffer.Write(r.queue, float32SliceToBytes(data[:]))
 	r.updateMSDFUniforms()
 }
 

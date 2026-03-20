@@ -42,12 +42,14 @@ type OpenGLRenderer struct {
 	msdfInited         bool
 
 	// Rounded rect rendering resources.
-	rectProgram     uint32
-	rectVAO         uint32
-	rectVBO         uint32
-	rectInstanceVBO uint32
-	rectProjUniform int32
-	rectInited      bool
+	rectProgram      uint32
+	rectVAO          uint32
+	rectVBO          uint32
+	rectInstanceVBO  uint32
+	rectProjUniform  int32
+	rectGrainUniform int32 // RFC-008 §10.5
+	rectInited       bool
+	grain            float32 // current grain intensity from scene
 
 	// Surface texture-blit rendering resources (RFC §8).
 	surfProgram     uint32
@@ -107,6 +109,7 @@ func (r *OpenGLRenderer) BeginFrame() {
 // shader-based SDF for rounded rects, bitmap glyphs via per-pixel scissor,
 // and textured quads for atlas glyphs.
 func (r *OpenGLRenderer) Draw(scene draw.Scene) {
+	r.grain = scene.Grain // RFC-008 §10.5
 	// Render rects preserving scene order: batch consecutive rounded rects,
 	// flush before each sharp rect to maintain correct z-ordering.
 	var roundedBatch []draw.DrawRect
@@ -233,6 +236,7 @@ func (r *OpenGLRenderer) initRectRendering() {
 
 	r.rectProgram = program
 	r.rectProjUniform = gl.GetUniformLocation(program, gl.Str("uProj\x00"))
+	r.rectGrainUniform = gl.GetUniformLocation(program, gl.Str("uGrain\x00"))
 
 	// Unit quad vertices: 6 vertices (2 triangles).
 	quadVerts := []float32{
@@ -293,6 +297,7 @@ func (r *OpenGLRenderer) drawRoundedRects(rects []draw.DrawRect) {
 
 	proj := orthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
 	gl.UniformMatrix4fv(r.rectProjUniform, 1, false, &proj[0])
+	gl.Uniform1f(r.rectGrainUniform, r.grain)
 
 	// Build instance data: 9 floats per rect.
 	instances := make([]float32, 0, len(rects)*9)
