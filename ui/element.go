@@ -234,6 +234,11 @@ func ButtonText(label string, onClick func()) Element {
 	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonFilled}
 }
 
+// ButtonTextDisabled creates a disabled text button (RFC-008 §9.6).
+func ButtonTextDisabled(label string) Element {
+	return buttonElement{Content: textElement{Content: label}, Variant: ButtonFilled, Disabled: true}
+}
+
 // ButtonVariantOf creates a button with the given variant and arbitrary content.
 func ButtonVariantOf(variant ButtonVariant, content Element, onClick func()) Element {
 	return buttonElement{Content: content, OnClick: onClick, Variant: variant}
@@ -409,10 +414,20 @@ func Checkbox(label string, checked bool, onToggle func(bool)) Element {
 	return checkboxElement{Label: label, Checked: checked, OnToggle: onToggle}
 }
 
+// CheckboxDisabled creates a disabled checkbox (RFC-008 §9.6).
+func CheckboxDisabled(label string, checked bool) Element {
+	return checkboxElement{Label: label, Checked: checked, Disabled: true}
+}
+
 // Radio creates a single-choice option. Group multiple Radio elements
 // in a Column; the user's model owns which option is selected.
 func Radio(label string, selected bool, onSelect func()) Element {
 	return radioElement{Label: label, Selected: selected, OnSelect: onSelect}
+}
+
+// RadioDisabled creates a disabled radio button (RFC-008 §9.6).
+func RadioDisabled(label string, selected bool) Element {
+	return radioElement{Label: label, Selected: selected, Disabled: true}
 }
 
 // Toggle creates a switch widget. An optional ToggleState pointer enables
@@ -425,9 +440,19 @@ func Toggle(on bool, onToggle func(bool), state ...*ToggleState) Element {
 	return toggleElement{On: on, OnToggle: onToggle, State: s}
 }
 
+// ToggleDisabled creates a disabled toggle (RFC-008 §9.6).
+func ToggleDisabled(on bool) Element {
+	return toggleElement{On: on, Disabled: true}
+}
+
 // Slider creates a continuous value selector (0.0–1.0).
 func Slider(value float32, onChange func(float32)) Element {
 	return sliderElement{Value: value, OnChange: onChange}
+}
+
+// SliderDisabled creates a disabled slider (RFC-008 §9.6).
+func SliderDisabled(value float32) Element {
+	return sliderElement{Value: value, Disabled: true}
 }
 
 // ProgressBar creates a determinate progress indicator (0.0–1.0).
@@ -475,6 +500,11 @@ func WithFocus(fm *FocusManager) TextFieldOption {
 	return func(e *textFieldElement) { e.Focus = fm }
 }
 
+// WithTextFieldDisabled marks the TextField as disabled (RFC-008 §9.6).
+func WithTextFieldDisabled() TextFieldOption {
+	return func(e *textFieldElement) { e.Disabled = true }
+}
+
 // SelectState holds the open/closed state for a Select dropdown.
 type SelectState struct {
 	Open bool
@@ -491,6 +521,11 @@ func WithSelectState(s *SelectState) SelectOption {
 // WithOnSelect sets the callback invoked when an option is chosen.
 func WithOnSelect(fn func(string)) SelectOption {
 	return func(e *selectElement) { e.OnSelect = fn }
+}
+
+// WithSelectDisabled marks the Select as disabled (RFC-008 §9.6).
+func WithSelectDisabled() SelectOption {
+	return func(e *selectElement) { e.Disabled = true }
 }
 
 // Select creates a dropdown selector. When configured with
@@ -569,9 +604,10 @@ const (
 )
 
 type buttonElement struct {
-	Content Element
-	OnClick func()
-	Variant ButtonVariant
+	Content  Element
+	OnClick  func()
+	Variant  ButtonVariant
+	Disabled bool
 }
 
 func (buttonElement) isElement() {}
@@ -841,6 +877,7 @@ type tooltipElement struct {
 	Trigger Element
 	Content Element // arbitrary widget content
 	Visible bool    // controlled by hover state or explicit flag
+	Blur    bool    // optional frosted-glass backdrop (RFC-008 §11.5)
 }
 
 func (tooltipElement) isElement() {}
@@ -853,6 +890,11 @@ func Tooltip(trigger, content Element) Element {
 // TooltipVisible creates a tooltip with explicit visibility control.
 func TooltipVisible(trigger, content Element, visible bool) Element {
 	return tooltipElement{Trigger: trigger, Content: content, Visible: visible}
+}
+
+// TooltipBlur creates a tooltip with frosted-glass backdrop (RFC-008 §11.5).
+func TooltipBlur(trigger, content Element) Element {
+	return tooltipElement{Trigger: trigger, Content: content, Blur: true}
 }
 
 type badgeElement struct {
@@ -882,6 +924,7 @@ type chipElement struct {
 	Selected  bool
 	OnClick   func()
 	OnDismiss func() // if non-nil, shows dismiss "×" button
+	Disabled  bool
 }
 
 func (chipElement) isElement() {}
@@ -894,6 +937,11 @@ func Chip(label Element, selected bool, onClick func()) Element {
 // ChipDismissible creates a dismissible chip with a "×" button.
 func ChipDismissible(label Element, selected bool, onClick, onDismiss func()) Element {
 	return chipElement{Label: label, Selected: selected, OnClick: onClick, OnDismiss: onDismiss}
+}
+
+// ChipDisabled creates a disabled chip (RFC-008 §9.6).
+func ChipDisabled(label Element, selected bool) Element {
+	return chipElement{Label: label, Selected: selected, Disabled: true}
 }
 
 // MenuItem defines an item in a MenuBar or ContextMenu.
@@ -930,6 +978,7 @@ type contextMenuElement struct {
 	Visible bool
 	PosX    float32
 	PosY    float32
+	Blur    bool // optional frosted-glass backdrop (RFC-008 §11.5)
 }
 
 func (contextMenuElement) isElement() {}
@@ -939,12 +988,18 @@ func ContextMenu(items []MenuItem, visible bool, x, y float32) Element {
 	return contextMenuElement{Items: items, Visible: visible, PosX: x, PosY: y}
 }
 
+// ContextMenuBlur creates a context menu with frosted-glass backdrop (RFC-008 §11.5).
+func ContextMenuBlur(items []MenuItem, visible bool, x, y float32) Element {
+	return contextMenuElement{Items: items, Visible: visible, PosX: x, PosY: y, Blur: true}
+}
+
 // ── Tier 2 element structs (continued) ──────────────────────────
 
 type checkboxElement struct {
 	Label    string
 	Checked  bool
 	OnToggle func(bool)
+	Disabled bool
 }
 
 func (checkboxElement) isElement() {}
@@ -953,6 +1008,7 @@ type radioElement struct {
 	Label    string
 	Selected bool
 	OnSelect func()
+	Disabled bool
 }
 
 func (radioElement) isElement() {}
@@ -961,6 +1017,7 @@ type toggleElement struct {
 	On       bool
 	OnToggle func(bool)
 	State    *ToggleState
+	Disabled bool
 }
 
 func (toggleElement) isElement() {}
@@ -968,6 +1025,7 @@ func (toggleElement) isElement() {}
 type sliderElement struct {
 	Value    float32
 	OnChange func(float32)
+	Disabled bool
 }
 
 func (sliderElement) isElement() {}
@@ -986,6 +1044,7 @@ type textFieldElement struct {
 	OnChange    func(string)
 	Focus       *FocusManager
 	FocusUID    UID // assigned during layout
+	Disabled    bool
 }
 
 func (textFieldElement) isElement() {}
@@ -995,6 +1054,7 @@ type selectElement struct {
 	Options  []string
 	State    *SelectState
 	OnSelect func(string)
+	Disabled bool
 }
 
 func (selectElement) isElement() {}
@@ -1184,7 +1244,9 @@ func (h *HoverState) ensureSize(n int) {
 // overlayEntry is a deferred render operation drawn after the main tree.
 // Used by Tooltip, ContextMenu, and MenuBar for correct Z-order.
 type overlayEntry struct {
-	Render func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor)
+	Render    func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor)
+	Animation OverlayAnimation     // enter/exit animation type
+	Duration  theme.DurationEasing // animation timing (RFC-008 §9.5)
 }
 
 // overlayStack collects overlay entries during layout.
@@ -1714,6 +1776,11 @@ func lerpColor(a, b draw.Color, t float32) draw.Color {
 	}
 }
 
+// disabledColor mutes a color by blending it 50% toward the base surface (RFC-008 §9.6).
+func disabledColor(c, base draw.Color) draw.Color {
+	return lerpColor(c, base, 0.5)
+}
+
 // drawFocusRing renders a subtle glow aura + focus stroke around a widget (RFC-008 §9.4).
 func drawFocusRing(canvas draw.Canvas, rect draw.Rect, radius float32, tokens theme.TokenSet) {
 	glowColor := tokens.Colors.Stroke.Focus
@@ -1797,11 +1864,17 @@ func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.
 
 	// Register hit target and get hover opacity atomically.
 	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
-	hoverOpacity := ix.RegisterHit(buttonRect, node.OnClick)
+	var hoverOpacity float32
+	if node.Disabled {
+		// Disabled: register no-op to keep hover index aligned (RFC-008 §9.6).
+		ix.RegisterHit(buttonRect, nil)
+	} else {
+		hoverOpacity = ix.RegisterHit(buttonRect, node.OnClick)
+	}
 
 	// Focus management (RFC-008 §9.4).
 	var focused bool
-	if fs != nil {
+	if fs != nil && !node.Disabled {
 		uid := fs.NextElementUID()
 		fs.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
 		focused = fs.IsElementFocused(uid)
@@ -1810,13 +1883,21 @@ func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindButton); df != nil {
 		df(theme.DrawCtx{
-			Canvas:  canvas,
-			Bounds:  buttonRect,
-			Hovered: hoverOpacity > 0,
-			Focused: focused,
+			Canvas:   canvas,
+			Bounds:   buttonRect,
+			Hovered:  hoverOpacity > 0,
+			Focused:  focused,
+			Disabled: node.Disabled,
 		}, tokens, node)
 	} else {
 		fillColor, borderColor, textColor := buttonVariantColors(node.Variant, tokens, hoverOpacity)
+		// Disabled muting (RFC-008 §9.6).
+		if node.Disabled {
+			base := tokens.Colors.Surface.Base
+			fillColor = disabledColor(fillColor, base)
+			borderColor = disabledColor(borderColor, base)
+			textColor = tokens.Colors.Text.Disabled
+		}
 
 		if node.Variant == ButtonFilled {
 			// Filled: border as background fill, opaque fill on top (2-rect approach).
@@ -2450,17 +2531,22 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 
 	// Register hit target and get hover opacity atomically.
 	checkboxRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH))
-	var clickFn func()
-	if node.OnToggle != nil {
-		checked := node.Checked
-		onToggle := node.OnToggle
-		clickFn = func() { onToggle(!checked) }
+	var hoverOpacity float32
+	if node.Disabled {
+		ix.RegisterHit(checkboxRect, nil)
+	} else {
+		var clickFn func()
+		if node.OnToggle != nil {
+			checked := node.Checked
+			onToggle := node.OnToggle
+			clickFn = func() { onToggle(!checked) }
+		}
+		hoverOpacity = ix.RegisterHit(checkboxRect, clickFn)
 	}
-	hoverOpacity := ix.RegisterHit(checkboxRect, clickFn)
 
 	// Focus management (RFC-008 §9.4).
 	var focused bool
-	if focus != nil {
+	if focus != nil && !node.Disabled {
 		uid := focus.NextElementUID()
 		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
 		focused = focus.IsElementFocused(uid)
@@ -2470,16 +2556,27 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 	boxRect := draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize))
 
 	// Border
+	borderColor := tokens.Colors.Stroke.Border
+	if node.Disabled {
+		borderColor = disabledColor(borderColor, tokens.Colors.Surface.Base)
+	}
 	canvas.FillRoundRect(boxRect,
-		tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
+		tokens.Radii.Input, draw.SolidPaint(borderColor))
 
-	// Fill
+	// Fill — two-stage hover→pressed visual (RFC-008 §9.3).
 	fillColor := tokens.Colors.Surface.Elevated
 	if hoverOpacity > 0 {
 		fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+		if hoverOpacity >= 0.9 {
+			pressedT := (hoverOpacity - 0.9) / 0.1
+			fillColor = lerpColor(fillColor, tokens.Colors.Surface.Pressed, pressedT)
+		}
 	}
 	if node.Checked {
 		fillColor = tokens.Colors.Accent.Primary
+	}
+	if node.Disabled {
+		fillColor = disabledColor(fillColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(
 		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
@@ -2505,7 +2602,11 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 	// Label
 	labelX := area.X + checkboxSize + checkboxGap
 	labelY := area.Y + (totalH-labelH)/2
-	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, tokens.Colors.Text.Primary)
+	labelColor := tokens.Colors.Text.Primary
+	if node.Disabled {
+		labelColor = tokens.Colors.Text.Disabled
+	}
+	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, labelColor)
 
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
@@ -2520,11 +2621,16 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 
 	// Register hit target and get hover opacity atomically.
 	radioRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH))
-	hoverOpacity := ix.RegisterHit(radioRect, node.OnSelect)
+	var hoverOpacity float32
+	if node.Disabled {
+		ix.RegisterHit(radioRect, nil)
+	} else {
+		hoverOpacity = ix.RegisterHit(radioRect, node.OnSelect)
+	}
 
 	// Focus management (RFC-008 §9.4).
 	var focused bool
-	if focus != nil {
+	if focus != nil && !node.Disabled {
 		uid := focus.NextElementUID()
 		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
 		focused = focus.IsElementFocused(uid)
@@ -2534,12 +2640,20 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 	circleRect := draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize))
 
 	// Outer circle
-	canvas.FillEllipse(circleRect, draw.SolidPaint(tokens.Colors.Stroke.Border))
+	outerColor := tokens.Colors.Stroke.Border
+	if node.Disabled {
+		outerColor = disabledColor(outerColor, tokens.Colors.Surface.Base)
+	}
+	canvas.FillEllipse(circleRect, draw.SolidPaint(outerColor))
 
-	// Inner fill
+	// Inner fill — two-stage hover→pressed visual (RFC-008 §9.3).
 	fillColor := tokens.Colors.Surface.Elevated
 	if hoverOpacity > 0 {
 		fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+		if hoverOpacity >= 0.9 {
+			pressedT := (hoverOpacity - 0.9) / 0.1
+			fillColor = lerpColor(fillColor, tokens.Colors.Surface.Pressed, pressedT)
+		}
 	}
 	canvas.FillEllipse(
 		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
@@ -2555,15 +2669,23 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 	if node.Selected {
 		dotSize := 8
 		dotOffset := (checkboxSize - dotSize) / 2
+		dotColor := tokens.Colors.Accent.Primary
+		if node.Disabled {
+			dotColor = disabledColor(dotColor, tokens.Colors.Surface.Base)
+		}
 		canvas.FillEllipse(
 			draw.R(float32(area.X+dotOffset), float32(boxY+dotOffset), float32(dotSize), float32(dotSize)),
-			draw.SolidPaint(tokens.Colors.Accent.Primary))
+			draw.SolidPaint(dotColor))
 	}
 
 	// Label
 	labelX := area.X + checkboxSize + checkboxGap
 	labelY := area.Y + (totalH-labelH)/2
-	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, tokens.Colors.Text.Primary)
+	labelColor := tokens.Colors.Text.Primary
+	if node.Disabled {
+		labelColor = tokens.Colors.Text.Disabled
+	}
+	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, labelColor)
 
 	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
@@ -2571,17 +2693,22 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
 	// Register hit target and get hover opacity atomically.
 	toggleRect := draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH))
-	var toggleClickFn func()
-	if node.OnToggle != nil {
-		on := node.On
-		onToggle := node.OnToggle
-		toggleClickFn = func() { onToggle(!on) }
+	var hoverOpacity float32
+	if node.Disabled {
+		ix.RegisterHit(toggleRect, nil)
+	} else {
+		var toggleClickFn func()
+		if node.OnToggle != nil {
+			on := node.On
+			onToggle := node.OnToggle
+			toggleClickFn = func() { onToggle(!on) }
+		}
+		hoverOpacity = ix.RegisterHit(toggleRect, toggleClickFn)
 	}
-	hoverOpacity := ix.RegisterHit(toggleRect, toggleClickFn)
 
 	// Focus management (RFC-008 §9.4).
 	var focused bool
-	if focus != nil {
+	if focus != nil && !node.Disabled {
 		uid := focus.NextElementUID()
 		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
 		focused = focus.IsElementFocused(uid)
@@ -2612,6 +2739,15 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 	}
 	if hoverOpacity > 0 {
 		trackColor = lerpColor(trackColor, hoverHighlight(trackColor), hoverOpacity)
+		// Pressed visual differentiation (RFC-008 §9.3).
+		if hoverOpacity >= 0.9 {
+			pressedT := (hoverOpacity - 0.9) / 0.1
+			trackColor = lerpColor(trackColor, tokens.Colors.Surface.Pressed, pressedT*0.3)
+		}
+	}
+	// Disabled muting (RFC-008 §9.6).
+	if node.Disabled {
+		trackColor = disabledColor(trackColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(
 		draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH)),
@@ -2633,6 +2769,10 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 	default:
 		thumbColor = lerpColor(offThumbColor, onThumbColor, t)
 	}
+	// Disabled muting (RFC-008 §9.6).
+	if node.Disabled {
+		thumbColor = disabledColor(thumbColor, tokens.Colors.Surface.Base)
+	}
 	canvas.FillEllipse(
 		draw.R(thumbX, thumbY, float32(toggleThumbD), float32(toggleThumbD)),
 		draw.SolidPaint(thumbColor))
@@ -2653,27 +2793,32 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.
 
 	// Register draggable hit target and get hover opacity atomically.
 	sliderRect := draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(sliderHeight))
-	var dragFn func(x, y float32)
-	if node.OnChange != nil {
-		areaX := float32(area.X)
-		tw := float32(trackW)
-		onChange := node.OnChange
-		dragFn = func(x, _ float32) {
-			v := (x - areaX) / tw
-			if v < 0 {
-				v = 0
+	var hoverOpacity float32
+	if node.Disabled {
+		ix.RegisterDrag(sliderRect, nil)
+	} else {
+		var dragFn func(x, y float32)
+		if node.OnChange != nil {
+			areaX := float32(area.X)
+			tw := float32(trackW)
+			onChange := node.OnChange
+			dragFn = func(x, _ float32) {
+				v := (x - areaX) / tw
+				if v < 0 {
+					v = 0
+				}
+				if v > 1 {
+					v = 1
+				}
+				onChange(v)
 			}
-			if v > 1 {
-				v = 1
-			}
-			onChange(v)
 		}
+		hoverOpacity = ix.RegisterDrag(sliderRect, dragFn)
 	}
-	hoverOpacity := ix.RegisterDrag(sliderRect, dragFn)
 
 	// Focus management (RFC-008 §9.4).
 	var focused bool
-	if focus != nil {
+	if focus != nil && !node.Disabled {
 		uid := focus.NextElementUID()
 		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
 		focused = focus.IsElementFocused(uid)
@@ -2699,20 +2844,32 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.
 		val = 1
 	}
 	filledW := int(float32(trackW) * val)
+	filledColor := tokens.Colors.Accent.Primary
+	if node.Disabled {
+		filledColor = disabledColor(filledColor, tokens.Colors.Surface.Base)
+	}
 	if filledW > 0 {
 		canvas.FillRoundRect(
 			draw.R(float32(area.X), float32(trackY), float32(filledW), float32(sliderTrackH)),
-			float32(sliderTrackH)/2, draw.SolidPaint(tokens.Colors.Accent.Primary))
+			float32(sliderTrackH)/2, draw.SolidPaint(filledColor))
 	}
 
-	// Thumb
+	// Thumb — pressed visual differentiation (RFC-008 §9.3).
 	thumbX := area.X + filledW - sliderThumbD/2
 	if thumbX < area.X {
 		thumbX = area.X
 	}
 	thumbY := area.Y + (sliderHeight-sliderThumbD)/2
 	thumbRect := draw.R(float32(thumbX), float32(thumbY), float32(sliderThumbD), float32(sliderThumbD))
-	canvas.FillEllipse(thumbRect, draw.SolidPaint(tokens.Colors.Accent.Primary))
+	thumbColor := tokens.Colors.Accent.Primary
+	if hoverOpacity >= 0.9 {
+		pressedT := (hoverOpacity - 0.9) / 0.1
+		thumbColor = lerpColor(thumbColor, tokens.Colors.Accent.Secondary, pressedT)
+	}
+	if node.Disabled {
+		thumbColor = disabledColor(thumbColor, tokens.Colors.Surface.Base)
+	}
+	canvas.FillEllipse(thumbRect, draw.SolidPaint(thumbColor))
 
 	// Focus glow on the slider thumb (RFC-008 §9.4).
 	if focused {
@@ -2780,7 +2937,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 
 	// Assign a focus UID if focus manager is provided.
 	var focusUID UID
-	if focus != nil {
+	if focus != nil && !node.Disabled {
 		focusUID = focus.NextElementUID()
 		focus.RegisterFocusable(focusUID, FocusOpts{
 			Focusable:    true,
@@ -2788,26 +2945,35 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 			FocusOnClick: true,
 		})
 	}
-	focused := focus.IsElementFocused(focusUID)
+	focused := !node.Disabled && focus.IsElementFocused(focusUID)
 
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindTextField); df != nil {
 		df(theme.DrawCtx{
-			Canvas:  canvas,
-			Bounds:  draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			Focused: focused,
+			Canvas:   canvas,
+			Bounds:   draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			Focused:  focused,
+			Disabled: node.Disabled,
 		}, tokens, node)
 	} else {
 		tfRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 
 		// Border
+		borderColor := tokens.Colors.Stroke.Border
+		if node.Disabled {
+			borderColor = disabledColor(borderColor, tokens.Colors.Surface.Base)
+		}
 		canvas.FillRoundRect(tfRect,
-			tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
+			tokens.Radii.Input, draw.SolidPaint(borderColor))
 
 		// Fill
+		fillColor := tokens.Colors.Surface.Elevated
+		if node.Disabled {
+			fillColor = disabledColor(fillColor, tokens.Colors.Surface.Base)
+		}
 		canvas.FillRoundRect(
 			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
-			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(fillColor))
 
 		// Focus glow + ring (RFC-008 §9.4)
 		if focused {
@@ -2817,8 +2983,12 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 		// Text or placeholder
 		textX := area.X + textFieldPadX
 		textY := area.Y + textFieldPadY
+		textColor := tokens.Colors.Text.Primary
+		if node.Disabled {
+			textColor = tokens.Colors.Text.Disabled
+		}
 		if node.Value != "" {
-			canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
+			canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, textColor)
 		} else if node.Placeholder != "" {
 			canvas.DrawText(node.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
 		}
@@ -2843,7 +3013,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 	}
 
 	// Hit target for focus acquisition.
-	if node.OnChange != nil && focus != nil {
+	if node.OnChange != nil && focus != nil && !node.Disabled {
 		uid := focusUID
 		fm := focus
 		ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
@@ -2864,18 +3034,23 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 
 	// Register hit target and get hover opacity atomically.
 	selectRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
-	var selectClickFn func()
-	if node.State != nil {
-		state := node.State
-		selectClickFn = func() { state.Open = !state.Open }
+	var hoverOpacity float32
+	if node.Disabled {
+		ix.RegisterHit(selectRect, nil)
+	} else {
+		var selectClickFn func()
+		if node.State != nil {
+			state := node.State
+			selectClickFn = func() { state.Open = !state.Open }
+		}
+		hoverOpacity = ix.RegisterHit(selectRect, selectClickFn)
 	}
-	hoverOpacity := ix.RegisterHit(selectRect, selectClickFn)
 
-	isOpen := node.State != nil && node.State.Open
+	isOpen := node.State != nil && node.State.Open && !node.Disabled
 
 	// Focus management (RFC-008 §9.4).
 	var focused bool
-	if focus != nil {
+	if focus != nil && !node.Disabled {
 		uid := focus.NextElementUID()
 		focus.RegisterFocusable(uid, FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
 		focused = focus.IsElementFocused(uid)
@@ -2884,33 +3059,50 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindSelect); df != nil {
 		df(theme.DrawCtx{
-			Canvas:  canvas,
-			Bounds:  selectRect,
-			Hovered: hoverOpacity > 0,
-			Focused: focused,
+			Canvas:   canvas,
+			Bounds:   selectRect,
+			Hovered:  hoverOpacity > 0,
+			Focused:  focused,
+			Disabled: node.Disabled,
 		}, tokens, node)
 	} else {
 		// Border
+		borderColor := tokens.Colors.Stroke.Border
+		if node.Disabled {
+			borderColor = disabledColor(borderColor, tokens.Colors.Surface.Base)
+		}
 		canvas.FillRoundRect(
 			draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Stroke.Border))
+			tokens.Radii.Input, draw.SolidPaint(borderColor))
 
 		// Fill
+		fillColor := tokens.Colors.Surface.Elevated
+		if node.Disabled {
+			fillColor = disabledColor(fillColor, tokens.Colors.Surface.Base)
+		}
 		canvas.FillRoundRect(
 			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
-			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(fillColor))
 
 		// Value text
 		textX := area.X + textFieldPadX
 		textY := area.Y + textFieldPadY
+		textColor := tokens.Colors.Text.Primary
+		if node.Disabled {
+			textColor = tokens.Colors.Text.Disabled
+		}
 		if node.Value != "" {
-			canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Primary)
+			canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, textColor)
 		}
 
 		// Down arrow indicator
 		arrowStyle := tokens.Typography.LabelSmall
 		arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
-		canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, tokens.Colors.Text.Secondary)
+		arrowColor := tokens.Colors.Text.Secondary
+		if node.Disabled {
+			arrowColor = tokens.Colors.Text.Disabled
+		}
+		canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, arrowColor)
 
 		// Focus glow (RFC-008 §9.4).
 		if focused || isOpen {
@@ -3076,15 +3268,20 @@ func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Them
 		w = area.W
 	}
 
-	// Border
-	canvas.FillRoundRect(
-		draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-		tokens.Radii.Card, draw.SolidPaint(tokens.Colors.Surface.Pressed))
+	cardRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+
+	// Elevation shadow (RFC-008 §11.4).
+	canvas.DrawShadow(cardRect, tokens.Elevation.Low)
 
 	// Fill
-	canvas.FillRoundRect(
-		draw.R(float32(area.X+cardBorder), float32(area.Y+cardBorder), float32(max(w-cardBorder*2, 0)), float32(max(h-cardBorder*2, 0))),
-		maxf(tokens.Radii.Card-cardBorder, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+	canvas.FillRoundRect(cardRect,
+		tokens.Radii.Card, draw.SolidPaint(tokens.Colors.Surface.Elevated))
+
+	// Fine border (RFC-008 §11.4).
+	canvas.StrokeRoundRect(cardRect, tokens.Radii.Card, draw.Stroke{
+		Paint: draw.SolidPaint(tokens.Colors.Stroke.Border),
+		Width: float32(cardBorder),
+	})
 
 	// Child content
 	layoutElement(node.Child, childArea, canvas, th, tokens, ix, overlays, focus)
@@ -3266,6 +3463,7 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th them
 	if visible {
 		tB := triggerBounds
 		content := node.Content
+		blur := node.Blur
 		overlays.push(overlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
 				// Measure content
@@ -3277,15 +3475,34 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th them
 				x := tB.X
 				y := tB.Y + tB.H + 4
 
-				// Border
-				canvas.FillRoundRect(
-					draw.R(float32(x), float32(y), float32(w), float32(h)),
-					tokens.Radii.Button, draw.SolidPaint(tokens.Colors.Stroke.Border))
+				tooltipRect := draw.R(float32(x), float32(y), float32(w), float32(h))
+				innerRect := draw.R(float32(x+1), float32(y+1), float32(max(w-2, 0)), float32(max(h-2, 0)))
+				innerRadius := maxf(tokens.Radii.Button-1, 0)
 
-				// Fill
-				canvas.FillRoundRect(
-					draw.R(float32(x+1), float32(y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
-					maxf(tokens.Radii.Button-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+				if blur {
+					// Frosted-glass backdrop (RFC-008 §11.5).
+					canvas.PushClipRoundRect(tooltipRect, tokens.Radii.Button)
+					canvas.PushBlur(8)
+					canvas.FillRoundRect(tooltipRect, tokens.Radii.Button, draw.SolidPaint(draw.Color{A: 0.01}))
+					canvas.PopBlur()
+					canvas.PopClip()
+					// Semi-transparent tinted fill.
+					tint := tokens.Colors.Surface.Elevated
+					tint.A = 0.75
+					canvas.FillRoundRect(innerRect, innerRadius, draw.SolidPaint(tint))
+				} else {
+					// Border
+					canvas.FillRoundRect(tooltipRect,
+						tokens.Radii.Button, draw.SolidPaint(tokens.Colors.Stroke.Border))
+					// Opaque fill
+					canvas.FillRoundRect(innerRect, innerRadius, draw.SolidPaint(tokens.Colors.Surface.Elevated))
+				}
+
+				// Border stroke (shared).
+				canvas.StrokeRoundRect(tooltipRect, tokens.Radii.Button, draw.Stroke{
+					Paint: draw.SolidPaint(tokens.Colors.Stroke.Border),
+					Width: 1,
+				})
 
 				// Content
 				layoutElement(content, bounds{X: x + tooltipPadding, Y: y + tooltipPadding, W: max(w-tooltipPadding*2, 0), H: max(h-tooltipPadding*2, 0)}, canvas, th, tokens, ix, nil, nil)
@@ -3343,15 +3560,20 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 	h := cb.H + chipPadY*2
 
 	// Register chip click target and get hover opacity atomically.
-	var chipClickFn func()
 	chipClickW := w
-	if node.OnClick != nil {
-		chipClickFn = node.OnClick
-		if node.OnDismiss != nil {
-			chipClickW = w - dismissW // exclude dismiss area
+	var hoverOpacity float32
+	if node.Disabled {
+		ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(chipClickW), float32(h)), nil)
+	} else {
+		var chipClickFn func()
+		if node.OnClick != nil {
+			chipClickFn = node.OnClick
+			if node.OnDismiss != nil {
+				chipClickW = w - dismissW // exclude dismiss area
+			}
 		}
+		hoverOpacity = ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(chipClickW), float32(h)), chipClickFn)
 	}
-	hoverOpacity := ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(chipClickW), float32(h)), chipClickFn)
 
 	// Background
 	var bgColor, borderColor draw.Color
@@ -3608,9 +3830,20 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 	dismissable := node.Dismissable
 	onDismiss := node.OnDismiss
 	backdrop := node.Backdrop
+	animation := node.Animation
 	winW, winH := overlays.windowW, overlays.windowH
 
+	// Resolve animation duration from theme tokens (RFC-008 §9.5).
+	// OverlayAnimFadeScale uses Motion.Emphasized for dialog-level transitions;
+	// simpler animations (Fade) use Motion.Standard.
+	overlayDuration := tokens.Motion.Standard
+	if animation == OverlayAnimFadeScale {
+		overlayDuration = tokens.Motion.Emphasized
+	}
+
 	overlays.push(overlayEntry{
+		Animation: animation,
+		Duration:  overlayDuration,
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
 			// Draw semi-transparent scrim behind the overlay for modal dialogs.
 			if backdrop {

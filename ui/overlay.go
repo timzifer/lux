@@ -58,6 +58,8 @@ type Overlay struct {
 	Dismissable bool
 
 	// Animation defines enter/exit behavior.
+	// When OverlayAnimFadeScale is used, the framework applies
+	// Motion.Emphasized timing (RFC-008 §9.5) by default.
 	Animation OverlayAnimation
 
 	// OnDismiss is called when a dismissable overlay's backdrop is clicked.

@@ -49,12 +49,13 @@ type DrawFunc func(ctx DrawCtx, tokens TokenSet, state any)
 
 // DrawCtx provides the rendering context passed to a DrawFunc.
 type DrawCtx struct {
-	Canvas  draw.Canvas
-	Bounds  draw.Rect
-	DPR     float32
-	Focused bool
-	Hovered bool
-	Pressed bool
+	Canvas   draw.Canvas
+	Bounds   draw.Rect
+	DPR      float32
+	Focused  bool
+	Hovered  bool
+	Pressed  bool
+	Disabled bool // RFC-008 §9.6: semantic disabled state
 }
 
 // Theme is the interface every theme must implement (RFC §5.1).
