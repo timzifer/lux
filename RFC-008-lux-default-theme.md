@@ -359,12 +359,18 @@ Die bestehende 4/8/16/24/32/48-Skala bleibt erhalten. Interpretation:
 
 ### 7.3 Radii
 
-`lux` verwendet kleine bis mittlere Radien:
+`lux` verwendet kleine bis mittlere Radien, aber bewusst konservativer als
+viele aktuelle Consumer-UIs. Die Formensprache soll eher „Werkzeug“ als
+„Lifestyle-App“ kommunizieren.
 
-- Inputs: eher präzise als verspielt
-- Buttons: leicht weicher als Inputs
+- Inputs: präzise, eher scharf als weich
+- Buttons: leicht weicher als Inputs, aber weiterhin desktop-nah
 - Cards / Menus / Dialoge: sichtbar weich, aber nicht blob-artig
 - Pill-Radius nur für Komponenten mit klarer semantischer Rechtfertigung
+
+Wichtig: Der Schritt von `Slate` zu `lux` soll **evolutionär**, nicht
+revolutionär sein. Gerade Input-Felder dürfen nicht plötzlich weicher und
+„consumeriger“ wirken als der Rest des Systems.
 
 ### 7.4 Regel
 
@@ -416,6 +422,24 @@ Materialität entsteht durch die Kombination aus:
 - optional minimalem Verlauf
 
 Nicht durch starke Texturen oder harte Lichtsimulation.
+
+### 8.5 Scrim-Semantik
+
+`Surface.Scrim` ist kein abstrakter Stimmungswert, sondern ein konkret
+definierter Render-Schritt:
+
+- Scrim wird als **vollflächiges FillRect über dem gesamten Viewport**
+  gezeichnet
+- der Scrim liegt **oberhalb des Basisinhalts**, aber **unterhalb** von Dialog,
+  Popover oder anderem modalen Floating-Content
+- Scrim nutzt standardmäßig **keinen Backdrop-Blur**
+- Scrim wird **nicht** als `PushOpacity` auf den gesamten Content-Layer
+  implementiert, damit Farben, Text und bereits gezeichnete Overlays nicht
+  unterschiedlich stark „verwaschen“
+
+Damit ist das Default-Verhalten auf Desktop- und DRM/KMS-Zielen vorhersagbar
+und performant. Blur hinter Modal-Overlays bleibt ein optionaler
+Theme-Override, nicht Teil des Default-Themes.
 
 ---
 
@@ -479,6 +503,25 @@ Empfohlene Defaults:
 Keine Komponente soll „floaty“ oder verspielt federn, außer dies ist bewusst
 für einzelne Showcase-Komponenten gewünscht.
 
+### 9.6 Disabled-Zustände
+
+Disabled ist in `lux` ein eigener semantischer Zustand und **kein pauschales
+`opacity: 0.38` über das gesamte Widget**.
+
+Default-Regeln:
+
+- Text und Icons verwenden `Text.Disabled`
+- Accent-Farben werden entfernt oder auf neutrale Flächen zurückgeführt
+- Borders werden abgeschwächt, aber nicht unsichtbar
+- Hintergründe bleiben lesbar, werden jedoch tonwertlich neutralisiert
+- Shadows, Glow und Hover-Reaktionen entfallen
+
+Bewusst **nicht** empfohlen wird ein globaler `PushOpacity`-Layer für das ganze
+Widget, weil dieser Text, Border, Icon und Hintergrund gleichermaßen absenkt
+und dadurch auf hellen wie dunklen Themes oft matschig wirkt. Eine globale
+Disabled-Opacity bleibt für Sonderfälle oder Theme-Overrides erlaubt, ist aber
+nicht die Standardregel von `lux`.
+
 ---
 
 ## 10. GPU-Effekte: subtil, nicht spektakulär
@@ -502,10 +545,23 @@ Regeln:
 Frosted Glass wird **nicht global**, sondern selektiv eingesetzt:
 
 - Command Palette
-- Context Menu
 - Dropdown / Popover
 - Floating Inspector
 - sekundäre Side-Panels über visuell aktivem Hintergrund
+
+Wichtig: **Context Menus gehören nicht zur Default-Bühne für Frosted Glass.**
+Sie erscheinen unter dem Cursor, werden häufig geöffnet und müssen auch auf
+Bare-Metal-/DRM-Zielen ohne dedizierte GPU billig renderbar bleiben.
+
+Für Context Menus gilt im Default-Theme daher:
+
+- normale Floating Surface
+- feine Border
+- weiche Shadow
+- optional Fade-/Scale-Motion
+- **kein Blur-Pass per Default**
+
+Frosted-Glass-Menus bleiben ein opt-in Verhalten in separaten Theme-Overrides.
 
 ### 10.3 Vibrancy / Tinted Blur
 
@@ -579,8 +635,15 @@ Dies ist die primäre Bühne für Lux' „subtle-fancy“-Qualität:
 - Floating Surface
 - feine Border
 - weiche Shadow
-- optional neutraler Frosted-Glass-Effekt
+- optional neutraler Frosted-Glass-Effekt für ausgewählte Overlays
 - schnelle Fade-/Scale-Motion
+
+Präzisierung:
+
+- Tooltips, Command Palette und ausgewählte Popovers dürfen Frosted Glass
+  verwenden
+- Context Menus verwenden im Default-Theme **kein** Frosted Glass
+- Dialoge verwenden standardmäßig Scrim + Floating Surface; Blur bleibt opt-in
 
 ### 11.6 Tabs, Chips, Badges
 
@@ -605,10 +668,20 @@ Das Framework soll eine Theme-Familie `lux` bereitstellen:
 
 - `theme.LuxDark`
 - `theme.LuxLight`
-- optional `theme.Lux` als Alias auf den empfohlenen Primärmodus
+- `theme.LuxAuto`
 
 Die Bezeichnung `lux` ist bewusst identisch mit dem Frameworknamen: Das
 Standard-Theme ist die Referenzdarstellung des Systems.
+
+`theme.LuxAuto` ist der empfohlene ergonomische Einstieg:
+
+- folgt dem OS-/System-Dark-Mode-Signal
+- startet in Light oder Dark abhängig von der Systempräferenz
+- wechselt zur Laufzeit via `SetDarkModeMsg` bzw. äquivalenter
+  Plattform-Integration automatisch mit
+
+`theme.LuxDark` und `theme.LuxLight` bleiben die expliziten Varianten für Apps,
+die ihre Erscheinung bewusst fest verdrahten wollen.
 
 ### 12.2 Beziehung zu `Slate`
 
@@ -617,6 +690,7 @@ mittelfristig sollte jedoch gelten:
 
 - `LuxDark` ersetzt `Slate` als empfohlene Standardwahl
 - `LuxLight` ersetzt `SlateLight` als empfohlene helle Wahl
+- `LuxAuto` ersetzt den bisherigen impliziten Wunsch nach „irgendeinem Default“
 - Dokumentation und Beispiele referenzieren primär `lux`
 
 ### 12.3 Tokens statt Sonderlogik
@@ -785,7 +859,7 @@ TypographyScale{
 
 ```go
 SpacingScale{XS: 4, S: 8, M: 16, L: 24, XL: 32, XXL: 48}
-RadiusScale{Input: 6, Button: 8, Card: 12, Pill: 999}
+RadiusScale{Input: 4, Button: 6, Card: 10, Pill: 999}
 ```
 
 ### 15.5 Elevation
