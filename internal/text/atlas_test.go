@@ -7,6 +7,7 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
+	"golang.org/x/image/font/sfnt"
 )
 
 func TestAtlasInsertAndLookup(t *testing.T) {
@@ -98,7 +99,13 @@ func TestAtlasLookupOrInsert(t *testing.T) {
 		t.Skip("no default font available")
 	}
 
-	key := GlyphKey{FontID: f.ID(), Rune: 'H', SizePx: 13}
+	// Look up the GlyphID for 'H' via cmap so the atlas key is valid.
+	var buf sfnt.Buffer
+	glyphIdx, err := f.SfntFont().GlyphIndex(&buf, 'H')
+	if err != nil {
+		t.Fatalf("GlyphIndex('H') failed: %v", err)
+	}
+	key := GlyphKey{FontID: f.ID(), GlyphID: GlyphID(glyphIdx), Rune: 'H', SizePx: 13}
 	entry, ok := atlas.LookupOrInsert(key, shaper, style)
 	if !ok {
 		t.Fatal("LookupOrInsert should succeed for 'H'")
