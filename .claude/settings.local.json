@@ -13,7 +13,8 @@
       "Bash(find G:/golang/lux -name \"*.go\" -type f -exec grep -l \"== .*\\\\|!= .*\" {})",
       "Bash(while read:*)",
       "Bash(do grep:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(ls -la /Users/tim.ebbinghaus/Documents/Development/Go/lux/ui/*.go)"
     ]
   }
 }

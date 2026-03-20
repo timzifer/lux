@@ -41,6 +41,7 @@ const (
 	WidgetKindMenuBar
 	WidgetKindContextMenu
 	WidgetKindSplitView
+	WidgetKindDialog
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).
@@ -122,6 +123,7 @@ type SurfaceColors struct {
 	Elevated draw.Color // Cards, overlays — one level above
 	Hovered  draw.Color // Widget hover state
 	Pressed  draw.Color // Widget active/pressed state
+	Scrim    draw.Color // Semi-transparent backdrop for modal dialogs
 }
 
 // AccentColors defines primary interaction color tokens.
@@ -170,15 +172,15 @@ type ColorScheme struct {
 
 // TypographyScale defines the desktop-first text style slots.
 type TypographyScale struct {
-	H1        draw.TextStyle // 20dp, SemiBold — page title
-	H2        draw.TextStyle // 16dp, SemiBold — section title
-	H3        draw.TextStyle // 14dp, Medium — subtitle
-	Body      draw.TextStyle // 13dp, Regular — standard body text
-	BodySmall draw.TextStyle // 12dp, Regular — metadata
-	Label     draw.TextStyle // 12dp, Medium — button text, tab labels
+	H1         draw.TextStyle // 20dp, SemiBold — page title
+	H2         draw.TextStyle // 16dp, SemiBold — section title
+	H3         draw.TextStyle // 14dp, Medium — subtitle
+	Body       draw.TextStyle // 13dp, Regular — standard body text
+	BodySmall  draw.TextStyle // 12dp, Regular — metadata
+	Label      draw.TextStyle // 12dp, Medium — button text, tab labels
 	LabelSmall draw.TextStyle // 11dp, Medium — badges, chips
-	Code      draw.TextStyle // 13dp, Regular, Monospace
-	CodeSmall draw.TextStyle // 12dp, Regular, Monospace
+	Code       draw.TextStyle // 13dp, Regular, Monospace
+	CodeSmall  draw.TextStyle // 12dp, Regular, Monospace
 }
 
 // ── SpacingScale (RFC-003 §2) ───────────────────────────────────
@@ -222,6 +224,7 @@ var slateTokens = TokenSet{
 			Elevated: draw.Hex("#18181b"), // Zinc-900
 			Hovered:  draw.Hex("#27272a"), // Zinc-800
 			Pressed:  draw.Hex("#3f3f46"), // Zinc-700
+			Scrim:    draw.Color{R: 0, G: 0, B: 0, A: 0.5},
 		},
 		Accent: AccentColors{
 			Primary:         draw.Hex("#3b82f6"), // Blue-500
@@ -230,8 +233,8 @@ var slateTokens = TokenSet{
 		},
 		Stroke: StrokeColors{
 			Border:  draw.Color{R: 1, G: 1, B: 1, A: 0.10}, // 10% white
-			Focus:   draw.Hex("#3b82f6"),                      // = Accent.Primary
-			Divider: draw.Color{R: 1, G: 1, B: 1, A: 0.06},  // 6% white
+			Focus:   draw.Hex("#3b82f6"),                   // = Accent.Primary
+			Divider: draw.Color{R: 1, G: 1, B: 1, A: 0.06}, // 6% white
 		},
 		Text: TextColors{
 			Primary:   draw.Hex("#fafafa"), // Zinc-50
@@ -249,15 +252,15 @@ var slateTokens = TokenSet{
 		},
 	},
 	Typography: TypographyScale{
-		H1:        draw.TextStyle{Size: 20, Weight: draw.FontWeightSemiBold, LineHeight: 1.3},
-		H2:        draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold, LineHeight: 1.3},
-		H3:        draw.TextStyle{Size: 14, Weight: draw.FontWeightMedium, LineHeight: 1.4},
-		Body:      draw.TextStyle{Size: 13, Weight: draw.FontWeightRegular, LineHeight: 1.5},
-		BodySmall: draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular, LineHeight: 1.5},
-		Label:     draw.TextStyle{Size: 12, Weight: draw.FontWeightMedium, LineHeight: 1.0},
+		H1:         draw.TextStyle{Size: 20, Weight: draw.FontWeightSemiBold, LineHeight: 1.3},
+		H2:         draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold, LineHeight: 1.3},
+		H3:         draw.TextStyle{Size: 14, Weight: draw.FontWeightMedium, LineHeight: 1.4},
+		Body:       draw.TextStyle{Size: 13, Weight: draw.FontWeightRegular, LineHeight: 1.5},
+		BodySmall:  draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular, LineHeight: 1.5},
+		Label:      draw.TextStyle{Size: 12, Weight: draw.FontWeightMedium, LineHeight: 1.0},
 		LabelSmall: draw.TextStyle{Size: 11, Weight: draw.FontWeightMedium, LineHeight: 1.0},
-		Code:      draw.TextStyle{Size: 13, Weight: draw.FontWeightRegular, LineHeight: 1.6, FontFamily: "JetBrains Mono"},
-		CodeSmall: draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular, LineHeight: 1.6, FontFamily: "JetBrains Mono"},
+		Code:       draw.TextStyle{Size: 13, Weight: draw.FontWeightRegular, LineHeight: 1.6, FontFamily: "JetBrains Mono"},
+		CodeSmall:  draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular, LineHeight: 1.6, FontFamily: "JetBrains Mono"},
 	},
 	Spacing: SpacingScale{XS: 4, S: 8, M: 16, L: 24, XL: 32, XXL: 48},
 	Radii:   RadiusScale{Input: 4, Button: 6, Card: 8, Pill: 999},
@@ -278,8 +281,8 @@ var slateTokens = TokenSet{
 }
 
 func (s *slateTheme) Tokens() TokenSet             { return slateTokens }
-func (s *slateTheme) DrawFunc(WidgetKind) DrawFunc  { return nil }
-func (s *slateTheme) Parent() Theme                 { return nil }
+func (s *slateTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
+func (s *slateTheme) Parent() Theme                { return nil }
 
 // ── theme.SlateLight (RFC-003 §2) ───────────────────────────────
 
@@ -296,6 +299,7 @@ var slateLightTokens = func() TokenSet {
 		Elevated: draw.Hex("#f4f4f5"), // Zinc-100
 		Hovered:  draw.Hex("#e4e4e7"), // Zinc-200
 		Pressed:  draw.Hex("#d4d4d8"), // Zinc-300
+		Scrim:    draw.Color{R: 0, G: 0, B: 0, A: 0.4},
 	}
 	t.Colors.Stroke = StrokeColors{
 		Border:  draw.Color{R: 0, G: 0, B: 0, A: 0.10}, // 10% black
@@ -312,8 +316,8 @@ var slateLightTokens = func() TokenSet {
 }()
 
 func (s *slateLightTheme) Tokens() TokenSet             { return slateLightTokens }
-func (s *slateLightTheme) DrawFunc(WidgetKind) DrawFunc  { return nil }
-func (s *slateLightTheme) Parent() Theme                 { return Slate }
+func (s *slateLightTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
+func (s *slateLightTheme) Parent() Theme                { return Slate }
 
 type slateLightTheme struct{}
 

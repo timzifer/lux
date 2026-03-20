@@ -12,15 +12,16 @@ type Target struct {
 	OnClick   func()
 	OnClickAt func(x, y float32) // positional click (e.g. Slider)
 	Draggable bool               // if true, OnClickAt fires continuously during drag
+	OnRelease func(x, y float32) // called when drag ends (mouse release); nil = no-op
 	Cursor    input.CursorKind   // cursor to show when hovering (RFC-002 §2.7)
 }
 
 // ScrollTarget is a scrollable region linked to a ScrollState.
 type ScrollTarget struct {
-	Bounds        draw.Rect
-	ContentHeight float32
+	Bounds         draw.Rect
+	ContentHeight  float32
 	ViewportHeight float32
-	OnScroll      func(deltaY float32) // called with scroll delta
+	OnScroll       func(deltaY float32) // called with scroll delta
 }
 
 // Map collects hit targets during layout and resolves pointer hits.
@@ -101,6 +102,15 @@ func (m *Map) AddDrag(bounds draw.Rect, onClick func(x, y float32)) {
 		return
 	}
 	m.targets = append(m.targets, Target{Bounds: bounds, OnClickAt: onClick, Draggable: true})
+}
+
+// AddDragRelease registers a draggable region with a release callback.
+// OnClickAt fires on press and during move; onRelease fires once on mouse release.
+func (m *Map) AddDragRelease(bounds draw.Rect, onClick func(x, y float32), onRelease func(x, y float32)) {
+	if onClick == nil {
+		return
+	}
+	m.targets = append(m.targets, Target{Bounds: bounds, OnClickAt: onClick, Draggable: true, OnRelease: onRelease})
 }
 
 // AddDragCursor registers a draggable region with a custom hover cursor.

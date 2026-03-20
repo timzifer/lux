@@ -15,8 +15,8 @@ import (
 
 // OpenGLRenderer implements Renderer using OpenGL 3.3 Core.
 type OpenGLRenderer struct {
-	width  int
-	height int
+	width   int
+	height  int
 	bgColor draw.Color
 
 	// Text rendering resources.
@@ -31,12 +31,12 @@ type OpenGLRenderer struct {
 	textInited   bool
 
 	// MSDF text rendering resources.
-	msdfProgram      uint32
-	msdfVAO          uint32
-	msdfVBO          uint32
-	msdfAtlasTexture uint32
-	msdfProjUniform  int32
-	msdfColorUniform int32
+	msdfProgram        uint32
+	msdfVAO            uint32
+	msdfVBO            uint32
+	msdfAtlasTexture   uint32
+	msdfProjUniform    int32
+	msdfColorUniform   int32
 	msdfAtlasUniform   int32
 	msdfPxRangeUniform int32
 	msdfInited         bool
@@ -48,6 +48,14 @@ type OpenGLRenderer struct {
 	rectInstanceVBO uint32
 	rectProjUniform int32
 	rectInited      bool
+
+	// Surface texture-blit rendering resources (RFC §8).
+	surfProgram     uint32
+	surfVAO         uint32
+	surfVBO         uint32
+	surfProjUniform int32
+	surfTexUniform  int32
+	surfInited      bool
 }
 
 // NewOpenGL creates an OpenGL-based renderer.
@@ -116,6 +124,9 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	if len(roundedBatch) > 0 {
 		r.drawRoundedRects(roundedBatch)
 	}
+	if len(scene.Surfaces) > 0 {
+		r.drawSurfaces(scene.Surfaces)
+	}
 	for _, glyph := range scene.Glyphs {
 		r.drawGlyph(glyph)
 	}
@@ -182,6 +193,11 @@ func (r *OpenGLRenderer) Destroy() {
 		gl.DeleteVertexArrays(1, &r.rectVAO)
 		gl.DeleteBuffers(1, &r.rectVBO)
 		gl.DeleteBuffers(1, &r.rectInstanceVBO)
+	}
+	if r.surfInited {
+		gl.DeleteProgram(r.surfProgram)
+		gl.DeleteVertexArrays(1, &r.surfVAO)
+		gl.DeleteBuffers(1, &r.surfVBO)
 	}
 }
 
@@ -594,6 +610,94 @@ func (r *OpenGLRenderer) flushMSDFBatch(vertices []float32, color draw.Color) {
 }
 
 // ── Shader helpers ──────────────────────────────────────────────
+
+// ── Surface texture-blit rendering (RFC §8) ─────────────────────
+
+func (r *OpenGLRenderer) initSurfaceRendering() {
+	if r.surfInited {
+		return
+	}
+
+	program, err := compileProgram(surfaceVertexShader, surfaceFragmentShader)
+	if err != nil {
+		return
+	}
+
+	r.surfProgram = program
+	r.surfProjUniform = gl.GetUniformLocation(program, gl.Str("uProj\x00"))
+	r.surfTexUniform = gl.GetUniformLocation(program, gl.Str("uTex\x00"))
+
+	gl.GenVertexArrays(1, &r.surfVAO)
+	gl.GenBuffers(1, &r.surfVBO)
+
+	gl.BindVertexArray(r.surfVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.surfVBO)
+
+	// Vertex layout: [posX, posY, uvX, uvY] per vertex.
+	stride := int32(4 * 4)
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointerWithOffset(0, 2, gl.FLOAT, false, stride, 0)
+	gl.EnableVertexAttribArray(1)
+	gl.VertexAttribPointerWithOffset(1, 2, gl.FLOAT, false, stride, uintptr(2*4))
+
+	gl.BindVertexArray(0)
+	r.surfInited = true
+}
+
+func (r *OpenGLRenderer) drawSurfaces(surfaces []draw.DrawSurface) {
+	r.initSurfaceRendering()
+	if !r.surfInited {
+		return
+	}
+
+	gl.Disable(gl.SCISSOR_TEST)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+	gl.UseProgram(r.surfProgram)
+
+	proj := orthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
+	gl.UniformMatrix4fv(r.surfProjUniform, 1, false, &proj[0])
+
+	gl.ActiveTexture(gl.TEXTURE0)
+	gl.Uniform1i(r.surfTexUniform, 0)
+
+	gl.BindVertexArray(r.surfVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.surfVBO)
+
+	for _, s := range surfaces {
+		if s.TextureID == 0 {
+			continue
+		}
+
+		x0 := float32(s.X)
+		y0 := float32(s.Y)
+		x1 := float32(s.X + s.W)
+		y1 := float32(s.Y + s.H)
+
+		// UV: (0,0) bottom-left to (1,1) top-right in OpenGL, but FBO textures
+		// are already in correct orientation, so flip V.
+		vertices := []float32{
+			x0, y0, 0, 1,
+			x1, y0, 1, 1,
+			x0, y1, 0, 0,
+
+			x1, y0, 1, 1,
+			x1, y1, 1, 0,
+			x0, y1, 0, 0,
+		}
+
+		gl.BindTexture(gl.TEXTURE_2D, uint32(s.TextureID))
+		gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices), gl.DYNAMIC_DRAW)
+		gl.DrawArrays(gl.TRIANGLES, 0, 6)
+	}
+
+	gl.BindTexture(gl.TEXTURE_2D, 0)
+	gl.BindVertexArray(0)
+	gl.UseProgram(0)
+	gl.Disable(gl.BLEND)
+	gl.Enable(gl.SCISSOR_TEST)
+}
 
 func compileProgram(vertSrc, fragSrc string) (uint32, error) {
 	vert, err := compileShader(vertSrc, gl.VERTEX_SHADER)

@@ -110,6 +110,26 @@ func (ix *Interactor) RegisterDragCursor(bounds draw.Rect, cursor input.CursorKi
 	return opacity
 }
 
+// RegisterSurfaceDrag registers a draggable hit target with a release callback.
+// Used by surface slots to forward press/move/release to SurfaceProvider.HandleMsg.
+func (ix *Interactor) RegisterSurfaceDrag(bounds draw.Rect, onDrag func(x, y float32), onRelease func(x, y float32)) float32 {
+	if ix == nil {
+		return 0
+	}
+	var opacity float32
+	if ix.hover != nil {
+		opacity = ix.hover.nextButtonHoverOpacity()
+	}
+	if ix.hitMap != nil {
+		if onDrag != nil {
+			ix.hitMap.AddDragRelease(bounds, onDrag, onRelease)
+		} else {
+			ix.hitMap.Add(bounds, func() {})
+		}
+	}
+	return opacity
+}
+
 // RegisterScroll registers a scrollable viewport region. Scroll targets use
 // a separate target list in hit.Map, so they do NOT consume a hover slot and
 // cannot cause index misalignment.

@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
@@ -79,8 +80,8 @@ type Widget interface {
 type RenderCtx struct {
 	UID    UID
 	Theme  theme.Theme
-	Send   func(any)      // local Send bound to this UID
-	Events []InputEvent   // input events dispatched to this widget (RFC-002 §2.6)
+	Send   func(any)    // local Send bound to this UID
+	Events []InputEvent // input events dispatched to this widget (RFC-002 §2.6)
 }
 
 // AdoptState is a generic helper that type-asserts the raw state or
@@ -136,6 +137,64 @@ type SurfaceKeyMsg struct {
 	Key       input.Key
 	Action    input.KeyAction
 	Mods      input.ModifierSet
+}
+
+// ── Surface Semantics (RFC-006 §5) ───────────────────────────────
+
+// SemanticProvider is an optional interface for surfaces that export
+// accessibility semantics. Surfaces that do not implement it remain
+// black boxes with a generic fallback AccessNode.
+//
+// Implementation is progressive: surfaces may implement only
+// SnapshotSemantics initially and add HitTest, Focus, and Action
+// support incrementally.
+type SemanticProvider interface {
+	// SnapshotSemantics returns an immutable snapshot of the semantic
+	// subtree relative to the current surface bounds.
+	SnapshotSemantics(bounds draw.Rect) SurfaceSemantics
+
+	// HitTestSemantics returns the semantic node at a position relative
+	// to the surface bounds. Used for explore-by-touch and focus routing.
+	HitTestSemantics(p draw.Point) (SurfaceNodeID, bool)
+
+	// FocusSemanticNode requests focus on a specific semantic node.
+	// Returns true if the surface accepted the focus change.
+	FocusSemanticNode(id SurfaceNodeID) bool
+
+	// PerformSemanticAction executes a semantic action on the given node
+	// (e.g. "activate", "increment", "scrollForward").
+	// Returns true if the action was handled.
+	PerformSemanticAction(id SurfaceNodeID, action string) bool
+}
+
+// SurfaceNodeID identifies a node within a surface's semantic subtree.
+// IDs must be stable across frames for the same logical element.
+type SurfaceNodeID uint64
+
+// SurfaceSemantics is an immutable snapshot of a surface's semantic subtree.
+type SurfaceSemantics struct {
+	// Roots contains the top-level semantic nodes of the surface.
+	Roots []SurfaceAccessNode
+
+	// Version is an optional monotonically increasing version number.
+	// Facilitates diffing, caching, and bridge optimizations.
+	Version uint64
+}
+
+// SurfaceAccessNode represents a single node in a surface's semantic subtree.
+// Bounds are relative to the surface origin in dp.
+type SurfaceAccessNode struct {
+	ID          SurfaceNodeID
+	Parent      SurfaceNodeID // 0 = root within the surface.
+	Role        a11y.AccessRole
+	Label       string
+	Description string
+	Value       string
+	Bounds      draw.Rect // Relative to the surface in dp.
+	Lang        string    // BCP 47 language tag (e.g. "de", "ar-EG"). Empty inherits from parent.
+	States      a11y.AccessStates
+	Actions     []a11y.AccessActionDesc
+	Relations   []a11y.AccessRelationDesc
 }
 
 // ── Element Types (RFC §4.3) ─────────────────────────────────────
@@ -987,9 +1046,9 @@ func (s *overlayStack) push(entry overlayEntry) {
 type bounds struct{ X, Y, W, H, Baseline int }
 
 const (
-	framePadding   = 24
-	columnGap      = 16
-	rowGap         = 12
+	framePadding    = 24
+	columnGap       = 16
+	rowGap          = 12
 	buttonPadX      = 18
 	buttonPadY      = 12
 	buttonBorder    = 1
@@ -1858,9 +1917,46 @@ func layoutSurface(node surfaceElement, area bounds, canvas draw.Canvas, tokens 
 		canvas.StrokeRect(r, draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Divider), Width: 1})
 	}
 
-	// Register hit target for input routing to surface.
+	// Register draggable hit target for input routing to surface.
+	// The drag callback fires on initial press and every move.
+	// The release callback fires once when the mouse button is released.
+	// Both forward SurfaceMouseMsg to the SurfaceProvider (RFC §8.3).
 	if ix != nil && node.Provider != nil {
-		ix.RegisterHit(r, nil)
+		provider := node.Provider
+		surfID := node.ID
+		origin := draw.Pt(r.X, r.Y)
+		pressed := false
+		ix.RegisterSurfaceDrag(r,
+			func(x, y float32) {
+				localPos := draw.Pt(x-origin.X, y-origin.Y)
+				if !pressed {
+					// First call = press.
+					pressed = true
+					provider.HandleMsg(SurfaceMouseMsg{
+						SurfaceID: surfID,
+						Pos:       localPos,
+						Button:    input.MouseButtonLeft,
+						Action:    input.MousePress,
+					})
+				} else {
+					provider.HandleMsg(SurfaceMouseMsg{
+						SurfaceID: surfID,
+						Pos:       localPos,
+						Button:    input.MouseButtonLeft,
+						Action:    input.MouseMove,
+					})
+				}
+			},
+			func(x, y float32) {
+				pressed = false
+				provider.HandleMsg(SurfaceMouseMsg{
+					SurfaceID: surfID,
+					Pos:       draw.Pt(x-origin.X, y-origin.Y),
+					Button:    input.MouseButtonLeft,
+					Action:    input.MouseRelease,
+				})
+			},
+		)
 	}
 
 	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
@@ -2519,23 +2615,23 @@ func max(a, b int) int {
 // ── Tier 3 Layout Constants ──────────────────────────────────────
 
 const (
-	cardPadding     = 16
-	cardBorder      = 1
-	tabHeaderPadX   = 16
-	tabHeaderPadY   = 10
-	tabIndicatorH   = 2
+	cardPadding      = 16
+	cardBorder       = 1
+	tabHeaderPadX    = 16
+	tabHeaderPadY    = 10
+	tabIndicatorH    = 2
 	accordionHeaderH = 36
-	tooltipPadding  = 8
-	badgePadX       = 6
-	badgePadY       = 2
-	badgeMinSize    = 20
-	chipPadX        = 12
-	chipPadY        = 6
-	chipDismissW    = 16
-	menuBarHeight   = 32
-	menuBarItemPadX = 12
-	menuItemHeight  = 32
-	menuItemPadX    = 12
+	tooltipPadding   = 8
+	badgePadX        = 6
+	badgePadY        = 2
+	badgeMinSize     = 20
+	chipPadX         = 12
+	chipPadY         = 6
+	chipDismissW     = 16
+	menuBarHeight    = 32
+	menuBarItemPadX  = 12
+	menuItemHeight   = 32
+	menuItemPadX     = 12
 )
 
 // ── Tier 3 Layout Functions ──────────────────────────────────────
@@ -3083,10 +3179,17 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 	placement := node.Placement
 	dismissable := node.Dismissable
 	onDismiss := node.OnDismiss
+	backdrop := node.Backdrop
 	winW, winH := overlays.windowW, overlays.windowH
 
 	overlays.push(overlayEntry{
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
+			// Draw semi-transparent scrim behind the overlay for modal dialogs.
+			if backdrop {
+				canvas.FillRect(draw.R(0, 0, float32(winW), float32(winH)),
+					draw.SolidPaint(tokens.Colors.Surface.Scrim))
+			}
+
 			// If dismissable, register a full-window backdrop hit target.
 			// Added BEFORE content targets so content takes priority (hitMap is LIFO).
 			if dismissable && onDismiss != nil {

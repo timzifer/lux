@@ -267,21 +267,39 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] Input-Routing an Surfaces
 - **Abhängig von:** 5.1
 
-### 6.2 Accessibility (RFC-001 §11)
+### 6.2 Accessibility (RFC-001 §11, RFC-006)
+
+#### 6.2a Core A11y Types (`a11y/`) ✅
+- [x] `AccessRole` mit Konstanten (RoleButton, ..., RoleCustomBase)
+- [x] `AccessStates` Struct (Focused, Checked, ..., Live)
+- [x] `AccessLiveRegion` (LiveOff, LivePolite, LiveAssertive)
+- [x] `AccessAction` / `AccessActionDesc` Typen
+- [x] `AccessRelation` / `AccessRelationDesc` Typen
+- [x] `AccessRelationKind` (LabelledBy, DescribedBy, Controls, FlowsTo)
+- [x] `AccessNode` Struct (Role, Label, Description, Value, Lang, States, Actions, Relations)
+- [x] `AccessNodeID` Typ
+
+#### 6.2b Surface Semantic Provider (RFC-006 §5) ✅
+- [x] `SemanticProvider` Interface (SnapshotSemantics, HitTestSemantics, FocusSemanticNode, PerformSemanticAction)
+- [x] `SurfaceNodeID` Typ
+- [x] `SurfaceSemantics` Struct (Roots, Version)
+- [x] `SurfaceAccessNode` Struct (ID, Parent, Role, Label, Description, Value, Bounds, Lang, States, Actions, Relations)
+
+#### 6.2c Widget A11y & AccessTree (ausstehend)
 - [ ] `AccessibleWidget`-Interface
-- [ ] `AccessNode` mit `Lang`-Feld (`language.Tag` für Screenreader-Sprachenwechsel)
-- [ ] `AccessRole`, `AccessStates` Typen
 - [ ] `AccessTree`-Konstruktion aus VTree
-- [ ] `FocusTrap` für modale Dialoge (RFC-001 §11.7)
-  - [ ] Fokus-Einschluss bei Modal-Öffnung (Tab/Shift+Tab zyklisch im Dialog)
-  - [ ] Fokus-Rückkehr bei Modal-Schließung (`RestoreFocus`)
-  - [ ] Inhalt außerhalb des Traps aus AccessTree ausblenden
-- [ ] Vollständige Keyboard-Navigation (Tab, Enter, Escape, Pfeiltasten) als Voraussetzung
-- [ ] Live-Regions (`LivePolite`, `LiveAssertive`) für dynamische Statusmeldungen
+- [ ] `renderToAccessTree()` Test-Helper für A11y-Unit-Tests in CI
+- [ ] Surface-Subtree-Merge in globalen AccessTree (RFC-006 §6)
+
+#### 6.2d FocusTrap (RFC-001 §11.7, ausstehend)
+- [ ] Fokus-Einschluss bei Modal-Öffnung (Tab/Shift+Tab zyklisch im Dialog)
+- [ ] Fokus-Rückkehr bei Modal-Schließung (`RestoreFocus`)
+- [ ] Inhalt außerhalb des Traps aus AccessTree ausblenden
+
+#### 6.2e Plattform-Bridges (ausstehend)
 - [ ] AT-SPI2 Bridge (Linux) — via D-Bus (`godbus`), kein CGo
 - [ ] UIA Bridge (Windows) — via CGo/COM
 - [ ] NSAccessibility Bridge (macOS) — via CGo/ObjC
-- [ ] `renderToAccessTree()` Test-Helper für A11y-Unit-Tests in CI
 - **Abhängig von:** 0.2, 0.3 (Focus-Management), 4b.2 (Locale für `Lang`-Feld)
 
 ### 6.3 State Persistence (RFC-001 §3.4) ✅
