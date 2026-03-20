@@ -105,6 +105,8 @@ in vec2 vHalfSize;
 in vec4 vColor;
 flat in float vRadius;
 
+uniform float uGrain; // RFC-008 §10.5: noise/grain intensity
+
 out vec4 fragColor;
 
 float roundedBoxSDF(vec2 p, vec2 b, float r) {
@@ -112,12 +114,17 @@ float roundedBoxSDF(vec2 p, vec2 b, float r) {
     return length(max(q, 0.0)) - r;
 }
 
+float noiseHash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
 void main() {
     float dist = roundedBoxSDF(vLocalPos, vHalfSize, vRadius);
     // Anti-alias: smoothstep over ~1px.
     float alpha = 1.0 - smoothstep(-0.5, 0.5, dist);
     if (alpha < 0.001) discard;
-    fragColor = vec4(vColor.rgb, vColor.a * alpha);
+    float n = (noiseHash(gl_FragCoord.xy) - 0.5) * uGrain;
+    fragColor = vec4(vColor.rgb + n, vColor.a * alpha);
 }
 ` + "\x00"
 

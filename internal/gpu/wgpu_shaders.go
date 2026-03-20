@@ -9,6 +9,7 @@ package gpu
 const wgslRectShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
+    params: vec4<f32>,  // x = grain intensity (RFC-008 §10.5), yzw reserved
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -60,7 +61,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (alpha < 0.001) {
         discard;
     }
-    let n = (noise_hash(in.position.xy) - 0.5) * 0.03;
+    let grain = uniforms.params.x;
+    let n = (noise_hash(in.position.xy) - 0.5) * grain;
     return vec4<f32>(in.color.rgb + n, in.color.a * alpha);
 }
 `
@@ -70,6 +72,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 const wgslTextInstancedShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
+    params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var atlas_texture: texture_2d<f32>;
@@ -111,6 +114,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 const wgslSurfaceShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
+    params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(1) @binding(0) var surf_texture: texture_2d<f32>;
@@ -146,6 +150,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 const wgslGradientShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
+    params: vec4<f32>,  // x = grain intensity (RFC-008 §10.5), yzw reserved
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -254,7 +259,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let color = sample_gradient(t);
-    let n = (noise_hash_g(in.position.xy) - 0.5) * 0.03;
+    let grain = uniforms.params.x;
+    let n = (noise_hash_g(in.position.xy) - 0.5) * grain;
     return vec4<f32>(color.rgb + n, color.a * alpha);
 }
 `
@@ -324,6 +330,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 const wgslShadowShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
+    params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -467,6 +474,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 const wgslBlurBlitShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
+    params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(1) @binding(0) var blit_texture: texture_2d<f32>;

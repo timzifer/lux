@@ -210,6 +210,8 @@ type BlurRegion struct {
 
 // Scene is the fully laid-out draw list for one frame.
 type Scene struct {
+	Grain float32 // Noise/grain intensity from theme (RFC-008 §10.5); 0 = off
+
 	Rects          []DrawRect
 	Glyphs         []DrawGlyph      // legacy bitmap glyphs
 	TexturedGlyphs []TexturedGlyph  // atlas-based glyphs

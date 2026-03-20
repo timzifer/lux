@@ -114,6 +114,7 @@ type TokenSet struct {
 	Motion     MotionSpec
 	Elevation  ElevationScale
 	Scroll     ScrollSpec
+	Grain      float32 // Noise/grain intensity (RFC-008 §10.5); 0 = off, 0.03 = subtle default
 }
 
 // ── ColorScheme (RFC-003 §1.2) ──────────────────────────────────
@@ -418,6 +419,7 @@ var luxDarkTokens = TokenSet{
 		StepSize:          48,
 		MultiplierPrecise: 1.5,
 	},
+	Grain: 0.03, // RFC-008 §10.5: subtle anti-banding noise
 }
 
 func (l *luxTheme) Tokens() TokenSet             { return luxDarkTokens }
@@ -490,6 +492,7 @@ type OverrideSpec struct {
 	Motion     *MotionSpec
 	Elevation  *ElevationScale
 	Scroll     *ScrollSpec
+	Grain      *float32 // RFC-008 §10.5: override noise/grain intensity
 }
 
 // Override creates a new Theme that applies partial overrides to a base theme.
@@ -524,6 +527,9 @@ func (o *overrideTheme) Tokens() TokenSet {
 	}
 	if o.spec.Scroll != nil {
 		t.Scroll = *o.spec.Scroll
+	}
+	if o.spec.Grain != nil {
+		t.Grain = *o.spec.Grain
 	}
 	return t
 }

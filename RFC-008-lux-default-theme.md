@@ -991,8 +991,13 @@ Stand: 2026-03-20
   `Motion.Emphasized`; einfachere Animationen nutzen `Motion.Standard`.
   `overlayEntry` trägt `Animation` + `Duration` für Framework-seitige
   Enter/Exit-Steuerung.
-- [ ] **§10.5 Noise/Grain** — Kein Grain-Shader oder -Token im Framework.
-  Erfordert GPU-Pipeline-Erweiterung (Noise-Pass als optionaler Post-Effekt)
+- [x] **§10.5 Noise/Grain** — `TokenSet.Grain` als konfigurierbarer
+  Intensitäts-Token (Default 0.03 in LuxDark/LuxLight, 0 in Slate).
+  Shader-Pipeline liest Grain-Wert aus Uniform statt Hardcoded-Konstante.
+  `OverrideSpec.Grain` ermöglicht Theme-Override.
+  WGSL: `uniforms.params.x` in Rect- und Gradient-Shader.
+  GLSL: `uGrain` Uniform im Rect-Fragment-Shader.
+  `draw.Scene.Grain` transportiert Token zum Renderer.
 - [x] **§11.4 Cards** — Card-Widget nutzt `DrawShadow` mit `Elevation.Low`
   + feine `StrokeRoundRect`-Border als Default statt des alten
   Doppel-FillRoundRect-Ansatzes

@@ -1329,7 +1329,9 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	// The canvas is a SceneCanvas — retrieve its scene.
 	type scener interface{ Scene() draw.Scene }
 	if sc, ok := canvas.(scener); ok {
-		return sc.Scene()
+		s := sc.Scene()
+		s.Grain = tokens.Grain // RFC-008 §10.5
+		return s
 	}
 	return draw.Scene{}
 }
