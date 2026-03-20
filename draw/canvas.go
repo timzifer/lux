@@ -167,6 +167,15 @@ type TexturedGlyph struct {
 	Color      Color
 }
 
+// ClipBatch groups draw commands that share the same scissor rectangle.
+type ClipBatch struct {
+	Clip         Rect
+	RectIdx      int  // start index in Rects[]
+	TextIdx      int  // start index in TexturedGlyphs[]
+	MSDFIdx      int  // start index in MSDFGlyphs[]
+	FullViewport bool // true = no scissor, full viewport
+}
+
 // Scene is the fully laid-out draw list for one frame.
 type Scene struct {
 	Rects          []DrawRect
@@ -183,4 +192,9 @@ type Scene struct {
 	OverlayGlyphs         []DrawGlyph
 	OverlayTexturedGlyphs []TexturedGlyph
 	OverlayMSDFGlyphs     []TexturedGlyph
+
+	// Scissor clip batches — each batch specifies a scissor rect and
+	// index ranges into the main/overlay draw lists.
+	ClipBatches        []ClipBatch
+	OverlayClipBatches []ClipBatch
 }

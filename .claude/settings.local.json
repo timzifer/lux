@@ -14,7 +14,16 @@
       "Bash(while read:*)",
       "Bash(do grep:*)",
       "Bash(done)",
-      "Bash(ls -la /Users/tim.ebbinghaus/Documents/Development/Go/lux/ui/*.go)"
+      "Bash(ls -la /Users/tim.ebbinghaus/Documents/Development/Go/lux/ui/*.go)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(go get:*)",
+      "Bash(go doc:*)",
+      "Bash(go list:*)",
+      "Bash(go mod:*)",
+      "Bash(cat:*)",
+      "Bash(wc:*)"
     ]
   }
 }

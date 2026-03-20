@@ -1,4 +1,4 @@
-//go:build !gogpu && !nogui
+//go:build !gogpu && !nogui && !windows
 
 // This file provides the wgpu-native CGo implementation (default backend).
 // It wraps the C wgpu-native library via CGo.
@@ -174,7 +174,8 @@ func (p *nativeRenderPass) SetBindGroup(index uint32, group BindGroup)          
 func (p *nativeRenderPass) SetVertexBuffer(slot uint32, buffer Buffer, offset, size uint64)  {}
 func (p *nativeRenderPass) Draw(vertexCount, instanceCount, firstVertex, firstInstance uint32) {}
 func (p *nativeRenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance uint32) {}
-func (p *nativeRenderPass) End()                                                               {}
+func (p *nativeRenderPass) SetScissorRect(x, y, width, height uint32)                                  {}
+func (p *nativeRenderPass) End()                                                                        {}
 
 type nativeQueue struct{ handle C.WGPUQueue }
 

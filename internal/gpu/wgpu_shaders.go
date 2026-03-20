@@ -1,4 +1,4 @@
-//go:build !nogui && !windows
+//go:build !nogui && (!windows || gogpu)
 
 package gpu
 
@@ -60,9 +60,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 `
 
-// wgslTextShader renders atlas-based textured glyphs (bitmap text < 24px).
-// Single-channel alpha atlas with per-batch color uniform.
-const wgslTextShader = `
+// wgslTextInstancedShader renders atlas-based textured glyphs (bitmap text < 24px)
+// using instanced rendering: unit quad + per-instance glyph rect/uv/color.
+const wgslTextInstancedShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
 };
@@ -71,57 +71,66 @@ struct Uniforms {
 @group(0) @binding(2) var atlas_sampler: sampler;
 
 struct VertexInput {
-    @location(0) pos: vec2<f32>,
-    @location(1) uv: vec2<f32>,
+    @location(0) pos: vec2<f32>,         // unit quad corner (0..1)
+    @location(1) glyph_rect: vec4<f32>,  // dstX, dstY, dstW, dstH
+    @location(2) glyph_uv: vec4<f32>,    // u0, v0, u1, v1
+    @location(3) color: vec4<f32>,       // r, g, b, a
 };
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.position = uniforms.proj * vec4<f32>(in.pos, 0.0, 1.0);
-    out.uv = in.uv;
+    let world_pos = in.glyph_rect.xy + in.pos * in.glyph_rect.zw;
+    out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
+    out.uv = mix(in.glyph_uv.xy, in.glyph_uv.zw, in.pos);
+    out.color = in.color;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let a = textureSample(atlas_texture, atlas_sampler, in.uv).r;
-    // Color is baked into vertex data for wgpu (unlike OpenGL uniform approach).
-    // For now, use white — the color will be multiplied in the vertex stage.
-    return vec4<f32>(1.0, 1.0, 1.0, a);
+    return vec4<f32>(in.color.rgb, in.color.a * a);
 }
 `
 
-// wgslMSDFShader renders MSDF (Multi-channel Signed Distance Field) text.
-// Uses the Chlumsky method for sharp text at any size (>= 24px).
-const wgslMSDFShader = `
+// wgslMSDFInstancedShader renders MSDF (Multi-channel Signed Distance Field) text
+// using instanced rendering: unit quad + per-instance glyph rect/uv/color.
+const wgslMSDFInstancedShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
+    atlas_size: vec4<f32>,  // xy = texture size, zw = px_range (replicated)
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var msdf_texture: texture_2d<f32>;
 @group(0) @binding(2) var msdf_sampler: sampler;
 
 struct VertexInput {
-    @location(0) pos: vec2<f32>,
-    @location(1) uv: vec2<f32>,
+    @location(0) pos: vec2<f32>,         // unit quad corner (0..1)
+    @location(1) glyph_rect: vec4<f32>,  // dstX, dstY, dstW, dstH
+    @location(2) glyph_uv: vec4<f32>,    // u0, v0, u1, v1
+    @location(3) color: vec4<f32>,       // r, g, b, a
 };
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.position = uniforms.proj * vec4<f32>(in.pos, 0.0, 1.0);
-    out.uv = in.uv;
+    let world_pos = in.glyph_rect.xy + in.pos * in.glyph_rect.zw;
+    out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
+    out.uv = mix(in.glyph_uv.xy, in.glyph_uv.zw, in.pos);
+    out.color = in.color;
     return out;
 }
 
@@ -135,14 +144,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let d = median3(s.r, s.g, s.b);
 
     // Compute screen-pixel distance using UV derivatives (Chlumsky method).
-    let tex_size = vec2<f32>(textureDimensions(msdf_texture, 0));
-    let px_range = 4.0; // MSDF pixel range
-    let unit_range = vec2<f32>(px_range) / tex_size;
+    // Atlas size is passed via uniforms.atlas_size since textureDimensions()
+    // is broken in naga's HLSL backend.
+    let unit_range = uniforms.atlas_size.zw / uniforms.atlas_size.xy;
     let screen_tex_size = vec2<f32>(1.0) / fwidth(in.uv);
     let screen_px_range = max(0.5 * dot(unit_range, screen_tex_size), 1.0);
 
     let screen_px_dist = screen_px_range * (d - 0.5);
     let alpha = clamp(screen_px_dist + 0.5, 0.0, 1.0);
-    return vec4<f32>(1.0, 1.0, 1.0, alpha);
+    if (alpha < 0.01) {
+        discard;
+    }
+    return vec4<f32>(in.color.rgb, in.color.a * alpha);
 }
 `

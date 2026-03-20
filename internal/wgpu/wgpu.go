@@ -473,6 +473,9 @@ type RenderPass interface {
 	// DrawInstanced draws instanced primitives.
 	DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance uint32)
 
+	// SetScissorRect sets the scissor rectangle for the render pass.
+	SetScissorRect(x, y, width, height uint32)
+
 	// End ends the render pass.
 	End()
 }

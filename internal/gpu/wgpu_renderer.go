@@ -1,10 +1,12 @@
-//go:build !nogui && !windows
+//go:build !nogui && (!windows || gogpu)
 
 package gpu
 
 import (
 	"fmt"
+	"log"
 	"math"
+	"time"
 	"unsafe"
 
 	"github.com/timzifer/lux/draw"
@@ -17,8 +19,8 @@ import (
 //   - Sharp rectangles via clear operations
 //   - Rounded rectangles via SDF fragment shader
 //   - Bitmap glyph rendering via per-pixel fills
-//   - Atlas-based textured glyph rendering
-//   - MSDF text rendering for large text sizes
+//   - Atlas-based textured glyph rendering (instanced)
+//   - MSDF text rendering for large text sizes (instanced)
 type WGPURenderer struct {
 	width     int
 	height    int
@@ -32,29 +34,54 @@ type WGPURenderer struct {
 	queue          wgpu.Queue
 
 	// Rendering pipelines
-	rectPipeline   wgpu.RenderPipeline
-	textPipeline   wgpu.RenderPipeline
-	msdfPipeline   wgpu.RenderPipeline
+	rectPipeline     wgpu.RenderPipeline
+	textInstPipeline wgpu.RenderPipeline // instanced text pipeline
+	msdfInstPipeline wgpu.RenderPipeline // instanced MSDF pipeline
 
 	// Shared resources
-	projBuffer     wgpu.Buffer
-	rectVertBuffer wgpu.Buffer
+	projBuffer     wgpu.Buffer   // 64 bytes: mat4x4 projection
+	msdfUniBuffer  wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 atlas_size
+	rectVertBuffer wgpu.Buffer   // unit quad shared by rect + text + MSDF
 	rectInstBuffer wgpu.Buffer
-	textVertBuffer wgpu.Buffer
+	glyphInstBuffer wgpu.Buffer  // unified GPU instance buffer for text + MSDF
 	atlasTexture   wgpu.Texture
 	atlasView      wgpu.TextureView
 	atlasSampler   wgpu.Sampler
 	msdfTexture    wgpu.Texture
 	msdfView       wgpu.TextureView
 
+	// Bind group layouts (kept for recreating bind groups on atlas resize)
+	textLayout     wgpu.BindGroupLayout
+
 	// Bind groups
 	projBindGroup  wgpu.BindGroup
 	textBindGroup  wgpu.BindGroup
 	msdfBindGroup  wgpu.BindGroup
 
+	// CPU-side retained buffers — grow-only, reset to [:0] each frame.
+	rectBuf  []float32
+	glyphBuf []float32 // unified: [text main|text overlay|msdf main|msdf overlay]
+
+	// GPU buffer capacities (bytes) — for grow-on-demand.
+	rectInstBufCap  uint64
+	glyphInstBufCap uint64
+
 	// State tracking
-	inited    bool
-	surfaceOK bool
+	inited         bool
+	surfaceOK      bool
+	atlasW, atlasH int // last known atlas texture size
+	msdfW, msdfH   int // last known MSDF atlas texture size
+
+	// Performance metrics
+	perfFrames     int
+	perfDrawStart  time.Time
+	perfLastReport time.Time
+	perfTotalDraw  time.Duration
+	perfMinDraw    time.Duration
+	perfMaxDraw    time.Duration
+	perfRects      int
+	perfTextGlyphs int
+	perfMSDFGlyphs int
 }
 
 // NewWGPU creates a new wgpu-based renderer.
@@ -89,6 +116,8 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("wgpu adapter: %w", err)
 	}
+	info := adapter.GetInfo()
+	log.Printf("wgpu: adapter=%q backend=%s type=%s", info.Name, info.BackendType, info.AdapterType)
 
 	device, err := adapter.RequestDevice(&wgpu.DeviceDescriptor{
 		Label: "lux-device",
@@ -117,7 +146,15 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
 	})
 
+	// Create MSDF uniform buffer (projection + atlas_size vec4 = 80 bytes).
+	r.msdfUniBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "msdf-uniforms",
+		Size:  80,
+		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+	})
+
 	// Create rect vertex buffer (unit quad: 6 vertices * 2 floats * 4 bytes = 48 bytes).
+	// Shared by rect, text, and MSDF pipelines.
 	r.rectVertBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: "rect-verts",
 		Size:  48,
@@ -129,32 +166,36 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	r.rectVertBuffer.Write(r.queue, float32SliceToBytes(quadVerts))
 
 	// Create rect instance buffer (dynamic, resized as needed).
+	r.rectInstBufCap = 1024 * 9 * 4
 	r.rectInstBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: "rect-instances",
-		Size:  1024 * 9 * 4, // 1024 rects * 9 floats * 4 bytes
+		Size:  r.rectInstBufCap,
 		Usage: wgpu.BufferUsageVertex | wgpu.BufferUsageCopyDst,
 	})
 
-	// Create text vertex buffer (dynamic).
-	r.textVertBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
-		Label: "text-verts",
-		Size:  4096 * 6 * 4 * 4, // 4096 glyphs * 6 verts * 4 floats * 4 bytes
+	// Create unified glyph instance buffer (dynamic).
+	r.glyphInstBufCap = 4096 * 12 * 4
+	r.glyphInstBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "glyph-instances",
+		Size:  r.glyphInstBufCap,
 		Usage: wgpu.BufferUsageVertex | wgpu.BufferUsageCopyDst,
 	})
 
 	// Create atlas texture (initially 512x512, single-channel).
+	r.atlasW, r.atlasH = 512, 512
 	r.atlasTexture = device.CreateTexture(&wgpu.TextureDescriptor{
 		Label:  "glyph-atlas",
-		Size:   wgpu.Extent3D{Width: 512, Height: 512, DepthOrArrayLayers: 1},
+		Size:   wgpu.Extent3D{Width: uint32(r.atlasW), Height: uint32(r.atlasH), DepthOrArrayLayers: 1},
 		Format: wgpu.TextureFormatR8Unorm,
 		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
 	})
 	r.atlasView = r.atlasTexture.CreateView()
 
 	// Create MSDF atlas texture (initially 512x512, RGBA).
+	r.msdfW, r.msdfH = 512, 512
 	r.msdfTexture = device.CreateTexture(&wgpu.TextureDescriptor{
 		Label:  "msdf-atlas",
-		Size:   wgpu.Extent3D{Width: 512, Height: 512, DepthOrArrayLayers: 1},
+		Size:   wgpu.Extent3D{Width: uint32(r.msdfW), Height: uint32(r.msdfH), DepthOrArrayLayers: 1},
 		Format: wgpu.TextureFormatRGBA8Unorm,
 		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
 	})
@@ -173,14 +214,14 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	defer rectShader.Destroy()
 
 	textShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:  "text-shader",
-		Source: wgslTextShader,
+		Label:  "text-instanced-shader",
+		Source: wgslTextInstancedShader,
 	})
 	defer textShader.Destroy()
 
 	msdfShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:  "msdf-shader",
-		Source: wgslMSDFShader,
+		Label:  "msdf-instanced-shader",
+		Source: wgslMSDFInstancedShader,
 	})
 	defer msdfShader.Destroy()
 
@@ -193,7 +234,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	})
 	defer projLayout.Destroy()
 
-	textLayout := device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	r.textLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Label: "text-layout",
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageVertex, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
@@ -201,7 +242,6 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			{Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &wgpu.SamplerBindingLayout{}},
 		},
 	})
-	defer textLayout.Destroy()
 
 	// Alpha blending state.
 	blend := &wgpu.BlendState{
@@ -217,6 +257,22 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 	}
 
+	// Instanced vertex buffer layout for glyph instances (shared by text + MSDF).
+	glyphInstanceLayout := wgpu.VertexBufferLayout{
+		ArrayStride: 48, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
+			{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // glyph_rect
+			{Format: wgpu.VertexFormatFloat32x4, Offset: 16, ShaderLocation: 2}, // glyph_uv
+			{Format: wgpu.VertexFormatFloat32x4, Offset: 32, ShaderLocation: 3}, // color
+		},
+	}
+
+	// Unit quad vertex layout (shared by rect, text, MSDF).
+	unitQuadLayout := wgpu.VertexBufferLayout{
+		ArrayStride: 8, StepMode: wgpu.VertexStepModeVertex, Attributes: []wgpu.VertexAttribute{
+			{Format: wgpu.VertexFormatFloat32x2, Offset: 0, ShaderLocation: 0},
+		},
+	}
+
 	// Create render pipelines.
 	r.rectPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label: "rect-pipeline",
@@ -224,9 +280,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     rectShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
-				{ArrayStride: 8, StepMode: wgpu.VertexStepModeVertex, Attributes: []wgpu.VertexAttribute{
-					{Format: wgpu.VertexFormatFloat32x2, Offset: 0, ShaderLocation: 0},
-				}},
+				unitQuadLayout,
 				{ArrayStride: 36, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 16, ShaderLocation: 2}, // color
@@ -243,17 +297,12 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout},
 	})
 
-	r.textPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-		Label: "text-pipeline",
+	r.textInstPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "text-instanced-pipeline",
 		Vertex: wgpu.VertexState{
 			Module:     textShader,
 			EntryPoint: "vs_main",
-			Buffers: []wgpu.VertexBufferLayout{
-				{ArrayStride: 16, StepMode: wgpu.VertexStepModeVertex, Attributes: []wgpu.VertexAttribute{
-					{Format: wgpu.VertexFormatFloat32x2, Offset: 0, ShaderLocation: 0}, // pos
-					{Format: wgpu.VertexFormatFloat32x2, Offset: 8, ShaderLocation: 1}, // uv
-				}},
-			},
+			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout, glyphInstanceLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     textShader,
@@ -261,20 +310,15 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
-		BindGroupLayouts: []wgpu.BindGroupLayout{textLayout},
+		BindGroupLayouts: []wgpu.BindGroupLayout{r.textLayout},
 	})
 
-	r.msdfPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-		Label: "msdf-pipeline",
+	r.msdfInstPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "msdf-instanced-pipeline",
 		Vertex: wgpu.VertexState{
 			Module:     msdfShader,
 			EntryPoint: "vs_main",
-			Buffers: []wgpu.VertexBufferLayout{
-				{ArrayStride: 16, StepMode: wgpu.VertexStepModeVertex, Attributes: []wgpu.VertexAttribute{
-					{Format: wgpu.VertexFormatFloat32x2, Offset: 0, ShaderLocation: 0},
-					{Format: wgpu.VertexFormatFloat32x2, Offset: 8, ShaderLocation: 1},
-				}},
-			},
+			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout, glyphInstanceLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     msdfShader,
@@ -282,7 +326,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
-		BindGroupLayouts: []wgpu.BindGroupLayout{textLayout},
+		BindGroupLayouts: []wgpu.BindGroupLayout{r.textLayout},
 	})
 
 	// Create bind groups.
@@ -296,7 +340,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 
 	r.textBindGroup = device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label:  "text-bind-group",
-		Layout: textLayout,
+		Layout: r.textLayout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: r.projBuffer, Size: 64},
 			{Binding: 1, Texture: r.atlasView},
@@ -306,9 +350,9 @@ func (r *WGPURenderer) Init(cfg Config) error {
 
 	r.msdfBindGroup = device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label:  "msdf-bind-group",
-		Layout: textLayout,
+		Layout: r.textLayout,
 		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 0, Buffer: r.msdfUniBuffer, Size: 80},
 			{Binding: 1, Texture: r.msdfView},
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
@@ -353,21 +397,111 @@ func (r *WGPURenderer) BeginFrame() {
 }
 
 // Draw renders the current scene using wgpu.
+//
+// WebGPU semantics: queue.WriteBuffer() executes immediately, but draw commands
+// in a render pass only execute at queue.Submit(). We must upload ALL buffer data
+// before beginning the render pass, then use firstInstance offsets to
+// separate main and overlay draws within the same buffer.
 func (r *WGPURenderer) Draw(scene draw.Scene) {
 	if !r.inited || !r.surfaceOK {
 		return
 	}
+	drawStart := time.Now()
 
 	// Acquire current surface texture.
 	textureView, err := r.surface.GetCurrentTexture()
 	if err != nil {
+		log.Printf("wgpu: GetCurrentTexture failed: %v", err)
 		return
 	}
 
-	// Create command encoder.
-	encoder := r.device.CreateCommandEncoder()
+	// --- Phase 1: Upload all buffer data before recording draw commands ---
 
-	// Begin render pass with clear.
+	// Resize GPU textures if the atlas has grown, then upload.
+	if r.atlas != nil {
+		if r.atlas.Width != r.atlasW || r.atlas.Height != r.atlasH {
+			r.resizeAtlasTexture()
+		}
+		if r.atlas.MSDFWidth != r.msdfW || r.atlas.MSDFHeight != r.msdfH {
+			r.resizeMSDFTexture()
+		}
+		if r.atlas.Dirty {
+			r.atlasTexture.Write(r.queue, r.atlas.Image.Pix, uint32(r.atlas.Image.Stride))
+			r.atlas.Dirty = false
+		}
+		if r.atlas.MSDFDirty {
+			r.msdfTexture.Write(r.queue, r.atlas.MSDFImage.Pix, uint32(r.atlas.MSDFImage.Stride))
+			r.atlas.MSDFDirty = false
+		}
+	}
+
+	// Rects: concatenate main + overlay instance data using retained buffer.
+	mainRectCount := uint32(len(scene.Rects))
+	overlayRectCount := uint32(len(scene.OverlayRects))
+	if mainRectCount+overlayRectCount > 0 {
+		r.rectBuf = r.rectBuf[:0]
+		for _, rect := range scene.Rects {
+			r.rectBuf = append(r.rectBuf,
+				float32(rect.X), float32(rect.Y), float32(rect.W), float32(rect.H),
+				rect.Color.R, rect.Color.G, rect.Color.B, rect.Color.A,
+				rect.Radius,
+			)
+		}
+		for _, rect := range scene.OverlayRects {
+			r.rectBuf = append(r.rectBuf,
+				float32(rect.X), float32(rect.Y), float32(rect.W), float32(rect.H),
+				rect.Color.R, rect.Color.G, rect.Color.B, rect.Color.A,
+				rect.Radius,
+			)
+		}
+		needed := uint64(len(r.rectBuf)) * 4
+		r.ensureGPUBuffer(&r.rectInstBuffer, &r.rectInstBufCap, needed, "rect-instances", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
+		r.rectInstBuffer.Write(r.queue, float32SliceToBytes(r.rectBuf))
+	}
+
+	// Glyph instances: unified buffer [text main | text overlay | msdf main | msdf overlay].
+	// 12 floats per glyph instance (glyph_rect + glyph_uv + color).
+	var mainTextGlyphs, overlayTextGlyphs int
+	var mainMSDFGlyphs, overlayMSDFGlyphs int
+	if r.atlas != nil {
+		atlasW := float32(r.atlas.Width)
+		atlasH := float32(r.atlas.Height)
+		msdfW := float32(r.atlas.MSDFWidth)
+		msdfH := float32(r.atlas.MSDFHeight)
+
+		r.glyphBuf = r.glyphBuf[:0]
+
+		// Text glyphs: main + overlay
+		for _, g := range scene.TexturedGlyphs {
+			r.glyphBuf = appendGlyphInstance(r.glyphBuf, g, atlasW, atlasH)
+		}
+		for _, g := range scene.OverlayTexturedGlyphs {
+			r.glyphBuf = appendGlyphInstance(r.glyphBuf, g, atlasW, atlasH)
+		}
+		mainTextGlyphs = len(scene.TexturedGlyphs)
+		overlayTextGlyphs = len(scene.OverlayTexturedGlyphs)
+
+		// MSDF glyphs: main + overlay
+		for _, g := range scene.MSDFGlyphs {
+			r.glyphBuf = appendGlyphInstance(r.glyphBuf, g, msdfW, msdfH)
+		}
+		for _, g := range scene.OverlayMSDFGlyphs {
+			r.glyphBuf = appendGlyphInstance(r.glyphBuf, g, msdfW, msdfH)
+		}
+		mainMSDFGlyphs = len(scene.MSDFGlyphs)
+		overlayMSDFGlyphs = len(scene.OverlayMSDFGlyphs)
+
+		// Upload unified glyph instance buffer.
+		if len(r.glyphBuf) > 0 {
+			needed := uint64(len(r.glyphBuf)) * 4
+			r.ensureGPUBuffer(&r.glyphInstBuffer, &r.glyphInstBufCap, needed, "glyph-instances", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
+			r.glyphInstBuffer.Write(r.queue, float32SliceToBytes(r.glyphBuf))
+		}
+	}
+
+	// --- Phase 2: Record render pass commands ---
+
+	encoder := r.device.CreateCommandEncoder()
 	renderPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 		ColorAttachments: []wgpu.RenderPassColorAttachment{
 			{
@@ -384,37 +518,49 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		},
 	})
 
-	// Draw rounded rects via instanced rendering.
-	if len(scene.Rects) > 0 {
-		r.drawRects(renderPass, scene.Rects)
-	}
+	// Set initial full-viewport scissor.
+	vpW, vpH := uint32(r.width), uint32(r.height)
+	renderPass.SetScissorRect(0, 0, vpW, vpH)
 
-	// Draw textured glyphs.
-	if len(scene.TexturedGlyphs) > 0 {
-		r.drawTexturedGlyphs(renderPass, scene.TexturedGlyphs)
-	}
+	totalRectBufSize := uint64((mainRectCount + overlayRectCount) * 9 * 4)
+	glyphBufSize := uint64(len(r.glyphBuf)) * 4
 
-	// Draw MSDF glyphs.
-	if len(scene.MSDFGlyphs) > 0 {
-		r.drawMSDFGlyphs(renderPass, scene.MSDFGlyphs)
-	}
+	// MSDF instances start after all text instances in the unified buffer.
+	msdfGPUOffset := mainTextGlyphs + overlayTextGlyphs
 
-	// Overlay pass.
-	if len(scene.OverlayRects) > 0 {
-		r.drawRects(renderPass, scene.OverlayRects)
-	}
-	if len(scene.OverlayTexturedGlyphs) > 0 {
-		r.drawTexturedGlyphs(renderPass, scene.OverlayTexturedGlyphs)
-	}
-	if len(scene.OverlayMSDFGlyphs) > 0 {
-		r.drawMSDFGlyphs(renderPass, scene.OverlayMSDFGlyphs)
-	}
+	// Draw main content via scissor clip batches.
+	r.drawClipBatches(renderPass, scene.ClipBatches,
+		int(mainRectCount), mainTextGlyphs, mainMSDFGlyphs,
+		0, 0, msdfGPUOffset, // MSDF starts after all text glyphs in unified buffer
+		totalRectBufSize, glyphBufSize,
+		vpW, vpH)
+
+	// Draw overlay content via scissor clip batches.
+	r.drawClipBatches(renderPass, scene.OverlayClipBatches,
+		int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs,
+		int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs,
+		totalRectBufSize, glyphBufSize,
+		vpW, vpH)
 
 	renderPass.End()
 
 	// Submit.
 	cmdBuffer := encoder.Finish()
 	r.queue.Submit(cmdBuffer)
+
+	// Collect perf metrics.
+	drawDur := time.Since(drawStart)
+	r.perfFrames++
+	r.perfTotalDraw += drawDur
+	if drawDur < r.perfMinDraw || r.perfMinDraw == 0 {
+		r.perfMinDraw = drawDur
+	}
+	if drawDur > r.perfMaxDraw {
+		r.perfMaxDraw = drawDur
+	}
+	r.perfRects += int(mainRectCount + overlayRectCount)
+	r.perfTextGlyphs += mainTextGlyphs + overlayTextGlyphs
+	r.perfMSDFGlyphs += mainMSDFGlyphs + overlayMSDFGlyphs
 }
 
 // EndFrame presents the rendered frame.
@@ -422,6 +568,44 @@ func (r *WGPURenderer) EndFrame() {
 	if r.surfaceOK {
 		r.surface.Present()
 	}
+	r.reportPerf()
+}
+
+func (r *WGPURenderer) reportPerf() {
+	if r.perfLastReport.IsZero() {
+		r.perfLastReport = time.Now()
+		return
+	}
+	elapsed := time.Since(r.perfLastReport)
+	if elapsed < 5*time.Second {
+		return
+	}
+	fps := float64(r.perfFrames) / elapsed.Seconds()
+	avgDraw := time.Duration(0)
+	if r.perfFrames > 0 {
+		avgDraw = r.perfTotalDraw / time.Duration(r.perfFrames)
+	}
+	avgRects := 0
+	avgText := 0
+	avgMSDF := 0
+	if r.perfFrames > 0 {
+		avgRects = r.perfRects / r.perfFrames
+		avgText = r.perfTextGlyphs / r.perfFrames
+		avgMSDF = r.perfMSDFGlyphs / r.perfFrames
+	}
+	log.Printf("wgpu perf: %.1f fps | draw avg=%v min=%v max=%v | rects=%d textGlyphs=%d msdfGlyphs=%d (per frame avg)",
+		fps, avgDraw.Round(time.Microsecond), r.perfMinDraw.Round(time.Microsecond), r.perfMaxDraw.Round(time.Microsecond),
+		avgRects, avgText, avgMSDF)
+
+	// Reset.
+	r.perfFrames = 0
+	r.perfTotalDraw = 0
+	r.perfMinDraw = 0
+	r.perfMaxDraw = 0
+	r.perfRects = 0
+	r.perfTextGlyphs = 0
+	r.perfMSDFGlyphs = 0
+	r.perfLastReport = time.Now()
 }
 
 // Destroy releases wgpu resources.
@@ -433,133 +617,252 @@ func (r *WGPURenderer) Destroy() {
 	r.textBindGroup.Destroy()
 	r.msdfBindGroup.Destroy()
 	r.projBuffer.Destroy()
+	r.msdfUniBuffer.Destroy()
 	r.rectVertBuffer.Destroy()
 	r.rectInstBuffer.Destroy()
-	r.textVertBuffer.Destroy()
+	r.glyphInstBuffer.Destroy()
 	r.atlasView.Destroy()
 	r.atlasTexture.Destroy()
 	r.msdfView.Destroy()
 	r.msdfTexture.Destroy()
 	r.atlasSampler.Destroy()
 	r.rectPipeline.Destroy()
-	r.textPipeline.Destroy()
-	r.msdfPipeline.Destroy()
-	r.device.Destroy()
+	r.textInstPipeline.Destroy()
+	r.msdfInstPipeline.Destroy()
+	r.textLayout.Destroy()
+	// Surface must be released before Device — DX12 needs the command queue for waitForGPU.
 	if r.surface != nil {
 		r.surface.Destroy()
 	}
+	r.device.Destroy()
 	r.instance.Destroy()
 }
 
-func (r *WGPURenderer) drawRects(pass wgpu.RenderPass, rects []draw.DrawRect) {
-	if len(rects) == 0 {
-		return
-	}
-
-	// Build instance data: 9 floats per rect (x, y, w, h, r, g, b, a, radius).
-	instances := make([]float32, 0, len(rects)*9)
-	for _, rect := range rects {
-		instances = append(instances,
-			float32(rect.X), float32(rect.Y), float32(rect.W), float32(rect.H),
-			rect.Color.R, rect.Color.G, rect.Color.B, rect.Color.A,
-			rect.Radius,
-		)
-	}
-
-	r.rectInstBuffer.Write(r.queue, float32SliceToBytes(instances))
-
-	pass.SetPipeline(r.rectPipeline)
-	pass.SetBindGroup(0, r.projBindGroup)
-	pass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-	pass.SetVertexBuffer(1, r.rectInstBuffer, 0, uint64(len(instances)*4))
-	pass.DrawInstanced(6, uint32(len(rects)), 0, 0)
+func (r *WGPURenderer) resizeAtlasTexture() {
+	r.atlasView.Destroy()
+	r.atlasTexture.Destroy()
+	r.atlasW, r.atlasH = r.atlas.Width, r.atlas.Height
+	r.atlasTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "glyph-atlas",
+		Size:   wgpu.Extent3D{Width: uint32(r.atlasW), Height: uint32(r.atlasH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatR8Unorm,
+		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+	})
+	r.atlasView = r.atlasTexture.CreateView()
+	// Recreate text bind group with new texture view.
+	r.textBindGroup.Destroy()
+	r.textBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  "text-bind-group",
+		Layout: r.textLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 1, Texture: r.atlasView},
+			{Binding: 2, Sampler: r.atlasSampler},
+		},
+	})
+	r.atlas.Dirty = true
 }
 
-func (r *WGPURenderer) drawTexturedGlyphs(pass wgpu.RenderPass, glyphs []draw.TexturedGlyph) {
-	if r.atlas == nil || len(glyphs) == 0 {
-		return
-	}
-
-	// Upload atlas if dirty.
-	if r.atlas.Dirty {
-		r.atlasTexture.Write(r.queue, r.atlas.Image.Pix, uint32(r.atlas.Image.Stride))
-		r.atlas.Dirty = false
-	}
-
-	atlasW := float32(r.atlas.Width)
-	atlasH := float32(r.atlas.Height)
-
-	// Build vertex data: 6 vertices per glyph, 4 floats per vertex.
-	vertices := make([]float32, 0, len(glyphs)*6*4)
-	for _, g := range glyphs {
-		x0, y0 := g.DstX, g.DstY
-		x1, y1 := g.DstX+g.DstW, g.DstY+g.DstH
-		u0 := float32(g.SrcX) / atlasW
-		v0 := float32(g.SrcY) / atlasH
-		u1 := float32(g.SrcX+g.SrcW) / atlasW
-		v1 := float32(g.SrcY+g.SrcH) / atlasH
-
-		vertices = append(vertices,
-			x0, y0, u0, v0,
-			x1, y0, u1, v0,
-			x0, y1, u0, v1,
-			x1, y0, u1, v0,
-			x1, y1, u1, v1,
-			x0, y1, u0, v1,
-		)
-	}
-
-	r.textVertBuffer.Write(r.queue, float32SliceToBytes(vertices))
-
-	pass.SetPipeline(r.textPipeline)
-	pass.SetBindGroup(0, r.textBindGroup)
-	pass.SetVertexBuffer(0, r.textVertBuffer, 0, uint64(len(vertices)*4))
-	pass.Draw(uint32(len(vertices)/4), 1, 0, 0)
+func (r *WGPURenderer) resizeMSDFTexture() {
+	r.msdfView.Destroy()
+	r.msdfTexture.Destroy()
+	r.msdfW, r.msdfH = r.atlas.MSDFWidth, r.atlas.MSDFHeight
+	r.msdfTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "msdf-atlas",
+		Size:   wgpu.Extent3D{Width: uint32(r.msdfW), Height: uint32(r.msdfH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatRGBA8Unorm,
+		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+	})
+	r.msdfView = r.msdfTexture.CreateView()
+	// Recreate MSDF bind group with new texture view.
+	r.msdfBindGroup.Destroy()
+	r.msdfBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  "msdf-bind-group",
+		Layout: r.textLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: r.msdfUniBuffer, Size: 80},
+			{Binding: 1, Texture: r.msdfView},
+			{Binding: 2, Sampler: r.atlasSampler},
+		},
+	})
+	r.atlas.MSDFDirty = true
+	r.updateMSDFUniforms()
 }
 
-func (r *WGPURenderer) drawMSDFGlyphs(pass wgpu.RenderPass, glyphs []draw.TexturedGlyph) {
-	if r.atlas == nil || len(glyphs) == 0 {
+// ensureGPUBuffer grows a GPU buffer if the needed capacity exceeds the current one.
+func (r *WGPURenderer) ensureGPUBuffer(buf *wgpu.Buffer, cap *uint64, needed uint64, label string, usage wgpu.BufferUsage) {
+	if needed <= *cap {
+		return
+	}
+	newCap := needed * 2
+	(*buf).Destroy()
+	*buf = r.device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: label, Size: newCap, Usage: usage,
+	})
+	*cap = newCap
+}
+
+// drawClipBatches iterates over ClipBatches, setting scissor rects and drawing
+// the appropriate ranges of rects/text/MSDF from the pre-uploaded GPU buffers.
+//
+// totalRects/totalTextGlyphs/totalMSDFGlyphs are counts for this layer (main or overlay).
+// gpuRectOffset/gpuTextGlyphOffset/gpuMSDFGlyphOffset are the offsets into the
+// concatenated GPU buffers (0 for main, mainCount for overlay).
+func (r *WGPURenderer) drawClipBatches(
+	renderPass wgpu.RenderPass,
+	batches []draw.ClipBatch,
+	totalRects, totalTextGlyphs, totalMSDFGlyphs int,
+	gpuRectOffset, gpuTextGlyphOffset, gpuMSDFGlyphOffset int,
+	rectBufSize, glyphBufSize uint64,
+	vpW, vpH uint32,
+) {
+	if totalRects == 0 && totalTextGlyphs == 0 && totalMSDFGlyphs == 0 {
 		return
 	}
 
-	if r.atlas.MSDFDirty {
-		r.msdfTexture.Write(r.queue, r.atlas.MSDFImage.Pix, uint32(r.atlas.MSDFImage.Stride))
-		r.atlas.MSDFDirty = false
+	// Pipeline state tracking for draw-call merging.
+	var lastPipeline int // 0=none, 1=rect, 2=text, 3=msdf
+
+	setRectPipeline := func() {
+		if lastPipeline != 1 {
+			renderPass.SetPipeline(r.rectPipeline)
+			renderPass.SetBindGroup(0, r.projBindGroup)
+			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1, r.rectInstBuffer, 0, rectBufSize)
+			lastPipeline = 1
+		}
 	}
 
-	atlasW := float32(r.atlas.MSDFWidth)
-	atlasH := float32(r.atlas.MSDFHeight)
-
-	vertices := make([]float32, 0, len(glyphs)*6*4)
-	for _, g := range glyphs {
-		x0, y0 := g.DstX, g.DstY
-		x1, y1 := g.DstX+g.DstW, g.DstY+g.DstH
-		u0 := float32(g.SrcX) / atlasW
-		v0 := float32(g.SrcY) / atlasH
-		u1 := float32(g.SrcX+g.SrcW) / atlasW
-		v1 := float32(g.SrcY+g.SrcH) / atlasH
-
-		vertices = append(vertices,
-			x0, y0, u0, v0,
-			x1, y0, u1, v0,
-			x0, y1, u0, v1,
-			x1, y0, u1, v0,
-			x1, y1, u1, v1,
-			x0, y1, u0, v1,
-		)
+	setTextPipeline := func() {
+		if lastPipeline != 2 {
+			renderPass.SetPipeline(r.textInstPipeline)
+			renderPass.SetBindGroup(0, r.textBindGroup)
+			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1, r.glyphInstBuffer, 0, glyphBufSize)
+			lastPipeline = 2
+		}
 	}
 
-	r.textVertBuffer.Write(r.queue, float32SliceToBytes(vertices))
+	setMSDFPipeline := func() {
+		if lastPipeline != 3 {
+			renderPass.SetPipeline(r.msdfInstPipeline)
+			renderPass.SetBindGroup(0, r.msdfBindGroup)
+			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1, r.glyphInstBuffer, 0, glyphBufSize)
+			lastPipeline = 3
+		}
+	}
 
-	pass.SetPipeline(r.msdfPipeline)
-	pass.SetBindGroup(0, r.msdfBindGroup)
-	pass.SetVertexBuffer(0, r.textVertBuffer, 0, uint64(len(vertices)*4))
-	pass.Draw(uint32(len(vertices)/4), 1, 0, 0)
+	// No clip batches → draw everything as a single full-viewport batch.
+	if len(batches) == 0 {
+		renderPass.SetScissorRect(0, 0, vpW, vpH)
+		if totalRects > 0 {
+			setRectPipeline()
+			renderPass.DrawInstanced(6, uint32(totalRects), 0, uint32(gpuRectOffset))
+		}
+		if totalTextGlyphs > 0 {
+			setTextPipeline()
+			renderPass.DrawInstanced(6, uint32(totalTextGlyphs), 0, uint32(gpuTextGlyphOffset))
+		}
+		if totalMSDFGlyphs > 0 {
+			setMSDFPipeline()
+			renderPass.DrawInstanced(6, uint32(totalMSDFGlyphs), 0, uint32(gpuMSDFGlyphOffset))
+		}
+		return
+	}
+
+	// Batch indices are scene-list indices (e.g., batch.RectIdx is an index
+	// into scene.Rects or scene.OverlayRects). The first batch's index is
+	// the base for this layer.
+	baseRectIdx := batches[0].RectIdx
+	baseTextIdx := batches[0].TextIdx
+	baseMSDFIdx := batches[0].MSDFIdx
+
+	for i, batch := range batches {
+		// Set scissor rect.
+		if batch.FullViewport {
+			renderPass.SetScissorRect(0, 0, vpW, vpH)
+		} else {
+			sx := uint32(batch.Clip.X)
+			sy := uint32(batch.Clip.Y)
+			sw := uint32(batch.Clip.W)
+			sh := uint32(batch.Clip.H)
+			if sx+sw > vpW {
+				sw = vpW - sx
+			}
+			if sy+sh > vpH {
+				sh = vpH - sy
+			}
+			renderPass.SetScissorRect(sx, sy, sw, sh)
+		}
+
+		// Compute draw counts from batch boundaries.
+		var endRectIdx, endTextIdx, endMSDFIdx int
+		if i+1 < len(batches) {
+			endRectIdx = batches[i+1].RectIdx
+			endTextIdx = batches[i+1].TextIdx
+			endMSDFIdx = batches[i+1].MSDFIdx
+		} else {
+			endRectIdx = baseRectIdx + totalRects
+			endTextIdx = baseTextIdx + totalTextGlyphs
+			endMSDFIdx = baseMSDFIdx + totalMSDFGlyphs
+		}
+
+		nRects := uint32(endRectIdx - batch.RectIdx)
+		nTextGlyphs := uint32(endTextIdx - batch.TextIdx)
+		nMSDFGlyphs := uint32(endMSDFIdx - batch.MSDFIdx)
+
+		// GPU offsets: scene index relative to base + layer offset in GPU buffer.
+		rectFirst := uint32(batch.RectIdx-baseRectIdx) + uint32(gpuRectOffset)
+		textFirst := uint32(batch.TextIdx-baseTextIdx) + uint32(gpuTextGlyphOffset)
+		msdfFirst := uint32(batch.MSDFIdx-baseMSDFIdx) + uint32(gpuMSDFGlyphOffset)
+
+		if nRects > 0 {
+			setRectPipeline()
+			renderPass.DrawInstanced(6, nRects, 0, rectFirst)
+		}
+		if nTextGlyphs > 0 {
+			setTextPipeline()
+			renderPass.DrawInstanced(6, nTextGlyphs, 0, textFirst)
+		}
+		if nMSDFGlyphs > 0 {
+			setMSDFPipeline()
+			renderPass.DrawInstanced(6, nMSDFGlyphs, 0, msdfFirst)
+		}
+	}
+}
+
+// appendGlyphInstance appends a single glyph's instance data (12 floats) to buf.
+func appendGlyphInstance(buf []float32, g draw.TexturedGlyph, atlasW, atlasH float32) []float32 {
+	u0 := float32(g.SrcX) / atlasW
+	v0 := float32(g.SrcY) / atlasH
+	u1 := float32(g.SrcX+g.SrcW) / atlasW
+	v1 := float32(g.SrcY+g.SrcH) / atlasH
+	return append(buf,
+		g.DstX, g.DstY, g.DstW, g.DstH, // glyph_rect
+		u0, v0, u1, v1,                   // glyph_uv
+		g.Color.R, g.Color.G, g.Color.B, g.Color.A, // color
+	)
 }
 
 func (r *WGPURenderer) updateProjection() {
 	proj := wgpuOrthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
 	r.projBuffer.Write(r.queue, float32SliceToBytes(proj[:]))
+	r.updateMSDFUniforms()
+}
+
+func (r *WGPURenderer) updateMSDFUniforms() {
+	proj := wgpuOrthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
+	// 20 floats: mat4x4 (16) + atlas_size vec4 (4)
+	// atlas_size.xy = texture dimensions, atlas_size.zw = px_range (replicated for dot product)
+	pxRange := float32(text.MSDFPxRange)
+	var data [20]float32
+	copy(data[:16], proj[:])
+	data[16] = float32(r.msdfW)
+	data[17] = float32(r.msdfH)
+	data[18] = pxRange
+	data[19] = pxRange
+	r.msdfUniBuffer.Write(r.queue, float32SliceToBytes(data[:]))
 }
 
 func wgpuOrthoMatrix(left, right, bottom, top, near, far float32) [16]float32 {

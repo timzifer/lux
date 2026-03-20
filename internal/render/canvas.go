@@ -22,12 +22,47 @@ type SceneCanvas struct {
 	atlas       *text.GlyphAtlas
 	clips       []draw.Rect // clip rect stack
 	overlayMode bool        // when true, draw commands go to overlay lists
+
+	// Scissor clip-batch tracking.
+	lastClip    draw.Rect
+	lastClipSet bool
 }
 
 // SetOverlayMode switches between main and overlay draw lists.
 // Overlay content is rendered after all main content, ensuring
 // dropdowns/tooltips fully cover underlying text.
-func (c *SceneCanvas) SetOverlayMode(on bool) { c.overlayMode = on }
+func (c *SceneCanvas) SetOverlayMode(on bool) {
+	c.overlayMode = on
+	c.lastClipSet = false // reset clip tracking on mode switch
+}
+
+// emitClipIfChanged emits a new ClipBatch if the current clip rect
+// differs from the last emitted one. This allows the GPU renderer to
+// set scissor rects per batch.
+func (c *SceneCanvas) emitClipIfChanged() {
+	cur := c.clipRect()
+	if c.lastClipSet && cur == c.lastClip {
+		return
+	}
+	fullViewport := len(c.clips) == 0
+	batch := draw.ClipBatch{
+		Clip:         cur,
+		RectIdx:      len(c.scene.Rects),
+		TextIdx:      len(c.scene.TexturedGlyphs),
+		MSDFIdx:      len(c.scene.MSDFGlyphs),
+		FullViewport: fullViewport,
+	}
+	if c.overlayMode {
+		batch.RectIdx = len(c.scene.OverlayRects)
+		batch.TextIdx = len(c.scene.OverlayTexturedGlyphs)
+		batch.MSDFIdx = len(c.scene.OverlayMSDFGlyphs)
+		c.scene.OverlayClipBatches = append(c.scene.OverlayClipBatches, batch)
+	} else {
+		c.scene.ClipBatches = append(c.scene.ClipBatches, batch)
+	}
+	c.lastClip = cur
+	c.lastClipSet = true
+}
 
 // CanvasOption configures a SceneCanvas.
 type CanvasOption func(*SceneCanvas)
@@ -65,6 +100,7 @@ func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
 	if c.isClipped(r.X, r.Y, r.W, r.H) {
 		return
 	}
+	c.emitClipIfChanged()
 	// Intersect with clip rect to clamp visible portion.
 	x, y, w, h := r.X, r.Y, r.W, r.H
 	if len(c.clips) > 0 {
@@ -99,6 +135,7 @@ func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Pain
 	if c.isClipped(r.X, r.Y, r.W, r.H) {
 		return
 	}
+	c.emitClipIfChanged()
 	x, y, w, h := r.X, r.Y, r.W, r.H
 	if len(c.clips) > 0 {
 		clip := c.clips[len(c.clips)-1]
@@ -213,6 +250,7 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 // drawTextTextured shapes text and emits TexturedGlyphs (or MSDFGlyphs) from the atlas.
 // origin.Y is the top-left of the text bounding box (not the baseline).
 func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw.TextStyle, color draw.Color, shaper text.GlyphRasterizer) {
+	c.emitClipIfChanged()
 	shaped := shaper.Shape(txt, style)
 	cursorX := origin.X
 
@@ -375,6 +413,7 @@ func (c *SceneCanvas) DrawTexture(tex draw.TextureID, dst draw.Rect) {
 	if c.isClipped(dst.X, dst.Y, dst.W, dst.H) {
 		return
 	}
+	c.emitClipIfChanged()
 	c.scene.Surfaces = append(c.scene.Surfaces, draw.DrawSurface{
 		X: int(dst.X), Y: int(dst.Y), W: int(dst.W), H: int(dst.H),
 		TextureID: tex,
