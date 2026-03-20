@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.2.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-19
+**Zuletzt abgeglichen:** 2026-03-20
 **Folge-RFCs:** RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme)
 
 ---
@@ -26,14 +26,14 @@
 | §5 Theming-System | ✅ Integriert | `Theme`-Interface, `TokenSet`, `DrawFunc`, `DrawCtx`, `Override` |
 | §5 Slate Dark + Light | ✅ Integriert | Vollständige Token-Werte wie spezifiziert |
 | §5.4 Resolved-Cache | ✅ Integriert | `CachedTheme` in `theme/cache.go` |
-| §6 Rendering-Pipeline | 🔶 Teilweise | OpenGL 3.3+ statt wgpu; Scene-Graph vorhanden |
+| §6 Rendering-Pipeline | ✅ Integriert | wgpu (gogpu) + OpenGL 3.3+ Fallback; Scene-Graph, Shadows, Blur, Gradients, Opacity |
 | §6.2 Canvas-API | ✅ Integriert | Alle Primitives: Blur, Gradients, Layer, ArcTo, DrawTextLayout, DrawImageSlice, DrawTexture, PushScale, PushClipRoundRect, PushClipPath |
 | §6.3 SDF-Text | ✅ Integriert | MSDF-Atlas (NRGBA, 32px Range), Dual-Path (MSDF ≥24px, Bitmap <24px) |
 | §6.4 VTree-Diff / Reconcile | ✅ Integriert | `ui/reconcile.go` |
 | §6.4 VirtualList | ✅ Integriert | `ui/virtual_list.go` |
-| §7 Platform-Abstraktion | 🔶 Teilweise | Interface + GLFW-Backend; Wayland/X11/DRM/Win32/Cocoa fehlen |
-| §8 Externe Surfaces | ⏳ Wartend | |
-| §11 Accessibility (A11y) | ⏳ Wartend | Kein Code vorhanden; §11.3 `AccessNode.Lang` (i18n), §11.7 FocusTrap spezifiziert |
+| §7 Platform-Abstraktion | ✅ Integriert | Interface + GLFW, Wayland, X11, Win32, Cocoa, DRM/KMS Backends |
+| §8 Externe Surfaces | ✅ Integriert | `SurfaceProvider`-Interface, `AcquireFrame`/`ReleaseFrame`, Input-Routing |
+| §11 Accessibility (A11y) | 🔶 Teilweise | Core-Typen (`AccessRole`, `AccessNode`, `AccessStates`, `SemanticProvider`) vorhanden; Bridges + AccessTree-Konstruktion ausstehend |
 | §12 Inspector & Debugging | ⏳ Wartend | |
 
 ---

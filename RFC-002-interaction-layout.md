@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-19
+**Zuletzt abgeglichen:** 2026-03-20
 **Abhängig von:** RFC-001 (Core Architecture)
 **Folge-RFC:** RFC-003 (Widget Catalogue & Theme)
 
@@ -28,7 +28,7 @@
 | §2.2 KeyMsg, MouseMsg, ScrollMsg | ✅ Integriert | Typisiert: `Key uint32`, `ModifierSet`, `ScrollMsg.Precise` |
 | §2.2 TouchMsg | ✅ Integriert | `TouchMsg` mit TouchID, Phase, Force |
 | §2.2 TextInputMsg → CharMsg | ✅ Integriert | Als `CharMsg` statt `TextInputMsg` |
-| §2.2 IME Compose-Window | ⏳ Wartend | `IMEComposeMsg`, `SetIMECursorRect` |
+| §2.2 IME Compose-Window | ✅ Integriert | `IMEComposeMsg`, `IMECommitMsg`, `SetIMECursorRect` auf allen Plattformen |
 | §2.3 Focus-Management | ✅ Integriert | `FocusManager`, `Focusable`-Interface, Tab-Order aus Layout |
 | §2.3 FocusGainedMsg/FocusLostMsg | ✅ Integriert | `ui/focus.go` |
 | §2.4 Hit-Testing | ✅ Integriert | `internal/hit/hit.go` + `Interactor` (index-safe) |
@@ -38,16 +38,16 @@
 | §2.8 Global Handler Layer | ✅ Integriert | `GlobalHandler`, `WithGlobalHandler`, `RegisterHandlerMsg` |
 | §3 Scroll & Kinetic Scrolling | ✅ Integriert | `KineticScroll` mit Friction, Rubber-Band, Velocity-Tracking |
 | §3.4 ScrollSpec im Theme | ✅ Integriert | Friction, Overscroll, TrackWidth, ThumbRadius |
-| §4 Layout-System | 🔶 Teilweise | |
+| §4 Layout-System | ✅ Integriert | |
 | §4.2 Constraints-Modell | ✅ Integriert | `ui/constraints.go` |
 | §4.4 Flexbox-Layout | ✅ Integriert | `ui/flex.go` — Direction, Justify, Align, Gap |
 | §4.5 Grid-Layout | ✅ Integriert | `ui/grid.go` |
 | §4.5 Stack | ✅ Integriert | |
 | §4.5 Padding/SizedBox/Expanded | ✅ Integriert | |
 | §4.3 Layout-Interface (Custom Layouts) | ✅ Integriert | `ui/layout.go` — `Layout`, `LayoutCtx`, `CustomLayout()`, `Size` |
-| §4.6 RTL-Layout-Spiegelung (i18n) | ⏳ Wartend | `Start`/`End` statt `Left`/`Right`, `LayoutDirection` |
+| §4.6 RTL-Layout-Spiegelung (i18n) | ✅ Integriert | `Insets.Resolve(dir)`, `InlineInsets`, `BlockInsets`, `LogicalInsets`, `LayoutDirection` |
 | §4.9 Layout-Cache | ✅ Integriert | `ui/layout_cache.go` — `LayoutCache` mit Store/IsValid/Invalidate |
-| §4.10 Insets-Typ (Start/End) | ⏳ Wartend | Logische Richtungen statt physische |
+| §4.10 Insets-Typ (Start/End) | ✅ Integriert | `Start`/`End` in `Insets`, `Resolve(dir)` für physische Auflösung |
 | §5 Datenbasierte Widgets | 🔶 Teilweise | |
 | §5.2 Tree-Widget | ✅ Integriert | `ui/tree.go` mit Expand/Collapse, Animation, Selection |
 | §5.3 Overlay-System | ✅ Integriert | `Overlay` Element mit Anchor, Placement, Dismissable, Animation |

@@ -140,58 +140,50 @@ Die Datei wird auf Deutsch verfasst, im selben Stil wie die bestehenden RFCs.
   - `gpu.WindowRenderer` Interface für per-Window Rendering
   - KitchenSink Demo: Blur-Section (5 Radii) + Multi-Window-Section (Open/Close)
 
-**Phase G: Visual Effects Pipeline** (TODO)
+**Phase G: Visual Effects Pipeline** ✅
 
 Die folgenden Effekte bauen auf der bestehenden Blur-Infrastruktur auf und
 transformieren die UI von "funktional" zu "subtle-fancy" (Premium-Feel).
 
 *Tier 1 — Sofortiger Premium-Effekt:*
 
-- TODO: **Soft Shadows (Box Shadow)** — `DrawShadow` ist ein Stub. Unscharfer, versetzter,
-  halbtransparenter Rect unter Karten/Buttons/Modalen. Kann den Blur-Shader
-  wiederverwenden (Blur eines einfarbigen Rects). Gibt der gesamten UI sofort Tiefe.
+- ✅ **Soft Shadows (Box Shadow)** — SDF-basierter Shadow-Shader (`wgslShadowShader`),
+  `DrawShadow` mit Color, BlurRadius, SpreadRadius, OffsetX/Y, Radius, Inset.
+  Shadows werden vor Rects gerendert (Behind-Content). Eigene GPU-Pipeline.
   Dateien: `internal/gpu/wgpu_renderer.go`, `internal/gpu/wgpu_shaders.go`,
-  `internal/render/canvas.go` (`DrawShadow`-Implementierung).
+  `internal/render/canvas.go`, `draw/paint.go`.
 
-- TODO: **Frosted Glass Overlays** — Tooltips, Dropdowns, Context-Menus mit
-  halbtransparentem Hintergrund + Backdrop-Blur. Blur-Infrastruktur existiert,
-  braucht Integration in das Overlay-System (`PushBlur` + halbtransparenter Rect
-  im Overlay-Rendering). Dateien: `ui/element.go` (Overlay-Stack),
-  `theme/` (DrawFunc für Tooltip/Menu).
+- ✅ **Frosted Glass Overlays** — `ui.FrostedGlass` Widget: `PushBlur()` +
+  halbtransparenter Tint + Overlay-Rendering. Blurred Backdrop + scharfer
+  Content. Dateien: `ui/element.go`.
 
-- TODO: **Opacity (PushOpacity/PopOpacity)** — Stub-Implementierung ersetzen.
-  Ermöglicht Fade-In/Out, Hover-Dimming, deaktivierte Elemente. Fundamental
-  für Transition-Effekte. Ansatz: Opacity-Stack in SceneCanvas, Alpha-Multiplikator
-  auf alle gezeichneten Primitives. Dateien: `internal/render/canvas.go`,
-  `draw/canvas.go` (evtl. Opacity-Feld auf DrawRect/TexturedGlyph).
+- ✅ **Opacity (PushOpacity/PopOpacity)** — Stack-basierter Opacity-Multiplikator
+  in SceneCanvas. `effectiveOpacity()` wird auf alle Fill-Operationen angewendet.
+  Dateien: `internal/render/canvas.go`.
 
 *Tier 2 — Subtile Verfeinerungen:*
 
-- TODO: **Elevation (Hover-responsive Shadows)** — Shadow-Intensität reagiert auf
-  Hover/Press-State. Button ruht → flacher Schatten, Hover → Schatten wächst
-  ("hebt sich"), Press → Schatten verschwindet ("drückt ein"). Nutzt Shadows +
-  bestehende `anim`-Animationen. Dateien: `theme/` (DrawFunc per Widget).
+- ✅ **Elevation (Hover-responsive Shadows)** — `ui.ElevationBox` (Rest/Hover/Press
+  Shadow-States mit `draw.LerpShadow`-Interpolation), `ui.ElevationCard`
+  (Theme-Presets Low/High/None). Dateien: `ui/element.go`.
 
-- TODO: **Tinted Blur (Vibrancy)** — Wie Frosted Glass, aber mit Farb-Tint.
-  Sidebar mit leichtem Blau/Lila-Tint über Blur → Windows 11 Mica / macOS Vibrancy.
-  Technisch: Blur + halbtransparenter farbiger Rect darüber. Kein neuer Shader nötig,
-  rein kompositorisch. Dateien: `theme/`, `ui/element.go`.
+- ✅ **Tinted Blur (Vibrancy)** — `ui.Vibrancy` (Accent-Tinted FrostedGlass),
+  `ui.TintedBlur` (expliziter Alias). Rein kompositorisch über FrostedGlass.
+  Dateien: `ui/element.go`.
 
-- TODO: **Inner Shadow / Inset** — Gibt Textfeldern und Eingabebereichen physische
-  Tiefe ("eingedrückt" statt "aufgesetzt"). Invertierter Box-Shadow. Kann als
-  Variation des Shadow-Shaders implementiert werden. Dateien:
-  `internal/gpu/wgpu_shaders.go`, `internal/render/canvas.go`.
+- ✅ **Inner Shadow / Inset** — `ui.InnerShadowBox` mit `Shadow.Inset=true`.
+  GPU berechnet invertierte SDF-Fade von Kanten nach innen. Overlay-Rendering
+  für korrekte Z-Ordnung. Dateien: `ui/element.go`, `internal/gpu/wgpu_shaders.go`.
 
 *Tier 3 — Polish:*
 
-- TODO: **Subtle Noise/Grain Texture** — Hauchfeine Textur über flache Flächen.
-  Verhindert Banding bei Gradients, gibt Oberflächen Materialität. Kleiner Zusatz
-  im Fragment-Shader (Hash-basiertes Noise, ~3 Zeilen WGSL).
-  Dateien: `internal/gpu/wgpu_shaders.go` (Rect-Shader-Erweiterung).
+- ✅ **Subtle Noise/Grain Texture** — `noise_hash()` im Rect-Fragment-Shader
+  für Anti-Aliasing-Dither. Verhindert Banding bei Gradients.
+  Dateien: `internal/gpu/wgpu_shaders.go`.
 
-- TODO: **Glow (Focus Ring)** — Weicher äußerer Schein um fokussierte Elemente.
-  Besser als harte Focus-Border. Technisch ähnlich wie Shadow, aber mit
-  Accent-Farbe und ohne Offset. Dateien: `theme/` (DrawFunc für fokussierte Widgets).
+- ✅ **Glow (Focus Ring)** — `ui.GlowBox` / `ui.Glow`: Shadow-Pipeline mit
+  Offset=0, Spread=0, Accent-Farbe. Weicher äußerer Schein um fokussierte
+  Elemente. Dateien: `ui/element.go`.
 
 ### Anhang: Kritische Dateien
 - `internal/wgpu/wgpu.go` — Interface-Definitionen (stabil, kaum Änderungen)

@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-19
+**Zuletzt abgeglichen:** 2026-03-20
 **Abhängig von:** RFC-001, RFC-002
 
 ---
@@ -21,15 +21,15 @@
 | §1.5 Theme-Wechsel (`SetThemeMsg`) | ✅ Integriert | `app.SetThemeMsg`, `app.SetDarkModeMsg` |
 | §1.6 `theme.Override` | ✅ Integriert | `OverrideSpec` mit Pointer-Feldern |
 | §2 theme.Slate Dark + Light | ✅ Integriert | Alle Token-Werte wie spezifiziert |
-| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | Kern vorhanden; fehlt: BiDi, UAX#14, Grapheme-Cluster, i18n |
-| §3.1 CGo-Strategie | 🔶 Teilweise | Aktuell: OpenGL+GLFW (CGo); wgpu/gogpu noch nicht integriert |
+| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | Kern + Locale-Propagation vorhanden; fehlt: BiDi, UAX#14, Grapheme-Cluster |
+| §3.1 CGo-Strategie | ✅ Integriert | wgpu/gogpu (pure Go, Default) + OpenGL+GLFW (CGo, Fallback); native Plattform-Backends via CGo |
 | §3.2 go-text/typesetting | ✅ Integriert | `GoTextShaper` mit vollständigem GSUB/GPOS |
 | §3.3 Shaper-Interface | ✅ Integriert | `Shaper` Interface, `ShapingRun`, `ShapedGlyph` in `internal/text/` |
 | §3.4 Font-Loading & Fallback-Chain | ✅ Integriert | `FontFamily` mit `Fallback`-Chain, `FindGlyphFont` pro Glyph |
 | §3.5 BiDi | ⏳ Wartend | |
 | §3.6 Unicode Line-Breaking (UAX #14) | ⏳ Wartend | |
 | §3.7 Grapheme-Cluster & Cursor-Navigation | ⏳ Wartend | |
-| §3.8 i18n & l10n | ⏳ Wartend | Locale-Propagation, RTL-Layout (→ RFC-002 §4.6) |
+| §3.8 i18n & l10n | 🔶 Teilweise | Locale-Propagation (`WithLocale`, `SetLocaleMsg`, `DirectionFromLocale`) integriert; vollständige l10n ausstehend |
 | §3.9 Package-Name | ✅ Integriert | `github.com/timzifer/lux` |
 | §4 Widget-Katalog | | |
 | §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |

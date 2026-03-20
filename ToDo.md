@@ -1,7 +1,7 @@
 # lux — Offene Aufgaben (nach Abhängigkeit geordnet)
 
-**Stand:** 2026-03-19
-**Abgeleitet aus:** RFC-001, RFC-002, RFC-003
+**Stand:** 2026-03-20
+**Abgeleitet aus:** RFC-001, RFC-002, RFC-003, RFC-007
 
 Die Aufgaben sind in Phasen gegliedert. Jede Phase baut auf den vorherigen auf — innerhalb einer Phase sind die Aufgaben weitgehend unabhängig und parallelisierbar.
 
