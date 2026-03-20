@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/hit"
 )
 
@@ -81,6 +82,27 @@ func (ix *Interactor) RegisterClickAt(bounds draw.Rect, onClick func(x, y float3
 	if ix.hitMap != nil {
 		if onClick != nil {
 			ix.hitMap.AddAt(bounds, onClick)
+		} else {
+			ix.hitMap.Add(bounds, func() {})
+		}
+	}
+	return opacity
+}
+
+// RegisterDragCursor registers a draggable hit target with a custom hover
+// cursor and returns the current hover opacity. If onDrag is nil, a no-op
+// click target is registered instead.
+func (ix *Interactor) RegisterDragCursor(bounds draw.Rect, cursor input.CursorKind, onDrag func(x, y float32)) float32 {
+	if ix == nil {
+		return 0
+	}
+	var opacity float32
+	if ix.hover != nil {
+		opacity = ix.hover.nextButtonHoverOpacity()
+	}
+	if ix.hitMap != nil {
+		if onDrag != nil {
+			ix.hitMap.AddDragCursor(bounds, cursor, onDrag)
 		} else {
 			ix.hitMap.Add(bounds, func() {})
 		}

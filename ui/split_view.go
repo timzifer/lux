@@ -162,8 +162,8 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 	secondBounds := layoutElement(node.Second, secondArea, canvas, th, tokens, ix, overlays, focus)
 	canvas.PopClip()
 
-	// Register drag target for divider.
-	if ix != nil && ix.hitMap != nil && node.OnResize != nil {
+	// Register drag target for divider via Interactor to keep hover indices aligned.
+	if node.OnResize != nil {
 		onResize := node.OnResize
 		areaStart := float32(area.X)
 		if !horizontal {
@@ -175,7 +175,7 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 			cursor = input.CursorResizeNS
 		}
 
-		ix.hitMap.AddDragCursor(divRect, cursor, func(x, y float32) {
+		ix.RegisterDragCursor(divRect, cursor, func(x, y float32) {
 			var pos float32
 			if horizontal {
 				pos = x

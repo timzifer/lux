@@ -1241,7 +1241,7 @@ func menusSection(m Model) ui.Element {
 			{Label: ui.Text("Copy"), OnClick: menuAction("Copy")},
 			{Label: ui.Text("Paste"), OnClick: menuAction("Paste")},
 			{Label: ui.Text("Delete"), OnClick: menuAction("Delete")},
-		}, true, 300, 400),
+		}, true, 0, 0),
 	)
 
 	return ui.Column(children...)

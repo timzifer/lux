@@ -2999,11 +2999,10 @@ func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas 
 	cornerR := maxf(tokens.Radii.Card-1, 0)
 	for itemIdx, item := range items {
 		// Register hit target and get hover opacity atomically.
-		var hoverOpacity float32
-		if item.OnClick != nil {
-			hoverOpacity = ix.RegisterHit(draw.R(float32(posX), float32(cursorY), float32(menuW), float32(menuItemHeight)),
-				item.OnClick)
-		}
+		// Always register (even for nil OnClick) to keep hover indices aligned
+		// and to block hover events from reaching underlying elements.
+		hoverOpacity := ix.RegisterHit(draw.R(float32(posX), float32(cursorY), float32(menuW), float32(menuItemHeight)),
+			item.OnClick)
 		if hoverOpacity > 0 {
 			hoverColor := draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity))
 			hoverRect := draw.R(float32(posX+1), float32(cursorY), float32(max(menuW-2, 0)), float32(menuItemHeight))
@@ -3022,19 +3021,52 @@ func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas 
 }
 
 func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
-	if !node.Visible || len(node.Items) == 0 {
+	if !node.Visible || len(node.Items) == 0 || overlays == nil {
 		return bounds{X: area.X, Y: area.Y}
 	}
 
 	nc := nullCanvas{delegate: canvas}
 	items := node.Items
-	posX := int(node.PosX)
-	posY := int(node.PosY)
+	// Anchor relative to the element's layout area.
+	posX := area.X + int(node.PosX)
+	posY := area.Y + int(node.PosY)
+	winW, winH := overlays.windowW, overlays.windowH
 
 	// Push overlay for context menu rendering.
 	overlays.push(overlayEntry{
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
-			layoutMenuDropdown(items, posX, posY, nc, canvas, th, tokens, ix)
+			// Measure dropdown size for clamping.
+			maxItemW := 0
+			for _, item := range items {
+				cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, th, tokens, nil, nil, nil)
+				w := cb.W + menuItemPadX*2
+				if w > maxItemW {
+					maxItemW = w
+				}
+			}
+			if maxItemW < 120 {
+				maxItemW = 120
+			}
+			menuW := maxItemW
+			menuH := len(items) * menuItemHeight
+
+			// Clamp to window bounds so the menu stays fully visible.
+			clampedX := posX
+			clampedY := posY
+			if clampedX+menuW > winW {
+				clampedX = winW - menuW
+			}
+			if clampedX < 0 {
+				clampedX = 0
+			}
+			if clampedY+menuH > winH {
+				clampedY = winH - menuH
+			}
+			if clampedY < 0 {
+				clampedY = 0
+			}
+
+			layoutMenuDropdown(items, clampedX, clampedY, nc, canvas, th, tokens, ix)
 		},
 	})
 
