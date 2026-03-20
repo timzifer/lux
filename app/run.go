@@ -166,9 +166,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					updateBgColor()
 				case SetDarkModeMsg:
 					if m.Dark {
-						cachedTheme = theme.NewCachedTheme(theme.Slate)
+						cachedTheme = theme.NewCachedTheme(darkVariant(activeTheme))
 					} else {
-						cachedTheme = theme.NewCachedTheme(theme.SlateLight)
+						cachedTheme = theme.NewCachedTheme(lightVariant(activeTheme))
 					}
 					cachedTheme.WarmUp()
 					activeTheme = cachedTheme
@@ -220,9 +220,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					modelDirty = true
 				case SetDarkModeMsg:
 					if m.Dark {
-						cachedTheme = theme.NewCachedTheme(theme.Slate)
+						cachedTheme = theme.NewCachedTheme(darkVariant(activeTheme))
 					} else {
-						cachedTheme = theme.NewCachedTheme(theme.SlateLight)
+						cachedTheme = theme.NewCachedTheme(lightVariant(activeTheme))
 					}
 					cachedTheme.WarmUp()
 					activeTheme = cachedTheme
@@ -579,6 +579,41 @@ func modelChanged(a, b any) (changed bool) {
 	changed = true // default: assume changed for non-comparable types
 	defer func() { recover() }()
 	return a != b
+}
+
+// darkVariant returns the dark theme associated with the current active theme.
+// If the theme (or its underlying base) implements ThemePair, its DarkVariant
+// is returned. If the base is a known Lux theme, we return LuxDark.
+// Otherwise we fall back to the legacy Slate theme.
+func darkVariant(active theme.Theme) theme.Theme {
+	base := unwrapBase(active)
+	if tp, ok := base.(theme.ThemePair); ok {
+		return tp.DarkVariant()
+	}
+	if base == theme.LuxDark || base == theme.LuxLight {
+		return theme.LuxDark
+	}
+	return theme.Slate
+}
+
+// lightVariant is the light-mode counterpart of darkVariant.
+func lightVariant(active theme.Theme) theme.Theme {
+	base := unwrapBase(active)
+	if tp, ok := base.(theme.ThemePair); ok {
+		return tp.LightVariant()
+	}
+	if base == theme.LuxDark || base == theme.LuxLight {
+		return theme.LuxLight
+	}
+	return theme.SlateLight
+}
+
+// unwrapBase extracts the underlying theme from a CachedTheme wrapper.
+func unwrapBase(t theme.Theme) theme.Theme {
+	if ct, ok := t.(*theme.CachedTheme); ok {
+		return ct.Base()
+	}
+	return t
 }
 
 // Ensure ViewFunc constraint is satisfied at compile time.

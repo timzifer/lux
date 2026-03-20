@@ -932,3 +932,76 @@ MotionSpec{
 - robustere Statussignalisierung
 
 Das ist eine Ableitung, nicht der Default.
+
+---
+
+## 17. Implementierungsstatus
+
+Stand: 2026-03-20
+
+### Erledigt
+
+- [x] **§4 Farbmodell** — Alle semantischen Farbrollen (Surface, Accent, Stroke,
+  Text, Status) in `LuxDark` und `LuxLight` definiert (`theme/theme.go`)
+- [x] **§5 Light-/Dark-Mode** — `LuxDark`, `LuxLight`, `LuxAuto` implementiert;
+  `ThemePair`-Interface für dynamischen Wechsel via `SetDarkModeMsg`
+- [x] **§6 Typografie** — Vollständige Skala (H1–CodeSmall) mit Tracking (-0.01
+  auf H1), JetBrains Mono für Code
+- [x] **§7 Spacing/Radii** — 4/8/16/24/32/48 Spacing; Input=4, Button=6,
+  Card=10, Pill=999
+- [x] **§8 Elevation** — Weiche Shadows (Low/Med/High) mit RFC-konformen
+  BlurRadius/Alpha/OffsetY-Werten; GPU-SDF-Shadow-Pipeline aktiv
+- [x] **§9.2 Hover** — Leise Tonwertänderung via `HoverState`, Dauer aus
+  `Motion.Quick`
+- [x] **§9.4 Focus** — `drawFocusRing()` mit Glow-Aura + `Stroke.Focus`-Ring
+  auf allen interaktiven Widgets (Button, TextField, Checkbox, Radio, Toggle,
+  Slider, Select)
+- [x] **§9.5 Motion** — `Motion.Quick` (Toggle, Hover), `Motion.Standard`
+  (Tree expand/collapse) aus Theme-Tokens konsumiert; `ToggleState.update()`
+  akzeptiert `DurationEasing`
+- [x] **§10.1 Soft Shadows** — GPU-Pipeline mit SDF-basiertem Blur-Falloff
+- [x] **§10.2 Frosted Glass** — `FrostedGlass()`, `TintedBlur()` als Primitiven
+  vorhanden; Context Menus ohne Blur per Default
+- [x] **§10.3 Vibrancy** — `Vibrancy()` als Accent-getönte Frosted-Glass-Variante
+- [x] **§10.4 Glow** — `GlowBox()`/`Glow()` via Shadow-Pipeline; Focus-Glow
+  via `drawFocusRing()`
+- [x] **§11.2 Buttons** — Filled, Outlined, Ghost, Tonal Varianten implementiert
+- [x] **§11.3 TextFields** — Focus-Aura via `drawFocusRing()`
+- [x] **§11.7 Dialoge** — Scrim als FillRect-Overlay, Floating-Elevation
+- [x] **§12.1 Theme-Familie** — `theme.LuxDark`, `theme.LuxLight`,
+  `theme.LuxAuto` exportiert
+- [x] **§12.2 Beziehung zu Slate** — `theme.Default = LuxDark`
+- [x] **§15 Token-Werte** — Alle konkreten Farb-, Typografie-, Spacing-, Radii-,
+  Elevation- und Motion-Werte aus Anhang A umgesetzt
+
+### Offen
+
+- [ ] **§9.3 Pressed** — Pressed-Zustand wird in Buttons über `Surface.Pressed`
+  gerendert, aber nicht alle Widgets differenzieren visuell zwischen Hover und
+  Pressed (z.B. Checkbox, Toggle, Slider fehlt ein dedizierter Pressed-Zustand)
+- [ ] **§9.6 Disabled** — Kein `Disabled`-Feld auf Widget-Elementen.
+  Semantisches Disabled-Rendering (Text.Disabled, Accent entfernt, Borders
+  abgeschwächt) erfordert API-Erweiterung aller interaktiven Element-Typen
+- [ ] **§9.5 Motion.Emphasized** — Definiert (320ms InOutCubic), aber von keinem
+  Widget konsumiert. Wird relevant für Dialog-Open/Close-Animationen
+- [ ] **§10.5 Noise/Grain** — Kein Grain-Shader oder -Token im Framework.
+  Erfordert GPU-Pipeline-Erweiterung (Noise-Pass als optionaler Post-Effekt)
+- [ ] **§11.4 Cards** — `ElevationCard` existiert, aber Card-Widget verwendet
+  noch keine feine Border als Default (nur Shadow)
+- [ ] **§11.5 Menus/Tooltips** — Tooltip und ContextMenu rendern Floating
+  Surface + Shadow, aber kein optionaler Frosted-Glass-Effekt als Default für
+  Command Palette / Tooltip (muss Widget-seitig verdrahtet werden)
+- [ ] **§11.6 Tabs/Chips/Badges** — Implementiert, aber aktive Elemente nutzen
+  noch vollflächigen Accent statt tonaler Abstufung
+- [ ] **§14 Migration** — Kitchen-Sink und Beispiel-Apps referenzieren `Slate`
+  statt `lux`; Screenshots und Doku noch nicht aktualisiert
+
+### Out-of-Scope (nicht Teil dieses RFCs)
+
+- **HMI-Variante (§B.5)** — Bewusst als spätere Ableitung geplant
+- **Brand-/Marketing-Theme (§13)** — Explizit als Nicht-Ziel definiert
+- **Mobile-First-Touch-Overdesign (§13)** — Nicht gewünscht
+- **Backdrop-Blur hinter Scrim (§8.5)** — Bewusst opt-in, nicht Default
+- **Frosted-Glass auf Context Menus (§10.2)** — Bewusst opt-in per
+  Theme-Override, nicht Default
+- **Kopie von Material/Fluent/Cupertino (§13)** — Eigenständige Identität
