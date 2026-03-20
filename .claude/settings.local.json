@@ -29,7 +29,16 @@
       "Read(//g/golang/lux/$\\(go env GOMODCACHE\\)/github.com/gogpu/wgpu@v0.21.3/**)",
       "Bash(find /g/golang/lux -type d -name *effect* -o -type d -name *render* -o -type d -name *wgpu* -o -type d -name *frontend*)",
       "Bash(find . -type d -name *effect*)",
-      "Bash(find /g/golang/lux/internal/gpu -name *.go)"
+      "Bash(find /g/golang/lux/internal/gpu -name *.go)",
+      "Bash(git stash:*)",
+      "Bash(/tmp/lux-debug)",
+      "Bash(go run:*)",
+      "Read(//Users/tim.ebbinghaus/Documents/Development/Go/lux/**)",
+      "Bash(xcrun metal:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(/usr/bin/xcrun --sdk macosx metal -c /tmp/metal_test.metal -o /dev/null)",
+      "Bash(cp -r /Users/tim.ebbinghaus/go/pkg/mod/github.com/gogpu/wgpu@v0.21.3 /Users/tim.ebbinghaus/Documents/Development/Go/lux/vendor_gogpu_wgpu)",
+      "Bash(chmod -R u+w /Users/tim.ebbinghaus/Documents/Development/Go/lux/vendor_gogpu_wgpu)"
     ]
   }
 }

@@ -14,6 +14,12 @@ import (
 	"github.com/timzifer/lux/internal/wgpu"
 )
 
+// metalBufferSlotOffset reserves Metal buffer slots 0..1 for bind-group
+// uniform/storage buffers. On Metal, vertex buffer slots and [[buffer(N)]]
+// shader arguments share the same index space, so we offset vertex buffers
+// to avoid conflicts with naga-generated [[buffer(0)]] etc.
+const metalBufferSlotOffset = 2
+
 // WGPURenderer implements Renderer using the wgpu abstraction layer (RFC §6.1).
 // It provides the same rendering capabilities as OpenGLRenderer but using WebGPU:
 //   - Sharp rectangles via clear operations
@@ -317,6 +323,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     rectShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 36, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
@@ -339,7 +346,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Vertex: wgpu.VertexState{
 			Module:     textShader,
 			EntryPoint: "vs_main",
-			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout, glyphInstanceLayout},
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, unitQuadLayout, glyphInstanceLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     textShader,
@@ -355,7 +362,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Vertex: wgpu.VertexState{
 			Module:     msdfShader,
 			EntryPoint: "vs_main",
-			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout, glyphInstanceLayout},
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, unitQuadLayout, glyphInstanceLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     msdfShader,
@@ -426,6 +433,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     surfShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 16, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1}, // rect
@@ -470,7 +478,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Vertex: wgpu.VertexState{
 			Module:     gradShader,
 			EntryPoint: "vs_main",
-			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout},
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, unitQuadLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     gradShader,
@@ -505,6 +513,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     shadowShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 48, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
@@ -594,6 +603,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     blurBlitShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 16, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1}, // rect
@@ -947,8 +957,8 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		copyPass.SetPipeline(r.blurBlitPipeline)
 		copyPass.SetBindGroup(0, r.projBindGroup)
 		copyPass.SetBindGroup(1, unblurredBG)
-		copyPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-		copyPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+		copyPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+		copyPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
 		copyPass.Draw(6, 1, 0, 0)
 		copyPass.End()
 
@@ -1084,8 +1094,8 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 			blitPass.SetPipeline(r.blurBlitPipeline)
 			blitPass.SetBindGroup(0, r.projBindGroup)
 			blitPass.SetBindGroup(1, dstBlitBG)
-			blitPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			blitPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+			blitPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			blitPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
 			blitPass.SetScissorRect(sx, sy, sw, sh)
 			blitPass.Draw(6, 1, 0, 0)
 			blitPass.End()
@@ -1390,8 +1400,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 4 {
 			renderPass.SetPipeline(r.shadowPipeline)
 			renderPass.SetBindGroup(0, r.projBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.shadowInstBuffer, 0, shadowBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.shadowInstBuffer, 0, shadowBufSize)
 			lastPipeline = 4
 		}
 	}
@@ -1400,8 +1410,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 1 {
 			renderPass.SetPipeline(r.rectPipeline)
 			renderPass.SetBindGroup(0, r.projBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.rectInstBuffer, 0, rectBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.rectInstBuffer, 0, rectBufSize)
 			lastPipeline = 1
 		}
 	}
@@ -1410,8 +1420,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 2 {
 			renderPass.SetPipeline(r.textInstPipeline)
 			renderPass.SetBindGroup(0, r.textBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.glyphInstBuffer, 0, glyphBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.glyphInstBuffer, 0, glyphBufSize)
 			lastPipeline = 2
 		}
 	}
@@ -1420,8 +1430,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 3 {
 			renderPass.SetPipeline(r.msdfInstPipeline)
 			renderPass.SetBindGroup(0, r.msdfBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.glyphInstBuffer, 0, glyphBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.glyphInstBuffer, 0, glyphBufSize)
 			lastPipeline = 3
 		}
 	}
@@ -1573,7 +1583,7 @@ func (r *WGPURenderer) drawGradientRect(renderPass wgpu.RenderPass, bindGroupIdx
 	renderPass.SetPipeline(r.gradPipeline)
 	renderPass.SetBindGroup(0, r.projBindGroup)
 	renderPass.SetBindGroup(1, r.gradBindGroups[bindGroupIdx])
-	renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+	renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
 	renderPass.Draw(6, 1, 0, 0)
 }
 
@@ -1603,8 +1613,8 @@ func (r *WGPURenderer) drawSurfaces(renderPass wgpu.RenderPass, surfaces []draw.
 		renderPass.SetPipeline(r.surfPipeline)
 		renderPass.SetBindGroup(0, r.projBindGroup)
 		renderPass.SetBindGroup(1, surfBindGroup)
-		renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-		renderPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+		renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+		renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
 		renderPass.Draw(6, 1, 0, 0)
 
 		surfBindGroup.Destroy()

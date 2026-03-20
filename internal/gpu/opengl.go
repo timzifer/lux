@@ -1,4 +1,4 @@
-//go:build !nogui && !windows
+//go:build !nogui && !windows && !(darwin && arm64)
 
 package gpu
 

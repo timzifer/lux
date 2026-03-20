@@ -1,4 +1,4 @@
-//go:build nogui || (windows && !gogpu)
+//go:build nogui || (windows && !gogpu) || (darwin && arm64)
 
 package main
 

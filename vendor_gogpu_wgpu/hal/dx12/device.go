@@ -1,0 +1,1956 @@
+// Copyright 2025 The GoGPU Authors
+// SPDX-License-Identifier: MIT
+
+//go:build windows
+
+package dx12
+
+import (
+	"fmt"
+	"runtime"
+	"sync"
+	"time"
+	"unsafe"
+
+	"github.com/gogpu/gputypes"
+	"github.com/gogpu/naga"
+	"github.com/gogpu/naga/hlsl"
+	"github.com/gogpu/naga/ir"
+	"github.com/gogpu/wgpu/hal"
+	"github.com/gogpu/wgpu/hal/dx12/d3d12"
+	"github.com/gogpu/wgpu/hal/dx12/d3dcompile"
+	"golang.org/x/sys/windows"
+)
+
+// maxFramesInFlight is the number of frames that can be in-flight simultaneously.
+// Matches defaultBufferCount for swapchain double-buffering.
+const maxFramesInFlight = 2
+
+// frameState tracks allocators and fence value for one in-flight frame slot.
+type frameState struct {
+	allocators []*CommandAllocator
+	fenceValue uint64
+}
+
+// Device implements hal.Device for DirectX 12.
+// It manages the D3D12 device, command queue, descriptor heaps, and synchronization.
+type Device struct {
+	raw      *d3d12.ID3D12Device
+	instance *Instance
+
+	// Command queue for graphics/compute operations.
+	directQueue *d3d12.ID3D12CommandQueue
+
+	// Descriptor heaps (shared for all resources).
+	viewHeap    *DescriptorHeap // CBV/SRV/UAV (shader-visible, for bind groups)
+	samplerHeap *DescriptorHeap // Samplers (shader-visible, for bind groups)
+	rtvHeap     *DescriptorHeap // Render Target Views (non-shader-visible)
+	dsvHeap     *DescriptorHeap // Depth Stencil Views (non-shader-visible)
+
+	// Staging heaps (non-shader-visible, CPU-only) for creating SRVs and samplers.
+	// DX12 requires CopyDescriptorsSimple source to be in a non-shader-visible heap
+	// because shader-visible heaps use WRITE_COMBINE or GPU-local memory which is
+	// prohibitively slow to read from (Microsoft docs: ID3D12Device::CopyDescriptorsSimple).
+	stagingViewHeap    *DescriptorHeap // CBV/SRV/UAV staging
+	stagingSamplerHeap *DescriptorHeap // Sampler staging
+
+	// GPU synchronization.
+	fence      *d3d12.ID3D12Fence
+	fenceValue uint64
+	fenceEvent windows.Handle
+	fenceMu    sync.Mutex
+
+	// Feature level and capabilities.
+	featureLevel d3d12.D3D_FEATURE_LEVEL
+
+	// Shared empty root signature for pipelines without bind groups.
+	// DX12 requires a valid root signature for every PSO, even if the shader
+	// has no resource bindings. This is lazily created on first use and shared
+	// across all pipelines that don't provide an explicit PipelineLayout.
+	emptyRootSignature *d3d12.ID3D12RootSignature
+
+	// Debug info queue for validation messages (nil when debug layer is off).
+	infoQueue *d3d12.ID3D12InfoQueue
+
+	// Debug: operation step counter for tracking which call kills the device.
+	debugStep int
+
+	// Per-frame tracking for CPU/GPU overlap (DX12-OPT-002).
+	frames         [maxFramesInFlight]frameState
+	frameIndex     uint64
+	freeAllocators []*d3d12.ID3D12CommandAllocator
+	allocatorMu    sync.Mutex
+}
+
+// DescriptorHeap wraps a D3D12 descriptor heap with allocation tracking.
+// Supports descriptor recycling via a free list — freed indices are reused
+// before bumping the linear allocator. This prevents heap exhaustion during
+// operations like swapchain resize that repeatedly allocate/free RTVs.
+type DescriptorHeap struct {
+	raw           *d3d12.ID3D12DescriptorHeap
+	heapType      d3d12.D3D12_DESCRIPTOR_HEAP_TYPE
+	cpuStart      d3d12.D3D12_CPU_DESCRIPTOR_HANDLE
+	gpuStart      d3d12.D3D12_GPU_DESCRIPTOR_HANDLE
+	incrementSize uint32
+	capacity      uint32
+	nextFree      uint32
+	freeList      []uint32 // Recycled descriptor indices (LIFO stack)
+	mu            sync.Mutex
+}
+
+// Allocate allocates descriptors from the heap.
+// Returns the CPU handle for the first allocated descriptor.
+// For single-descriptor allocations, recycled slots are preferred.
+func (h *DescriptorHeap) Allocate(count uint32) (d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Recycle from free list for single-descriptor allocations
+	if count == 1 && len(h.freeList) > 0 {
+		idx := h.freeList[len(h.freeList)-1]
+		h.freeList = h.freeList[:len(h.freeList)-1]
+		handle := h.cpuStart.Offset(int(idx), h.incrementSize)
+		return handle, nil
+	}
+
+	if h.nextFree+count > h.capacity {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, fmt.Errorf("dx12: descriptor heap exhausted (capacity=%d, used=%d, requested=%d)",
+			h.capacity, h.nextFree, count)
+	}
+
+	handle := h.cpuStart.Offset(int(h.nextFree), h.incrementSize)
+	h.nextFree += count
+	return handle, nil
+}
+
+// AllocateGPU allocates descriptors and returns both CPU and GPU handles.
+// For single-descriptor allocations, recycled slots are preferred.
+func (h *DescriptorHeap) AllocateGPU(count uint32) (d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, d3d12.D3D12_GPU_DESCRIPTOR_HANDLE, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Recycle from free list for single-descriptor allocations
+	if count == 1 && len(h.freeList) > 0 {
+		idx := h.freeList[len(h.freeList)-1]
+		h.freeList = h.freeList[:len(h.freeList)-1]
+		cpuHandle := h.cpuStart.Offset(int(idx), h.incrementSize)
+		gpuHandle := h.gpuStart.Offset(int(idx), h.incrementSize)
+		return cpuHandle, gpuHandle, nil
+	}
+
+	if h.nextFree+count > h.capacity {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, d3d12.D3D12_GPU_DESCRIPTOR_HANDLE{},
+			fmt.Errorf("dx12: descriptor heap exhausted (capacity=%d, used=%d, requested=%d)",
+				h.capacity, h.nextFree, count)
+	}
+
+	cpuHandle := h.cpuStart.Offset(int(h.nextFree), h.incrementSize)
+	gpuHandle := h.gpuStart.Offset(int(h.nextFree), h.incrementSize)
+	h.nextFree += count
+	return cpuHandle, gpuHandle, nil
+}
+
+// Free returns descriptor indices to the free list for reuse.
+// The descriptors must no longer be referenced by any in-flight GPU work.
+func (h *DescriptorHeap) Free(baseIndex, count uint32) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i := uint32(0); i < count; i++ {
+		h.freeList = append(h.freeList, baseIndex+i)
+	}
+}
+
+// HandleToIndex computes the descriptor index from a CPU handle.
+func (h *DescriptorHeap) HandleToIndex(handle d3d12.D3D12_CPU_DESCRIPTOR_HANDLE) uint32 {
+	return uint32((handle.Ptr - h.cpuStart.Ptr) / uintptr(h.incrementSize))
+}
+
+// newDevice creates a new DX12 device from a DXGI adapter.
+// adapterPtr is the IUnknown pointer to the DXGI adapter.
+func newDevice(instance *Instance, adapterPtr unsafe.Pointer, featureLevel d3d12.D3D_FEATURE_LEVEL) (*Device, error) {
+	// Create D3D12 device
+	rawDevice, err := instance.d3d12Lib.CreateDevice(adapterPtr, featureLevel)
+	if err != nil {
+		return nil, fmt.Errorf("dx12: D3D12CreateDevice failed: %w", err)
+	}
+
+	dev := &Device{
+		raw:          rawDevice,
+		instance:     instance,
+		featureLevel: featureLevel,
+	}
+
+	// Create the direct (graphics) command queue
+	if err := dev.createCommandQueue(); err != nil {
+		rawDevice.Release()
+		return nil, err
+	}
+
+	// Create descriptor heaps
+	if err := dev.createDescriptorHeaps(); err != nil {
+		dev.cleanup()
+		return nil, err
+	}
+
+	// Create the fence for GPU synchronization
+	if err := dev.createFence(); err != nil {
+		dev.cleanup()
+		return nil, err
+	}
+
+	// Query InfoQueue for debug messages (only available when debug layer is on).
+	if instance.flags&gputypes.InstanceFlagsDebug != 0 {
+		if iq := rawDevice.QueryInfoQueue(); iq != nil {
+			dev.infoQueue = iq
+			hal.Logger().Info("dx12: InfoQueue attached, debug messages enabled")
+		} else {
+			hal.Logger().Debug("dx12: InfoQueue not available, debug layer may not be active")
+		}
+	}
+
+	// Set a finalizer to ensure cleanup
+	runtime.SetFinalizer(dev, (*Device).Destroy)
+
+	hal.Logger().Info("dx12: device created",
+		"featureLevel", fmt.Sprintf("0x%x", featureLevel),
+	)
+
+	return dev, nil
+}
+
+// createCommandQueue creates the direct (graphics) command queue.
+func (d *Device) createCommandQueue() error {
+	desc := d3d12.D3D12_COMMAND_QUEUE_DESC{
+		Type:     d3d12.D3D12_COMMAND_LIST_TYPE_DIRECT,
+		Priority: 0, // D3D12_COMMAND_QUEUE_PRIORITY_NORMAL
+		Flags:    d3d12.D3D12_COMMAND_QUEUE_FLAG_NONE,
+		NodeMask: 0,
+	}
+
+	queue, err := d.raw.CreateCommandQueue(&desc)
+	if err != nil {
+		return fmt.Errorf("dx12: CreateCommandQueue failed: %w", err)
+	}
+
+	d.directQueue = queue
+	return nil
+}
+
+// createDescriptorHeaps creates the descriptor heaps for various resource gputypes.
+func (d *Device) createDescriptorHeaps() error {
+	var err error
+
+	// CBV/SRV/UAV heap (shader visible — for bind groups, referenced by GPU)
+	d.viewHeap, err = d.createHeap(
+		d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+		1_000_000, // D3D12 Tier 1/2 maximum for shader-visible CBV/SRV/UAV
+		true,      // shader visible
+	)
+	if err != nil {
+		return fmt.Errorf("dx12: failed to create CBV/SRV/UAV heap: %w", err)
+	}
+
+	// CBV/SRV/UAV staging heap (non-shader-visible — for creating SRVs)
+	// CopyDescriptorsSimple requires source in non-shader-visible heap because
+	// shader-visible heaps use WRITE_COMBINE memory that is slow/unreliable to read.
+	d.stagingViewHeap, err = d.createHeap(
+		d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+		65536, // 64K staging descriptors
+		false, // non-shader-visible
+	)
+	if err != nil {
+		return fmt.Errorf("dx12: failed to create staging CBV/SRV/UAV heap: %w", err)
+	}
+
+	// Sampler heap (shader visible — for bind groups, referenced by GPU)
+	d.samplerHeap, err = d.createHeap(
+		d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
+		2048,
+		true,
+	)
+	if err != nil {
+		return fmt.Errorf("dx12: failed to create sampler heap: %w", err)
+	}
+
+	// Sampler staging heap (non-shader-visible — for creating samplers)
+	d.stagingSamplerHeap, err = d.createHeap(
+		d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
+		2048,
+		false,
+	)
+	if err != nil {
+		return fmt.Errorf("dx12: failed to create staging sampler heap: %w", err)
+	}
+
+	// RTV heap (not shader visible)
+	d.rtvHeap, err = d.createHeap(
+		d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+		256,
+		false,
+	)
+	if err != nil {
+		return fmt.Errorf("dx12: failed to create RTV heap: %w", err)
+	}
+
+	// DSV heap (not shader visible)
+	d.dsvHeap, err = d.createHeap(
+		d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+		64,
+		false,
+	)
+	if err != nil {
+		return fmt.Errorf("dx12: failed to create DSV heap: %w", err)
+	}
+
+	return nil
+}
+
+// createHeap creates a single descriptor heap.
+func (d *Device) createHeap(heapType d3d12.D3D12_DESCRIPTOR_HEAP_TYPE, numDescriptors uint32, shaderVisible bool) (*DescriptorHeap, error) {
+	var flags d3d12.D3D12_DESCRIPTOR_HEAP_FLAGS
+	if shaderVisible {
+		flags = d3d12.D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE
+	}
+
+	desc := d3d12.D3D12_DESCRIPTOR_HEAP_DESC{
+		Type:           heapType,
+		NumDescriptors: numDescriptors,
+		Flags:          flags,
+		NodeMask:       0,
+	}
+
+	rawHeap, err := d.raw.CreateDescriptorHeap(&desc)
+	if err != nil {
+		return nil, err
+	}
+
+	heap := &DescriptorHeap{
+		raw:           rawHeap,
+		heapType:      heapType,
+		cpuStart:      rawHeap.GetCPUDescriptorHandleForHeapStart(),
+		incrementSize: d.raw.GetDescriptorHandleIncrementSize(heapType),
+		capacity:      numDescriptors,
+		nextFree:      0,
+	}
+
+	if shaderVisible {
+		heap.gpuStart = rawHeap.GetGPUDescriptorHandleForHeapStart()
+	}
+
+	return heap, nil
+}
+
+// createFence creates the GPU synchronization fence.
+func (d *Device) createFence() error {
+	fence, err := d.raw.CreateFence(0, d3d12.D3D12_FENCE_FLAG_NONE)
+	if err != nil {
+		return fmt.Errorf("dx12: CreateFence failed: %w", err)
+	}
+
+	// Create Windows event for fence signaling
+	event, err := windows.CreateEvent(nil, 0, 0, nil)
+	if err != nil {
+		fence.Release()
+		return fmt.Errorf("dx12: CreateEvent failed: %w", err)
+	}
+
+	d.fence = fence
+	d.fenceEvent = event
+	d.fenceValue = 0
+	return nil
+}
+
+// waitForGPU blocks until all GPU work completes.
+func (d *Device) waitForGPU() error {
+	d.fenceMu.Lock()
+	defer d.fenceMu.Unlock()
+
+	d.fenceValue++
+	targetValue := d.fenceValue
+
+	// Signal the fence from the GPU
+	if err := d.directQueue.Signal(d.fence, targetValue); err != nil {
+		return fmt.Errorf("dx12: queue Signal failed: %w", err)
+	}
+
+	// Wait for the GPU to reach the fence value
+	if d.fence.GetCompletedValue() < targetValue {
+		if err := d.fence.SetEventOnCompletion(targetValue, uintptr(d.fenceEvent)); err != nil {
+			return fmt.Errorf("dx12: SetEventOnCompletion failed: %w", err)
+		}
+		_, err := windows.WaitForSingleObject(d.fenceEvent, windows.INFINITE)
+		if err != nil {
+			return fmt.Errorf("dx12: WaitForSingleObject failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// acquireAllocator gets a command allocator from the pool or creates a new one.
+// The allocator is registered with the current frame slot for lifecycle tracking.
+func (d *Device) acquireAllocator() (*CommandAllocator, error) {
+	d.allocatorMu.Lock()
+	defer d.allocatorMu.Unlock()
+
+	var raw *d3d12.ID3D12CommandAllocator
+	if len(d.freeAllocators) > 0 {
+		raw = d.freeAllocators[len(d.freeAllocators)-1]
+		d.freeAllocators = d.freeAllocators[:len(d.freeAllocators)-1]
+	} else {
+		var err error
+		raw, err = d.raw.CreateCommandAllocator(d3d12.D3D12_COMMAND_LIST_TYPE_DIRECT)
+		if err != nil {
+			return nil, fmt.Errorf("dx12: CreateCommandAllocator failed: %w", err)
+		}
+	}
+
+	alloc := &CommandAllocator{raw: raw}
+	slot := d.frameIndex % maxFramesInFlight
+	d.frames[slot].allocators = append(d.frames[slot].allocators, alloc)
+	return alloc, nil
+}
+
+// waitForFrameSlot waits until the GPU finishes the frame occupying the given slot.
+// Returns immediately if no work was submitted for that slot.
+func (d *Device) waitForFrameSlot(slot uint64) error {
+	d.fenceMu.Lock()
+	defer d.fenceMu.Unlock()
+
+	target := d.frames[slot].fenceValue
+	if target == 0 {
+		return nil
+	}
+
+	if d.fence.GetCompletedValue() >= target {
+		return nil
+	}
+
+	if err := d.fence.SetEventOnCompletion(target, uintptr(d.fenceEvent)); err != nil {
+		return fmt.Errorf("dx12: SetEventOnCompletion failed: %w", err)
+	}
+	_, err := windows.WaitForSingleObject(d.fenceEvent, windows.INFINITE)
+	if err != nil {
+		return fmt.Errorf("dx12: WaitForSingleObject failed: %w", err)
+	}
+	return nil
+}
+
+// advanceFrame increments the frame index and recycles allocators from the old frame
+// that occupied the new slot. Only waits for that specific frame — not all GPU work —
+// enabling CPU/GPU overlap.
+func (d *Device) advanceFrame() error {
+	d.frameIndex++
+	slot := d.frameIndex % maxFramesInFlight
+
+	// Wait for the old frame that occupied this slot to finish on GPU.
+	if err := d.waitForFrameSlot(slot); err != nil {
+		return err
+	}
+
+	// Clear fence value for this slot (protected by fenceMu).
+	d.fenceMu.Lock()
+	d.frames[slot].fenceValue = 0
+	d.fenceMu.Unlock()
+
+	// Reset and recycle allocators from the completed frame.
+	d.allocatorMu.Lock()
+	for _, alloc := range d.frames[slot].allocators {
+		if alloc == nil || alloc.raw == nil {
+			continue
+		}
+		if err := alloc.raw.Reset(); err != nil {
+			alloc.raw.Release()
+			continue
+		}
+		d.freeAllocators = append(d.freeAllocators, alloc.raw)
+	}
+	d.frames[slot].allocators = d.frames[slot].allocators[:0]
+	d.allocatorMu.Unlock()
+
+	return nil
+}
+
+// signalFrameFence signals the device fence from the queue and records the value
+// in the current frame slot. This enables per-frame fence tracking — advanceFrame
+// only needs to wait for the specific slot's fence value, not all GPU work.
+func (d *Device) signalFrameFence() error {
+	d.fenceMu.Lock()
+	d.fenceValue++
+	value := d.fenceValue
+	err := d.directQueue.Signal(d.fence, value)
+	d.frames[d.frameIndex%maxFramesInFlight].fenceValue = value
+	d.fenceMu.Unlock()
+
+	if err != nil {
+		return fmt.Errorf("dx12: frame fence Signal failed: %w", err)
+	}
+	return nil
+}
+
+// getOrCreateEmptyRootSignature returns a shared empty root signature for
+// pipelines that have no resource bindings (no PipelineLayout).
+// DX12 requires a valid root signature for every PSO — even with zero parameters.
+// Created lazily on first use, reused for all such pipelines on this device.
+func (d *Device) getOrCreateEmptyRootSignature() (*d3d12.ID3D12RootSignature, error) {
+	if d.emptyRootSignature != nil {
+		return d.emptyRootSignature, nil
+	}
+
+	// Create root signature with zero parameters (only the IA input layout flag).
+	desc := d3d12.D3D12_ROOT_SIGNATURE_DESC{
+		Flags: d3d12.D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+	}
+
+	blob, errorBlob, err := d.instance.d3d12Lib.SerializeRootSignature(&desc, d3d12.D3D_ROOT_SIGNATURE_VERSION_1_0)
+	if err != nil {
+		if errorBlob != nil {
+			errorBlob.Release()
+		}
+		return nil, fmt.Errorf("dx12: failed to serialize empty root signature: %w", err)
+	}
+	defer blob.Release()
+
+	rootSig, err := d.raw.CreateRootSignature(0, blob.GetBufferPointer(), blob.GetBufferSize())
+	if err != nil {
+		return nil, fmt.Errorf("dx12: failed to create empty root signature: %w", err)
+	}
+
+	d.emptyRootSignature = rootSig
+	return rootSig, nil
+}
+
+// checkHealth verifies the device is still alive and logs the current step.
+// Returns an error if the device has been removed.
+func (d *Device) checkHealth(operation string) error {
+	d.debugStep++
+	d.DrainDebugMessages()
+	if reason := d.raw.GetDeviceRemovedReason(); reason != nil {
+		hal.Logger().Error("dx12: device removed", "step", d.debugStep, "operation", operation, "reason", reason)
+		return fmt.Errorf("dx12: device removed at step %d (%s): %w", d.debugStep, operation, reason)
+	}
+	return nil
+}
+
+// CheckHealth is a public diagnostic method that checks if the DX12 device
+// is still operational. Returns nil if healthy, or an error with the removal reason.
+func (d *Device) CheckHealth(label string) error {
+	return d.checkHealth(label)
+}
+
+// DrainDebugMessages reads and logs all pending messages from the D3D12 InfoQueue.
+// Returns the number of messages drained. No-op if debug layer is off.
+func (d *Device) DrainDebugMessages() int {
+	if d.infoQueue == nil {
+		return 0
+	}
+
+	count := d.infoQueue.GetNumStoredMessages()
+	if count == 0 {
+		return 0
+	}
+
+	for i := uint64(0); i < count; i++ {
+		msg := d.infoQueue.GetMessage(i)
+		if msg == nil {
+			continue
+		}
+		hal.Logger().Warn("dx12: debug message", "severity", msg.Severity, "id", msg.ID, "msg", msg.Description())
+	}
+	d.infoQueue.ClearStoredMessages()
+
+	return int(count)
+}
+
+// cleanup releases all device resources without clearing the finalizer.
+func (d *Device) cleanup() {
+	// Drain any remaining debug messages before releasing resources.
+	d.DrainDebugMessages()
+
+	// Release pooled and in-flight allocators.
+	d.allocatorMu.Lock()
+	for _, raw := range d.freeAllocators {
+		if raw != nil {
+			raw.Release()
+		}
+	}
+	d.freeAllocators = nil
+	for i := range d.frames {
+		for _, alloc := range d.frames[i].allocators {
+			if alloc != nil && alloc.raw != nil {
+				alloc.raw.Release()
+			}
+		}
+		d.frames[i].allocators = nil
+	}
+	d.allocatorMu.Unlock()
+
+	if d.infoQueue != nil {
+		d.infoQueue.Release()
+		d.infoQueue = nil
+	}
+
+	if d.emptyRootSignature != nil {
+		d.emptyRootSignature.Release()
+		d.emptyRootSignature = nil
+	}
+
+	if d.fenceEvent != 0 {
+		_ = windows.CloseHandle(d.fenceEvent)
+		d.fenceEvent = 0
+	}
+
+	if d.fence != nil {
+		d.fence.Release()
+		d.fence = nil
+	}
+
+	if d.viewHeap != nil && d.viewHeap.raw != nil {
+		d.viewHeap.raw.Release()
+		d.viewHeap = nil
+	}
+	if d.stagingViewHeap != nil && d.stagingViewHeap.raw != nil {
+		d.stagingViewHeap.raw.Release()
+		d.stagingViewHeap = nil
+	}
+	if d.samplerHeap != nil && d.samplerHeap.raw != nil {
+		d.samplerHeap.raw.Release()
+		d.samplerHeap = nil
+	}
+	if d.stagingSamplerHeap != nil && d.stagingSamplerHeap.raw != nil {
+		d.stagingSamplerHeap.raw.Release()
+		d.stagingSamplerHeap = nil
+	}
+	if d.rtvHeap != nil && d.rtvHeap.raw != nil {
+		d.rtvHeap.raw.Release()
+		d.rtvHeap = nil
+	}
+	if d.dsvHeap != nil && d.dsvHeap.raw != nil {
+		d.dsvHeap.raw.Release()
+		d.dsvHeap = nil
+	}
+
+	if d.directQueue != nil {
+		d.directQueue.Release()
+		d.directQueue = nil
+	}
+
+	if d.raw != nil {
+		d.raw.Release()
+		d.raw = nil
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Descriptor Allocation Helpers
+// -----------------------------------------------------------------------------
+
+// allocateDescriptor allocates a descriptor from the given staging heap.
+// Recycles freed slots before bumping the watermark.
+func allocateDescriptor(heap *DescriptorHeap, heapName string) (d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, uint32, error) {
+	if heap == nil {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, 0, fmt.Errorf("dx12: %s heap not initialized", heapName)
+	}
+
+	heap.mu.Lock()
+	defer heap.mu.Unlock()
+
+	// Prefer recycled slots.
+	if len(heap.freeList) > 0 {
+		idx := heap.freeList[len(heap.freeList)-1]
+		heap.freeList = heap.freeList[:len(heap.freeList)-1]
+		handle := heap.cpuStart.Offset(int(idx), heap.incrementSize)
+		return handle, idx, nil
+	}
+
+	if heap.nextFree >= heap.capacity {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, 0, fmt.Errorf("dx12: %s heap exhausted", heapName)
+	}
+
+	index := heap.nextFree
+	handle := heap.cpuStart.Offset(int(index), heap.incrementSize)
+	heap.nextFree++
+	return handle, index, nil
+}
+
+// allocateRTVDescriptor allocates a render target view descriptor.
+func (d *Device) allocateRTVDescriptor() (d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, uint32, error) {
+	return allocateDescriptor(d.rtvHeap, "RTV")
+}
+
+// allocateDSVDescriptor allocates a depth stencil view descriptor.
+func (d *Device) allocateDSVDescriptor() (d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, uint32, error) {
+	return allocateDescriptor(d.dsvHeap, "DSV")
+}
+
+// allocateSRVDescriptor allocates a shader resource view descriptor in the
+// non-shader-visible staging heap. SRVs are created here and later copied to
+// the shader-visible heap via CopyDescriptorsSimple in CreateBindGroup.
+// DX12 requires CopyDescriptorsSimple source to be non-shader-visible.
+func (d *Device) allocateSRVDescriptor() (d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, uint32, error) {
+	if d.stagingViewHeap == nil {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, 0, fmt.Errorf("dx12: staging SRV heap not initialized")
+	}
+
+	d.stagingViewHeap.mu.Lock()
+	defer d.stagingViewHeap.mu.Unlock()
+
+	if d.stagingViewHeap.nextFree >= d.stagingViewHeap.capacity {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, 0, fmt.Errorf("dx12: staging CBV/SRV/UAV heap exhausted")
+	}
+
+	index := d.stagingViewHeap.nextFree
+	handle := d.stagingViewHeap.cpuStart.Offset(int(index), d.stagingViewHeap.incrementSize)
+	d.stagingViewHeap.nextFree++
+	return handle, index, nil
+}
+
+// allocateSamplerDescriptor allocates a sampler descriptor in the
+// non-shader-visible staging heap. Samplers are created here and later copied
+// to the shader-visible heap via CopyDescriptorsSimple in CreateBindGroup.
+func (d *Device) allocateSamplerDescriptor() (d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, uint32, error) {
+	if d.stagingSamplerHeap == nil {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, 0, fmt.Errorf("dx12: staging sampler heap not initialized")
+	}
+
+	d.stagingSamplerHeap.mu.Lock()
+	defer d.stagingSamplerHeap.mu.Unlock()
+
+	if d.stagingSamplerHeap.nextFree >= d.stagingSamplerHeap.capacity {
+		return d3d12.D3D12_CPU_DESCRIPTOR_HANDLE{}, 0, fmt.Errorf("dx12: staging sampler heap exhausted")
+	}
+
+	index := d.stagingSamplerHeap.nextFree
+	handle := d.stagingSamplerHeap.cpuStart.Offset(int(index), d.stagingSamplerHeap.incrementSize)
+	d.stagingSamplerHeap.nextFree++
+	return handle, index, nil
+}
+
+// -----------------------------------------------------------------------------
+// hal.Device interface implementation
+// -----------------------------------------------------------------------------
+
+// CreateBuffer creates a GPU buffer.
+func (d *Device) CreateBuffer(desc *hal.BufferDescriptor) (hal.Buffer, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: buffer descriptor is nil in DX12.CreateBuffer — core validation gap")
+	}
+
+	// Determine heap type based on usage
+	var heapType d3d12.D3D12_HEAP_TYPE
+	var initialState d3d12.D3D12_RESOURCE_STATES
+
+	switch {
+	case desc.Usage&gputypes.BufferUsageMapRead != 0:
+		// Readback buffer
+		heapType = d3d12.D3D12_HEAP_TYPE_READBACK
+		initialState = d3d12.D3D12_RESOURCE_STATE_COPY_DEST
+	case desc.Usage&gputypes.BufferUsageMapWrite != 0 || desc.MappedAtCreation:
+		// Upload buffer
+		heapType = d3d12.D3D12_HEAP_TYPE_UPLOAD
+		initialState = d3d12.D3D12_RESOURCE_STATE_GENERIC_READ
+	default:
+		// Default (GPU-only) buffer
+		heapType = d3d12.D3D12_HEAP_TYPE_DEFAULT
+		initialState = d3d12.D3D12_RESOURCE_STATE_COMMON
+	}
+
+	// Align size for constant buffers (256-byte alignment required)
+	bufferSize := desc.Size
+	if desc.Usage&gputypes.BufferUsageUniform != 0 {
+		bufferSize = alignTo256(bufferSize)
+	}
+
+	// Build resource flags
+	var resourceFlags d3d12.D3D12_RESOURCE_FLAGS
+	if desc.Usage&gputypes.BufferUsageStorage != 0 {
+		resourceFlags |= d3d12.D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+	}
+
+	// Create heap properties
+	heapProps := d3d12.D3D12_HEAP_PROPERTIES{
+		Type:                 heapType,
+		CPUPageProperty:      d3d12.D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+		MemoryPoolPreference: d3d12.D3D12_MEMORY_POOL_UNKNOWN,
+		CreationNodeMask:     0,
+		VisibleNodeMask:      0,
+	}
+
+	// Create resource description for buffer
+	resourceDesc := d3d12.D3D12_RESOURCE_DESC{
+		Dimension:        d3d12.D3D12_RESOURCE_DIMENSION_BUFFER,
+		Alignment:        0,
+		Width:            bufferSize,
+		Height:           1,
+		DepthOrArraySize: 1,
+		MipLevels:        1,
+		Format:           d3d12.DXGI_FORMAT_UNKNOWN,
+		SampleDesc:       d3d12.DXGI_SAMPLE_DESC{Count: 1, Quality: 0},
+		Layout:           d3d12.D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+		Flags:            resourceFlags,
+	}
+
+	// Create the committed resource
+	resource, err := d.raw.CreateCommittedResource(
+		&heapProps,
+		d3d12.D3D12_HEAP_FLAG_NONE,
+		&resourceDesc,
+		initialState,
+		nil, // No optimized clear value for buffers
+	)
+	if err != nil {
+		return nil, fmt.Errorf("dx12: CreateCommittedResource failed: %w", err)
+	}
+
+	buffer := &Buffer{
+		raw:      resource,
+		size:     desc.Size, // Return original size, not aligned size
+		usage:    desc.Usage,
+		heapType: heapType,
+		gpuVA:    resource.GetGPUVirtualAddress(),
+		device:   d,
+	}
+
+	// Map at creation if requested
+	if desc.MappedAtCreation {
+		ptr, mapErr := buffer.Map(0, desc.Size)
+		if mapErr != nil {
+			resource.Release()
+			return nil, fmt.Errorf("dx12: failed to map buffer at creation: %w", mapErr)
+		}
+		buffer.mappedPointer = ptr
+	}
+
+	return buffer, nil
+}
+
+// DestroyBuffer destroys a GPU buffer.
+func (d *Device) DestroyBuffer(buffer hal.Buffer) {
+	if b, ok := buffer.(*Buffer); ok && b != nil {
+		b.Destroy()
+	}
+}
+
+// CreateTexture creates a GPU texture.
+func (d *Device) CreateTexture(desc *hal.TextureDescriptor) (hal.Texture, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: texture descriptor is nil in DX12.CreateTexture — core validation gap")
+	}
+
+	// Check device health before allocating resources.
+	if reason := d.raw.GetDeviceRemovedReason(); reason != nil {
+		d.DrainDebugMessages() // Print validation errors that killed the device
+		return nil, fmt.Errorf("dx12: device already removed before CreateTexture (format=%d, samples=%d): %w",
+			desc.Format, desc.SampleCount, reason)
+	}
+
+	// Convert format
+	dxgiFormat := textureFormatToD3D12(desc.Format)
+	if dxgiFormat == d3d12.DXGI_FORMAT_UNKNOWN {
+		return nil, fmt.Errorf("dx12: unsupported texture format: %d", desc.Format)
+	}
+
+	// Build resource flags based on usage
+	var resourceFlags d3d12.D3D12_RESOURCE_FLAGS
+	if desc.Usage&gputypes.TextureUsageRenderAttachment != 0 {
+		if isDepthFormat(desc.Format) {
+			resourceFlags |= d3d12.D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+		} else {
+			resourceFlags |= d3d12.D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+		}
+	}
+	if desc.Usage&gputypes.TextureUsageStorageBinding != 0 {
+		resourceFlags |= d3d12.D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+	}
+
+	// Determine depth/array size
+	depthOrArraySize := desc.Size.DepthOrArrayLayers
+	if depthOrArraySize == 0 {
+		depthOrArraySize = 1
+	}
+
+	// Mip levels
+	mipLevels := desc.MipLevelCount
+	if mipLevels == 0 {
+		mipLevels = 1
+	}
+
+	// Sample count
+	sampleCount := desc.SampleCount
+	if sampleCount == 0 {
+		sampleCount = 1
+	}
+
+	// For depth formats, we may need to use typeless format for SRV compatibility
+	createFormat := dxgiFormat
+	if isDepthFormat(desc.Format) && (desc.Usage&gputypes.TextureUsageTextureBinding != 0) {
+		// Use typeless format to allow both DSV and SRV
+		createFormat = depthFormatToTypeless(desc.Format)
+		if createFormat == d3d12.DXGI_FORMAT_UNKNOWN {
+			createFormat = dxgiFormat
+		}
+	}
+
+	// Use optimal texture layout for all dimensions - let driver choose
+	layout := d3d12.D3D12_TEXTURE_LAYOUT_UNKNOWN
+
+	// Create resource description
+	resourceDesc := d3d12.D3D12_RESOURCE_DESC{
+		Dimension:        textureDimensionToD3D12(desc.Dimension),
+		Alignment:        0,
+		Width:            uint64(desc.Size.Width),
+		Height:           desc.Size.Height,
+		DepthOrArraySize: uint16(depthOrArraySize),
+		MipLevels:        uint16(mipLevels),
+		Format:           createFormat,
+		SampleDesc:       d3d12.DXGI_SAMPLE_DESC{Count: sampleCount, Quality: 0},
+		Layout:           layout,
+		Flags:            resourceFlags,
+	}
+
+	// Heap properties (default heap for GPU textures)
+	heapProps := d3d12.D3D12_HEAP_PROPERTIES{
+		Type:                 d3d12.D3D12_HEAP_TYPE_DEFAULT,
+		CPUPageProperty:      d3d12.D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+		MemoryPoolPreference: d3d12.D3D12_MEMORY_POOL_UNKNOWN,
+		CreationNodeMask:     0,
+		VisibleNodeMask:      0,
+	}
+
+	// Determine initial state based on primary usage
+	var initialState d3d12.D3D12_RESOURCE_STATES
+	switch {
+	case desc.Usage&gputypes.TextureUsageRenderAttachment != 0 && isDepthFormat(desc.Format):
+		initialState = d3d12.D3D12_RESOURCE_STATE_DEPTH_WRITE
+	case desc.Usage&gputypes.TextureUsageRenderAttachment != 0:
+		initialState = d3d12.D3D12_RESOURCE_STATE_RENDER_TARGET
+	case desc.Usage&gputypes.TextureUsageCopyDst != 0:
+		initialState = d3d12.D3D12_RESOURCE_STATE_COPY_DEST
+	default:
+		initialState = d3d12.D3D12_RESOURCE_STATE_COMMON
+	}
+
+	// Optimized clear value for render targets/depth stencil
+	var clearValue *d3d12.D3D12_CLEAR_VALUE
+	if desc.Usage&gputypes.TextureUsageRenderAttachment != 0 {
+		cv := d3d12.D3D12_CLEAR_VALUE{
+			Format: dxgiFormat,
+		}
+		if isDepthFormat(desc.Format) {
+			cv.SetDepthStencil(1.0, 0)
+		} else {
+			cv.SetColor([4]float32{0, 0, 0, 0})
+		}
+		clearValue = &cv
+	}
+
+	// Create the committed resource
+	resource, err := d.raw.CreateCommittedResource(
+		&heapProps,
+		d3d12.D3D12_HEAP_FLAG_NONE,
+		&resourceDesc,
+		initialState,
+		clearValue,
+	)
+	if err != nil {
+		if reason := d.raw.GetDeviceRemovedReason(); reason != nil {
+			return nil, fmt.Errorf("dx12: CreateCommittedResource for texture failed (device removed: %w, format=%d, samples=%d, %dx%d, flags=0x%x): %w",
+				reason, createFormat, sampleCount, desc.Size.Width, desc.Size.Height, resourceFlags, err)
+		}
+		return nil, fmt.Errorf("dx12: CreateCommittedResource for texture failed (format=%d, samples=%d, %dx%d, flags=0x%x): %w",
+			createFormat, sampleCount, desc.Size.Width, desc.Size.Height, resourceFlags, err)
+	}
+
+	tex := &Texture{
+		raw:       resource,
+		format:    desc.Format,
+		dimension: desc.Dimension,
+		size: hal.Extent3D{
+			Width:              desc.Size.Width,
+			Height:             desc.Size.Height,
+			DepthOrArrayLayers: depthOrArraySize,
+		},
+		mipLevels:    mipLevels,
+		samples:      sampleCount,
+		usage:        desc.Usage,
+		device:       d,
+		currentState: initialState,
+	}
+
+	// Post-creation health check: detect if CreateCommittedResource silently poisoned the device.
+	if reason := d.raw.GetDeviceRemovedReason(); reason != nil {
+		d.DrainDebugMessages()
+		hal.Logger().Error("dx12: device removed during CreateTexture",
+			"format", createFormat, "samples", sampleCount,
+			"width", desc.Size.Width, "height", desc.Size.Height,
+			"flags", fmt.Sprintf("0x%x", resourceFlags), "reason", reason)
+	}
+
+	return tex, nil
+}
+
+// DestroyTexture destroys a GPU texture.
+func (d *Device) DestroyTexture(texture hal.Texture) {
+	if t, ok := texture.(*Texture); ok && t != nil {
+		t.Destroy()
+	}
+}
+
+// CreateTextureView creates a view into a texture.
+//
+//nolint:maintidx // inherent D3D12 complexity: one WebGPU view → RTV + DSV + SRV descriptors
+func (d *Device) CreateTextureView(texture hal.Texture, desc *hal.TextureViewDescriptor) (hal.TextureView, error) {
+	if texture == nil {
+		return nil, fmt.Errorf("dx12: texture is nil")
+	}
+
+	// Handle SurfaceTexture (swapchain back buffer) — return a lightweight view
+	// with the pre-existing RTV handle, similar to Vulkan's SwapchainTexture path.
+	// hasRTV=true so BeginRenderPass uses this RTV, but isExternal=true tells
+	// Destroy() to skip freeing the RTV heap slot (the Surface owns it).
+	if st, ok := texture.(*SurfaceTexture); ok {
+		return &TextureView{
+			texture: &Texture{
+				raw:        st.resource,
+				format:     st.format,
+				dimension:  gputypes.TextureDimension2D,
+				size:       hal.Extent3D{Width: st.width, Height: st.height, DepthOrArrayLayers: 1},
+				mipLevels:  1,
+				isExternal: true,
+			},
+			format:     st.format,
+			dimension:  gputypes.TextureViewDimension2D,
+			baseMip:    0,
+			mipCount:   1,
+			baseLayer:  0,
+			layerCount: 1,
+			device:     d,
+			rtvHandle:  st.rtvHandle,
+			hasRTV:     true,
+		}, nil
+	}
+
+	tex, ok := texture.(*Texture)
+	if !ok {
+		return nil, fmt.Errorf("dx12: texture is not a DX12 texture")
+	}
+
+	// Determine view format
+	viewFormat := tex.format
+	if desc != nil && desc.Format != gputypes.TextureFormatUndefined {
+		viewFormat = desc.Format
+	}
+
+	// Determine view dimension
+	viewDim := gputypes.TextureViewDimension2D // Default
+	if desc != nil && desc.Dimension != gputypes.TextureViewDimensionUndefined {
+		viewDim = desc.Dimension
+	} else {
+		// Infer from texture dimension
+		switch tex.dimension {
+		case gputypes.TextureDimension1D:
+			viewDim = gputypes.TextureViewDimension1D
+		case gputypes.TextureDimension2D:
+			viewDim = gputypes.TextureViewDimension2D
+		case gputypes.TextureDimension3D:
+			viewDim = gputypes.TextureViewDimension3D
+		}
+	}
+
+	// Determine mip range
+	baseMip := uint32(0)
+	mipCount := tex.mipLevels
+	if desc != nil {
+		baseMip = desc.BaseMipLevel
+		if desc.MipLevelCount > 0 {
+			mipCount = desc.MipLevelCount
+		} else {
+			mipCount = tex.mipLevels - baseMip
+		}
+	}
+
+	// Determine array layer range
+	baseLayer := uint32(0)
+	layerCount := tex.size.DepthOrArrayLayers
+	if desc != nil {
+		baseLayer = desc.BaseArrayLayer
+		if desc.ArrayLayerCount > 0 {
+			layerCount = desc.ArrayLayerCount
+		} else {
+			layerCount = tex.size.DepthOrArrayLayers - baseLayer
+		}
+	}
+
+	view := &TextureView{
+		texture:    tex,
+		format:     viewFormat,
+		dimension:  viewDim,
+		baseMip:    baseMip,
+		mipCount:   mipCount,
+		baseLayer:  baseLayer,
+		layerCount: layerCount,
+		device:     d,
+	}
+
+	dxgiFormat := textureFormatToD3D12(viewFormat)
+
+	isMultisampled := tex.samples > 1
+
+	// Create RTV if texture supports render attachment and is not depth
+	if tex.usage&gputypes.TextureUsageRenderAttachment != 0 && !isDepthFormat(viewFormat) {
+		// Allocate RTV descriptor
+		rtvHandle, rtvIndex, err := d.allocateRTVDescriptor()
+		if err != nil {
+			return nil, fmt.Errorf("dx12: failed to allocate RTV descriptor: %w", err)
+		}
+
+		var rtvDesc d3d12.D3D12_RENDER_TARGET_VIEW_DESC
+		if isMultisampled && viewDim == gputypes.TextureViewDimension2D {
+			// MSAA textures require TEXTURE2DMS view dimension.
+			// Using TEXTURE2D for multi-sampled resources is invalid and
+			// causes DX12 DEVICE_REMOVED on some drivers (Intel Iris Xe).
+			rtvDesc = d3d12.D3D12_RENDER_TARGET_VIEW_DESC{
+				Format:        dxgiFormat,
+				ViewDimension: d3d12.D3D12_RTV_DIMENSION_TEXTURE2DMS,
+			}
+			// TEXTURE2DMS has no additional fields (no MipSlice, etc.)
+		} else {
+			rtvDesc = d3d12.D3D12_RENDER_TARGET_VIEW_DESC{
+				Format:        dxgiFormat,
+				ViewDimension: textureViewDimensionToRTV(viewDim),
+			}
+			switch viewDim {
+			case gputypes.TextureViewDimension1D:
+				rtvDesc.SetTexture1D(baseMip)
+			case gputypes.TextureViewDimension2D:
+				rtvDesc.SetTexture2D(baseMip, 0)
+			case gputypes.TextureViewDimension2DArray:
+				rtvDesc.SetTexture2DArray(baseMip, baseLayer, layerCount, 0)
+			case gputypes.TextureViewDimension3D:
+				rtvDesc.SetTexture3D(baseMip, baseLayer, layerCount)
+			}
+		}
+
+		d.raw.CreateRenderTargetView(tex.raw, &rtvDesc, rtvHandle)
+		view.rtvHandle = rtvHandle
+		view.rtvHeapIndex = rtvIndex
+		view.hasRTV = true
+	}
+
+	// Create DSV if texture supports render attachment and is depth
+	if tex.usage&gputypes.TextureUsageRenderAttachment != 0 && isDepthFormat(viewFormat) {
+		// Allocate DSV descriptor
+		dsvHandle, dsvIndex, err := d.allocateDSVDescriptor()
+		if err != nil {
+			return nil, fmt.Errorf("dx12: failed to allocate DSV descriptor: %w", err)
+		}
+
+		// For depth views, use the actual depth format, not typeless
+		depthFormat := textureFormatToD3D12(viewFormat)
+
+		var dsvDesc d3d12.D3D12_DEPTH_STENCIL_VIEW_DESC
+		if isMultisampled && viewDim == gputypes.TextureViewDimension2D {
+			// MSAA depth/stencil textures require TEXTURE2DMS view dimension.
+			dsvDesc = d3d12.D3D12_DEPTH_STENCIL_VIEW_DESC{
+				Format:        depthFormat,
+				ViewDimension: d3d12.D3D12_DSV_DIMENSION_TEXTURE2DMS,
+				Flags:         0,
+			}
+			// TEXTURE2DMS has no additional fields.
+		} else {
+			dsvDesc = d3d12.D3D12_DEPTH_STENCIL_VIEW_DESC{
+				Format:        depthFormat,
+				ViewDimension: textureViewDimensionToDSV(viewDim),
+				Flags:         0,
+			}
+			switch viewDim {
+			case gputypes.TextureViewDimension1D:
+				dsvDesc.SetTexture1D(baseMip)
+			case gputypes.TextureViewDimension2D:
+				dsvDesc.SetTexture2D(baseMip)
+			case gputypes.TextureViewDimension2DArray:
+				dsvDesc.SetTexture2DArray(baseMip, baseLayer, layerCount)
+			}
+		}
+
+		d.raw.CreateDepthStencilView(tex.raw, &dsvDesc, dsvHandle)
+		view.dsvHandle = dsvHandle
+		view.dsvHeapIndex = dsvIndex
+		view.hasDSV = true
+	}
+
+	// Create SRV if texture supports texture binding
+	if tex.usage&gputypes.TextureUsageTextureBinding != 0 {
+		// Allocate SRV descriptor
+		srvHandle, srvIndex, err := d.allocateSRVDescriptor()
+		if err != nil {
+			return nil, fmt.Errorf("dx12: failed to allocate SRV descriptor: %w", err)
+		}
+
+		// For depth textures, use SRV-compatible format
+		srvFormat := dxgiFormat
+		if isDepthFormat(viewFormat) {
+			srvFormat = depthFormatToSRV(viewFormat)
+		}
+
+		// Create SRV desc
+		srvDesc := d3d12.D3D12_SHADER_RESOURCE_VIEW_DESC{
+			Format:                  srvFormat,
+			ViewDimension:           textureViewDimensionToSRV(viewDim),
+			Shader4ComponentMapping: d3d12.D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+		}
+
+		// Set up dimension-specific fields
+		switch viewDim {
+		case gputypes.TextureViewDimension1D:
+			srvDesc.SetTexture1D(baseMip, mipCount, 0)
+		case gputypes.TextureViewDimension2D:
+			srvDesc.SetTexture2D(baseMip, mipCount, 0, 0)
+		case gputypes.TextureViewDimension2DArray:
+			srvDesc.SetTexture2DArray(baseMip, mipCount, baseLayer, layerCount, 0, 0)
+		case gputypes.TextureViewDimensionCube:
+			srvDesc.SetTextureCube(baseMip, mipCount, 0)
+		case gputypes.TextureViewDimensionCubeArray:
+			srvDesc.SetTextureCubeArray(baseMip, mipCount, baseLayer/6, layerCount/6, 0)
+		case gputypes.TextureViewDimension3D:
+			srvDesc.SetTexture3D(baseMip, mipCount, 0)
+		}
+
+		d.raw.CreateShaderResourceView(tex.raw, &srvDesc, srvHandle)
+		view.srvHandle = srvHandle
+		view.srvHeapIndex = srvIndex
+		view.hasSRV = true
+	}
+
+	return view, nil
+}
+
+// DestroyTextureView destroys a texture view.
+func (d *Device) DestroyTextureView(view hal.TextureView) {
+	if v, ok := view.(*TextureView); ok && v != nil {
+		v.Destroy()
+	}
+}
+
+// CreateSampler creates a texture sampler.
+func (d *Device) CreateSampler(desc *hal.SamplerDescriptor) (hal.Sampler, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: sampler descriptor is nil in DX12.CreateSampler — core validation gap")
+	}
+
+	// Allocate sampler descriptor
+	handle, heapIndex, err := d.allocateSamplerDescriptor()
+	if err != nil {
+		return nil, fmt.Errorf("dx12: failed to allocate sampler descriptor: %w", err)
+	}
+
+	// Build D3D12 sampler desc
+	samplerDesc := d3d12.D3D12_SAMPLER_DESC{
+		Filter:         filterModeToD3D12(desc.MinFilter, desc.MagFilter, desc.MipmapFilter, desc.Compare),
+		AddressU:       addressModeToD3D12(desc.AddressModeU),
+		AddressV:       addressModeToD3D12(desc.AddressModeV),
+		AddressW:       addressModeToD3D12(desc.AddressModeW),
+		MipLODBias:     0,
+		MaxAnisotropy:  uint32(desc.Anisotropy),
+		ComparisonFunc: compareFunctionToD3D12(desc.Compare),
+		BorderColor:    [4]float32{0, 0, 0, 0},
+		MinLOD:         desc.LodMinClamp,
+		MaxLOD:         desc.LodMaxClamp,
+	}
+
+	// Clamp anisotropy
+	if samplerDesc.MaxAnisotropy == 0 {
+		samplerDesc.MaxAnisotropy = 1
+	}
+	if samplerDesc.MaxAnisotropy > 16 {
+		samplerDesc.MaxAnisotropy = 16
+	}
+
+	d.raw.CreateSampler(&samplerDesc, handle)
+
+	return &Sampler{
+		handle:    handle,
+		heapIndex: heapIndex,
+		device:    d,
+	}, nil
+}
+
+// DestroySampler destroys a sampler.
+func (d *Device) DestroySampler(sampler hal.Sampler) {
+	if s, ok := sampler.(*Sampler); ok && s != nil {
+		s.Destroy()
+	}
+}
+
+// CreateBindGroupLayout creates a bind group layout.
+func (d *Device) CreateBindGroupLayout(desc *hal.BindGroupLayoutDescriptor) (hal.BindGroupLayout, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: bind group layout descriptor is nil in DX12.CreateBindGroupLayout — core validation gap")
+	}
+
+	entries := make([]BindGroupLayoutEntry, len(desc.Entries))
+	for i, entry := range desc.Entries {
+		entries[i] = BindGroupLayoutEntry{
+			Binding:    entry.Binding,
+			Visibility: entry.Visibility,
+			Count:      1,
+		}
+
+		// Determine binding type
+		switch {
+		case entry.Buffer != nil:
+			switch entry.Buffer.Type {
+			case gputypes.BufferBindingTypeUniform:
+				entries[i].Type = BindingTypeUniformBuffer
+			case gputypes.BufferBindingTypeStorage:
+				entries[i].Type = BindingTypeStorageBuffer
+			case gputypes.BufferBindingTypeReadOnlyStorage:
+				entries[i].Type = BindingTypeReadOnlyStorageBuffer
+			}
+		case entry.Sampler != nil:
+			if entry.Sampler.Type == gputypes.SamplerBindingTypeComparison {
+				entries[i].Type = BindingTypeComparisonSampler
+			} else {
+				entries[i].Type = BindingTypeSampler
+			}
+		case entry.Texture != nil:
+			entries[i].Type = BindingTypeSampledTexture
+		case entry.StorageTexture != nil:
+			entries[i].Type = BindingTypeStorageTexture
+		}
+	}
+
+	return &BindGroupLayout{
+		entries: entries,
+		device:  d,
+	}, nil
+}
+
+// DestroyBindGroupLayout destroys a bind group layout.
+func (d *Device) DestroyBindGroupLayout(layout hal.BindGroupLayout) {
+	if l, ok := layout.(*BindGroupLayout); ok && l != nil {
+		l.Destroy()
+	}
+}
+
+// CreateBindGroup creates a bind group.
+func (d *Device) CreateBindGroup(desc *hal.BindGroupDescriptor) (hal.BindGroup, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: bind group descriptor is nil in DX12.CreateBindGroup — core validation gap")
+	}
+
+	layout, ok := desc.Layout.(*BindGroupLayout)
+	if !ok {
+		return nil, fmt.Errorf("dx12: invalid bind group layout type")
+	}
+
+	bg := &BindGroup{
+		layout: layout,
+		device: d,
+	}
+
+	// Classify entries into CBV/SRV/UAV vs Sampler
+	var viewEntries []gputypes.BindGroupEntry // CBV, SRV, UAV
+	var samplerEntries []gputypes.BindGroupEntry
+
+	for _, entry := range desc.Entries {
+		switch entry.Resource.(type) {
+		case gputypes.SamplerBinding:
+			samplerEntries = append(samplerEntries, entry)
+		default: // BufferBinding, TextureViewBinding
+			viewEntries = append(viewEntries, entry)
+		}
+	}
+
+	// Allocate and populate CBV/SRV/UAV descriptors
+	if len(viewEntries) > 0 && d.viewHeap != nil {
+		cpuStart, gpuStart, err := d.viewHeap.AllocateGPU(uint32(len(viewEntries)))
+		if err != nil {
+			return nil, fmt.Errorf("dx12: failed to allocate view descriptors: %w", err)
+		}
+		bg.gpuDescHandle = gpuStart
+		bg.viewHeapIndex = d.viewHeap.HandleToIndex(cpuStart)
+		bg.viewCount = uint32(len(viewEntries))
+
+		for i, entry := range viewEntries {
+			destCPU := cpuStart.Offset(i, d.viewHeap.incrementSize)
+			if err := d.writeViewDescriptor(destCPU, entry); err != nil {
+				return nil, fmt.Errorf("dx12: failed to write descriptor for binding %d: %w", entry.Binding, err)
+			}
+		}
+	}
+
+	// Allocate and populate sampler descriptors
+	if len(samplerEntries) > 0 && d.samplerHeap != nil {
+		cpuStart, gpuStart, err := d.samplerHeap.AllocateGPU(uint32(len(samplerEntries)))
+		if err != nil {
+			return nil, fmt.Errorf("dx12: failed to allocate sampler descriptors: %w", err)
+		}
+		bg.samplerGPUHandle = gpuStart
+		bg.samplerHeapIndex = d.samplerHeap.HandleToIndex(cpuStart)
+		bg.samplerCount = uint32(len(samplerEntries))
+
+		for i, entry := range samplerEntries {
+			destCPU := cpuStart.Offset(i, d.samplerHeap.incrementSize)
+			sb := entry.Resource.(gputypes.SamplerBinding)
+			sampler := (*Sampler)(unsafe.Pointer(sb.Sampler)) //nolint:govet // intentional: HAL handle → concrete type
+			d.raw.CopyDescriptorsSimple(1, destCPU, sampler.handle, d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
+		}
+	}
+
+	return bg, nil
+}
+
+// writeViewDescriptor writes a single CBV/SRV/UAV descriptor to the specified CPU handle.
+func (d *Device) writeViewDescriptor(dest d3d12.D3D12_CPU_DESCRIPTOR_HANDLE, entry gputypes.BindGroupEntry) error {
+	switch res := entry.Resource.(type) {
+	case gputypes.BufferBinding:
+		buf := (*Buffer)(unsafe.Pointer(res.Buffer)) //nolint:govet // intentional: HAL handle → concrete type
+		size := res.Size
+		if size == 0 {
+			size = buf.size - res.Offset
+		}
+		// Align CBV size to 256 bytes (D3D12 requirement)
+		alignedSize := (size + 255) &^ 255
+		d.raw.CreateConstantBufferView(&d3d12.D3D12_CONSTANT_BUFFER_VIEW_DESC{
+			BufferLocation: buf.gpuVA + res.Offset,
+			SizeInBytes:    uint32(alignedSize),
+		}, dest)
+
+	case gputypes.TextureViewBinding:
+		view := (*TextureView)(unsafe.Pointer(res.TextureView)) //nolint:govet // intentional: HAL handle → concrete type
+		if !view.hasSRV {
+			return fmt.Errorf("texture view has no SRV")
+		}
+		d.raw.CopyDescriptorsSimple(1, dest, view.srvHandle, d3d12.D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+
+	default:
+		return fmt.Errorf("unsupported binding resource type: %T", entry.Resource)
+	}
+	return nil
+}
+
+// DestroyBindGroup destroys a bind group.
+func (d *Device) DestroyBindGroup(group hal.BindGroup) {
+	if g, ok := group.(*BindGroup); ok && g != nil {
+		g.Destroy()
+	}
+}
+
+// CreatePipelineLayout creates a pipeline layout.
+func (d *Device) CreatePipelineLayout(desc *hal.PipelineLayoutDescriptor) (hal.PipelineLayout, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: pipeline layout descriptor is nil in DX12.CreatePipelineLayout — core validation gap")
+	}
+
+	// Create root signature from bind group layouts
+	rootSig, groupMappings, err := d.createRootSignatureFromLayouts(desc.BindGroupLayouts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store references to bind group layouts
+	bgLayouts := make([]*BindGroupLayout, len(desc.BindGroupLayouts))
+	for i, l := range desc.BindGroupLayouts {
+		bgLayout, ok := l.(*BindGroupLayout)
+		if !ok {
+			rootSig.Release()
+			return nil, fmt.Errorf("dx12: invalid bind group layout type at index %d", i)
+		}
+		bgLayouts[i] = bgLayout
+	}
+
+	if err := d.checkHealth("CreatePipelineLayout(" + desc.Label + ")"); err != nil {
+		rootSig.Release()
+		return nil, err
+	}
+	return &PipelineLayout{
+		rootSignature:    rootSig,
+		bindGroupLayouts: bgLayouts,
+		groupMappings:    groupMappings,
+		device:           d,
+	}, nil
+}
+
+// DestroyPipelineLayout destroys a pipeline layout.
+func (d *Device) DestroyPipelineLayout(layout hal.PipelineLayout) {
+	if l, ok := layout.(*PipelineLayout); ok && l != nil {
+		l.Destroy()
+	}
+}
+
+// CreateShaderModule creates a shader module.
+// Supports WGSL source (compiled via naga HLSL backend + D3DCompile) and pre-compiled SPIR-V.
+func (d *Device) CreateShaderModule(desc *hal.ShaderModuleDescriptor) (hal.ShaderModule, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: shader module descriptor is nil in DX12.CreateShaderModule — core validation gap")
+	}
+
+	module := &ShaderModule{
+		entryPoints: make(map[string][]byte),
+		device:      d,
+	}
+
+	switch {
+	case desc.Source.WGSL != "":
+		if err := d.compileWGSLModule(desc.Source.WGSL, module); err != nil {
+			return nil, fmt.Errorf("dx12: WGSL compilation failed: %w", err)
+		}
+		hal.Logger().Debug("dx12: shader module compiled",
+			"entryPoints", len(module.entryPoints),
+			"source", "WGSL",
+		)
+	case len(desc.Source.SPIRV) > 0:
+		// Legacy: pre-compiled SPIR-V stored as single entry "main"
+		bytecode := make([]byte, len(desc.Source.SPIRV)*4)
+		for i, word := range desc.Source.SPIRV {
+			bytecode[i*4+0] = byte(word)
+			bytecode[i*4+1] = byte(word >> 8)
+			bytecode[i*4+2] = byte(word >> 16)
+			bytecode[i*4+3] = byte(word >> 24)
+		}
+		module.entryPoints["main"] = bytecode
+	default:
+		return nil, fmt.Errorf("dx12: no shader source provided (need WGSL or SPIRV)")
+	}
+
+	if err := d.checkHealth("CreateShaderModule(" + desc.Label + ")"); err != nil {
+		return nil, err
+	}
+	return module, nil
+}
+
+// compileWGSLModule compiles WGSL source to per-entry-point DXBC bytecode.
+// Pipeline: WGSL → naga parse → IR → HLSL → D3DCompile → DXBC
+func (d *Device) compileWGSLModule(wgslSource string, module *ShaderModule) error {
+	// Step 1: Parse WGSL to AST
+	ast, err := naga.Parse(wgslSource)
+	if err != nil {
+		return fmt.Errorf("WGSL parse: %w", err)
+	}
+
+	// Step 2: Lower to IR
+	irModule, err := naga.LowerWithSource(ast, wgslSource)
+	if err != nil {
+		return fmt.Errorf("WGSL lower: %w", err)
+	}
+
+	// Step 3: Generate HLSL (all entry points)
+	hlslSource, info, err := hlsl.Compile(irModule, hlsl.DefaultOptions())
+	if err != nil {
+		return fmt.Errorf("HLSL generation: %w", err)
+	}
+
+	// Step 4: Load d3dcompiler_47.dll
+	compiler, err := d3dcompile.Load()
+	if err != nil {
+		return fmt.Errorf("load d3dcompiler: %w", err)
+	}
+
+	// Step 5: Compile each entry point separately
+	for _, ep := range irModule.EntryPoints {
+		target := shaderStageToTarget(ep.Stage)
+
+		// Use the HLSL entry point name (naga may rename it)
+		hlslName := ep.Name
+		if info != nil && info.EntryPointNames != nil {
+			if mapped, ok := info.EntryPointNames[ep.Name]; ok {
+				hlslName = mapped
+			}
+		}
+
+		bytecode, err := compiler.Compile(hlslSource, hlslName, target)
+		if err != nil {
+			return fmt.Errorf("D3DCompile entry point %q (hlsl: %q, target: %s): %w",
+				ep.Name, hlslName, target, err)
+		}
+
+		module.entryPoints[ep.Name] = bytecode
+	}
+
+	return nil
+}
+
+// shaderStageToTarget maps naga IR shader stage to D3DCompile target profile.
+func shaderStageToTarget(stage ir.ShaderStage) string {
+	switch stage {
+	case ir.StageVertex:
+		return d3dcompile.TargetVS51
+	case ir.StageFragment:
+		return d3dcompile.TargetPS51
+	case ir.StageCompute:
+		return d3dcompile.TargetCS51
+	default:
+		return d3dcompile.TargetVS51
+	}
+}
+
+// DestroyShaderModule destroys a shader module.
+func (d *Device) DestroyShaderModule(module hal.ShaderModule) {
+	if m, ok := module.(*ShaderModule); ok && m != nil {
+		m.Destroy()
+	}
+}
+
+// CreateRenderPipeline creates a render pipeline.
+func (d *Device) CreateRenderPipeline(desc *hal.RenderPipelineDescriptor) (hal.RenderPipeline, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: render pipeline descriptor is nil in DX12.CreateRenderPipeline — core validation gap")
+	}
+
+	// Build input layout from vertex buffers
+	inputElements, semanticNames := buildInputLayout(desc.Vertex.Buffers)
+
+	// Keep semantic names alive until pipeline creation
+	_ = semanticNames
+
+	// Build PSO description
+	psoDesc, err := d.buildGraphicsPipelineStateDesc(desc, inputElements, semanticNames)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the pipeline state object
+	pso, err := d.raw.CreateGraphicsPipelineState(psoDesc)
+	d.DrainDebugMessages() // Check for validation warnings/errors during PSO creation
+	if err != nil {
+		if reason := d.raw.GetDeviceRemovedReason(); reason != nil {
+			return nil, fmt.Errorf("dx12: CreateGraphicsPipelineState failed (device removed: %w): %w", reason, err)
+		}
+		return nil, fmt.Errorf("dx12: CreateGraphicsPipelineState failed: %w", err)
+	}
+
+	// Get root signature reference and group mappings for command list binding.
+	// Must match the root signature used in the PSO.
+	var rootSig *d3d12.ID3D12RootSignature
+	var groupMappings []rootParamMapping
+	if desc.Layout != nil {
+		pipelineLayout, ok := desc.Layout.(*PipelineLayout)
+		if ok {
+			rootSig = pipelineLayout.rootSignature
+			groupMappings = pipelineLayout.groupMappings
+		}
+	} else {
+		// No layout → use the same empty root signature that was used in the PSO.
+		rootSig, _ = d.getOrCreateEmptyRootSignature()
+	}
+
+	// Calculate vertex strides for IASetVertexBuffers
+	vertexStrides := make([]uint32, len(desc.Vertex.Buffers))
+	for i, buf := range desc.Vertex.Buffers {
+		vertexStrides[i] = uint32(buf.ArrayStride)
+	}
+
+	if err := d.checkHealth("CreateRenderPipeline(" + desc.Label + ")"); err != nil {
+		pso.Release()
+		return nil, err
+	}
+
+	hal.Logger().Debug("dx12: render pipeline created",
+		"label", desc.Label,
+		"vertexEntry", desc.Vertex.EntryPoint,
+	)
+
+	return &RenderPipeline{
+		pso:           pso,
+		rootSignature: rootSig,
+		groupMappings: groupMappings,
+		topology:      primitiveTopologyToD3D12(desc.Primitive.Topology),
+		vertexStrides: vertexStrides,
+	}, nil
+}
+
+// DestroyRenderPipeline destroys a render pipeline.
+func (d *Device) DestroyRenderPipeline(pipeline hal.RenderPipeline) {
+	if p, ok := pipeline.(*RenderPipeline); ok && p != nil {
+		p.Destroy()
+	}
+}
+
+// CreateComputePipeline creates a compute pipeline.
+func (d *Device) CreateComputePipeline(desc *hal.ComputePipelineDescriptor) (hal.ComputePipeline, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("BUG: compute pipeline descriptor is nil in DX12.CreateComputePipeline — core validation gap")
+	}
+
+	// Get shader module
+	shaderModule, ok := desc.Compute.Module.(*ShaderModule)
+	if !ok {
+		return nil, fmt.Errorf("dx12: invalid compute shader module type")
+	}
+
+	// Get root signature and group mappings from layout.
+	// DX12 requires a valid root signature for every PSO.
+	var rootSig *d3d12.ID3D12RootSignature
+	var groupMappings []rootParamMapping
+	if desc.Layout != nil {
+		pipelineLayout, ok := desc.Layout.(*PipelineLayout)
+		if !ok {
+			return nil, fmt.Errorf("dx12: invalid pipeline layout type")
+		}
+		rootSig = pipelineLayout.rootSignature
+		groupMappings = pipelineLayout.groupMappings
+	} else {
+		emptyRS, err := d.getOrCreateEmptyRootSignature()
+		if err != nil {
+			return nil, fmt.Errorf("dx12: failed to get empty root signature for compute: %w", err)
+		}
+		rootSig = emptyRS
+	}
+
+	// Build compute pipeline state desc
+	psoDesc := d3d12.D3D12_COMPUTE_PIPELINE_STATE_DESC{
+		RootSignature: rootSig,
+		NodeMask:      0,
+	}
+
+	bytecode := shaderModule.EntryPointBytecode(desc.Compute.EntryPoint)
+	if len(bytecode) > 0 {
+		psoDesc.CS = d3d12.D3D12_SHADER_BYTECODE{
+			ShaderBytecode: unsafe.Pointer(&bytecode[0]),
+			BytecodeLength: uintptr(len(bytecode)),
+		}
+	} else {
+		return nil, fmt.Errorf("dx12: compute shader entry point %q not found in module", desc.Compute.EntryPoint)
+	}
+
+	// Create the pipeline state object
+	pso, err := d.raw.CreateComputePipelineState(&psoDesc)
+	d.DrainDebugMessages() // Check for validation warnings/errors during PSO creation
+	if err != nil {
+		if reason := d.raw.GetDeviceRemovedReason(); reason != nil {
+			return nil, fmt.Errorf("dx12: CreateComputePipelineState failed (device removed: %w): %w", reason, err)
+		}
+		return nil, fmt.Errorf("dx12: CreateComputePipelineState failed: %w", err)
+	}
+
+	if err := d.checkHealth("CreateComputePipeline"); err != nil {
+		pso.Release()
+		return nil, err
+	}
+
+	hal.Logger().Debug("dx12: compute pipeline created",
+		"entryPoint", desc.Compute.EntryPoint,
+	)
+
+	return &ComputePipeline{
+		pso:           pso,
+		rootSignature: rootSig,
+		groupMappings: groupMappings,
+	}, nil
+}
+
+// DestroyComputePipeline destroys a compute pipeline.
+func (d *Device) DestroyComputePipeline(pipeline hal.ComputePipeline) {
+	if p, ok := pipeline.(*ComputePipeline); ok && p != nil {
+		p.Destroy()
+	}
+}
+
+// CreateQuerySet creates a query set.
+// TODO: implement using ID3D12Device::CreateQueryHeap for full timestamp support.
+func (d *Device) CreateQuerySet(_ *hal.QuerySetDescriptor) (hal.QuerySet, error) {
+	return nil, hal.ErrTimestampsNotSupported
+}
+
+// DestroyQuerySet destroys a query set.
+func (d *Device) DestroyQuerySet(_ hal.QuerySet) {
+	// Stub: DX12 query set implementation pending.
+}
+
+// CreateCommandEncoder creates a command encoder.
+// The encoder is a lightweight shell — command allocator and list are created
+// lazily in BeginEncoding, enabling per-frame allocator pooling.
+func (d *Device) CreateCommandEncoder(desc *hal.CommandEncoderDescriptor) (hal.CommandEncoder, error) {
+	var label string
+	if desc != nil {
+		label = desc.Label
+	}
+
+	return &CommandEncoder{
+		device: d,
+		label:  label,
+	}, nil
+}
+
+// CreateFence creates a synchronization fence.
+func (d *Device) CreateFence() (hal.Fence, error) {
+	fence, err := d.raw.CreateFence(0, d3d12.D3D12_FENCE_FLAG_NONE)
+	if err != nil {
+		return nil, fmt.Errorf("dx12: CreateFence failed: %w", err)
+	}
+
+	// Create Windows event for this fence
+	event, err := windows.CreateEvent(nil, 0, 0, nil)
+	if err != nil {
+		fence.Release()
+		return nil, fmt.Errorf("dx12: CreateEvent for fence failed: %w", err)
+	}
+
+	return &Fence{
+		raw:   fence,
+		event: event,
+	}, nil
+}
+
+// DestroyFence destroys a fence.
+func (d *Device) DestroyFence(fence hal.Fence) {
+	f, ok := fence.(*Fence)
+	if !ok || f == nil {
+		return
+	}
+
+	if f.event != 0 {
+		_ = windows.CloseHandle(f.event)
+		f.event = 0
+	}
+
+	if f.raw != nil {
+		f.raw.Release()
+		f.raw = nil
+	}
+}
+
+// Wait waits for a fence to reach the specified value.
+// Returns true if the fence reached the value, false if timeout.
+func (d *Device) Wait(fence hal.Fence, value uint64, timeout time.Duration) (bool, error) {
+	f, ok := fence.(*Fence)
+	if !ok || f == nil {
+		return false, fmt.Errorf("dx12: invalid fence")
+	}
+
+	// Check if already completed
+	if f.raw.GetCompletedValue() >= value {
+		return true, nil
+	}
+
+	// Set up event notification
+	if err := f.raw.SetEventOnCompletion(value, uintptr(f.event)); err != nil {
+		return false, fmt.Errorf("dx12: SetEventOnCompletion failed: %w", err)
+	}
+
+	// Convert timeout to milliseconds
+	var timeoutMs uint32
+	if timeout < 0 {
+		timeoutMs = windows.INFINITE
+	} else {
+		timeoutMs = uint32(timeout.Milliseconds())
+		if timeoutMs == 0 && timeout > 0 {
+			timeoutMs = 1 // At least 1ms if non-zero duration
+		}
+	}
+
+	result, err := windows.WaitForSingleObject(f.event, timeoutMs)
+	if err != nil {
+		return false, fmt.Errorf("dx12: WaitForSingleObject failed: %w", err)
+	}
+
+	switch result {
+	case windows.WAIT_OBJECT_0:
+		return true, nil
+	case uint32(windows.WAIT_TIMEOUT):
+		return false, nil
+	default:
+		return false, fmt.Errorf("dx12: WaitForSingleObject returned unexpected: %d", result)
+	}
+}
+
+// ResetFence resets a fence to the unsignaled state.
+// Note: D3D12 fences are timeline-based and don't have a direct reset.
+// The fence value monotonically increases, so "reset" is a no-op.
+// Users should track fence values properly for D3D12.
+func (d *Device) ResetFence(_ hal.Fence) error {
+	// D3D12 fences are timeline semaphores - they cannot be reset.
+	// The fence value only increases monotonically.
+	// This is a no-op to satisfy the interface.
+	return nil
+}
+
+// GetFenceStatus returns true if the fence is signaled (non-blocking).
+// D3D12 fences are timeline-based, so we check if completed value > 0.
+func (d *Device) GetFenceStatus(fence hal.Fence) (bool, error) {
+	f, ok := fence.(*Fence)
+	if !ok || f == nil {
+		return false, nil
+	}
+	// D3D12 fence: check if GPU has signaled the fence at all
+	return f.GetCompletedValue() > 0, nil
+}
+
+// FreeCommandBuffer returns a command buffer to its command allocator.
+// In DX12, command allocators are reset at frame boundaries rather than
+// freeing individual command lists.
+func (d *Device) FreeCommandBuffer(cmdBuffer hal.CommandBuffer) {
+	if cb, ok := cmdBuffer.(*CommandBuffer); ok && cb != nil {
+		cb.Destroy()
+	}
+}
+
+// CreateRenderBundleEncoder creates a render bundle encoder.
+// Note: DX12 supports bundles natively, but not yet implemented.
+func (d *Device) CreateRenderBundleEncoder(desc *hal.RenderBundleEncoderDescriptor) (hal.RenderBundleEncoder, error) {
+	return nil, fmt.Errorf("dx12: render bundles not yet implemented")
+}
+
+// DestroyRenderBundle destroys a render bundle.
+func (d *Device) DestroyRenderBundle(bundle hal.RenderBundle) {}
+
+// WaitIdle waits for all GPU work to complete.
+func (d *Device) WaitIdle() error {
+	return d.waitForGPU()
+}
+
+// Destroy releases the device.
+func (d *Device) Destroy() {
+	if d == nil {
+		return
+	}
+
+	// Clear finalizer to prevent double-free
+	runtime.SetFinalizer(d, nil)
+
+	// Wait for GPU to finish before cleanup
+	_ = d.waitForGPU()
+
+	d.cleanup()
+}
+
+// -----------------------------------------------------------------------------
+// Fence implementation
+// -----------------------------------------------------------------------------
+
+// Fence implements hal.Fence for DirectX 12.
+type Fence struct {
+	raw   *d3d12.ID3D12Fence
+	event windows.Handle
+}
+
+// Destroy releases the fence resources.
+func (f *Fence) Destroy() {
+	if f.event != 0 {
+		_ = windows.CloseHandle(f.event)
+		f.event = 0
+	}
+	if f.raw != nil {
+		f.raw.Release()
+		f.raw = nil
+	}
+}
+
+// GetCompletedValue returns the current fence value.
+func (f *Fence) GetCompletedValue() uint64 {
+	if f.raw == nil {
+		return 0
+	}
+	return f.raw.GetCompletedValue()
+}
+
+// -----------------------------------------------------------------------------
+// Compile-time interface assertions
+// -----------------------------------------------------------------------------
+
+var (
+	_ hal.Device = (*Device)(nil)
+	_ hal.Fence  = (*Fence)(nil)
+)
