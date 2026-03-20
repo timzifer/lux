@@ -314,10 +314,31 @@ func Stack(children ...Element) Element {
 	return stackElement{Children: children}
 }
 
+// CheckerRect renders a colorful checkerboard pattern of the given size.
+// Useful as a complex background to demonstrate blur/frosted-glass effects.
+func CheckerRect(width, height, cellSize float32) Element {
+	return checkerRectElement{Width: width, Height: height, CellSize: cellSize}
+}
+
 // BlurBox wraps a child and applies a Gaussian blur backdrop effect.
 // Content underneath the BlurBox bounds is blurred at the given radius.
 func BlurBox(radius float32, child Element) Element {
 	return blurBoxElement{Radius: radius, Child: child}
+}
+
+// ShadowBox draws a soft shadow behind a child element.
+func ShadowBox(shadow draw.Shadow, radius float32, child Element) Element {
+	return shadowBoxElement{Shadow: shadow, Radius: radius, Child: child}
+}
+
+// OpacityBox applies a uniform opacity to all child content.
+func OpacityBox(alpha float32, child Element) Element {
+	return opacityBoxElement{Alpha: alpha, Child: child}
+}
+
+// FrostedGlass renders a frosted-glass effect: backdrop blur + semi-transparent tint overlay.
+func FrostedGlass(blurRadius float32, tint draw.Color, child Element) Element {
+	return frostedGlassElement{BlurRadius: blurRadius, Tint: tint, Child: child}
 }
 
 // ScrollView constrains a child to a maximum height, clipping overflow
@@ -600,6 +621,35 @@ type blurBoxElement struct {
 }
 
 func (blurBoxElement) isElement() {}
+
+type checkerRectElement struct {
+	Width, Height, CellSize float32
+}
+
+func (checkerRectElement) isElement() {}
+
+type shadowBoxElement struct {
+	Shadow draw.Shadow
+	Radius float32
+	Child  Element
+}
+
+func (shadowBoxElement) isElement() {}
+
+type opacityBoxElement struct {
+	Alpha float32
+	Child Element
+}
+
+func (opacityBoxElement) isElement() {}
+
+type frostedGlassElement struct {
+	BlurRadius float32
+	Tint       draw.Color
+	Child      Element
+}
+
+func (frostedGlassElement) isElement() {}
 
 type scrollViewElement struct {
 	Child     Element
@@ -1231,6 +1281,46 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 	case stackElement:
 		return layoutStack(node, area, canvas, th, tokens, ix, overlays, fs)
 
+	case checkerRectElement:
+		w := int(node.Width)
+		h := int(node.Height)
+		if w > area.W {
+			w = area.W
+		}
+		if h > area.H {
+			h = area.H
+		}
+		cell := node.CellSize
+		if cell < 1 {
+			cell = 8
+		}
+		colors := [6]draw.Color{
+			{R: 0.93, G: 0.27, B: 0.27, A: 1}, // red
+			{R: 0.96, G: 0.62, B: 0.04, A: 1}, // amber
+			{R: 0.13, G: 0.77, B: 0.37, A: 1}, // green
+			{R: 0.23, G: 0.51, B: 0.96, A: 1}, // blue
+			{R: 0.55, G: 0.36, B: 0.96, A: 1}, // violet
+			{R: 0.93, G: 0.35, B: 0.60, A: 1}, // pink
+		}
+		for row := float32(0); row < float32(h); row += cell {
+			for col := float32(0); col < float32(w); col += cell {
+				ci := (int(row/cell) + int(col/cell)) % len(colors)
+				cw := cell
+				ch := cell
+				if col+cw > float32(w) {
+					cw = float32(w) - col
+				}
+				if row+ch > float32(h) {
+					ch = float32(h) - row
+				}
+				canvas.FillRect(
+					draw.R(float32(area.X)+col, float32(area.Y)+row, cw, ch),
+					draw.SolidPaint(colors[ci]),
+				)
+			}
+		}
+		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+
 	case blurBoxElement:
 		// Layout child first to determine its actual bounds.
 		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
@@ -1240,6 +1330,50 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		canvas.PushBlur(node.Radius)
 		canvas.PopBlur()
 		canvas.PopClip()
+		return b
+
+	case shadowBoxElement:
+		// Draw shadow first (behind content), then layout child on top.
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
+		shadow := node.Shadow
+		if node.Radius > 0 {
+			shadow.Radius = node.Radius
+		}
+		canvas.DrawShadow(r, shadow)
+		return b
+
+	case opacityBoxElement:
+		canvas.PushOpacity(node.Alpha)
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		canvas.PopOpacity()
+		return b
+
+	case frostedGlassElement:
+		// Frosted glass: blurred backdrop + sharp overlay content.
+		// 1. Measure child with nullCanvas (no drawing) to get bounds.
+		nc := nullCanvas{delegate: canvas}
+		b := layoutElement(node.Child, area, nc, th, tokens, nil, nil)
+		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
+
+		// 2. Register blur region in main scene.
+		canvas.PushClip(r)
+		canvas.PushBlur(node.BlurRadius)
+		canvas.PopBlur()
+		canvas.PopClip()
+
+		// 3. Draw tint + child in overlay mode (rendered after blur post-processing).
+		type overlayModeSetter interface{ SetOverlayMode(bool) }
+		if oms, ok := canvas.(overlayModeSetter); ok {
+			oms.SetOverlayMode(true)
+			canvas.FillRoundRect(r, node.BlurRadius*0.5, draw.SolidPaint(node.Tint))
+			layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+			oms.SetOverlayMode(false)
+		} else {
+			// Fallback: draw in main scene (blur will affect tint+child too).
+			canvas.FillRoundRect(r, node.BlurRadius*0.5, draw.SolidPaint(node.Tint))
+			layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		}
 		return b
 
 	case scrollViewElement:

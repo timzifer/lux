@@ -269,6 +269,12 @@ var slateTokens = TokenSet{
 		Emphasized: DurationEasing{400 * time.Millisecond, anim.InOutCubic},
 		Quick:      DurationEasing{100 * time.Millisecond, anim.OutExpo},
 	},
+	Elevation: ElevationScale{
+		None: draw.Shadow{},
+		Low:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.6}, BlurRadius: 4, OffsetY: 2, Radius: 8},
+		Med:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.7}, BlurRadius: 8, OffsetY: 4, Radius: 8},
+		High: draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.8}, BlurRadius: 16, OffsetY: 8, Radius: 8},
+	},
 	Scroll: ScrollSpec{
 		Friction:          0.95,
 		Overscroll:        40,

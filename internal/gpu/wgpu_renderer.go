@@ -72,6 +72,12 @@ type WGPURenderer struct {
 	gradUniBufCap    uint64      // current capacity in bytes
 	gradBindGroups   []wgpu.BindGroup // per-gradient bind groups (rebuilt each frame)
 
+	// Shadow resources
+	shadowPipeline    wgpu.RenderPipeline
+	shadowInstBuffer  wgpu.Buffer
+	shadowInstBufCap  uint64
+	shadowBuf         []float32
+
 	// Blur resources (fragment-shader-based, 2-pass ping-pong)
 	blurPipeline        wgpu.RenderPipeline  // fullscreen-triangle blur pass
 	blurBlitPipeline    wgpu.RenderPipeline  // blit blurred result back to surface
@@ -476,6 +482,46 @@ func (r *WGPURenderer) Init(cfg Config) error {
 
 	r.surfaceTextures = make(map[draw.TextureID]wgpu.TextureView)
 
+	// --- Shadow pipeline ---
+
+	shadowShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "shadow-shader",
+		Source: wgslShadowShader,
+	})
+	defer shadowShader.Destroy()
+
+	// Shadow instance buffer (10 floats = 40 bytes per instance).
+	r.shadowInstBufCap = 256 * 10 * 4
+	r.shadowInstBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "shadow-instances",
+		Size:  r.shadowInstBufCap,
+		Usage: wgpu.BufferUsageVertex | wgpu.BufferUsageCopyDst,
+	})
+
+	r.shadowPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "shadow-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     shadowShader,
+			EntryPoint: "vs_main",
+			Buffers: []wgpu.VertexBufferLayout{
+				unitQuadLayout,
+				{ArrayStride: 40, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
+					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
+					{Format: wgpu.VertexFormatFloat32x4, Offset: 16, ShaderLocation: 2}, // color
+					{Format: wgpu.VertexFormatFloat32, Offset: 32, ShaderLocation: 3},   // radius
+					{Format: wgpu.VertexFormatFloat32, Offset: 36, ShaderLocation: 4},   // blur_radius
+				}},
+			},
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     shadowShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout},
+	})
+
 	// --- Blur pipeline (fragment-shader, 2-pass ping-pong) ---
 
 	blurShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
@@ -729,6 +775,31 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		}
 	}
 
+	// Shadows: concatenate main + overlay shadow instance data.
+	mainShadowCount := uint32(len(scene.ShadowRects))
+	overlayShadowCount := uint32(len(scene.OverlayShadowRects))
+	if mainShadowCount+overlayShadowCount > 0 {
+		r.shadowBuf = r.shadowBuf[:0]
+		for _, s := range scene.ShadowRects {
+			r.shadowBuf = append(r.shadowBuf,
+				float32(s.X), float32(s.Y), float32(s.W), float32(s.H),
+				s.Color.R, s.Color.G, s.Color.B, s.Color.A,
+				s.Radius, s.BlurRadius,
+			)
+		}
+		for _, s := range scene.OverlayShadowRects {
+			r.shadowBuf = append(r.shadowBuf,
+				float32(s.X), float32(s.Y), float32(s.W), float32(s.H),
+				s.Color.R, s.Color.G, s.Color.B, s.Color.A,
+				s.Radius, s.BlurRadius,
+			)
+		}
+		needed := uint64(len(r.shadowBuf)) * 4
+		r.ensureGPUBuffer(&r.shadowInstBuffer, &r.shadowInstBufCap, needed, "shadow-instances", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
+		r.shadowInstBuffer.Write(r.queue, float32SliceToBytes(r.shadowBuf))
+	}
+	totalShadowBufSize := uint64((mainShadowCount + overlayShadowCount) * 10 * 4)
+
 	// Gradients: pre-upload all gradient uniform data and create per-gradient bind groups.
 	// Each gradient occupies 512 bytes (304 data + 208 padding for 256-byte alignment).
 	const gradStride = 512 // bytes
@@ -806,22 +877,24 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 
 	// Draw main content via scissor clip batches.
 	r.drawClipBatches(renderPass, scene.ClipBatches,
-		int(mainRectCount), mainTextGlyphs, mainMSDFGlyphs,
-		0, 0, msdfGPUOffset, // MSDF starts after all text glyphs in unified buffer
-		totalRectBufSize, glyphBufSize,
+		int(mainRectCount), mainTextGlyphs, mainMSDFGlyphs, int(mainShadowCount),
+		0, 0, msdfGPUOffset, 0, // MSDF starts after all text glyphs in unified buffer
+		totalRectBufSize, glyphBufSize, totalShadowBufSize,
 		scene.GradientRects, 0,
 		vpW, vpH)
 
 	// Draw surfaces (between main and overlay).
 	r.drawSurfaces(renderPass, scene.Surfaces, vpW, vpH)
 
-	// Draw overlay content via scissor clip batches.
-	r.drawClipBatches(renderPass, scene.OverlayClipBatches,
-		int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs,
-		int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs,
-		totalRectBufSize, glyphBufSize,
-		scene.OverlayGradientRects, mainGradCount,
-		vpW, vpH)
+	if !hasBlur {
+		// No blur: overlay in same pass (fast path).
+		r.drawClipBatches(renderPass, scene.OverlayClipBatches,
+			int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs, int(overlayShadowCount),
+			int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs, int(mainShadowCount),
+			totalRectBufSize, glyphBufSize, totalShadowBufSize,
+			scene.OverlayGradientRects, mainGradCount,
+			vpW, vpH)
+	}
 
 	renderPass.End()
 
@@ -1012,6 +1085,28 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		srcTexBG.Destroy()
 		tmpTexBG.Destroy()
 		dstBlitBG.Destroy()
+
+		// --- Overlay pass (post-blur): render overlay content on top of blurred surface ---
+		// This enables frosted glass: blurred backdrop + sharp overlay content.
+		hasOverlay := overlayRectCount > 0 || overlayTextGlyphs > 0 || overlayMSDFGlyphs > 0 ||
+			len(scene.OverlayGradientRects) > 0 || overlayShadowCount > 0
+		if hasOverlay {
+			overlayPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+				ColorAttachments: []wgpu.RenderPassColorAttachment{{
+					View:    textureView,
+					LoadOp:  wgpu.LoadOpLoad,
+					StoreOp: wgpu.StoreOpStore,
+				}},
+			})
+			overlayPass.SetScissorRect(0, 0, vpW, vpH)
+			r.drawClipBatches(overlayPass, scene.OverlayClipBatches,
+				int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs, int(overlayShadowCount),
+				int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs, int(mainShadowCount),
+				totalRectBufSize, glyphBufSize, totalShadowBufSize,
+				scene.OverlayGradientRects, mainGradCount,
+				vpW, vpH)
+			overlayPass.End()
+		}
 	}
 
 	// Submit.
@@ -1104,6 +1199,8 @@ func (r *WGPURenderer) Destroy() {
 	r.msdfInstPipeline.Destroy()
 	r.surfPipeline.Destroy()
 	r.gradPipeline.Destroy()
+	r.shadowPipeline.Destroy()
+	r.shadowInstBuffer.Destroy()
 	r.textLayout.Destroy()
 	r.surfTexLayout.Destroy()
 	r.gradLayout.Destroy()
@@ -1261,18 +1358,28 @@ func (r *WGPURenderer) ensureGPUBuffer(buf *wgpu.Buffer, cap *uint64, needed uin
 func (r *WGPURenderer) drawClipBatches(
 	renderPass wgpu.RenderPass,
 	batches []draw.ClipBatch,
-	totalRects, totalTextGlyphs, totalMSDFGlyphs int,
-	gpuRectOffset, gpuTextGlyphOffset, gpuMSDFGlyphOffset int,
-	rectBufSize, glyphBufSize uint64,
+	totalRects, totalTextGlyphs, totalMSDFGlyphs, totalShadows int,
+	gpuRectOffset, gpuTextGlyphOffset, gpuMSDFGlyphOffset, gpuShadowOffset int,
+	rectBufSize, glyphBufSize, shadowBufSize uint64,
 	gradientRects []draw.DrawGradientRect, gradBindGroupOffset int,
 	vpW, vpH uint32,
 ) {
-	if totalRects == 0 && totalTextGlyphs == 0 && totalMSDFGlyphs == 0 && len(gradientRects) == 0 {
+	if totalRects == 0 && totalTextGlyphs == 0 && totalMSDFGlyphs == 0 && len(gradientRects) == 0 && totalShadows == 0 {
 		return
 	}
 
 	// Pipeline state tracking for draw-call merging.
-	var lastPipeline int // 0=none, 1=rect, 2=text, 3=msdf
+	var lastPipeline int // 0=none, 1=rect, 2=text, 3=msdf, 4=shadow
+
+	setShadowPipeline := func() {
+		if lastPipeline != 4 {
+			renderPass.SetPipeline(r.shadowPipeline)
+			renderPass.SetBindGroup(0, r.projBindGroup)
+			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1, r.shadowInstBuffer, 0, shadowBufSize)
+			lastPipeline = 4
+		}
+	}
 
 	setRectPipeline := func() {
 		if lastPipeline != 1 {
@@ -1307,6 +1414,10 @@ func (r *WGPURenderer) drawClipBatches(
 	// No clip batches → draw everything as a single full-viewport batch.
 	if len(batches) == 0 {
 		renderPass.SetScissorRect(0, 0, vpW, vpH)
+		if totalShadows > 0 {
+			setShadowPipeline()
+			renderPass.DrawInstanced(6, uint32(totalShadows), 0, uint32(gpuShadowOffset))
+		}
 		if totalRects > 0 {
 			setRectPipeline()
 			renderPass.DrawInstanced(6, uint32(totalRects), 0, uint32(gpuRectOffset))
@@ -1333,6 +1444,7 @@ func (r *WGPURenderer) drawClipBatches(
 	baseTextIdx := batches[0].TextIdx
 	baseMSDFIdx := batches[0].MSDFIdx
 	baseGradIdx := batches[0].GradientIdx
+	baseShadowIdx := batches[0].ShadowIdx
 
 	for i, batch := range batches {
 		// Set scissor rect.
@@ -1353,28 +1465,37 @@ func (r *WGPURenderer) drawClipBatches(
 		}
 
 		// Compute draw counts from batch boundaries.
-		var endRectIdx, endTextIdx, endMSDFIdx, endGradIdx int
+		var endRectIdx, endTextIdx, endMSDFIdx, endGradIdx, endShadowIdx int
 		if i+1 < len(batches) {
 			endRectIdx = batches[i+1].RectIdx
 			endTextIdx = batches[i+1].TextIdx
 			endMSDFIdx = batches[i+1].MSDFIdx
 			endGradIdx = batches[i+1].GradientIdx
+			endShadowIdx = batches[i+1].ShadowIdx
 		} else {
 			endRectIdx = baseRectIdx + totalRects
 			endTextIdx = baseTextIdx + totalTextGlyphs
 			endMSDFIdx = baseMSDFIdx + totalMSDFGlyphs
 			endGradIdx = baseGradIdx + len(gradientRects)
+			endShadowIdx = baseShadowIdx + totalShadows
 		}
 
 		nRects := uint32(endRectIdx - batch.RectIdx)
 		nTextGlyphs := uint32(endTextIdx - batch.TextIdx)
 		nMSDFGlyphs := uint32(endMSDFIdx - batch.MSDFIdx)
+		nShadows := uint32(endShadowIdx - batch.ShadowIdx)
 
 		// GPU offsets: scene index relative to base + layer offset in GPU buffer.
 		rectFirst := uint32(batch.RectIdx-baseRectIdx) + uint32(gpuRectOffset)
 		textFirst := uint32(batch.TextIdx-baseTextIdx) + uint32(gpuTextGlyphOffset)
 		msdfFirst := uint32(batch.MSDFIdx-baseMSDFIdx) + uint32(gpuMSDFGlyphOffset)
+		shadowFirst := uint32(batch.ShadowIdx-baseShadowIdx) + uint32(gpuShadowOffset)
 
+		// Draw shadows BEFORE rects (shadows go behind content).
+		if nShadows > 0 {
+			setShadowPipeline()
+			renderPass.DrawInstanced(6, nShadows, 0, shadowFirst)
+		}
 		if nRects > 0 {
 			setRectPipeline()
 			renderPass.DrawInstanced(6, nRects, 0, rectFirst)

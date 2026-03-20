@@ -130,6 +130,7 @@ type Shadow struct {
 	SpreadRadius float32
 	OffsetX      float32
 	OffsetY      float32
+	Radius       float32 // corner radius of the shadow shape
 }
 
 // BlendMode controls layer compositing.

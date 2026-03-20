@@ -182,6 +182,14 @@ type DrawGradientRect struct {
 	StopCount int
 }
 
+// DrawShadowRect is a soft-shadow rectangle in framebuffer coordinates.
+type DrawShadowRect struct {
+	X, Y, W, H int
+	Color       Color
+	Radius      float32 // corner radius
+	BlurRadius  float32 // shadow blur spread
+}
+
 // ClipBatch groups draw commands that share the same scissor rectangle.
 type ClipBatch struct {
 	Clip         Rect
@@ -189,6 +197,7 @@ type ClipBatch struct {
 	TextIdx      int  // start index in TexturedGlyphs[]
 	MSDFIdx      int  // start index in MSDFGlyphs[]
 	GradientIdx  int  // start index in GradientRects[]
+	ShadowIdx    int  // start index in ShadowRects[]
 	FullViewport bool // true = no scissor, full viewport
 }
 
@@ -211,6 +220,9 @@ type Scene struct {
 	// Gradient-filled rectangles.
 	GradientRects []DrawGradientRect
 
+	// Soft-shadow rectangles (rendered before rects so shadows go behind content).
+	ShadowRects []DrawShadowRect
+
 	// Overlay draw lists — rendered after main content so overlays
 	// (tooltips, dropdowns, context menus) fully cover underlying text.
 	OverlayRects          []DrawRect
@@ -218,6 +230,7 @@ type Scene struct {
 	OverlayTexturedGlyphs []TexturedGlyph
 	OverlayMSDFGlyphs     []TexturedGlyph
 	OverlayGradientRects  []DrawGradientRect
+	OverlayShadowRects    []DrawShadowRect
 
 	// Scissor clip batches — each batch specifies a scissor rect and
 	// index ranges into the main/overlay draw lists.

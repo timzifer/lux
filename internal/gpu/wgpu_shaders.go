@@ -308,6 +308,66 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 `
 
+// wgslShadowShader renders soft box shadows using SDF with blur falloff.
+// Instanced rendering: unit quad vertices + per-instance rect/color/radius/blurRadius.
+// 10 floats per instance (40 bytes).
+const wgslShadowShader = `
+struct Uniforms {
+    proj: mat4x4<f32>,
+};
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexInput {
+    @location(0) pos: vec2<f32>,       // unit quad corner (0..1)
+    @location(1) rect: vec4<f32>,      // (x, y, w, h) in screen coords
+    @location(2) color: vec4<f32>,     // RGBA color
+    @location(3) radius: f32,          // corner radius
+    @location(4) blur_radius: f32,     // shadow blur spread
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) local_pos: vec2<f32>,
+    @location(1) half_size: vec2<f32>,
+    @location(2) color: vec4<f32>,
+    @location(3) @interpolate(flat) radius: f32,
+    @location(4) @interpolate(flat) blur_radius: f32,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+
+    // Expand quad by blur_radius + 0.5px so the soft falloff is fully visible.
+    let expand = vec2<f32>(in.blur_radius + 0.5);
+    let expanded_size = in.rect.zw + expand * 2.0;
+    let world_pos = in.rect.xy - expand + in.pos * expanded_size;
+    out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
+
+    out.half_size = in.rect.zw * 0.5;
+    out.local_pos = (in.pos - 0.5) * expanded_size;
+    out.color = in.color;
+    out.radius = in.radius;
+    out.blur_radius = in.blur_radius;
+    return out;
+}
+
+fn rounded_box_sdf_s(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
+    let q = abs(p) - b + r;
+    return length(max(q, vec2<f32>(0.0))) - r;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let dist = rounded_box_sdf_s(in.local_pos, in.half_size, in.radius);
+    let alpha = 1.0 - smoothstep(0.0, in.blur_radius, dist);
+    if (alpha < 0.001) {
+        discard;
+    }
+    return vec4<f32>(in.color.rgb, in.color.a * alpha);
+}
+`
+
 // wgslBlurShader implements a separable Gaussian blur as a fullscreen-quad fragment shader.
 // Two render passes: horizontal (direction=(1,0)) then vertical (direction=(0,1)).
 // Bind group 0: blur uniforms (direction, radius, texture_size).

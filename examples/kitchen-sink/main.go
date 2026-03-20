@@ -47,6 +47,8 @@ var sectionIDs = []string{
 	"gradients",
 	// Phase F — Blur & Multi-Window
 	"blur", "multi-window",
+	// Phase G — Effects
+	"effects",
 }
 
 func sectionLabel(id string) string {
@@ -138,6 +140,9 @@ func sectionLabel(id string) string {
 		return "Blur"
 	case "multi-window":
 		return "Multi-Window"
+	// Phase G
+	case "effects":
+		return "Effects"
 	default:
 		return id
 	}
@@ -600,19 +605,22 @@ func view(m Model) ui.Element {
 	// Right panel: active section content (maxHeight 0 = fill available space)
 	content := ui.ScrollView(sectionContent(m), 0, m.Scroll)
 
-	return ui.Padding(ui.UniformInsets(16), ui.Column(
-		// SplitView: nav on the left, content on the right — Expanded fills window height
-		ui.Expanded(ui.SplitView(
-			nav,
-			content,
-			m.NavSplitRatio,
-			func(r float32) { app.Send(SetNavSplitMsg{r}) },
-		)),
-		// Footer
-		ui.Spacer(12),
-		ui.Row(
-			ui.ButtonText(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
-		),
+	return ui.Padding(ui.UniformInsets(16), ui.Flex(
+		[]ui.Element{
+			// SplitView: nav on the left, content on the right — Expanded fills remaining height
+			ui.Expanded(ui.SplitView(
+				nav,
+				content,
+				m.NavSplitRatio,
+				func(r float32) { app.Send(SetNavSplitMsg{r}) },
+			)),
+			// Footer
+			ui.Spacer(12),
+			ui.Row(
+				ui.ButtonText(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
+			),
+		},
+		ui.WithDirection(ui.FlexColumn),
 	))
 }
 
@@ -705,6 +713,9 @@ func sectionContent(m Model) ui.Element {
 		return blurSection()
 	case "multi-window":
 		return multiWindowSection(m)
+	// Phase G
+	case "effects":
+		return effectsSection()
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -2320,6 +2331,103 @@ func blurSection() ui.Element {
 			),
 		)
 	}
+
+	return ui.Column(items...)
+}
+
+// ── Effects Section (Phase G) ────────────────────────────────────
+
+func effectsSection() ui.Element {
+	items := []ui.Element{
+		sectionHeader("Effects (Phase G)"),
+	}
+
+	// --- Shadows ---
+	items = append(items,
+		ui.Text("Soft Shadows (None / Low / Med / High):"),
+		ui.Spacer(8),
+	)
+
+	type shadowLevel struct {
+		label string
+		shadow draw.Shadow
+		bg     draw.Color // card background — distinct per level, visible in both themes
+	}
+	levels := []shadowLevel{
+		{"None", draw.Shadow{}, draw.Hex("#6366f1")},       // indigo
+		{"Low", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.6}, BlurRadius: 6, OffsetY: 3, Radius: 8}, draw.Hex("#3b82f6")},  // blue
+		{"Med", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.7}, BlurRadius: 12, OffsetY: 6, Radius: 8}, draw.Hex("#0ea5e9")}, // sky
+		{"High", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.85}, BlurRadius: 24, OffsetY: 10, Radius: 8}, draw.Hex("#14b8a6")}, // teal
+	}
+	shadowCards := make([]ui.Element, len(levels))
+	for i, lv := range levels {
+		shadowCards[i] = ui.Padding(ui.UniformInsets(20),
+			ui.ShadowBox(lv.shadow, 8,
+				ui.Stack(
+					ui.GradientRect(132, 82, 8, draw.SolidPaint(lv.bg)),
+					ui.Padding(ui.UniformInsets(16),
+						ui.SizedBox(100, 50,
+							ui.Text(lv.label),
+						),
+					),
+				),
+			),
+		)
+	}
+	items = append(items, ui.Row(shadowCards...))
+
+	// --- Opacity ---
+	items = append(items,
+		ui.Spacer(16),
+		ui.Text("Opacity (1.0, 0.75, 0.5, 0.25):"),
+		ui.Spacer(8),
+	)
+
+	alphas := []float32{1.0, 0.75, 0.5, 0.25}
+	opacityBoxes := make([]ui.Element, len(alphas))
+	for i, a := range alphas {
+		opacityBoxes[i] = ui.Padding(ui.UniformInsets(4),
+			ui.OpacityBox(a,
+				ui.Stack(
+					ui.GradientRect(104, 64, 6, draw.SolidPaint(draw.Hex("#3b82f6"))),
+					ui.Padding(ui.UniformInsets(12),
+						ui.SizedBox(80, 40,
+							ui.Text(fmt.Sprintf("%.0f%%", a*100)),
+						),
+					),
+				),
+			),
+		)
+	}
+	items = append(items, ui.Row(opacityBoxes...))
+
+	// --- Frosted Glass ---
+	items = append(items,
+		ui.Spacer(16),
+		ui.Text("Frosted Glass (blur backdrop + sharp overlay panel):"),
+		ui.Spacer(8),
+	)
+
+	items = append(items,
+		ui.Stack(
+			// Complex background: colorful checkerboard pattern makes blur effect obvious
+			ui.CheckerRect(420, 160, 16),
+			// Frosted glass panel overlaid on the pattern
+			ui.Padding(draw.Insets{Top: 24, Left: 50, Right: 50, Bottom: 24},
+				ui.FrostedGlass(16, draw.Color{R: 1, G: 1, B: 1, A: 0.18},
+					ui.SizedBox(320, 112,
+						ui.Padding(ui.UniformInsets(16),
+							ui.Column(
+								ui.Text("Frosted Glass Panel"),
+								ui.Spacer(4),
+								ui.Text("Background is blurred, text stays sharp."),
+							),
+						),
+					),
+				),
+			),
+		),
+	)
 
 	return ui.Column(items...)
 }

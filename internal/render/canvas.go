@@ -27,7 +27,8 @@ type SceneCanvas struct {
 	lastClip    draw.Rect
 	lastClipSet bool
 
-	blurStack []float32
+	blurStack    []float32
+	opacityStack []float32
 }
 
 // SetOverlayMode switches between main and overlay draw lists.
@@ -53,6 +54,7 @@ func (c *SceneCanvas) emitClipIfChanged() {
 		TextIdx:      len(c.scene.TexturedGlyphs),
 		MSDFIdx:      len(c.scene.MSDFGlyphs),
 		GradientIdx:  len(c.scene.GradientRects),
+		ShadowIdx:    len(c.scene.ShadowRects),
 		FullViewport: fullViewport,
 	}
 	if c.overlayMode {
@@ -60,6 +62,7 @@ func (c *SceneCanvas) emitClipIfChanged() {
 		batch.TextIdx = len(c.scene.OverlayTexturedGlyphs)
 		batch.MSDFIdx = len(c.scene.OverlayMSDFGlyphs)
 		batch.GradientIdx = len(c.scene.OverlayGradientRects)
+		batch.ShadowIdx = len(c.scene.OverlayShadowRects)
 		c.scene.OverlayClipBatches = append(c.scene.OverlayClipBatches, batch)
 	} else {
 		c.scene.ClipBatches = append(c.scene.ClipBatches, batch)
@@ -132,7 +135,12 @@ func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
 			return
 		}
 	}
-	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.FallbackColor()}
+	color := paint.FallbackColor()
+	color.A *= c.effectiveOpacity()
+	if color.A < 0.001 {
+		return
+	}
+	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: color}
 	if c.overlayMode {
 		c.scene.OverlayRects = append(c.scene.OverlayRects, rect)
 	} else {
@@ -171,7 +179,12 @@ func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Pain
 			return
 		}
 	}
-	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: paint.FallbackColor(), Radius: radius}
+	color := paint.FallbackColor()
+	color.A *= c.effectiveOpacity()
+	if color.A < 0.001 {
+		return
+	}
+	rect := draw.DrawRect{X: int(x), Y: int(y), W: int(w), H: int(h), Color: color, Radius: radius}
 	if c.overlayMode {
 		c.scene.OverlayRects = append(c.scene.OverlayRects, rect)
 	} else {
@@ -216,6 +229,12 @@ func (c *SceneCanvas) appendGradientRect(r draw.Rect, radius float32, paint draw
 				gr.Stops[i] = s
 				gr.StopCount = i + 1
 			}
+		}
+	}
+	opacity := c.effectiveOpacity()
+	if opacity < 1.0 {
+		for i := 0; i < gr.StopCount; i++ {
+			gr.Stops[i].Color.A *= opacity
 		}
 	}
 	if c.overlayMode {
@@ -310,6 +329,10 @@ func (c *SceneCanvas) DrawText(txt string, origin draw.Point, style draw.TextSty
 // drawTextTextured shapes text and emits TexturedGlyphs (or MSDFGlyphs) from the atlas.
 // origin.Y is the top-left of the text bounding box (not the baseline).
 func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw.TextStyle, color draw.Color, shaper text.GlyphRasterizer) {
+	color.A *= c.effectiveOpacity()
+	if color.A < 0.001 {
+		return
+	}
 	c.emitClipIfChanged()
 	shaped := shaper.Shape(txt, style)
 	cursorX := origin.X
@@ -482,7 +505,34 @@ func (c *SceneCanvas) DrawTexture(tex draw.TextureID, dst draw.Rect) {
 
 // ── Shadows ──────────────────────────────────────────────────────
 
-func (c *SceneCanvas) DrawShadow(_ draw.Rect, _ draw.Shadow) {}
+func (c *SceneCanvas) DrawShadow(r draw.Rect, s draw.Shadow) {
+	// Compute expanded bounds: shadow extends by offset + spread + blur.
+	expand := s.SpreadRadius + s.BlurRadius
+	x := r.X + s.OffsetX - expand
+	y := r.Y + s.OffsetY - expand
+	w := r.W + 2*expand
+	h := r.H + 2*expand
+	if c.isClipped(x, y, w, h) {
+		return
+	}
+	color := s.Color
+	color.A *= c.effectiveOpacity()
+	if color.A < 0.001 {
+		return
+	}
+	c.emitClipIfChanged()
+	sr := draw.DrawShadowRect{
+		X: int(x), Y: int(y), W: int(w), H: int(h),
+		Color:      color,
+		Radius:     s.Radius,
+		BlurRadius: s.BlurRadius,
+	}
+	if c.overlayMode {
+		c.scene.OverlayShadowRects = append(c.scene.OverlayShadowRects, sr)
+	} else {
+		c.scene.ShadowRects = append(c.scene.ShadowRects, sr)
+	}
+}
 
 // ── Clipping & Transform ─────────────────────────────────────────
 
@@ -564,8 +614,29 @@ func (c *SceneCanvas) PushScale(_, _ float32)         {}
 
 // ── Effects ──────────────────────────────────────────────────────
 
-func (c *SceneCanvas) PushOpacity(_ float32)         {}
-func (c *SceneCanvas) PopOpacity()                   {}
+func (c *SceneCanvas) PushOpacity(alpha float32) {
+	if alpha < 0 {
+		alpha = 0
+	}
+	if alpha > 1 {
+		alpha = 1
+	}
+	c.opacityStack = append(c.opacityStack, c.effectiveOpacity()*alpha)
+}
+
+func (c *SceneCanvas) PopOpacity() {
+	if len(c.opacityStack) > 0 {
+		c.opacityStack = c.opacityStack[:len(c.opacityStack)-1]
+	}
+}
+
+// effectiveOpacity returns the cumulative opacity from the stack, or 1.0 if empty.
+func (c *SceneCanvas) effectiveOpacity() float32 {
+	if len(c.opacityStack) == 0 {
+		return 1.0
+	}
+	return c.opacityStack[len(c.opacityStack)-1]
+}
 func (c *SceneCanvas) PushBlur(radius float32) {
 	if radius <= 0 {
 		return
