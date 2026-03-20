@@ -240,7 +240,7 @@ func rootNavigate(this uintptr, direction win32.NavigateDirection, pRetVal **win
 	case win32.NavigateDirection_FirstChild:
 		root := tree.Root()
 		if root != nil && root.FirstChild >= 0 {
-			ep := rp.bridge.getOrCreateProvider(tree.Nodes[root.FirstChild].ID)
+			ep := rp.bridge.providerFor(tree.Nodes[root.FirstChild].ID)
 			if ep != nil {
 				atomic.AddInt32(&ep.refCount, 1)
 				*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&ep.vtblFragment))
@@ -252,7 +252,7 @@ func rootNavigate(this uintptr, direction win32.NavigateDirection, pRetVal **win
 			children := tree.Children(root)
 			if len(children) > 0 {
 				last := children[len(children)-1]
-				ep := rp.bridge.getOrCreateProvider(last.ID)
+				ep := rp.bridge.providerFor(last.ID)
 				if ep != nil {
 					atomic.AddInt32(&ep.refCount, 1)
 					*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&ep.vtblFragment))
@@ -320,7 +320,7 @@ func rootGetFocusProvider(this uintptr, pRetVal **win32.IRawElementProviderFragm
 	defer rp.bridge.mu.RUnlock()
 
 	if rp.bridge.tree.FocusedID != 0 {
-		ep := rp.bridge.getOrCreateProvider(rp.bridge.tree.FocusedID)
+		ep := rp.bridge.providerFor(rp.bridge.tree.FocusedID)
 		if ep != nil {
 			atomic.AddInt32(&ep.refCount, 1)
 			*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&ep.vtblFragment))

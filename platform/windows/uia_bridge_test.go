@@ -168,13 +168,10 @@ func TestUIABridgeProviderPruning(t *testing.T) {
 	}
 	bridge.UpdateTree(tree1)
 
-	// Force provider creation for node 3.
-	bridge.mu.Lock()
-	bridge.getOrCreateProviderLocked(3)
-	bridge.mu.Unlock()
-
-	if len(bridge.providers) != 1 {
-		t.Fatalf("expected 1 provider, got %d", len(bridge.providers))
+	// After UpdateTree, providers are pre-created for all non-root nodes.
+	// tree1 has root (ID=1) at index 0, plus nodes 2 and 3.
+	if len(bridge.providers) != 2 {
+		t.Fatalf("expected 2 providers (nodes 2,3), got %d", len(bridge.providers))
 	}
 
 	// Second tree without node 3.

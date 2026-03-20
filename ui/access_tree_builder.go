@@ -9,12 +9,17 @@ import (
 // It performs a depth-first walk, extracting accessibility information from
 // AccessibleWidget implementations and SemanticProvider surfaces.
 // The windowBounds specify the window's screen-space position for coordinate mapping.
+//
+// The tree always starts with a synthetic root node at index 0 (RoleGroup)
+// that wraps all top-level elements. The UIA root provider maps to this node.
 func BuildAccessTree(root Element, reconciler *Reconciler, windowBounds a11y.Rect) a11y.AccessTree {
 	b := accessTreeBuilder{
 		reconciler:   reconciler,
 		windowBounds: windowBounds,
 	}
-	b.walk(root, -1)
+	// Create synthetic root node at index 0. All elements become its children.
+	rootIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: "Application"}, -1, windowBounds)
+	b.walk(root, int32(rootIdx))
 	tree := a11y.AccessTree{Nodes: b.nodes}
 	tree.EnsureIndex()
 	return tree
@@ -122,52 +127,142 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 		idx := b.addNode(accessNode, parentIdx, a11y.Rect{})
 		b.walk(node.Content, int32(idx))
 
+	// ── Container elements: walk children under the same parent ──
 	case boxElement:
 		for _, child := range node.Children {
 			b.walk(child, parentIdx)
 		}
-
 	case stackElement:
 		for _, child := range node.Children {
 			b.walk(child, parentIdx)
 		}
-
 	case flexElement:
 		for _, child := range node.Children {
 			b.walk(child, parentIdx)
 		}
-
 	case gridElement:
 		for _, child := range node.Children {
 			b.walk(child, parentIdx)
 		}
-
-	case paddingElement:
-		b.walk(node.Child, parentIdx)
-
-	case sizedBoxElement:
-		if node.Child != nil {
-			b.walk(node.Child, parentIdx)
-		}
-
-	case expandedElement:
-		b.walk(node.Child, parentIdx)
-
-	case scrollViewElement:
-		b.walk(node.Child, parentIdx)
-
-	case keyedElement:
-		b.walk(node.Child, parentIdx)
-
 	case themedElement:
 		for _, child := range node.Children {
 			b.walk(child, parentIdx)
 		}
+	case customLayoutElement:
+		for _, child := range node.Children {
+			b.walk(child, parentIdx)
+		}
+
+	// ── Wrapper elements: pass through to single child ──
+	case paddingElement:
+		b.walk(node.Child, parentIdx)
+	case sizedBoxElement:
+		if node.Child != nil {
+			b.walk(node.Child, parentIdx)
+		}
+	case expandedElement:
+		b.walk(node.Child, parentIdx)
+	case scrollViewElement:
+		b.walk(node.Child, parentIdx)
+	case keyedElement:
+		b.walk(node.Child, parentIdx)
+	case blurBoxElement:
+		b.walk(node.Child, parentIdx)
+	case shadowBoxElement:
+		b.walk(node.Child, parentIdx)
+	case opacityBoxElement:
+		b.walk(node.Child, parentIdx)
+	case frostedGlassElement:
+		b.walk(node.Child, parentIdx)
+	case innerShadowBoxElement:
+		b.walk(node.Child, parentIdx)
+	case elevationBoxElement:
+		b.walk(node.Child, parentIdx)
+	case elevationCardElement:
+		b.walk(node.Child, parentIdx)
+	case vibrancyElement:
+		b.walk(node.Child, parentIdx)
+	case glowBoxElement:
+		b.walk(node.Child, parentIdx)
+	case cardElement:
+		b.walk(node.Child, parentIdx)
+	case badgeElement:
+		b.walk(node.Content, parentIdx)
+	case chipElement:
+		b.walk(node.Label, parentIdx)
+	case tooltipElement:
+		// Only the trigger is relevant for a11y; tooltip content is overlay.
+		b.walk(node.Trigger, parentIdx)
+	case splitViewElement:
+		b.walk(node.First, parentIdx)
+		b.walk(node.Second, parentIdx)
+
+	// ── Interactive leaf elements with a11y semantics ──
+	case checkboxElement:
+		an := a11y.AccessNode{
+			Role:   a11y.RoleCheckbox,
+			Label:  node.Label,
+			States: a11y.AccessStates{Checked: node.Checked},
+		}
+		if node.OnToggle != nil {
+			toggle := node.OnToggle
+			checked := node.Checked
+			an.Actions = []a11y.AccessAction{{Name: "activate", Trigger: func() { toggle(!checked) }}}
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
+	case toggleElement:
+		an := a11y.AccessNode{
+			Role:   a11y.RoleToggle,
+			States: a11y.AccessStates{Checked: node.On},
+		}
+		if node.OnToggle != nil {
+			toggle := node.OnToggle
+			on := node.On
+			an.Actions = []a11y.AccessAction{{Name: "activate", Trigger: func() { toggle(!on) }}}
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
+	case sliderElement:
+		b.addNode(a11y.AccessNode{
+			Role: a11y.RoleSlider,
+		}, parentIdx, a11y.Rect{})
+	case progressBarElement:
+		b.addNode(a11y.AccessNode{
+			Role: a11y.RoleProgressBar,
+		}, parentIdx, a11y.Rect{})
+	case textFieldElement:
+		b.addNode(a11y.AccessNode{
+			Role:  a11y.RoleTextInput,
+			Label: node.Placeholder,
+			Value: node.Value,
+		}, parentIdx, a11y.Rect{})
+	case radioElement:
+		b.addNode(a11y.AccessNode{
+			Role:   a11y.RoleCheckbox,
+			Label:  node.Label,
+			States: a11y.AccessStates{Checked: node.Selected},
+		}, parentIdx, a11y.Rect{})
+	case selectElement:
+		b.addNode(a11y.AccessNode{
+			Role:  a11y.RoleCombobox,
+			Value: node.Value,
+		}, parentIdx, a11y.Rect{})
+
+	// ── Data-driven elements with dynamic children ──
+	case treeElement:
+		treeIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleTree, Label: "Tree"}, parentIdx, a11y.Rect{})
+		b.walkTreeNodes(node, node.RootIDs, int32(treeIdx), 0)
+	case virtualListElement:
+		listIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleListbox, Label: "List"}, parentIdx, a11y.Rect{})
+		if node.BuildItem != nil {
+			for i := 0; i < node.ItemCount; i++ {
+				item := node.BuildItem(i)
+				b.walk(item, int32(listIdx))
+			}
+		}
 
 	default:
-		// Unknown/leaf elements that we don't have special handling for.
-		// Just create a generic group node.
-		b.addNode(a11y.AccessNode{Role: a11y.RoleGroup}, parentIdx, a11y.Rect{})
+		// Leaf-only elements (divider, spacer, icon, gradient, etc.)
+		// or unrecognized types — no a11y node needed.
 	}
 }
 
@@ -204,6 +299,78 @@ func surfaceAccessNodeToAccessNode(sn SurfaceAccessNode) a11y.AccessNode {
 		Value:       sn.Value,
 		States:      sn.States,
 	}
+}
+
+// walkTreeNodes recursively walks a treeElement's nodes and adds them to the access tree.
+func (b *accessTreeBuilder) walkTreeNodes(tree treeElement, ids []string, parentIdx int32, depth int) {
+	for _, id := range ids {
+		expanded := tree.State != nil && tree.State.IsExpanded(id)
+		selected := tree.State != nil && tree.State.Selected == id
+
+		var kids []string
+		if tree.Children != nil {
+			kids = tree.Children(id)
+		}
+		hasKids := len(kids) > 0
+
+		// Build the display element to extract a label.
+		var label string
+		if tree.BuildNode != nil {
+			nodeEl := tree.BuildNode(id, depth, expanded, selected)
+			label = extractElementLabel(nodeEl)
+		}
+		if label == "" {
+			label = id
+		}
+
+		an := a11y.AccessNode{
+			Role:  a11y.RoleGroup,
+			Label: label,
+			States: a11y.AccessStates{
+				Selected: selected,
+				Expanded: hasKids && expanded,
+			},
+		}
+		if tree.OnSelect != nil {
+			selectID := id
+			onSelect := tree.OnSelect
+			an.Actions = []a11y.AccessAction{{Name: "activate", Trigger: func() { onSelect(selectID) }}}
+		}
+
+		idx := b.addNode(an, parentIdx, a11y.Rect{})
+
+		// Recurse into expanded children.
+		if hasKids && expanded {
+			b.walkTreeNodes(tree, kids, int32(idx), depth+1)
+		}
+	}
+}
+
+// extractElementLabel tries to extract a text label from an arbitrary element.
+func extractElementLabel(el Element) string {
+	switch node := el.(type) {
+	case textElement:
+		return node.Content
+	case boxElement:
+		for _, c := range node.Children {
+			if l := extractElementLabel(c); l != "" {
+				return l
+			}
+		}
+	case paddingElement:
+		return extractElementLabel(node.Child)
+	case sizedBoxElement:
+		if node.Child != nil {
+			return extractElementLabel(node.Child)
+		}
+	case expandedElement:
+		return extractElementLabel(node.Child)
+	case widgetBoundsElement:
+		return extractElementLabel(node.Child)
+	case keyedElement:
+		return extractElementLabel(node.Child)
+	}
+	return ""
 }
 
 // extractButtonLabel tries to get a text label from a button's content element.

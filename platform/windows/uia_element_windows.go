@@ -220,18 +220,21 @@ func elemNavigate(this uintptr, direction win32.NavigateDirection, pRetVal **win
 	switch direction {
 	case win32.NavigateDirection_Parent:
 		if node.ParentIndex < 0 {
-			// Parent is the root provider.
+			// Should not happen (only the synthetic root has parentIndex=-1,
+			// and we don't create element providers for it). Safety fallback.
+			return uintptr(win32.S_OK)
+		}
+		parent := tree.NodeByIndex(int(node.ParentIndex))
+		if parent != nil && parent.ID == ep.bridge.rootNodeID {
+			// Parent is the synthetic root → return the root UIA provider.
 			rp := ep.bridge.root
 			atomic.AddInt32(&rp.refCount, 1)
 			*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&rp.vtblFragment))
-		} else {
-			parent := tree.NodeByIndex(int(node.ParentIndex))
-			if parent != nil {
-				pp := ep.bridge.getOrCreateProvider(parent.ID)
-				if pp != nil {
-					atomic.AddInt32(&pp.refCount, 1)
-					*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&pp.vtblFragment))
-				}
+		} else if parent != nil {
+			pp := ep.bridge.providerFor(parent.ID)
+			if pp != nil {
+				atomic.AddInt32(&pp.refCount, 1)
+				*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&pp.vtblFragment))
 			}
 		}
 
@@ -239,7 +242,7 @@ func elemNavigate(this uintptr, direction win32.NavigateDirection, pRetVal **win
 		if node.NextSibling >= 0 {
 			sibling := tree.NodeByIndex(int(node.NextSibling))
 			if sibling != nil {
-				sp := ep.bridge.getOrCreateProvider(sibling.ID)
+				sp := ep.bridge.providerFor(sibling.ID)
 				if sp != nil {
 					atomic.AddInt32(&sp.refCount, 1)
 					*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&sp.vtblFragment))
@@ -251,7 +254,7 @@ func elemNavigate(this uintptr, direction win32.NavigateDirection, pRetVal **win
 		if node.PrevSibling >= 0 {
 			sibling := tree.NodeByIndex(int(node.PrevSibling))
 			if sibling != nil {
-				sp := ep.bridge.getOrCreateProvider(sibling.ID)
+				sp := ep.bridge.providerFor(sibling.ID)
 				if sp != nil {
 					atomic.AddInt32(&sp.refCount, 1)
 					*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&sp.vtblFragment))
@@ -263,7 +266,7 @@ func elemNavigate(this uintptr, direction win32.NavigateDirection, pRetVal **win
 		if node.FirstChild >= 0 {
 			child := tree.NodeByIndex(int(node.FirstChild))
 			if child != nil {
-				cp := ep.bridge.getOrCreateProvider(child.ID)
+				cp := ep.bridge.providerFor(child.ID)
 				if cp != nil {
 					atomic.AddInt32(&cp.refCount, 1)
 					*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&cp.vtblFragment))
@@ -275,7 +278,7 @@ func elemNavigate(this uintptr, direction win32.NavigateDirection, pRetVal **win
 		children := tree.Children(node)
 		if len(children) > 0 {
 			last := children[len(children)-1]
-			lp := ep.bridge.getOrCreateProvider(last.ID)
+			lp := ep.bridge.providerFor(last.ID)
 			if lp != nil {
 				atomic.AddInt32(&lp.refCount, 1)
 				*pRetVal = (*win32.IRawElementProviderFragment)(unsafe.Pointer(&lp.vtblFragment))

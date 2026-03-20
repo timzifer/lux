@@ -13,12 +13,13 @@ import (
 // UIABridge coordinates the Windows UIA accessibility bridge.
 // It manages the root provider, element providers, and access tree state.
 type UIABridge struct {
-	hwnd      uintptr
-	root      *rootProvider
-	mu        sync.RWMutex
-	tree      a11y.AccessTree
-	providers map[a11y.AccessNodeID]*elementProvider
-	send      func(any) // routes actions to the app loop
+	hwnd       uintptr
+	root       *rootProvider
+	mu         sync.RWMutex
+	tree       a11y.AccessTree
+	rootNodeID a11y.AccessNodeID // ID of synthetic root node (tree.Nodes[0])
+	providers  map[a11y.AccessNodeID]*elementProvider
+	send       func(any) // routes actions to the app loop
 }
 
 // NewUIABridge creates a UIA bridge for the given window.
@@ -42,15 +43,29 @@ func (b *UIABridge) RootProvider() unsafe.Pointer {
 func (b *UIABridge) UpdateTree(tree a11y.AccessTree) {
 	b.mu.Lock()
 
-	// Track which nodes still exist for pruning.
 	tree.EnsureIndex()
 	oldTree := b.tree
 	b.tree = tree
 
+	// Remember the root node ID (synthetic root at index 0).
+	if len(tree.Nodes) > 0 {
+		b.rootNodeID = tree.Nodes[0].ID
+	}
+
 	// Prune providers for nodes no longer in the tree.
+	// Skip the root node (index 0) — it maps to the root UIA provider, not an element provider.
 	for id := range b.providers {
 		if tree.FindByID(id) == nil {
 			delete(b.providers, id)
+		}
+	}
+
+	// Pre-create providers for all nodes (except the root node at index 0)
+	// so that navigation callbacks only need read access.
+	for i := 1; i < len(tree.Nodes); i++ {
+		id := tree.Nodes[i].ID
+		if _, exists := b.providers[id]; !exists {
+			b.providers[id] = newElementProvider(b, id)
 		}
 	}
 
@@ -70,7 +85,7 @@ func (b *UIABridge) UpdateTree(tree a11y.AccessTree) {
 func (b *UIABridge) NotifyFocus(nodeID a11y.AccessNodeID) {
 	b.mu.Lock()
 	b.tree.FocusedID = nodeID
-	ep := b.getOrCreateProviderLocked(nodeID)
+	ep := b.ensureProvider(nodeID)
 	b.mu.Unlock()
 
 	if ep != nil {
@@ -84,7 +99,7 @@ func (b *UIABridge) NotifyFocus(nodeID a11y.AccessNodeID) {
 // NotifyLiveRegion raises a live-region changed event.
 func (b *UIABridge) NotifyLiveRegion(nodeID a11y.AccessNodeID, text string) {
 	b.mu.RLock()
-	ep := b.getOrCreateProviderLocked(nodeID)
+	ep := b.providerFor(nodeID)
 	b.mu.RUnlock()
 
 	if ep != nil {
@@ -103,25 +118,15 @@ func (b *UIABridge) Destroy() {
 	b.root = nil
 }
 
-// getOrCreateProvider returns the provider for the given node ID,
-// creating one if necessary. Must be called with at least a read lock.
-func (b *UIABridge) getOrCreateProvider(nodeID a11y.AccessNodeID) *elementProvider {
-	if ep, ok := b.providers[nodeID]; ok {
-		return ep
-	}
-	// Need write access to create — upgrade from RLock by doing the
-	// creation optimistically. This is safe because providers map is
-	// only modified under write lock in UpdateTree, and here under
-	// read lock we only add (no concurrent map write).
-	// For true safety, this should be called under write lock.
-	ep := newElementProvider(b, nodeID)
-	b.providers[nodeID] = ep
-	return ep
+// providerFor returns the pre-created provider for the given node ID.
+// Must be called with at least a read lock held. Returns nil if not found
+// (e.g. for the root node which maps to the root UIA provider).
+func (b *UIABridge) providerFor(nodeID a11y.AccessNodeID) *elementProvider {
+	return b.providers[nodeID]
 }
 
-// getOrCreateProviderLocked is like getOrCreateProvider but assumes
-// the caller holds the write lock.
-func (b *UIABridge) getOrCreateProviderLocked(nodeID a11y.AccessNodeID) *elementProvider {
+// ensureProvider returns or creates a provider under write lock.
+func (b *UIABridge) ensureProvider(nodeID a11y.AccessNodeID) *elementProvider {
 	if ep, ok := b.providers[nodeID]; ok {
 		return ep
 	}

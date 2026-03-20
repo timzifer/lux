@@ -120,19 +120,19 @@ func TestBuildAccessTree_TreeNavigation(t *testing.T) {
 	reconciler := NewReconciler()
 	accessTree := BuildAccessTree(tree, reconciler, a11y.Rect{})
 
-	// Column's children are walked flat (no wrapper node for the box itself).
-	// We expect at least 2 nodes: a text node and a button node.
-	if len(accessTree.Nodes) < 2 {
-		t.Fatalf("expected at least 2 nodes, got %d", len(accessTree.Nodes))
+	// Synthetic root + text "Header" + button "Action" + button's text content.
+	if len(accessTree.Nodes) < 3 {
+		t.Fatalf("expected at least 3 nodes, got %d", len(accessTree.Nodes))
 	}
 
-	// Both should be top-level (parentIndex == -1) since box children are inlined.
-	for i, n := range accessTree.Nodes {
-		if n.ParentIndex != -1 {
-			// Button children (the text content inside button) will have a parent.
-			continue
-		}
-		_ = i
+	// Root should have children (the text and button are under the synthetic root).
+	root := accessTree.Root()
+	if root == nil {
+		t.Fatal("expected root node")
+	}
+	children := accessTree.Children(root)
+	if len(children) < 2 {
+		t.Fatalf("expected at least 2 children of root, got %d", len(children))
 	}
 
 	// Verify we can find both by role/label.
@@ -154,7 +154,11 @@ func TestBuildAccessTree_EmptyTree(t *testing.T) {
 	tree := Empty()
 	reconciler := NewReconciler()
 	accessTree := BuildAccessTree(tree, reconciler, a11y.Rect{})
-	if len(accessTree.Nodes) != 0 {
-		t.Errorf("expected 0 nodes for empty tree, got %d", len(accessTree.Nodes))
+	// Always has the synthetic root node at index 0.
+	if len(accessTree.Nodes) != 1 {
+		t.Errorf("expected 1 node (synthetic root) for empty tree, got %d", len(accessTree.Nodes))
+	}
+	if accessTree.Root().Node.Role != a11y.RoleGroup {
+		t.Errorf("expected root role RoleGroup, got %d", accessTree.Root().Node.Role)
 	}
 }
