@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/platform"
 )
@@ -60,6 +61,9 @@ type Platform struct {
 	// mainWork receives closures to execute on the main thread.
 	// Dialog methods send work here; the event loop picks it up.
 	mainWork chan func()
+
+	// Accessibility bridge.
+	axBridge *AXBridge
 
 	// Multi-window support.
 	windows map[uint32]*windowState
@@ -519,8 +523,28 @@ func keyCodeToName(code uint16) string {
 	}
 }
 
+// A11yBridge returns the macOS accessibility bridge, creating it on first call.
+func (p *Platform) A11yBridge() a11y.A11yBridge {
+	if p.axBridge == nil && p.view != 0 {
+		p.axBridge = NewAXBridge(p.view, nil)
+	}
+	return p.axBridge
+}
+
+// SetA11ySend sets the send function for the accessibility bridge to route actions
+// to the app loop.
+func (p *Platform) SetA11ySend(send func(any)) {
+	if p.axBridge != nil {
+		p.axBridge.send = send
+	}
+}
+
 // Destroy releases Cocoa resources.
 func (p *Platform) Destroy() {
+	if p.axBridge != nil {
+		p.axBridge.Destroy()
+		p.axBridge = nil
+	}
 	if p.window != 0 {
 		pool := newAutoreleasePool()
 		msgSendVoid(p.window, sel("close"))

@@ -181,6 +181,17 @@ func (d *EventDispatcher) RegisterWidgetBounds(uid UID, bounds draw.Rect) {
 	d.nextBounds[uid] = bounds
 }
 
+// BoundsForWidget returns the screen bounds for a widget UID, if known.
+func (d *EventDispatcher) BoundsForWidget(uid UID) (draw.Rect, bool) {
+	b, ok := d.widgetBounds[uid]
+	return b, ok
+}
+
+// widgetBoundsCount returns the number of tracked widget bounds.
+func (d *EventDispatcher) widgetBoundsCount() int {
+	return len(d.widgetBounds)
+}
+
 // SwapBounds promotes nextBounds to widgetBounds and clears nextBounds.
 // Call this after the layout pass completes.
 func (d *EventDispatcher) SwapBounds() {

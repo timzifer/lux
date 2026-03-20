@@ -318,6 +318,11 @@ func cStringToGo(ptr uintptr) string {
 // Used by the makeBackingLayer callback to return the correct layer per view.
 var viewMetalLayers sync.Map
 
+// registerLuxViewClassHooks is a list of hooks invoked just before
+// objc_registerClassPair in registerLuxViewClass. Each hook can add
+// additional ObjC methods to the LuxMetalView class (e.g. accessibility overrides).
+var registerLuxViewClassHooks []func(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.CallInterface)
+
 // registerLuxViewClass creates a custom NSView subclass "LuxMetalView" that
 // overrides makeBackingLayer to return a CAMetalLayer and wantsUpdateLayer
 // to return YES. This is equivalent to the CGo LuxView in cocoa.m.
@@ -407,6 +412,11 @@ func registerLuxViewClass(metalLayerPtr *uintptr) uintptr {
 		[]unsafe.Pointer{unsafe.Pointer(&newClass), unsafe.Pointer(&acceptsFirstResponderSel),
 			unsafe.Pointer(&acceptsFirstResponderIMP), unsafe.Pointer(&acceptsFirstResponderTypesPtr)})
 	runtime.KeepAlive(acceptsFirstResponderTypes)
+
+	// Invoke hooks to add additional methods (e.g. accessibility overrides).
+	for _, hook := range registerLuxViewClassHooks {
+		hook(newClass, fnAddMethod, &cifAddMethod)
+	}
 
 	// objc_registerClassPair(cls)
 	var cifRegister types.CallInterface
