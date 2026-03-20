@@ -23,7 +23,8 @@
       "Bash(go list:*)",
       "Bash(go mod:*)",
       "Bash(cat:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(ls:*)"
     ]
   }
 }

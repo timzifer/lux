@@ -169,13 +169,15 @@ func (e *nativeCommandEncoder) Finish() CommandBuffer { return nil }
 
 type nativeRenderPass struct{ handle C.WGPURenderPassEncoder }
 
-func (p *nativeRenderPass) SetPipeline(pipeline RenderPipeline)                              {}
-func (p *nativeRenderPass) SetBindGroup(index uint32, group BindGroup)                       {}
-func (p *nativeRenderPass) SetVertexBuffer(slot uint32, buffer Buffer, offset, size uint64)  {}
-func (p *nativeRenderPass) Draw(vertexCount, instanceCount, firstVertex, firstInstance uint32) {}
+func (p *nativeRenderPass) SetPipeline(pipeline RenderPipeline)                                         {}
+func (p *nativeRenderPass) SetBindGroup(index uint32, group BindGroup)                                  {}
+func (p *nativeRenderPass) SetVertexBuffer(slot uint32, buffer Buffer, offset, size uint64)             {}
+func (p *nativeRenderPass) SetIndexBuffer(buffer Buffer, format IndexFormat, offset, size uint64)       {}
+func (p *nativeRenderPass) Draw(vertexCount, instanceCount, firstVertex, firstInstance uint32)          {}
 func (p *nativeRenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance uint32) {}
-func (p *nativeRenderPass) SetScissorRect(x, y, width, height uint32)                                  {}
-func (p *nativeRenderPass) End()                                                                        {}
+func (p *nativeRenderPass) DrawIndexed(int32, int32, int32, int32, uint32)                                         {}
+func (p *nativeRenderPass) SetScissorRect(x, y, width, height uint32)                                               {}
+func (p *nativeRenderPass) End()                                                                                     {}
 
 type nativeQueue struct{ handle C.WGPUQueue }
 

@@ -50,12 +50,14 @@ func (c *SceneCanvas) emitClipIfChanged() {
 		RectIdx:      len(c.scene.Rects),
 		TextIdx:      len(c.scene.TexturedGlyphs),
 		MSDFIdx:      len(c.scene.MSDFGlyphs),
+		GradientIdx:  len(c.scene.GradientRects),
 		FullViewport: fullViewport,
 	}
 	if c.overlayMode {
 		batch.RectIdx = len(c.scene.OverlayRects)
 		batch.TextIdx = len(c.scene.OverlayTexturedGlyphs)
 		batch.MSDFIdx = len(c.scene.OverlayMSDFGlyphs)
+		batch.GradientIdx = len(c.scene.OverlayGradientRects)
 		c.scene.OverlayClipBatches = append(c.scene.OverlayClipBatches, batch)
 	} else {
 		c.scene.ClipBatches = append(c.scene.ClipBatches, batch)
@@ -100,6 +102,11 @@ func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
 	if c.isClipped(r.X, r.Y, r.W, r.H) {
 		return
 	}
+	// Route gradient paints to the gradient pipeline.
+	if paint.Kind == draw.PaintLinearGradient || paint.Kind == draw.PaintRadialGradient {
+		c.appendGradientRect(r, 0, paint)
+		return
+	}
 	c.emitClipIfChanged()
 	// Intersect with clip rect to clamp visible portion.
 	x, y, w, h := r.X, r.Y, r.W, r.H
@@ -135,6 +142,11 @@ func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Pain
 	if c.isClipped(r.X, r.Y, r.W, r.H) {
 		return
 	}
+	// Route gradient paints to the gradient pipeline.
+	if paint.Kind == draw.PaintLinearGradient || paint.Kind == draw.PaintRadialGradient {
+		c.appendGradientRect(r, radius, paint)
+		return
+	}
 	c.emitClipIfChanged()
 	x, y, w, h := r.X, r.Y, r.W, r.H
 	if len(c.clips) > 0 {
@@ -162,6 +174,52 @@ func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Pain
 		c.scene.OverlayRects = append(c.scene.OverlayRects, rect)
 	} else {
 		c.scene.Rects = append(c.scene.Rects, rect)
+	}
+}
+
+// appendGradientRect appends a gradient-filled rect to the scene.
+func (c *SceneCanvas) appendGradientRect(r draw.Rect, radius float32, paint draw.Paint) {
+	c.emitClipIfChanged()
+	gr := draw.DrawGradientRect{
+		X: int(r.X), Y: int(r.Y), W: int(r.W), H: int(r.H),
+		Radius: radius,
+		Kind:   paint.Kind,
+	}
+	// Gradient coordinates in Paint are element-local; offset to screen space.
+	ox, oy := r.X, r.Y
+	switch paint.Kind {
+	case draw.PaintLinearGradient:
+		if paint.Linear != nil {
+			gr.StartX = paint.Linear.Start.X + ox
+			gr.StartY = paint.Linear.Start.Y + oy
+			gr.EndX = paint.Linear.End.X + ox
+			gr.EndY = paint.Linear.End.Y + oy
+			for i, s := range paint.Linear.Stops {
+				if i >= 8 {
+					break
+				}
+				gr.Stops[i] = s
+				gr.StopCount = i + 1
+			}
+		}
+	case draw.PaintRadialGradient:
+		if paint.Radial != nil {
+			gr.CenterX = paint.Radial.Center.X + ox
+			gr.CenterY = paint.Radial.Center.Y + oy
+			gr.GradRadius = paint.Radial.Radius
+			for i, s := range paint.Radial.Stops {
+				if i >= 8 {
+					break
+				}
+				gr.Stops[i] = s
+				gr.StopCount = i + 1
+			}
+		}
+	}
+	if c.overlayMode {
+		c.scene.OverlayGradientRects = append(c.scene.OverlayGradientRects, gr)
+	} else {
+		c.scene.GradientRects = append(c.scene.GradientRects, gr)
 	}
 }
 

@@ -43,6 +43,8 @@ var sectionIDs = []string{
 	"surfaces",
 	// Phase 7 — Dialogs
 	"dialogs",
+	// Phase E — Gradients
+	"gradients",
 }
 
 func sectionLabel(id string) string {
@@ -126,6 +128,9 @@ func sectionLabel(id string) string {
 	// Phase 7
 	case "dialogs":
 		return "Dialogs"
+	// Phase E
+	case "gradients":
+		return "Gradients"
 	default:
 		return id
 	}
@@ -677,6 +682,9 @@ func sectionContent(m Model) ui.Element {
 	// Phase 7
 	case "dialogs":
 		return dialogsSection(m)
+	// Phase E
+	case "gradients":
+		return gradientsSection()
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -2132,7 +2140,7 @@ func surfacesSection(pyramid *PyramidSurface) ui.Element {
 		ui.Text("  • Fallback: OSR → CPU-Copy → Upload"),
 		ui.Spacer(12),
 
-		ui.Text("OpenGL RGB Cube (drag to rotate):"),
+		ui.Text("RGB Cube (drag to rotate):"),
 		ui.Spacer(4),
 		ui.Surface(1, pyramid, 400, 300),
 		ui.Spacer(12),
@@ -2141,6 +2149,57 @@ func surfacesSection(pyramid *PyramidSurface) ui.Element {
 		ui.Spacer(4),
 		ui.Text("  Mouse/Key events in surface area → SurfaceMouseMsg/SurfaceKeyMsg"),
 		ui.Text("  Routed via SurfaceProvider.HandleMsg()"),
+	)
+}
+
+// ── Gradients Section (Phase E) ──────────────────────────────────
+
+func gradientsSection() ui.Element {
+	return ui.Column(
+		sectionHeader("Gradients (Phase E)"),
+		ui.Text("GPU-rendered gradient fills via the gradient pipeline:"),
+		ui.Spacer(12),
+
+		// Linear gradient: 2-stop blue→indigo
+		ui.Text("Linear Gradient (2 stops):"),
+		ui.Spacer(4),
+		ui.GradientRect(200, 60, 8, draw.LinearGradientPaint(
+			draw.Pt(0, 0), draw.Pt(200, 0),
+			draw.GradientStop{Offset: 0, Color: draw.Hex("#3b82f6")},
+			draw.GradientStop{Offset: 1, Color: draw.Hex("#6366f1")},
+		)),
+		ui.Spacer(12),
+
+		// Linear gradient: 4-stop rainbow
+		ui.Text("Linear Gradient (4 stops):"),
+		ui.Spacer(4),
+		ui.GradientRect(200, 60, 8, draw.LinearGradientPaint(
+			draw.Pt(0, 0), draw.Pt(200, 0),
+			draw.GradientStop{Offset: 0.0, Color: draw.Hex("#ef4444")},
+			draw.GradientStop{Offset: 0.33, Color: draw.Hex("#eab308")},
+			draw.GradientStop{Offset: 0.66, Color: draw.Hex("#22c55e")},
+			draw.GradientStop{Offset: 1.0, Color: draw.Hex("#3b82f6")},
+		)),
+		ui.Spacer(12),
+
+		// Radial gradient
+		ui.Text("Radial Gradient:"),
+		ui.Spacer(4),
+		ui.GradientRect(200, 200, 8, draw.RadialGradientPaint(
+			draw.Pt(100, 100), 100,
+			draw.GradientStop{Offset: 0, Color: draw.Hex("#ffffff")},
+			draw.GradientStop{Offset: 1, Color: draw.Hex("#09090b")},
+		)),
+		ui.Spacer(12),
+
+		// Sharp rect (no radius)
+		ui.Text("Sharp Linear Gradient (no radius):"),
+		ui.Spacer(4),
+		ui.GradientRect(200, 40, 0, draw.LinearGradientPaint(
+			draw.Pt(0, 0), draw.Pt(0, 40),
+			draw.GradientStop{Offset: 0, Color: draw.Hex("#f97316")},
+			draw.GradientStop{Offset: 1, Color: draw.Hex("#dc2626")},
+		)),
 	)
 }
 
@@ -2284,7 +2343,8 @@ func main() {
 		},
 	})
 
-	if err := app.RunWithCmd(initial, update, view,
+	// Phase E: Connect PyramidSurface to WGPU renderer (if available).
+	runOpts := []app.Option{
 		app.WithTheme(theme.Default),
 		app.WithTitle("Lux Kitchen Sink"),
 		app.WithSize(900, 700),
@@ -2295,7 +2355,11 @@ func main() {
 		app.WithGlobalHandler(keyLogger),
 		// Phase 2: State Persistence (RFC §3.4)
 		persistence,
-	); err != nil {
+	}
+	if rf := pyramidRendererFactory(initial.Pyramid); rf != nil {
+		runOpts = append(runOpts, app.WithRenderer(rf))
+	}
+	if err := app.RunWithCmd(initial, update, view, runOpts...); err != nil {
 		log.Fatal(err)
 	}
 }

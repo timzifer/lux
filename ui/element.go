@@ -296,6 +296,11 @@ func Divider() Element { return dividerElement{} }
 // Spacer creates invisible spacing of the given size in dp (RFC-003 §4.1).
 func Spacer(size float32) Element { return spacerElement{Size: size} }
 
+// GradientRect renders a gradient-filled rectangle of a fixed size (Phase E).
+func GradientRect(width, height, radius float32, paint draw.Paint) Element {
+	return gradientRectElement{Width: width, Height: height, Radius: radius, Paint: paint}
+}
+
 // Icon renders a text symbol at the theme's label size (RFC-003 §4.1).
 // The name is rendered as-is (typically a single character or emoji).
 func Icon(name string) Element { return iconElement{Name: name, Size: 0} }
@@ -558,6 +563,15 @@ func (keyedElement) isElement() {}
 type dividerElement struct{}
 
 func (dividerElement) isElement() {}
+
+// gradientRectElement renders a gradient-filled rectangle of a fixed size.
+type gradientRectElement struct {
+	Width, Height float32
+	Radius        float32
+	Paint         draw.Paint
+}
+
+func (gradientRectElement) isElement() {}
 
 type spacerElement struct{ Size float32 }
 
@@ -1161,6 +1175,23 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 	case spacerElement:
 		s := int(node.Size)
 		return bounds{X: area.X, Y: area.Y, W: s, H: s, Baseline: s}
+
+	case gradientRectElement:
+		w := int(node.Width)
+		h := int(node.Height)
+		if w > area.W {
+			w = area.W
+		}
+		if h > area.H {
+			h = area.H
+		}
+		r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+		if node.Radius > 0 {
+			canvas.FillRoundRect(r, node.Radius, node.Paint)
+		} else {
+			canvas.FillRect(r, node.Paint)
+		}
+		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
 	case iconElement:
 		size := node.Size

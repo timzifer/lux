@@ -60,12 +60,12 @@ Die Datei wird auf Deutsch verfasst, im selben Stil wie die bestehenden RFCs.
 - Alternative: wgpu-native Calls über Shared Memory / Command-Buffer
 
 ### §8 Fehlende Renderer-Features
-- Scissor/Clip-Rects: `RenderPass.SetScissorRect()` für UI-Clipping
-- Per-Glyph-Farbe: Vertex-Attribut statt Uniform (ermöglicht farbigen Text in einem Draw-Call)
-- Surface-Pipeline: Texture-Blit für externe Surfaces (WebView, Video)
-- Atlas-Resize: Texture-Neuerststellung + BindGroup-Update bei Atlas-Wachstum
-- Gradient-Support: Linear/Radial Gradients als eigene Pipeline
-- Blur-Pipeline: Gaussian Blur via Compute-Shader oder Multi-Pass
+- ✅ Scissor/Clip-Rects: `RenderPass.SetScissorRect()` für UI-Clipping (Phase B)
+- ✅ Per-Glyph-Farbe: Vertex-Attribut statt Uniform (Phase A)
+- ✅ Surface-Pipeline: Texture-Blit für externe Surfaces (Phase E)
+- ✅ Atlas-Resize: Texture-Neuerststellung + BindGroup-Update bei Atlas-Wachstum (Phase A)
+- ✅ Gradient-Support: Linear/Radial Gradients als eigene Pipeline (Phase E)
+- Blur-Pipeline: Gaussian Blur via Compute-Shader oder Multi-Pass (TODO)
 
 ### §9 Present-Mode & Frame-Pacing
 - Fifo (VSync) als Default (bereits gesetzt)
@@ -114,11 +114,15 @@ Die Datei wird auf Deutsch verfasst, im selben Stil wie die bestehenden RFCs.
 - Validation-Toggle
 - Shader-Precompilation
 
-**Phase E: Erweiterte Features**
-- Gradient-Pipeline
-- Blur via Compute-Shader
-- Surface-Pipeline für externes Content
-- Multi-Window-Support
+**Phase E: Erweiterte Features** ✅ (Surface-Pipeline, Gradient-Pipeline, WGPU-Cube)
+- ✅ Surface-Pipeline für externes Content (Texture-Registry, Blit-Shader, `RegisterSurfaceTexture` API)
+- ✅ Gradient-Pipeline (Linear + Radial, bis 8 Stops, SDF-Rounded-Corners, per-Gradient Uniform mit 512-Byte-Stride)
+- ✅ WGPU-Cube Demo (`pyramid_wgpu.go`, Offscreen-Render mit Depth/Stencil, Index-Buffer, Back-Face-Culling)
+- ✅ wgpu-Interface erweitert: `VertexFormatFloat32x3`, `DepthStencilState`, `SetIndexBuffer`/`DrawIndexed`, `CullMode`/`FrontFace`
+- ✅ `ui.GradientRect` Element + Canvas-Routing (`FillRect`/`FillRoundRect` → Gradient-Pipeline bei Gradient-Paint)
+- ✅ Build-Tag-Matrix: `pyramid_wgpu.go` (gogpu), `pyramid.go` (OpenGL, Linux/macOS), `pyramid_noop.go` (nogui/Windows-default)
+- TODO: Blur via Compute-Shader
+- TODO: Multi-Window-Support
 
 ### Anhang: Kritische Dateien
 - `internal/wgpu/wgpu.go` — Interface-Definitionen (stabil, kaum Änderungen)

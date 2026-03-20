@@ -75,8 +75,10 @@ type noopRenderPass struct{}
 func (p *noopRenderPass) SetPipeline(RenderPipeline)                              {}
 func (p *noopRenderPass) SetBindGroup(uint32, BindGroup)                          {}
 func (p *noopRenderPass) SetVertexBuffer(uint32, Buffer, uint64, uint64)          {}
+func (p *noopRenderPass) SetIndexBuffer(Buffer, IndexFormat, uint64, uint64)      {}
 func (p *noopRenderPass) Draw(uint32, uint32, uint32, uint32)                     {}
 func (p *noopRenderPass) DrawInstanced(uint32, uint32, uint32, uint32)            {}
+func (p *noopRenderPass) DrawIndexed(int32, int32, int32, int32, uint32)          {}
 func (p *noopRenderPass) SetScissorRect(uint32, uint32, uint32, uint32)           {}
 func (p *noopRenderPass) End()                                                    {}
 

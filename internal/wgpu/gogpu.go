@@ -156,9 +156,26 @@ func (d *goDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) RenderPi
 			Buffers:    mapVertexBufferLayouts(desc.Vertex.Buffers),
 		},
 		Primitive: gpuwgpu.PrimitiveState{
-			Topology: mapPrimitiveTopology(desc.Primitive.Topology),
+			Topology:  mapPrimitiveTopology(desc.Primitive.Topology),
+			CullMode:  mapCullMode(desc.Primitive.CullMode),
+			FrontFace: mapFrontFace(desc.Primitive.FrontFace),
 		},
 		Multisample: gputypes.DefaultMultisampleState(),
+	}
+	if desc.DepthStencil != nil {
+		stencilFace := gpuwgpu.StencilFaceState{
+			Compare:     gputypes.CompareFunctionAlways,
+			FailOp:      gpuwgpu.StencilOperationKeep,
+			DepthFailOp: gpuwgpu.StencilOperationKeep,
+			PassOp:      gpuwgpu.StencilOperationKeep,
+		}
+		gdesc.DepthStencil = &gpuwgpu.DepthStencilState{
+			Format:            mapTextureFormat(desc.DepthStencil.Format),
+			DepthWriteEnabled: desc.DepthStencil.DepthWriteEnabled,
+			DepthCompare:      mapCompareFunction(desc.DepthStencil.DepthCompare),
+			StencilFront:      stencilFace,
+			StencilBack:       stencilFace,
+		}
 	}
 	if sm, ok := desc.Vertex.Module.(*goShaderModule); ok && sm.module != nil {
 		gdesc.Vertex.Module = sm.module
@@ -538,9 +555,21 @@ func (e *goCommandEncoder) BeginRenderPass(desc *RenderPassDescriptor) RenderPas
 			colorAttachments[i].View = gv.view
 		}
 	}
-	rp, err := e.encoder.BeginRenderPass(&gpuwgpu.RenderPassDescriptor{
+	rpDesc := &gpuwgpu.RenderPassDescriptor{
 		ColorAttachments: colorAttachments,
-	})
+	}
+	if desc.DepthStencilAttachment != nil {
+		dsa := &gpuwgpu.RenderPassDepthStencilAttachment{
+			DepthLoadOp:     mapLoadOp(desc.DepthStencilAttachment.DepthLoadOp),
+			DepthStoreOp:    mapStoreOp(desc.DepthStencilAttachment.DepthStoreOp),
+			DepthClearValue: desc.DepthStencilAttachment.DepthClearValue,
+		}
+		if gv, ok := desc.DepthStencilAttachment.View.(*goTextureView); ok && gv.view != nil {
+			dsa.View = gv.view
+		}
+		rpDesc.DepthStencilAttachment = dsa
+	}
+	rp, err := e.encoder.BeginRenderPass(rpDesc)
 	if err != nil {
 		log.Printf("wgpu/gogpu: BeginRenderPass failed: %v", err)
 		return &goRenderPass{}
@@ -594,6 +623,19 @@ func (p *goRenderPass) SetVertexBuffer(slot uint32, buffer Buffer, offset, size 
 	}
 }
 
+func (p *goRenderPass) SetIndexBuffer(buffer Buffer, format IndexFormat, offset, size uint64) {
+	if p.pass == nil {
+		return
+	}
+	if gb, ok := buffer.(*goBuffer); ok && gb.buffer != nil {
+		f := gputypes.IndexFormatUint16
+		if format == IndexFormatUint32 {
+			f = gputypes.IndexFormatUint32
+		}
+		p.pass.SetIndexBuffer(gb.buffer, f, offset)
+	}
+}
+
 func (p *goRenderPass) Draw(vertexCount, instanceCount, firstVertex, firstInstance uint32) {
 	if p.pass == nil {
 		return
@@ -606,6 +648,13 @@ func (p *goRenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex, fi
 		return
 	}
 	p.pass.Draw(vertexCount, instanceCount, firstVertex, firstInstance)
+}
+
+func (p *goRenderPass) DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex int32, firstInstance uint32) {
+	if p.pass == nil {
+		return
+	}
+	p.pass.DrawIndexed(uint32(indexCount), uint32(instanceCount), uint32(firstIndex), baseVertex, firstInstance)
 }
 
 func (p *goRenderPass) SetScissorRect(x, y, width, height uint32) {
@@ -738,6 +787,8 @@ func mapTextureFormat(f TextureFormat) gpuwgpu.TextureFormat {
 		return gpuwgpu.TextureFormatRGBA8Unorm
 	case TextureFormatR8Unorm:
 		return gputypes.TextureFormatR8Unorm
+	case TextureFormatDepth24Plus:
+		return gputypes.TextureFormatDepth24Plus
 	default:
 		return gpuwgpu.TextureFormatRGBA8Unorm
 	}
@@ -797,6 +848,8 @@ func mapVertexFormat(f VertexFormat) gputypes.VertexFormat {
 		return gputypes.VertexFormatFloat32x4
 	case VertexFormatFloat32:
 		return gputypes.VertexFormatFloat32
+	case VertexFormatFloat32x3:
+		return gputypes.VertexFormatFloat32x3
 	default:
 		return gputypes.VertexFormatFloat32x4
 	}
@@ -978,4 +1031,47 @@ func mapColorTargets(targets []ColorTargetState) []gpuwgpu.ColorTargetState {
 		}
 	}
 	return result
+}
+
+func mapCompareFunction(f CompareFunction) gputypes.CompareFunction {
+	switch f {
+	case CompareFunctionNever:
+		return gputypes.CompareFunctionNever
+	case CompareFunctionLess:
+		return gputypes.CompareFunctionLess
+	case CompareFunctionEqual:
+		return gputypes.CompareFunctionEqual
+	case CompareFunctionLessEqual:
+		return gputypes.CompareFunctionLessEqual
+	case CompareFunctionGreater:
+		return gputypes.CompareFunctionGreater
+	case CompareFunctionNotEqual:
+		return gputypes.CompareFunctionNotEqual
+	case CompareFunctionGreaterEqual:
+		return gputypes.CompareFunctionGreaterEqual
+	case CompareFunctionAlways:
+		return gputypes.CompareFunctionAlways
+	default:
+		return gputypes.CompareFunctionAlways
+	}
+}
+
+func mapCullMode(m CullMode) gputypes.CullMode {
+	switch m {
+	case CullModeFront:
+		return gputypes.CullModeFront
+	case CullModeBack:
+		return gputypes.CullModeBack
+	default:
+		return gputypes.CullModeNone
+	}
+}
+
+func mapFrontFace(f FrontFace) gputypes.FrontFace {
+	switch f {
+	case FrontFaceCW:
+		return gputypes.FrontFaceCW
+	default:
+		return gputypes.FrontFaceCCW
+	}
 }

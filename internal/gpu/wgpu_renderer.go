@@ -37,6 +37,8 @@ type WGPURenderer struct {
 	rectPipeline     wgpu.RenderPipeline
 	textInstPipeline wgpu.RenderPipeline // instanced text pipeline
 	msdfInstPipeline wgpu.RenderPipeline // instanced MSDF pipeline
+	surfPipeline     wgpu.RenderPipeline // surface texture blit pipeline
+	gradPipeline     wgpu.RenderPipeline // gradient rectangle pipeline
 
 	// Shared resources
 	projBuffer     wgpu.Buffer   // 64 bytes: mat4x4 projection
@@ -52,11 +54,23 @@ type WGPURenderer struct {
 
 	// Bind group layouts (kept for recreating bind groups on atlas resize)
 	textLayout     wgpu.BindGroupLayout
+	surfTexLayout  wgpu.BindGroupLayout // surface texture bind group layout (group 1)
+	gradLayout     wgpu.BindGroupLayout // gradient params bind group layout (group 1)
 
 	// Bind groups
 	projBindGroup  wgpu.BindGroup
 	textBindGroup  wgpu.BindGroup
 	msdfBindGroup  wgpu.BindGroup
+
+	// Surface texture registry
+	surfaceTextures map[draw.TextureID]wgpu.TextureView
+	surfSampler     wgpu.Sampler
+	surfInstBuffer  wgpu.Buffer // per-surface instance (rect x,y,w,h = 16 bytes)
+
+	// Gradient resources
+	gradUniBuffer    wgpu.Buffer // gradient params uniform buffer (resizable)
+	gradUniBufCap    uint64      // current capacity in bytes
+	gradBindGroups   []wgpu.BindGroup // per-gradient bind groups (rebuilt each frame)
 
 	// CPU-side retained buffers — grow-only, reset to [:0] each frame.
 	rectBuf  []float32
@@ -358,6 +372,94 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 	})
 
+	// --- Surface blit pipeline ---
+
+	surfShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "surface-shader",
+		Source: wgslSurfaceShader,
+	})
+	defer surfShader.Destroy()
+
+	r.surfTexLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "surf-tex-layout",
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &wgpu.TextureBindingLayout{SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D}},
+			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: &wgpu.SamplerBindingLayout{}},
+		},
+	})
+
+	r.surfSampler = device.CreateSampler(&wgpu.SamplerDescriptor{Label: "surface-sampler"})
+
+	// Surface instance buffer (1 rect = 16 bytes).
+	r.surfInstBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "surf-instance",
+		Size:  16,
+		Usage: wgpu.BufferUsageVertex | wgpu.BufferUsageCopyDst,
+	})
+
+	r.surfPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "surface-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     surfShader,
+			EntryPoint: "vs_main",
+			Buffers: []wgpu.VertexBufferLayout{
+				unitQuadLayout,
+				{ArrayStride: 16, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
+					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1}, // rect
+				}},
+			},
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     surfShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.surfTexLayout},
+	})
+
+	// --- Gradient pipeline ---
+
+	gradShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "gradient-shader",
+		Source: wgslGradientShader,
+	})
+	defer gradShader.Destroy()
+
+	r.gradLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "grad-layout",
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
+		},
+	})
+
+	// Gradient uniform buffer — resized per-frame to hold all gradients.
+	// Each gradient = 304 bytes, padded to 512 bytes (256-byte offset alignment).
+	r.gradUniBufCap = 512
+	r.gradUniBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "grad-uniforms",
+		Size:  r.gradUniBufCap,
+		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+	})
+
+	r.gradPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "gradient-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     gradShader,
+			EntryPoint: "vs_main",
+			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout},
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     gradShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.gradLayout},
+	})
+
+	r.surfaceTextures = make(map[draw.TextureID]wgpu.TextureView)
+
 	// Upload initial projection matrix.
 	r.updateProjection()
 
@@ -373,6 +475,26 @@ func (r *WGPURenderer) SetBackgroundColor(c draw.Color) {
 // SetAtlas sets the glyph atlas for textured glyph rendering.
 func (r *WGPURenderer) SetAtlas(a *text.GlyphAtlas) {
 	r.atlas = a
+}
+
+// Device returns the wgpu device for external surface providers.
+func (r *WGPURenderer) Device() wgpu.Device { return r.device }
+
+// Queue returns the wgpu command queue for external surface providers.
+func (r *WGPURenderer) Queue() wgpu.Queue { return r.queue }
+
+// RegisterSurfaceTexture registers an external texture view under the given ID.
+// Surface providers call this to make their rendered texture available for blitting.
+func (r *WGPURenderer) RegisterSurfaceTexture(id draw.TextureID, view wgpu.TextureView) {
+	if r.surfaceTextures == nil {
+		r.surfaceTextures = make(map[draw.TextureID]wgpu.TextureView)
+	}
+	r.surfaceTextures[id] = view
+}
+
+// UnregisterSurfaceTexture removes a previously registered texture.
+func (r *WGPURenderer) UnregisterSurfaceTexture(id draw.TextureID) {
+	delete(r.surfaceTextures, id)
 }
 
 // Resize updates the viewport.
@@ -499,6 +621,42 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		}
 	}
 
+	// Gradients: pre-upload all gradient uniform data and create per-gradient bind groups.
+	// Each gradient occupies 512 bytes (304 data + 208 padding for 256-byte alignment).
+	const gradStride = 512 // bytes
+	const gradStrideF = gradStride / 4 // 128 floats
+	allGrads := append(scene.GradientRects, scene.OverlayGradientRects...)
+	// Destroy previous frame's bind groups.
+	for _, bg := range r.gradBindGroups {
+		bg.Destroy()
+	}
+	r.gradBindGroups = r.gradBindGroups[:0]
+
+	if len(allGrads) > 0 {
+		needed := uint64(len(allGrads)) * gradStride
+		r.ensureGPUBuffer(&r.gradUniBuffer, &r.gradUniBufCap, needed, "grad-uniforms", wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst)
+
+		gradBuf := make([]float32, len(allGrads)*gradStrideF)
+		for i, gr := range allGrads {
+			off := i * gradStrideF
+			packGradientUniform(gradBuf[off:off+76], gr)
+		}
+		r.gradUniBuffer.Write(r.queue, float32SliceToBytes(gradBuf))
+
+		// Create per-gradient bind groups with buffer offsets.
+		for i := range allGrads {
+			bg := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+				Label:  "grad-bg",
+				Layout: r.gradLayout,
+				Entries: []wgpu.BindGroupEntry{
+					{Binding: 0, Buffer: r.gradUniBuffer, Offset: uint64(i) * gradStride, Size: 304},
+				},
+			})
+			r.gradBindGroups = append(r.gradBindGroups, bg)
+		}
+	}
+	mainGradCount := len(scene.GradientRects)
+
 	// --- Phase 2: Record render pass commands ---
 
 	encoder := r.device.CreateCommandEncoder()
@@ -533,13 +691,18 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		int(mainRectCount), mainTextGlyphs, mainMSDFGlyphs,
 		0, 0, msdfGPUOffset, // MSDF starts after all text glyphs in unified buffer
 		totalRectBufSize, glyphBufSize,
+		scene.GradientRects, 0,
 		vpW, vpH)
+
+	// Draw surfaces (between main and overlay).
+	r.drawSurfaces(renderPass, scene.Surfaces, vpW, vpH)
 
 	// Draw overlay content via scissor clip batches.
 	r.drawClipBatches(renderPass, scene.OverlayClipBatches,
 		int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs,
 		int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs,
 		totalRectBufSize, glyphBufSize,
+		scene.OverlayGradientRects, mainGradCount,
 		vpW, vpH)
 
 	renderPass.End()
@@ -618,18 +781,25 @@ func (r *WGPURenderer) Destroy() {
 	r.msdfBindGroup.Destroy()
 	r.projBuffer.Destroy()
 	r.msdfUniBuffer.Destroy()
+	r.gradUniBuffer.Destroy()
 	r.rectVertBuffer.Destroy()
 	r.rectInstBuffer.Destroy()
 	r.glyphInstBuffer.Destroy()
+	r.surfInstBuffer.Destroy()
 	r.atlasView.Destroy()
 	r.atlasTexture.Destroy()
 	r.msdfView.Destroy()
 	r.msdfTexture.Destroy()
 	r.atlasSampler.Destroy()
+	r.surfSampler.Destroy()
 	r.rectPipeline.Destroy()
 	r.textInstPipeline.Destroy()
 	r.msdfInstPipeline.Destroy()
+	r.surfPipeline.Destroy()
+	r.gradPipeline.Destroy()
 	r.textLayout.Destroy()
+	r.surfTexLayout.Destroy()
+	r.gradLayout.Destroy()
 	// Surface must be released before Device — DX12 needs the command queue for waitForGPU.
 	if r.surface != nil {
 		r.surface.Destroy()
@@ -714,9 +884,10 @@ func (r *WGPURenderer) drawClipBatches(
 	totalRects, totalTextGlyphs, totalMSDFGlyphs int,
 	gpuRectOffset, gpuTextGlyphOffset, gpuMSDFGlyphOffset int,
 	rectBufSize, glyphBufSize uint64,
+	gradientRects []draw.DrawGradientRect, gradBindGroupOffset int,
 	vpW, vpH uint32,
 ) {
-	if totalRects == 0 && totalTextGlyphs == 0 && totalMSDFGlyphs == 0 {
+	if totalRects == 0 && totalTextGlyphs == 0 && totalMSDFGlyphs == 0 && len(gradientRects) == 0 {
 		return
 	}
 
@@ -768,6 +939,10 @@ func (r *WGPURenderer) drawClipBatches(
 			setMSDFPipeline()
 			renderPass.DrawInstanced(6, uint32(totalMSDFGlyphs), 0, uint32(gpuMSDFGlyphOffset))
 		}
+		for gi := range gradientRects {
+			r.drawGradientRect(renderPass, gradBindGroupOffset+gi)
+			lastPipeline = 0
+		}
 		return
 	}
 
@@ -777,6 +952,7 @@ func (r *WGPURenderer) drawClipBatches(
 	baseRectIdx := batches[0].RectIdx
 	baseTextIdx := batches[0].TextIdx
 	baseMSDFIdx := batches[0].MSDFIdx
+	baseGradIdx := batches[0].GradientIdx
 
 	for i, batch := range batches {
 		// Set scissor rect.
@@ -797,15 +973,17 @@ func (r *WGPURenderer) drawClipBatches(
 		}
 
 		// Compute draw counts from batch boundaries.
-		var endRectIdx, endTextIdx, endMSDFIdx int
+		var endRectIdx, endTextIdx, endMSDFIdx, endGradIdx int
 		if i+1 < len(batches) {
 			endRectIdx = batches[i+1].RectIdx
 			endTextIdx = batches[i+1].TextIdx
 			endMSDFIdx = batches[i+1].MSDFIdx
+			endGradIdx = batches[i+1].GradientIdx
 		} else {
 			endRectIdx = baseRectIdx + totalRects
 			endTextIdx = baseTextIdx + totalTextGlyphs
 			endMSDFIdx = baseMSDFIdx + totalMSDFGlyphs
+			endGradIdx = baseGradIdx + len(gradientRects)
 		}
 
 		nRects := uint32(endRectIdx - batch.RectIdx)
@@ -829,6 +1007,91 @@ func (r *WGPURenderer) drawClipBatches(
 			setMSDFPipeline()
 			renderPass.DrawInstanced(6, nMSDFGlyphs, 0, msdfFirst)
 		}
+
+		// Draw gradient rects for this batch (1 draw call per gradient).
+		gradStart := batch.GradientIdx - baseGradIdx
+		gradEnd := endGradIdx - baseGradIdx
+		for gi := gradStart; gi < gradEnd && gi < len(gradientRects); gi++ {
+			r.drawGradientRect(renderPass, gradBindGroupOffset+gi)
+			lastPipeline = 0 // gradient changes pipeline state
+		}
+	}
+}
+
+// packGradientUniform writes 76 floats (304 bytes) of gradient uniform data into dst.
+func packGradientUniform(dst []float32, gr draw.DrawGradientRect) {
+	dst[0] = float32(gr.X)
+	dst[1] = float32(gr.Y)
+	dst[2] = float32(gr.W)
+	dst[3] = float32(gr.H)
+	dst[4] = gr.Radius
+	if gr.Kind == draw.PaintRadialGradient {
+		dst[5] = 1.0
+	}
+	dst[6] = float32(gr.StopCount)
+	if gr.Kind == draw.PaintLinearGradient {
+		dst[8] = gr.StartX
+		dst[9] = gr.StartY
+		dst[10] = gr.EndX
+		dst[11] = gr.EndY
+	} else {
+		dst[8] = gr.CenterX
+		dst[9] = gr.CenterY
+		dst[10] = gr.GradRadius
+	}
+	for i := 0; i < gr.StopCount && i < 8; i++ {
+		base := 12 + i*8
+		dst[base+0] = gr.Stops[i].Offset
+		dst[base+1] = gr.Stops[i].Color.R
+		dst[base+2] = gr.Stops[i].Color.G
+		dst[base+3] = gr.Stops[i].Color.B
+		dst[base+4] = gr.Stops[i].Color.A
+	}
+}
+
+// drawGradientRect draws one gradient using the pre-built bind group at the given index.
+func (r *WGPURenderer) drawGradientRect(renderPass wgpu.RenderPass, bindGroupIdx int) {
+	if bindGroupIdx < 0 || bindGroupIdx >= len(r.gradBindGroups) {
+		return
+	}
+	renderPass.SetPipeline(r.gradPipeline)
+	renderPass.SetBindGroup(0, r.projBindGroup)
+	renderPass.SetBindGroup(1, r.gradBindGroups[bindGroupIdx])
+	renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+	renderPass.Draw(6, 1, 0, 0)
+}
+
+// drawSurfaces blits registered surface textures into the render pass.
+func (r *WGPURenderer) drawSurfaces(renderPass wgpu.RenderPass, surfaces []draw.DrawSurface, vpW, vpH uint32) {
+	for _, s := range surfaces {
+		view, ok := r.surfaceTextures[s.TextureID]
+		if !ok || s.TextureID == 0 || view == nil {
+			continue
+		}
+
+		// Upload per-surface instance data (rect).
+		instData := []float32{float32(s.X), float32(s.Y), float32(s.W), float32(s.H)}
+		r.surfInstBuffer.Write(r.queue, float32SliceToBytes(instData))
+
+		// Create per-surface bind group for texture.
+		surfBindGroup := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  "surf-per-draw",
+			Layout: r.surfTexLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Texture: view},
+				{Binding: 1, Sampler: r.surfSampler},
+			},
+		})
+
+		renderPass.SetScissorRect(0, 0, vpW, vpH)
+		renderPass.SetPipeline(r.surfPipeline)
+		renderPass.SetBindGroup(0, r.projBindGroup)
+		renderPass.SetBindGroup(1, surfBindGroup)
+		renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+		renderPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+		renderPass.Draw(6, 1, 0, 0)
+
+		surfBindGroup.Destroy()
 	}
 }
 

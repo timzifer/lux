@@ -12,6 +12,7 @@ const (
 	TextureFormatBGRA8Unorm TextureFormat = iota
 	TextureFormatRGBA8Unorm
 	TextureFormatR8Unorm
+	TextureFormatDepth24Plus
 )
 
 // PrimitiveTopology describes how vertices form primitives.
@@ -180,10 +181,11 @@ type ShaderModuleDescriptor struct {
 
 // RenderPipelineDescriptor describes a render pipeline.
 type RenderPipelineDescriptor struct {
-	Label          string
-	Vertex         VertexState
-	Fragment       *FragmentState
-	Primitive      PrimitiveState
+	Label            string
+	Vertex           VertexState
+	Fragment         *FragmentState
+	Primitive        PrimitiveState
+	DepthStencil     *DepthStencilState
 	BindGroupLayouts []BindGroupLayout
 }
 
@@ -223,6 +225,7 @@ const (
 	VertexFormatFloat32x2 VertexFormat = iota
 	VertexFormatFloat32x4
 	VertexFormatFloat32
+	VertexFormatFloat32x3
 )
 
 // FragmentState describes fragment processing.
@@ -251,10 +254,50 @@ type BlendComponent struct {
 	Operation BlendOperation
 }
 
+// CompareFunction describes a comparison function for depth/stencil tests.
+type CompareFunction uint32
+
+const (
+	CompareFunctionNever CompareFunction = iota
+	CompareFunctionLess
+	CompareFunctionEqual
+	CompareFunctionLessEqual
+	CompareFunctionGreater
+	CompareFunctionNotEqual
+	CompareFunctionGreaterEqual
+	CompareFunctionAlways
+)
+
+// DepthStencilState describes depth/stencil testing.
+type DepthStencilState struct {
+	Format            TextureFormat
+	DepthWriteEnabled bool
+	DepthCompare      CompareFunction
+}
+
 // PrimitiveState describes primitive assembly.
 type PrimitiveState struct {
-	Topology PrimitiveTopology
+	Topology  PrimitiveTopology
+	CullMode  CullMode
+	FrontFace FrontFace
 }
+
+// CullMode describes which faces to cull.
+type CullMode uint32
+
+const (
+	CullModeNone CullMode = iota
+	CullModeFront
+	CullModeBack
+)
+
+// FrontFace describes which winding order is considered front-facing.
+type FrontFace uint32
+
+const (
+	FrontFaceCCW FrontFace = iota
+	FrontFaceCW
+)
 
 // BufferDescriptor describes a buffer to create.
 type BufferDescriptor struct {
@@ -445,7 +488,16 @@ type CommandEncoder interface {
 
 // RenderPassDescriptor describes a render pass.
 type RenderPassDescriptor struct {
-	ColorAttachments []RenderPassColorAttachment
+	ColorAttachments      []RenderPassColorAttachment
+	DepthStencilAttachment *RenderPassDepthStencilAttachment
+}
+
+// RenderPassDepthStencilAttachment describes a depth/stencil attachment for a render pass.
+type RenderPassDepthStencilAttachment struct {
+	View              TextureView
+	DepthLoadOp       LoadOp
+	DepthStoreOp      StoreOp
+	DepthClearValue   float32
 }
 
 // RenderPassColorAttachment describes a color attachment for a render pass.
@@ -455,6 +507,14 @@ type RenderPassColorAttachment struct {
 	StoreOp    StoreOp
 	ClearValue Color
 }
+
+// IndexFormat describes the format of index buffer data.
+type IndexFormat uint32
+
+const (
+	IndexFormatUint16 IndexFormat = iota
+	IndexFormatUint32
+)
 
 // RenderPass encodes render commands.
 type RenderPass interface {
@@ -467,11 +527,17 @@ type RenderPass interface {
 	// SetVertexBuffer sets a vertex buffer.
 	SetVertexBuffer(slot uint32, buffer Buffer, offset, size uint64)
 
+	// SetIndexBuffer sets the index buffer.
+	SetIndexBuffer(buffer Buffer, format IndexFormat, offset, size uint64)
+
 	// Draw draws primitives.
 	Draw(vertexCount, instanceCount, firstVertex, firstInstance uint32)
 
 	// DrawInstanced draws instanced primitives.
 	DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance uint32)
+
+	// DrawIndexed draws indexed primitives.
+	DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex int32, firstInstance uint32)
 
 	// SetScissorRect sets the scissor rectangle for the render pass.
 	SetScissorRect(x, y, width, height uint32)

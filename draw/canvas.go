@@ -167,12 +167,28 @@ type TexturedGlyph struct {
 	Color      Color
 }
 
+// DrawGradientRect is a gradient-filled rectangle in framebuffer coordinates.
+type DrawGradientRect struct {
+	X, Y, W, H int
+	Radius      float32
+	Kind        PaintKind // PaintLinearGradient or PaintRadialGradient
+
+	// Linear gradient: Start/End in screen coords.
+	StartX, StartY, EndX, EndY float32
+	// Radial gradient: Center + Radius in screen coords.
+	CenterX, CenterY, GradRadius float32
+
+	Stops     [8]GradientStop
+	StopCount int
+}
+
 // ClipBatch groups draw commands that share the same scissor rectangle.
 type ClipBatch struct {
 	Clip         Rect
 	RectIdx      int  // start index in Rects[]
 	TextIdx      int  // start index in TexturedGlyphs[]
 	MSDFIdx      int  // start index in MSDFGlyphs[]
+	GradientIdx  int  // start index in GradientRects[]
 	FullViewport bool // true = no scissor, full viewport
 }
 
@@ -186,12 +202,16 @@ type Scene struct {
 	// External surface texture blits (RFC §8).
 	Surfaces []DrawSurface
 
+	// Gradient-filled rectangles.
+	GradientRects []DrawGradientRect
+
 	// Overlay draw lists — rendered after main content so overlays
 	// (tooltips, dropdowns, context menus) fully cover underlying text.
 	OverlayRects          []DrawRect
 	OverlayGlyphs         []DrawGlyph
 	OverlayTexturedGlyphs []TexturedGlyph
 	OverlayMSDFGlyphs     []TexturedGlyph
+	OverlayGradientRects  []DrawGradientRect
 
 	// Scissor clip batches — each batch specifies a scissor rect and
 	// index ranges into the main/overlay draw lists.
