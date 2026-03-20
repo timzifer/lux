@@ -287,6 +287,7 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) screen_tex_size: vec2<f32>,
 };
 
 @vertex
@@ -296,6 +297,14 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
     out.uv = mix(in.glyph_uv.xy, in.glyph_uv.zw, in.pos);
     out.color = in.color;
+
+    // Derivatives from fwidth(in.uv) are discontinuous across the quad's
+    // internal triangle seam, which can show up as isolated black/white pixels
+    // inside counters such as “a” and “e”. Because Lux renders glyph quads with
+    // only translation+uniform scaling, we can derive the exact screen-pixel
+    // coverage per atlas texel from the instance rect and UV span instead.
+    let uv_span = max(in.glyph_uv.zw - in.glyph_uv.xy, vec2<f32>(1e-6, 1e-6));
+    out.screen_tex_size = in.glyph_rect.zw / uv_span;
     return out;
 }
 
@@ -308,12 +317,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let s = textureSample(msdf_texture, msdf_sampler, in.uv).rgb;
     let d = median3(s.r, s.g, s.b);
 
-    // Compute screen-pixel distance using UV derivatives (Chlumsky method).
+    // Compute screen-pixel distance without derivatives. Using fwidth(in.uv)
+    // here causes seam artifacts because each glyph quad is split into two
+    // triangles and derivatives are evaluated per triangle.
     // Atlas size is passed via uniforms.atlas_size since textureDimensions()
     // is broken in naga's HLSL backend.
     let unit_range = uniforms.atlas_size.zw / uniforms.atlas_size.xy;
-    let screen_tex_size = vec2<f32>(1.0) / fwidth(in.uv);
-    let screen_px_range = max(0.5 * dot(unit_range, screen_tex_size), 1.0);
+    let screen_px_range = max(0.5 * dot(unit_range, in.screen_tex_size), 1.0);
 
     let screen_px_dist = screen_px_range * (d - 0.5);
     let alpha = clamp(screen_px_dist + 0.5, 0.0, 1.0);
