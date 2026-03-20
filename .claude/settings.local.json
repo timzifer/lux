@@ -24,7 +24,9 @@
       "Bash(go mod:*)",
       "Bash(cat:*)",
       "Bash(wc:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(go env:*)",
+      "Read(//g/golang/lux/$\\(go env GOMODCACHE\\)/github.com/gogpu/wgpu@v0.21.3/**)"
     ]
   }
 }

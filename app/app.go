@@ -49,6 +49,10 @@ type UpdateWithCmd[M any] func(M, Msg) (M, Cmd)
 // ViewFunc is the signature for the view function (RFC §3.1).
 type ViewFunc[M any] func(M) ui.Element
 
+// MultiViewFunc is the signature for a multi-window view function.
+// It returns a map of window IDs to their element trees.
+type MultiViewFunc[M any] func(M) map[WindowID]ui.Element
+
 // globalLoop holds the active loop instance for package-level Send/TrySend.
 var globalLoop *loop.Loop
 

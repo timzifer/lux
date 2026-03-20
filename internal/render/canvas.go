@@ -26,6 +26,8 @@ type SceneCanvas struct {
 	// Scissor clip-batch tracking.
 	lastClip    draw.Rect
 	lastClipSet bool
+
+	blurStack []float32
 }
 
 // SetOverlayMode switches between main and overlay draw lists.
@@ -564,8 +566,29 @@ func (c *SceneCanvas) PushScale(_, _ float32)         {}
 
 func (c *SceneCanvas) PushOpacity(_ float32)         {}
 func (c *SceneCanvas) PopOpacity()                   {}
-func (c *SceneCanvas) PushBlur(_ float32)            {}
-func (c *SceneCanvas) PopBlur()                      {}
+func (c *SceneCanvas) PushBlur(radius float32) {
+	if radius <= 0 {
+		return
+	}
+	if radius > 64 {
+		radius = 64
+	}
+	c.blurStack = append(c.blurStack, radius)
+	clip := c.clipRect()
+	c.scene.BlurRegions = append(c.scene.BlurRegions, draw.BlurRegion{
+		X:      int(clip.X),
+		Y:      int(clip.Y),
+		W:      int(clip.W),
+		H:      int(clip.H),
+		Radius: radius,
+	})
+}
+
+func (c *SceneCanvas) PopBlur() {
+	if len(c.blurStack) > 0 {
+		c.blurStack = c.blurStack[:len(c.blurStack)-1]
+	}
+}
 func (c *SceneCanvas) PushLayer(_ draw.LayerOptions) {}
 func (c *SceneCanvas) PopLayer()                     {}
 

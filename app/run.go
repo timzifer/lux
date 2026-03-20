@@ -205,6 +205,13 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				case SetFullscreenMsg:
 					plat.SetFullscreen(m.Fullscreen)
 
+				case OpenWindowMsg:
+					handleOpenWindow(m, plat, renderer)
+					return true
+				case CloseWindowMsg:
+					handleCloseWindow(m, plat, renderer)
+					return true
+
 				case ui.RequestFocusMsg:
 					oldUID := fm.FocusedUID()
 					fm.SetFocusedUID(m.Target)
@@ -522,6 +529,12 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 		OnIMECommit: func(text string) {
 			Send(input.IMECommitMsg{Text: text})
+		},
+
+		// Multi-window: when the user closes a secondary window via the X button,
+		// send a WindowClosedMsg so the model can react.
+		OnWindowClose: func(windowID uint32) {
+			Send(WindowClosedMsg{Window: WindowID(windowID)})
 		},
 	})
 }

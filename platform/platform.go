@@ -103,4 +103,24 @@ type Callbacks struct {
 
 	// OnIMECommit is called when the IME commits final text (RFC-002 §2.2).
 	OnIMECommit func(text string)
+
+	// ── Multi-window callbacks ────────────────────────────────────
+	OnWindowResize      func(windowID uint32, width, height int)
+	OnWindowClose       func(windowID uint32)
+	OnWindowMouseButton func(windowID uint32, x, y float32, button int, pressed bool)
+	OnWindowMouseMove   func(windowID uint32, x, y float32)
+	OnWindowKey         func(windowID uint32, key string, action int, mods int)
+	OnWindowChar        func(windowID uint32, ch rune)
+	OnWindowScroll      func(windowID uint32, deltaX, deltaY float32)
+}
+
+// MultiWindowPlatform extends Platform with multi-window support.
+// Implementations that support multiple windows should implement this interface.
+type MultiWindowPlatform interface {
+	Platform
+	CreateWindow(id uint32, cfg Config) (nativeHandle uintptr, err error)
+	DestroyWindow(id uint32)
+	SetWindowTitle(id uint32, title string)
+	WindowSizeByID(id uint32) (int, int)
+	FramebufferSizeByID(id uint32) (int, int)
 }

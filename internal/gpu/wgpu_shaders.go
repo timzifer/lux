@@ -307,3 +307,98 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(in.color.rgb, in.color.a * alpha);
 }
 `
+
+// wgslBlurShader implements a separable Gaussian blur as a fullscreen-quad fragment shader.
+// Two render passes: horizontal (direction=(1,0)) then vertical (direction=(0,1)).
+// Bind group 0: blur uniforms (direction, radius, texture_size).
+// Bind group 1: input texture + sampler.
+// Output: render attachment (the other ping-pong texture).
+const wgslBlurShader = `
+struct BlurUniforms {
+    direction: vec2<f32>,
+    radius: u32,
+    _pad: u32,
+    texture_size: vec2<f32>,
+    _pad2: vec2<f32>,
+};
+@group(0) @binding(0) var<uniform> params: BlurUniforms;
+@group(1) @binding(0) var input_tex: texture_2d<f32>;
+@group(1) @binding(1) var input_sampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+// Fullscreen triangle — 3 vertices cover the entire screen, no vertex buffer needed.
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
+    var out: VertexOutput;
+    // Generates a triangle that covers clip space [-1,1]:
+    //   vi=0 → (-1,-1), vi=1 → (3,-1), vi=2 → (-1,3)
+    let x = f32(i32(vi & 1u)) * 4.0 - 1.0;
+    let y = f32(i32(vi >> 1u)) * 4.0 - 1.0;
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    // Map to UV [0,1] with Y flipped for texture coords.
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+fn gaussian(x: f32, sigma: f32) -> f32 {
+    return exp(-(x * x) / (2.0 * sigma * sigma));
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let r = i32(min(params.radius, 64u));
+    let sigma = max(f32(r) / 3.0, 1.0);
+    let texel = params.direction / params.texture_size;
+
+    var color = vec4<f32>(0.0);
+    var weight_sum = 0.0;
+
+    for (var i = -r; i <= r; i++) {
+        let offset = texel * f32(i);
+        let uv = clamp(in.uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
+        let w = gaussian(f32(i), sigma);
+        color += textureSample(input_tex, input_sampler, uv) * w;
+        weight_sum += w;
+    }
+
+    return color / weight_sum;
+}
+` + ""
+
+// wgslBlurBlitShader blits a texture to the screen as a full-screen quad (used after blur).
+const wgslBlurBlitShader = `
+struct Uniforms {
+    proj: mat4x4<f32>,
+};
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(1) @binding(0) var blit_texture: texture_2d<f32>;
+@group(1) @binding(1) var blit_sampler: sampler;
+
+struct VertexInput {
+    @location(0) pos: vec2<f32>,       // unit quad corner (0..1)
+    @location(1) rect: vec4<f32>,      // (x, y, w, h) in screen coords
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    let world_pos = in.rect.xy + in.pos * in.rect.zw;
+    out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
+    out.uv = vec2<f32>(in.pos.x, in.pos.y);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(blit_texture, blit_sampler, in.uv);
+}
+` + ""

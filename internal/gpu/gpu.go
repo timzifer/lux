@@ -30,3 +30,15 @@ type Config struct {
 	Height       int
 	NativeHandle uintptr // Platform-specific window handle (HWND on Windows, 0 otherwise).
 }
+
+// WindowRenderer extends Renderer with multi-window support.
+// Implementations that can render to multiple windows should implement this interface.
+type WindowRenderer interface {
+	Renderer
+	InitWindow(id uint32, cfg Config) error
+	DestroyWindow(id uint32)
+	ResizeWindow(id uint32, width, height int)
+	BeginFrameWindow(id uint32)
+	DrawWindow(id uint32, scene draw.Scene)
+	EndFrameWindow(id uint32)
+}

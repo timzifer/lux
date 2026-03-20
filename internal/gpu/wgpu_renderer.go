@@ -72,6 +72,22 @@ type WGPURenderer struct {
 	gradUniBufCap    uint64      // current capacity in bytes
 	gradBindGroups   []wgpu.BindGroup // per-gradient bind groups (rebuilt each frame)
 
+	// Blur resources (fragment-shader-based, 2-pass ping-pong)
+	blurPipeline        wgpu.RenderPipeline  // fullscreen-triangle blur pass
+	blurBlitPipeline    wgpu.RenderPipeline  // blit blurred result back to surface
+	blurUniformBuffer   wgpu.Buffer
+	blurBindGroupLayout wgpu.BindGroupLayout // group 0: blur uniforms
+	blurTexBindGroupLayout wgpu.BindGroupLayout // group 1: texture + sampler (blur pass)
+	blurBlitBindGroupLayout wgpu.BindGroupLayout // group 1: texture + sampler (blit pass)
+	blurSampler         wgpu.Sampler
+	blurSrcTexture      wgpu.Texture  // original unblurred scene (read-only after scene render)
+	blurSrcView         wgpu.TextureView
+	blurTmpTexture      wgpu.Texture  // H-pass output
+	blurTmpView         wgpu.TextureView
+	blurDstTexture      wgpu.Texture  // V-pass output (final blurred result)
+	blurDstView         wgpu.TextureView
+	blurW, blurH        int // current blur texture dimensions
+
 	// CPU-side retained buffers — grow-only, reset to [:0] each frame.
 	rectBuf  []float32
 	glyphBuf []float32 // unified: [text main|text overlay|msdf main|msdf overlay]
@@ -460,6 +476,97 @@ func (r *WGPURenderer) Init(cfg Config) error {
 
 	r.surfaceTextures = make(map[draw.TextureID]wgpu.TextureView)
 
+	// --- Blur pipeline (fragment-shader, 2-pass ping-pong) ---
+
+	blurShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "blur-shader",
+		Source: wgslBlurShader,
+	})
+	defer blurShader.Destroy()
+
+	blurBlitShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "blur-blit-shader",
+		Source: wgslBlurBlitShader,
+	})
+	defer blurBlitShader.Destroy()
+
+	// Blur uniform buffer: direction vec2<f32>, radius u32, pad u32, texture_size vec2<f32>, pad2 vec2<f32> = 32 bytes.
+	r.blurUniformBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "blur-uniforms",
+		Size:  32,
+		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+	})
+
+	// Blur bind group layout group 0: uniforms (vertex+fragment visibility for the blur pass).
+	r.blurBindGroupLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "blur-uni-layout",
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
+		},
+	})
+
+	// Blur bind group layout group 1: input texture + sampler (fragment visibility).
+	r.blurTexBindGroupLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "blur-tex-layout",
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &wgpu.TextureBindingLayout{SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D}},
+			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: &wgpu.SamplerBindingLayout{}},
+		},
+	})
+
+	// Blur render pipeline — fullscreen triangle, no vertex buffers.
+	r.blurPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "blur-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     blurShader,
+			EntryPoint: "vs_main",
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     blurShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{r.blurBindGroupLayout, r.blurTexBindGroupLayout},
+	})
+
+	// Blur blit bind group layout group 1: texture + sampler (fragment visibility).
+	r.blurBlitBindGroupLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "blur-blit-layout",
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &wgpu.TextureBindingLayout{SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D}},
+			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: &wgpu.SamplerBindingLayout{}},
+		},
+	})
+
+	// Blur blit render pipeline (reuses projection layout for group 0, surface-like vertex layout).
+	r.blurBlitPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "blur-blit-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     blurBlitShader,
+			EntryPoint: "vs_main",
+			Buffers: []wgpu.VertexBufferLayout{
+				unitQuadLayout,
+				{ArrayStride: 16, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
+					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1}, // rect
+				}},
+			},
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     blurBlitShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.blurBlitBindGroupLayout},
+	})
+
+	// Blur sampler.
+	r.blurSampler = device.CreateSampler(&wgpu.SamplerDescriptor{Label: "blur-sampler"})
+
+	// Create initial blur textures at framebuffer size.
+	r.resizeBlurTextures()
+
 	// Upload initial projection matrix.
 	r.updateProjection()
 
@@ -511,6 +618,7 @@ func (r *WGPURenderer) Resize(width, height int) {
 		})
 	}
 	r.updateProjection()
+	r.resizeBlurTextures()
 }
 
 // BeginFrame starts a new frame.
@@ -659,11 +767,21 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 
 	// --- Phase 2: Record render pass commands ---
 
+	hasBlur := len(scene.BlurRegions) > 0 && r.blurPipeline != nil
+
 	encoder := r.device.CreateCommandEncoder()
+
+	// When blur is active, render the scene to an offscreen texture (blurSrc)
+	// so we can read it back for the blur passes, then blit to the surface.
+	mainTarget := textureView
+	if hasBlur {
+		mainTarget = r.blurSrcView
+	}
+
 	renderPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 		ColorAttachments: []wgpu.RenderPassColorAttachment{
 			{
-				View:    textureView,
+				View:    mainTarget,
 				LoadOp:  wgpu.LoadOpClear,
 				StoreOp: wgpu.StoreOpStore,
 				ClearValue: wgpu.Color{
@@ -706,6 +824,195 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		vpW, vpH)
 
 	renderPass.End()
+
+	// --- Blur post-processing + final blit to surface ---
+	//
+	// Flow when hasBlur:
+	//   1. Scene was rendered to blurSrc (offscreen, unblurred — preserved read-only).
+	//   2. Blit unblurred blurSrc → surface (sharp full-screen copy).
+	//   3. Per blur region (each with its own radius):
+	//      a. H-pass: blurSrc → blurTmp  (blurSrc stays pristine)
+	//      b. V-pass: blurTmp → blurDst
+	//      c. Scissor-blit: blurDst → surface (LoadOp=Load, exact region bounds)
+	if hasBlur {
+		// Upload blit rect instance: full viewport.
+		blitRect := []float32{0, 0, float32(r.width), float32(r.height)}
+		r.surfInstBuffer.Write(r.queue, float32SliceToBytes(blitRect))
+
+		// --- Step 2: Blit unblurred scene to surface ---
+		unblurredBG := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  "blur-unblurred",
+			Layout: r.blurBlitBindGroupLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Texture: r.blurSrcView},
+				{Binding: 1, Sampler: r.blurSampler},
+			},
+		})
+		copyPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+			ColorAttachments: []wgpu.RenderPassColorAttachment{{
+				View:    textureView,
+				LoadOp:  wgpu.LoadOpClear,
+				StoreOp: wgpu.StoreOpStore,
+				ClearValue: wgpu.Color{R: 0, G: 0, B: 0, A: 1},
+			}},
+		})
+		copyPass.SetPipeline(r.blurBlitPipeline)
+		copyPass.SetBindGroup(0, r.projBindGroup)
+		copyPass.SetBindGroup(1, unblurredBG)
+		copyPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+		copyPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+		copyPass.Draw(6, 1, 0, 0)
+		copyPass.End()
+
+		// Shared bind groups for reading blurSrc (original scene).
+		srcTexBG := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  "blur-src-tex",
+			Layout: r.blurTexBindGroupLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Texture: r.blurSrcView},
+				{Binding: 1, Sampler: r.blurSampler},
+			},
+		})
+		tmpTexBG := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  "blur-tmp-tex",
+			Layout: r.blurTexBindGroupLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Texture: r.blurTmpView},
+				{Binding: 1, Sampler: r.blurSampler},
+			},
+		})
+		dstBlitBG := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  "blur-dst-blit",
+			Layout: r.blurBlitBindGroupLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Texture: r.blurDstView},
+				{Binding: 1, Sampler: r.blurSampler},
+			},
+		})
+
+		// --- Step 3: Pre-upload all blur uniforms into a single buffer ---
+		// Each region needs 2 slots (H-pass, V-pass). 256-byte alignment per slot.
+		const blurUniStride = 256 // bytes (WebGPU minUniformBufferOffsetAlignment)
+		const blurUniStrideF = blurUniStride / 4 // 64 floats
+		numSlots := len(scene.BlurRegions) * 2
+		needed := uint64(numSlots) * blurUniStride
+
+		// Recreate blur uniform buffer if too small.
+		if r.blurUniformBuffer != nil {
+			r.blurUniformBuffer.Destroy()
+		}
+		r.blurUniformBuffer = r.device.CreateBuffer(&wgpu.BufferDescriptor{
+			Label: "blur-uniforms",
+			Size:  needed,
+			Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+		})
+
+		blurUniBuf := make([]float32, numSlots*blurUniStrideF)
+		slot := 0
+		for _, br := range scene.BlurRegions {
+			radius := br.Radius
+			if radius > 64 {
+				radius = 64
+			}
+			// H-pass slot
+			off := slot * blurUniStrideF
+			blurUniBuf[off+0] = 1.0 // direction.x
+			blurUniBuf[off+1] = 0.0 // direction.y
+			*(*uint32)(unsafe.Pointer(&blurUniBuf[off+2])) = uint32(radius)
+			blurUniBuf[off+4] = float32(r.blurW)
+			blurUniBuf[off+5] = float32(r.blurH)
+			slot++
+			// V-pass slot
+			off = slot * blurUniStrideF
+			blurUniBuf[off+0] = 0.0 // direction.x
+			blurUniBuf[off+1] = 1.0 // direction.y
+			*(*uint32)(unsafe.Pointer(&blurUniBuf[off+2])) = uint32(radius)
+			blurUniBuf[off+4] = float32(r.blurW)
+			blurUniBuf[off+5] = float32(r.blurH)
+			slot++
+		}
+		r.blurUniformBuffer.Write(r.queue, float32SliceToBytes(blurUniBuf))
+
+		// Create per-slot bind groups with buffer offsets.
+		blurUniBGs := make([]wgpu.BindGroup, numSlots)
+		for i := 0; i < numSlots; i++ {
+			blurUniBGs[i] = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+				Label:  "blur-uni",
+				Layout: r.blurBindGroupLayout,
+				Entries: []wgpu.BindGroupEntry{
+					{Binding: 0, Buffer: r.blurUniformBuffer, Offset: uint64(i) * blurUniStride, Size: 32},
+				},
+			})
+		}
+
+		// --- Step 4: Per-region blur + scissor blit ---
+		slot = 0
+		for _, br := range scene.BlurRegions {
+			if br.W <= 0 || br.H <= 0 || br.Radius <= 0 {
+				slot += 2
+				continue
+			}
+			hUniBG := blurUniBGs[slot]
+			vUniBG := blurUniBGs[slot+1]
+			slot += 2
+
+			// H-pass: blurSrc → blurTmp
+			hPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+				ColorAttachments: []wgpu.RenderPassColorAttachment{{
+					View: r.blurTmpView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore,
+					ClearValue: wgpu.Color{R: 0, G: 0, B: 0, A: 0},
+				}},
+			})
+			hPass.SetPipeline(r.blurPipeline)
+			hPass.SetBindGroup(0, hUniBG)
+			hPass.SetBindGroup(1, srcTexBG)
+			hPass.Draw(3, 1, 0, 0)
+			hPass.End()
+
+			// V-pass: blurTmp → blurDst
+			vPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+				ColorAttachments: []wgpu.RenderPassColorAttachment{{
+					View: r.blurDstView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore,
+					ClearValue: wgpu.Color{R: 0, G: 0, B: 0, A: 0},
+				}},
+			})
+			vPass.SetPipeline(r.blurPipeline)
+			vPass.SetBindGroup(0, vUniBG)
+			vPass.SetBindGroup(1, tmpTexBG)
+			vPass.Draw(3, 1, 0, 0)
+			vPass.End()
+
+			// Scissor-blit: blurDst → surface (exact region bounds)
+			sx, sy := uint32(br.X), uint32(br.Y)
+			sw, sh := uint32(br.W), uint32(br.H)
+			if sx+sw > vpW { sw = vpW - sx }
+			if sy+sh > vpH { sh = vpH - sy }
+
+			blitPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+				ColorAttachments: []wgpu.RenderPassColorAttachment{{
+					View: textureView, LoadOp: wgpu.LoadOpLoad, StoreOp: wgpu.StoreOpStore,
+				}},
+			})
+			blitPass.SetPipeline(r.blurBlitPipeline)
+			blitPass.SetBindGroup(0, r.projBindGroup)
+			blitPass.SetBindGroup(1, dstBlitBG)
+			blitPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+			blitPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+			blitPass.SetScissorRect(sx, sy, sw, sh)
+			blitPass.Draw(6, 1, 0, 0)
+			blitPass.End()
+
+		}
+
+		// Cleanup bind groups.
+		for _, bg := range blurUniBGs {
+			bg.Destroy()
+		}
+		unblurredBG.Destroy()
+		srcTexBG.Destroy()
+		tmpTexBG.Destroy()
+		dstBlitBG.Destroy()
+	}
 
 	// Submit.
 	cmdBuffer := encoder.Finish()
@@ -800,6 +1107,45 @@ func (r *WGPURenderer) Destroy() {
 	r.textLayout.Destroy()
 	r.surfTexLayout.Destroy()
 	r.gradLayout.Destroy()
+	if r.blurPipeline != nil {
+		r.blurPipeline.Destroy()
+	}
+	if r.blurBlitPipeline != nil {
+		r.blurBlitPipeline.Destroy()
+	}
+	if r.blurUniformBuffer != nil {
+		r.blurUniformBuffer.Destroy()
+	}
+	if r.blurBindGroupLayout != nil {
+		r.blurBindGroupLayout.Destroy()
+	}
+	if r.blurTexBindGroupLayout != nil {
+		r.blurTexBindGroupLayout.Destroy()
+	}
+	if r.blurBlitBindGroupLayout != nil {
+		r.blurBlitBindGroupLayout.Destroy()
+	}
+	if r.blurSampler != nil {
+		r.blurSampler.Destroy()
+	}
+	if r.blurSrcView != nil {
+		r.blurSrcView.Destroy()
+	}
+	if r.blurSrcTexture != nil {
+		r.blurSrcTexture.Destroy()
+	}
+	if r.blurTmpView != nil {
+		r.blurTmpView.Destroy()
+	}
+	if r.blurTmpTexture != nil {
+		r.blurTmpTexture.Destroy()
+	}
+	if r.blurDstView != nil {
+		r.blurDstView.Destroy()
+	}
+	if r.blurDstTexture != nil {
+		r.blurDstTexture.Destroy()
+	}
 	// Surface must be released before Device — DX12 needs the command queue for waitForGPU.
 	if r.surface != nil {
 		r.surface.Destroy()
@@ -857,6 +1203,40 @@ func (r *WGPURenderer) resizeMSDFTexture() {
 	})
 	r.atlas.MSDFDirty = true
 	r.updateMSDFUniforms()
+}
+
+func (r *WGPURenderer) resizeBlurTextures() {
+	if r.blurSrcTexture != nil {
+		r.blurSrcView.Destroy()
+		r.blurSrcTexture.Destroy()
+		r.blurTmpView.Destroy()
+		r.blurTmpTexture.Destroy()
+		r.blurDstView.Destroy()
+		r.blurDstTexture.Destroy()
+	}
+	r.blurW, r.blurH = r.width, r.height
+	blurUsage := wgpu.TextureUsageCopySrc | wgpu.TextureUsageCopyDst | wgpu.TextureUsageTextureBinding | wgpu.TextureUsageRenderAttachment
+	r.blurSrcTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "blur-src",
+		Size:   wgpu.Extent3D{Width: uint32(r.blurW), Height: uint32(r.blurH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatBGRA8Unorm,
+		Usage:  blurUsage,
+	})
+	r.blurSrcView = r.blurSrcTexture.CreateView()
+	r.blurTmpTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "blur-tmp",
+		Size:   wgpu.Extent3D{Width: uint32(r.blurW), Height: uint32(r.blurH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatBGRA8Unorm,
+		Usage:  blurUsage,
+	})
+	r.blurTmpView = r.blurTmpTexture.CreateView()
+	r.blurDstTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "blur-dst",
+		Size:   wgpu.Extent3D{Width: uint32(r.blurW), Height: uint32(r.blurH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatBGRA8Unorm,
+		Usage:  blurUsage,
+	})
+	r.blurDstView = r.blurDstTexture.CreateView()
 }
 
 // ensureGPUBuffer grows a GPU buffer if the needed capacity exceeds the current one.

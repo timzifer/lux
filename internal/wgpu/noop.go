@@ -40,6 +40,7 @@ func (d *noopDevice) CreateBindGroupLayout(_ *BindGroupLayoutDescriptor) BindGro
 func (d *noopDevice) CreateBindGroup(_ *BindGroupDescriptor) BindGroup                   { return &noopBindGroup{} }
 func (d *noopDevice) CreateCommandEncoder() CommandEncoder                               { return &noopCommandEncoder{} }
 func (d *noopDevice) CreateSampler(_ *SamplerDescriptor) Sampler                         { return &noopSampler{} }
+func (d *noopDevice) CreateComputePipeline(_ *ComputePipelineDescriptor) ComputePipeline { return &noopComputePipeline{} }
 func (d *noopDevice) GetQueue() Queue                                                    { return &noopQueue{} }
 func (d *noopDevice) Destroy()                                                           {}
 
@@ -69,7 +70,18 @@ func (m *noopShaderModule) Destroy() {}
 
 type noopCommandEncoder struct{}
 func (e *noopCommandEncoder) BeginRenderPass(*RenderPassDescriptor) RenderPass { return &noopRenderPass{} }
+func (e *noopCommandEncoder) BeginComputePass() ComputePass { return &noopComputePass{} }
+func (e *noopCommandEncoder) CopyTextureToTexture(*ImageCopyTexture, *ImageCopyTexture, Extent3D) {}
 func (e *noopCommandEncoder) Finish() CommandBuffer                            { return nil }
+
+type noopComputePipeline struct{}
+func (p *noopComputePipeline) Destroy() {}
+
+type noopComputePass struct{}
+func (p *noopComputePass) SetPipeline(ComputePipeline)       {}
+func (p *noopComputePass) SetBindGroup(uint32, BindGroup)    {}
+func (p *noopComputePass) Dispatch(uint32, uint32, uint32)   {}
+func (p *noopComputePass) End()                               {}
 
 type noopRenderPass struct{}
 func (p *noopRenderPass) SetPipeline(RenderPipeline)                              {}

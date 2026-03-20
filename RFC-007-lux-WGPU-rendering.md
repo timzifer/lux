@@ -65,7 +65,11 @@ Die Datei wird auf Deutsch verfasst, im selben Stil wie die bestehenden RFCs.
 - ✅ Surface-Pipeline: Texture-Blit für externe Surfaces (Phase E)
 - ✅ Atlas-Resize: Texture-Neuerststellung + BindGroup-Update bei Atlas-Wachstum (Phase A)
 - ✅ Gradient-Support: Linear/Radial Gradients als eigene Pipeline (Phase E)
-- Blur-Pipeline: Gaussian Blur via Compute-Shader oder Multi-Pass (TODO)
+- ✅ Blur-Pipeline: Gaussian Blur via Fragment-Shader, 2-Pass separabel (Phase F)
+- ✅ Multi-Window: Per-Window Surface/Renderer, sekundäre Fenster (Phase F)
+- TODO: Soft Shadows (Box Shadow) — `DrawShadow` Stub ersetzen (Phase G)
+- TODO: Opacity — `PushOpacity`/`PopOpacity` Stub ersetzen (Phase G)
+- TODO: Frosted Glass Overlays, Vibrancy, Glow (Phase G)
 
 ### §9 Present-Mode & Frame-Pacing
 - Fifo (VSync) als Default (bereits gesetzt)
@@ -121,8 +125,73 @@ Die Datei wird auf Deutsch verfasst, im selben Stil wie die bestehenden RFCs.
 - ✅ wgpu-Interface erweitert: `VertexFormatFloat32x3`, `DepthStencilState`, `SetIndexBuffer`/`DrawIndexed`, `CullMode`/`FrontFace`
 - ✅ `ui.GradientRect` Element + Canvas-Routing (`FillRect`/`FillRoundRect` → Gradient-Pipeline bei Gradient-Paint)
 - ✅ Build-Tag-Matrix: `pyramid_wgpu.go` (gogpu), `pyramid.go` (OpenGL, Linux/macOS), `pyramid_noop.go` (nogui/Windows-default)
-- TODO: Blur via Compute-Shader
-- TODO: Multi-Window-Support
+
+**Phase F: Blur + Multi-Window** ✅
+- ✅ Blur via Fragment-Shader (separabler 2-Pass Gaussian, Ping-Pong zwischen 3 Offscreen-Texturen)
+  - `wgslBlurShader`: Fullscreen-Triangle, `textureSample`-basiert (DX12/HLSL-kompatibel)
+  - `wgslBlurBlitShader`: Blit-Shader für Rückprojektion auf die Surface
+  - Per-Region Radius (256-Byte-aligned Uniform-Buffer-Offsets pro BlurRegion)
+  - Scissor-basierte Region-Isolation: unblurred Scene → Surface, dann blurred Overlay per Region
+  - `PushBlur(radius)`/`PopBlur()` auf Canvas-API, `BlurRegion` in Scene, `ui.BlurBox` Widget
+- ✅ Multi-Window-Support
+  - `app.WindowID`, `OpenWindow`/`CloseWindow` Commands, `WindowOpenedMsg`/`WindowClosedMsg`
+  - `platform.MultiWindowPlatform` Interface (optional, kein Breaking Change)
+  - Win32: `CreateWindow`/`DestroyWindow`, separater `secondaryWindowProc` (kein PostQuitMessage)
+  - `gpu.WindowRenderer` Interface für per-Window Rendering
+  - KitchenSink Demo: Blur-Section (5 Radii) + Multi-Window-Section (Open/Close)
+
+**Phase G: Visual Effects Pipeline** (TODO)
+
+Die folgenden Effekte bauen auf der bestehenden Blur-Infrastruktur auf und
+transformieren die UI von "funktional" zu "subtle-fancy" (Premium-Feel).
+
+*Tier 1 — Sofortiger Premium-Effekt:*
+
+- TODO: **Soft Shadows (Box Shadow)** — `DrawShadow` ist ein Stub. Unscharfer, versetzter,
+  halbtransparenter Rect unter Karten/Buttons/Modalen. Kann den Blur-Shader
+  wiederverwenden (Blur eines einfarbigen Rects). Gibt der gesamten UI sofort Tiefe.
+  Dateien: `internal/gpu/wgpu_renderer.go`, `internal/gpu/wgpu_shaders.go`,
+  `internal/render/canvas.go` (`DrawShadow`-Implementierung).
+
+- TODO: **Frosted Glass Overlays** — Tooltips, Dropdowns, Context-Menus mit
+  halbtransparentem Hintergrund + Backdrop-Blur. Blur-Infrastruktur existiert,
+  braucht Integration in das Overlay-System (`PushBlur` + halbtransparenter Rect
+  im Overlay-Rendering). Dateien: `ui/element.go` (Overlay-Stack),
+  `theme/` (DrawFunc für Tooltip/Menu).
+
+- TODO: **Opacity (PushOpacity/PopOpacity)** — Stub-Implementierung ersetzen.
+  Ermöglicht Fade-In/Out, Hover-Dimming, deaktivierte Elemente. Fundamental
+  für Transition-Effekte. Ansatz: Opacity-Stack in SceneCanvas, Alpha-Multiplikator
+  auf alle gezeichneten Primitives. Dateien: `internal/render/canvas.go`,
+  `draw/canvas.go` (evtl. Opacity-Feld auf DrawRect/TexturedGlyph).
+
+*Tier 2 — Subtile Verfeinerungen:*
+
+- TODO: **Elevation (Hover-responsive Shadows)** — Shadow-Intensität reagiert auf
+  Hover/Press-State. Button ruht → flacher Schatten, Hover → Schatten wächst
+  ("hebt sich"), Press → Schatten verschwindet ("drückt ein"). Nutzt Shadows +
+  bestehende `anim`-Animationen. Dateien: `theme/` (DrawFunc per Widget).
+
+- TODO: **Tinted Blur (Vibrancy)** — Wie Frosted Glass, aber mit Farb-Tint.
+  Sidebar mit leichtem Blau/Lila-Tint über Blur → Windows 11 Mica / macOS Vibrancy.
+  Technisch: Blur + halbtransparenter farbiger Rect darüber. Kein neuer Shader nötig,
+  rein kompositorisch. Dateien: `theme/`, `ui/element.go`.
+
+- TODO: **Inner Shadow / Inset** — Gibt Textfeldern und Eingabebereichen physische
+  Tiefe ("eingedrückt" statt "aufgesetzt"). Invertierter Box-Shadow. Kann als
+  Variation des Shadow-Shaders implementiert werden. Dateien:
+  `internal/gpu/wgpu_shaders.go`, `internal/render/canvas.go`.
+
+*Tier 3 — Polish:*
+
+- TODO: **Subtle Noise/Grain Texture** — Hauchfeine Textur über flache Flächen.
+  Verhindert Banding bei Gradients, gibt Oberflächen Materialität. Kleiner Zusatz
+  im Fragment-Shader (Hash-basiertes Noise, ~3 Zeilen WGSL).
+  Dateien: `internal/gpu/wgpu_shaders.go` (Rect-Shader-Erweiterung).
+
+- TODO: **Glow (Focus Ring)** — Weicher äußerer Schein um fokussierte Elemente.
+  Besser als harte Focus-Border. Technisch ähnlich wie Shadow, aber mit
+  Accent-Farbe und ohne Offset. Dateien: `theme/` (DrawFunc für fokussierte Widgets).
 
 ### Anhang: Kritische Dateien
 - `internal/wgpu/wgpu.go` — Interface-Definitionen (stabil, kaum Änderungen)

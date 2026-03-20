@@ -45,6 +45,8 @@ var sectionIDs = []string{
 	"dialogs",
 	// Phase E — Gradients
 	"gradients",
+	// Phase F — Blur & Multi-Window
+	"blur", "multi-window",
 }
 
 func sectionLabel(id string) string {
@@ -131,6 +133,11 @@ func sectionLabel(id string) string {
 	// Phase E
 	case "gradients":
 		return "Gradients"
+	// Phase F
+	case "blur":
+		return "Blur"
+	case "multi-window":
+		return "Multi-Window"
 	default:
 		return id
 	}
@@ -216,6 +223,8 @@ type Model struct {
 	InputDialogValue  string
 	DialogResult      string
 	DialogMsgKind     platform.DialogKind
+	// Phase F — Multi-Window
+	SecondWindowOpen bool
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -518,6 +527,12 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.ShowConfirmDialog = true
 		m.DialogResult = "(native unavailable, using fallback)"
 
+	// Phase F — Multi-Window
+	case app.WindowOpenedMsg:
+		m.SecondWindowOpen = true
+	case app.WindowClosedMsg:
+		m.SecondWindowOpen = false
+
 	case app.TickMsg:
 		dt := msg.DeltaTime.Seconds()
 		m.AnimTime += dt
@@ -685,6 +700,11 @@ func sectionContent(m Model) ui.Element {
 	// Phase E
 	case "gradients":
 		return gradientsSection()
+	// Phase F
+	case "blur":
+		return blurSection()
+	case "multi-window":
+		return multiWindowSection(m)
 	default:
 		return ui.Column(
 			ui.Spacer(24),
@@ -2267,6 +2287,68 @@ func dialogsSection(m Model) ui.Element {
 	}
 
 	return ui.Column(children...)
+}
+
+// ── Blur Section (Phase F) ───────────────────────────────────────
+
+func blurSection() ui.Element {
+	radii := []float32{4, 8, 16, 32, 64}
+	items := make([]ui.Element, 0, len(radii)+3)
+	items = append(items,
+		sectionHeader("Blur (Phase F)"),
+		ui.Text("Gaussian blur at various radii (PushBlur / PopBlur):"),
+		ui.Spacer(8),
+	)
+
+	for _, r := range radii {
+		radius := r
+		items = append(items,
+			ui.Spacer(4),
+			ui.BlurBox(radius,
+				ui.Stack(
+					ui.GradientRect(200, 60, 8, draw.LinearGradientPaint(
+						draw.Pt(0, 0), draw.Pt(200, 0),
+						draw.GradientStop{Offset: 0, Color: draw.Hex("#3366cc")},
+						draw.GradientStop{Offset: 1, Color: draw.Hex("#ffcc33")},
+					)),
+					ui.SizedBox(200, 60,
+						ui.Padding(ui.UniformInsets(8),
+							ui.Text(fmt.Sprintf("radius = %.0f", radius)),
+						),
+					),
+				),
+			),
+		)
+	}
+
+	return ui.Column(items...)
+}
+
+// ── Multi-Window Section (Phase F) ──────────────────────────────
+
+func multiWindowSection(m Model) ui.Element {
+	var btn ui.Element
+	if m.SecondWindowOpen {
+		btn = ui.ButtonText("Close Second Window", func() {
+			app.Send(app.CloseWindowMsg{ID: 1})
+		})
+	} else {
+		btn = ui.ButtonText("Open Second Window", func() {
+			app.Send(app.OpenWindowMsg{
+				ID:     1,
+				Config: app.WindowConfig{Title: "Lux — Second Window", Width: 400, Height: 300},
+			})
+		})
+	}
+
+	return ui.Column(
+		sectionHeader("Multi-Window (Phase F)"),
+		ui.Text("Multi-window support:"),
+		ui.Spacer(8),
+		ui.Padding(ui.UniformInsets(8), btn),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("Second window open: %v", m.SecondWindowOpen)),
+	)
 }
 
 // ── Main ─────────────────────────────────────────────────────────

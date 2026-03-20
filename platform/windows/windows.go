@@ -123,6 +123,14 @@ type Platform struct {
 	savedStyle     uintptr
 	savedRect      rect
 	frameRequested bool
+	windows        map[uint32]*windowState
+}
+
+// windowState tracks per-window state for multi-window support.
+type windowState struct {
+	hwnd   uintptr
+	width  int
+	height int
 }
 
 // New creates a new Win32 platform instance.
@@ -451,6 +459,93 @@ func (p *Platform) initCursors() {
 	}
 }
 
+var _ platform.MultiWindowPlatform = (*Platform)(nil)
+
+// CreateWindow creates a secondary window and returns its native handle.
+func (p *Platform) CreateWindow(id uint32, cfg platform.Config) (uintptr, error) {
+	if err := ensureWindowClass(); err != nil {
+		return 0, err
+	}
+	title := cfg.Title
+	if title == "" {
+		title = "Lux Window"
+	}
+	w, h := cfg.Width, cfg.Height
+	if w <= 0 {
+		w = 640
+	}
+	if h <= 0 {
+		h = 480
+	}
+
+	hwnd, _, err := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(windowClassName)),
+		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(title))),
+		wsOverlappedWindow|wsVisible,
+		cwUseDefault, cwUseDefault,
+		uintptr(w), uintptr(h),
+		0, 0, 0, 0,
+	)
+	if hwnd == 0 {
+		return 0, fmt.Errorf("CreateWindowExW for window %d: %w", id, err)
+	}
+
+	if p.windows == nil {
+		p.windows = make(map[uint32]*windowState)
+	}
+	p.windows[id] = &windowState{hwnd: hwnd, width: w, height: h}
+	platformsByHWND.Store(hwnd, p)
+
+	procShowWindow.Call(hwnd, swShowDefault)
+	procUpdateWindow.Call(hwnd)
+
+	return hwnd, nil
+}
+
+// DestroyWindow destroys a secondary window.
+func (p *Platform) DestroyWindow(id uint32) {
+	if p.windows == nil {
+		return
+	}
+	ws, ok := p.windows[id]
+	if !ok {
+		return
+	}
+	procDestroyWindow.Call(ws.hwnd)
+	platformsByHWND.Delete(ws.hwnd)
+	delete(p.windows, id)
+}
+
+// SetWindowTitle updates the title of a specific window.
+func (p *Platform) SetWindowTitle(id uint32, title string) {
+	if p.windows == nil {
+		return
+	}
+	ws, ok := p.windows[id]
+	if !ok {
+		return
+	}
+	procSetWindowTextW.Call(ws.hwnd, uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(title))))
+}
+
+// WindowSizeByID returns the size of a specific window.
+func (p *Platform) WindowSizeByID(id uint32) (int, int) {
+	if p.windows == nil {
+		return 0, 0
+	}
+	ws, ok := p.windows[id]
+	if !ok {
+		return 0, 0
+	}
+	return ws.width, ws.height
+}
+
+// FramebufferSizeByID returns the framebuffer size of a specific window.
+func (p *Platform) FramebufferSizeByID(id uint32) (int, int) {
+	return p.WindowSizeByID(id) // 1:1 on Windows (DPI scaling handled separately)
+}
+
 func ensureWindowClass() error {
 	registerClassOnce.Do(func() {
 		hInstance, _, err := procGetModuleHandleW.Call(0)
@@ -481,6 +576,13 @@ func ensureWindowClass() error {
 func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 	if value, ok := platformsByHWND.Load(hwnd); ok {
 		p := value.(*Platform)
+
+		// Determine if this is a secondary window.
+		isSecondary := hwnd != p.hwnd
+		if isSecondary {
+			return p.secondaryWindowProc(hwnd, msg, wParam, lParam)
+		}
+
 		switch msg {
 		case wmEraseBkgnd:
 			// Suppress GDI background erase to prevent flash during resize/fullscreen toggle.
@@ -580,6 +682,105 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		}
 	}
 
+	result, _, _ := procDefWindowProcW.Call(hwnd, uintptr(msg), wParam, lParam)
+	return result
+}
+
+// windowIDByHWND finds the window ID for a secondary window HWND.
+func (p *Platform) windowIDByHWND(hwnd uintptr) (uint32, bool) {
+	for id, ws := range p.windows {
+		if ws.hwnd == hwnd {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// secondaryWindowProc handles messages for secondary (non-main) windows.
+func (p *Platform) secondaryWindowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
+	wid, _ := p.windowIDByHWND(hwnd)
+	switch msg {
+	case wmEraseBkgnd:
+		return 1
+	case wmSize:
+		width := int(uint32(lParam & 0xFFFF))
+		height := int(uint32((lParam >> 16) & 0xFFFF))
+		// Update stored size.
+		if ws, ok := p.windows[wid]; ok {
+			ws.width = width
+			ws.height = height
+		}
+		if p.callbacks.OnWindowResize != nil {
+			p.callbacks.OnWindowResize(wid, width, height)
+		}
+		return 0
+	case wmMouseMove:
+		if p.callbacks.OnWindowMouseMove != nil {
+			x := float32(int16(lParam & 0xFFFF))
+			y := float32(int16((lParam >> 16) & 0xFFFF))
+			p.callbacks.OnWindowMouseMove(wid, x, y)
+		}
+		return 0
+	case wmLButtonDown, wmRButtonDown, wmMButtonDown:
+		if p.callbacks.OnWindowMouseButton != nil {
+			x := float32(int16(lParam & 0xFFFF))
+			y := float32(int16((lParam >> 16) & 0xFFFF))
+			button := 0
+			if msg == wmRButtonDown {
+				button = 1
+			} else if msg == wmMButtonDown {
+				button = 2
+			}
+			p.callbacks.OnWindowMouseButton(wid, x, y, button, true)
+		}
+		return 0
+	case wmLButtonUp, wmRButtonUp, wmMButtonUp:
+		if p.callbacks.OnWindowMouseButton != nil {
+			x := float32(int16(lParam & 0xFFFF))
+			y := float32(int16((lParam >> 16) & 0xFFFF))
+			button := 0
+			if msg == wmRButtonUp {
+				button = 1
+			} else if msg == wmMButtonUp {
+				button = 2
+			}
+			p.callbacks.OnWindowMouseButton(wid, x, y, button, false)
+		}
+		return 0
+	case wmKeyDown:
+		if p.callbacks.OnWindowKey != nil {
+			p.callbacks.OnWindowKey(wid, win32KeyName(int(wParam)), 0, 0)
+		}
+		return 0
+	case wmKeyUp:
+		if p.callbacks.OnWindowKey != nil {
+			p.callbacks.OnWindowKey(wid, win32KeyName(int(wParam)), 1, 0)
+		}
+		return 0
+	case wmChar:
+		if p.callbacks.OnWindowChar != nil {
+			p.callbacks.OnWindowChar(wid, rune(wParam))
+		}
+		return 0
+	case wmMouseWheel:
+		if p.callbacks.OnWindowScroll != nil {
+			delta := float32(int16(wParam>>16)) / 120.0
+			p.callbacks.OnWindowScroll(wid, 0, delta)
+		}
+		return 0
+	case wmClose:
+		// Do NOT call PostQuitMessage — only destroy the secondary window.
+		if p.callbacks.OnWindowClose != nil {
+			p.callbacks.OnWindowClose(wid)
+		}
+		procDestroyWindow.Call(hwnd)
+		return 0
+	case wmDestroy:
+		// Clean up without quitting the application.
+		platformsByHWND.Delete(hwnd)
+		delete(p.windows, wid)
+		return 0
+	}
 	result, _, _ := procDefWindowProcW.Call(hwnd, uintptr(msg), wParam, lParam)
 	return result
 }

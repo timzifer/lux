@@ -192,6 +192,12 @@ type ClipBatch struct {
 	FullViewport bool // true = no scissor, full viewport
 }
 
+// BlurRegion describes a rectangular area to apply Gaussian blur.
+type BlurRegion struct {
+	X, Y, W, H int
+	Radius      float32
+}
+
 // Scene is the fully laid-out draw list for one frame.
 type Scene struct {
 	Rects          []DrawRect
@@ -217,4 +223,7 @@ type Scene struct {
 	// index ranges into the main/overlay draw lists.
 	ClipBatches        []ClipBatch
 	OverlayClipBatches []ClipBatch
+
+	// Blur regions — areas to apply Gaussian blur post-processing.
+	BlurRegions []BlurRegion
 }

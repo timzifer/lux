@@ -252,6 +252,13 @@ func (d *goDevice) CreateBindGroupLayout(desc *BindGroupLayoutDescriptor) BindGr
 				ViewDimension: mapTextureViewDimension(e.Texture.ViewDimension),
 			}
 		}
+		if e.StorageTexture != nil {
+			entries[i].StorageTexture = &gputypes.StorageTextureBindingLayout{
+				Access:        mapStorageTextureAccess(e.StorageTexture.Access),
+				Format:        mapTextureFormat(e.StorageTexture.Format),
+				ViewDimension: mapTextureViewDimension(e.StorageTexture.ViewDimension),
+			}
+		}
 	}
 	bgl, err := d.device.CreateBindGroupLayout(&gpuwgpu.BindGroupLayoutDescriptor{
 		Label:   desc.Label,
@@ -329,6 +336,41 @@ func (d *goDevice) CreateSampler(desc *SamplerDescriptor) Sampler {
 		return &goSampler{}
 	}
 	return &goSampler{sampler: s}
+}
+
+func (d *goDevice) CreateComputePipeline(desc *ComputePipelineDescriptor) ComputePipeline {
+	var layout *gpuwgpu.PipelineLayout
+	if len(desc.BindGroupLayouts) > 0 {
+		bgls := make([]*gpuwgpu.BindGroupLayout, len(desc.BindGroupLayouts))
+		for i, bgl := range desc.BindGroupLayouts {
+			if g, ok := bgl.(*goBindGroupLayout); ok && g.layout != nil {
+				bgls[i] = g.layout
+			}
+		}
+		var err error
+		layout, err = d.device.CreatePipelineLayout(&gpuwgpu.PipelineLayoutDescriptor{
+			Label:            desc.Label + "-layout",
+			BindGroupLayouts: bgls,
+		})
+		if err != nil {
+			log.Printf("wgpu/gogpu: CreatePipelineLayout (compute) failed: %v", err)
+			return &goComputePipeline{}
+		}
+	}
+	gdesc := &gpuwgpu.ComputePipelineDescriptor{
+		Label:      desc.Label,
+		Layout:     layout,
+		EntryPoint: desc.EntryPoint,
+	}
+	if sm, ok := desc.Module.(*goShaderModule); ok && sm.module != nil {
+		gdesc.Module = sm.module
+	}
+	pipeline, err := d.device.CreateComputePipeline(gdesc)
+	if err != nil {
+		log.Printf("wgpu/gogpu: CreateComputePipeline failed: %v", err)
+		return &goComputePipeline{}
+	}
+	return &goComputePipeline{pipeline: pipeline}
 }
 
 func (d *goDevice) GetQueue() Queue {
@@ -429,6 +471,59 @@ func (p *goRenderPipeline) Destroy() {
 	if p.pipeline != nil {
 		p.pipeline.Release()
 		p.pipeline = nil
+	}
+}
+
+// --- ComputePipeline ---
+
+type goComputePipeline struct {
+	pipeline *gpuwgpu.ComputePipeline
+}
+
+func (p *goComputePipeline) Destroy() {
+	if p.pipeline != nil {
+		p.pipeline.Release()
+		p.pipeline = nil
+	}
+}
+
+// --- ComputePass ---
+
+type goComputePass struct {
+	pass *gpuwgpu.ComputePassEncoder
+}
+
+func (p *goComputePass) SetPipeline(pipeline ComputePipeline) {
+	if p.pass == nil {
+		return
+	}
+	if gp, ok := pipeline.(*goComputePipeline); ok && gp.pipeline != nil {
+		p.pass.SetPipeline(gp.pipeline)
+	}
+}
+
+func (p *goComputePass) SetBindGroup(index uint32, group BindGroup) {
+	if p.pass == nil {
+		return
+	}
+	if gb, ok := group.(*goBindGroup); ok && gb.group != nil {
+		p.pass.SetBindGroup(index, gb.group, nil)
+	}
+}
+
+func (p *goComputePass) Dispatch(x, y, z uint32) {
+	if p.pass == nil {
+		return
+	}
+	p.pass.Dispatch(x, y, z)
+}
+
+func (p *goComputePass) End() {
+	if p.pass == nil {
+		return
+	}
+	if err := p.pass.End(); err != nil {
+		log.Printf("wgpu/gogpu: ComputePass.End failed: %v", err)
 	}
 }
 
@@ -587,6 +682,27 @@ func (e *goCommandEncoder) Finish() CommandBuffer {
 		return &goCommandBuffer{}
 	}
 	return &goCommandBuffer{buffer: cb}
+}
+
+func (e *goCommandEncoder) BeginComputePass() ComputePass {
+	if e.encoder == nil {
+		return &goComputePass{}
+	}
+	cp, err := e.encoder.BeginComputePass(nil)
+	if err != nil {
+		log.Printf("wgpu/gogpu: BeginComputePass failed: %v", err)
+		return &goComputePass{}
+	}
+	return &goComputePass{pass: cp}
+}
+
+func (e *goCommandEncoder) CopyTextureToTexture(src, dst *ImageCopyTexture, size Extent3D) {
+	if e.encoder == nil {
+		return
+	}
+	// gogpu's high-level CommandEncoder does not expose CopyTextureToTexture yet.
+	// Log and skip; callers should use an alternative path if needed.
+	log.Printf("wgpu/gogpu: CopyTextureToTexture not yet supported by gogpu high-level API")
 }
 
 // --- RenderPass ---
@@ -897,6 +1013,9 @@ func mapTextureUsage(u TextureUsage) gpuwgpu.TextureUsage {
 	if u&TextureUsageRenderAttachment != 0 {
 		result |= gpuwgpu.TextureUsageRenderAttachment
 	}
+	if u&TextureUsageStorageBinding != 0 {
+		result |= gpuwgpu.TextureUsageStorageBinding
+	}
 	return result
 }
 
@@ -939,6 +1058,9 @@ func mapShaderStage(s ShaderStage) gputypes.ShaderStage {
 	if s&ShaderStageFragment != 0 {
 		result |= gputypes.ShaderStageFragment
 	}
+	if s&ShaderStageCompute != 0 {
+		result |= gputypes.ShaderStageCompute
+	}
 	return result
 }
 
@@ -946,6 +1068,8 @@ func mapBufferBindingType(t BufferBindingType) gputypes.BufferBindingType {
 	switch t {
 	case BufferBindingTypeUniform:
 		return gputypes.BufferBindingTypeUniform
+	case BufferBindingTypeStorage:
+		return gputypes.BufferBindingTypeStorage
 	default:
 		return gputypes.BufferBindingTypeUniform
 	}
@@ -966,6 +1090,19 @@ func mapTextureViewDimension(d TextureViewDimension) gputypes.TextureViewDimensi
 		return gputypes.TextureViewDimension2D
 	default:
 		return gputypes.TextureViewDimension2D
+	}
+}
+
+func mapStorageTextureAccess(a StorageTextureAccess) gputypes.StorageTextureAccess {
+	switch a {
+	case StorageTextureAccessWriteOnly:
+		return gputypes.StorageTextureAccessWriteOnly
+	case StorageTextureAccessReadOnly:
+		return gputypes.StorageTextureAccessReadOnly
+	case StorageTextureAccessReadWrite:
+		return gputypes.StorageTextureAccessReadWrite
+	default:
+		return gputypes.StorageTextureAccessWriteOnly
 	}
 }
 

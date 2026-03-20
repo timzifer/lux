@@ -122,6 +122,10 @@ func (d *nativeDevice) CreateSampler(desc *SamplerDescriptor) Sampler {
 	return &nativeSampler{}
 }
 
+func (d *nativeDevice) CreateComputePipeline(desc *ComputePipelineDescriptor) ComputePipeline {
+	return &nativeComputePipeline{}
+}
+
 func (d *nativeDevice) GetQueue() Queue {
 	return &nativeQueue{}
 }
@@ -165,6 +169,8 @@ type nativeCommandEncoder struct{ handle C.WGPUCommandEncoder }
 func (e *nativeCommandEncoder) BeginRenderPass(desc *RenderPassDescriptor) RenderPass {
 	return &nativeRenderPass{}
 }
+func (e *nativeCommandEncoder) BeginComputePass() ComputePass { return &nativeComputePass{} }
+func (e *nativeCommandEncoder) CopyTextureToTexture(src, dst *ImageCopyTexture, size Extent3D) {}
 func (e *nativeCommandEncoder) Finish() CommandBuffer { return nil }
 
 type nativeRenderPass struct{ handle C.WGPURenderPassEncoder }
@@ -178,6 +184,15 @@ func (p *nativeRenderPass) DrawInstanced(vertexCount, instanceCount, firstVertex
 func (p *nativeRenderPass) DrawIndexed(int32, int32, int32, int32, uint32)                                         {}
 func (p *nativeRenderPass) SetScissorRect(x, y, width, height uint32)                                               {}
 func (p *nativeRenderPass) End()                                                                                     {}
+
+type nativeComputePipeline struct{}
+func (p *nativeComputePipeline) Destroy() {}
+
+type nativeComputePass struct{}
+func (p *nativeComputePass) SetPipeline(ComputePipeline)       {}
+func (p *nativeComputePass) SetBindGroup(uint32, BindGroup)    {}
+func (p *nativeComputePass) Dispatch(uint32, uint32, uint32)   {}
+func (p *nativeComputePass) End()                               {}
 
 type nativeQueue struct{ handle C.WGPUQueue }
 

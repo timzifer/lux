@@ -314,6 +314,12 @@ func Stack(children ...Element) Element {
 	return stackElement{Children: children}
 }
 
+// BlurBox wraps a child and applies a Gaussian blur backdrop effect.
+// Content underneath the BlurBox bounds is blurred at the given radius.
+func BlurBox(radius float32, child Element) Element {
+	return blurBoxElement{Radius: radius, Child: child}
+}
+
 // ScrollView constrains a child to a maximum height, clipping overflow
 // and rendering a scrollbar when content exceeds the viewport (RFC-003 §4.1).
 // An optional ScrollState pointer drives the vertical offset; pass nil for static views.
@@ -587,6 +593,13 @@ func (iconElement) isElement() {}
 type stackElement struct{ Children []Element }
 
 func (stackElement) isElement() {}
+
+type blurBoxElement struct {
+	Radius float32
+	Child  Element
+}
+
+func (blurBoxElement) isElement() {}
 
 type scrollViewElement struct {
 	Child     Element
@@ -1217,6 +1230,17 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 
 	case stackElement:
 		return layoutStack(node, area, canvas, th, tokens, ix, overlays, fs)
+
+	case blurBoxElement:
+		// Layout child first to determine its actual bounds.
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		// Push a tight clip for the child's bounds, then PushBlur captures
+		// exactly that region (not the full parent content area).
+		canvas.PushClip(draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H)))
+		canvas.PushBlur(node.Radius)
+		canvas.PopBlur()
+		canvas.PopClip()
+		return b
 
 	case scrollViewElement:
 		return layoutScrollView(node, area, canvas, th, tokens, ix, overlays, fs)

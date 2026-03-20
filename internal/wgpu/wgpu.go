@@ -166,6 +166,9 @@ type Device interface {
 	// CreateSampler creates a texture sampler.
 	CreateSampler(desc *SamplerDescriptor) Sampler
 
+	// CreateComputePipeline creates a compute pipeline.
+	CreateComputePipeline(desc *ComputePipelineDescriptor) ComputePipeline
+
 	// GetQueue returns the device's command queue.
 	GetQueue() Queue
 
@@ -322,6 +325,7 @@ const (
 	TextureUsageCopyDst
 	TextureUsageTextureBinding
 	TextureUsageRenderAttachment
+	TextureUsageStorageBinding
 )
 
 // BindGroupLayoutDescriptor describes a bind group layout.
@@ -332,11 +336,12 @@ type BindGroupLayoutDescriptor struct {
 
 // BindGroupLayoutEntry describes a bind group layout entry.
 type BindGroupLayoutEntry struct {
-	Binding    uint32
-	Visibility ShaderStage
-	Buffer     *BufferBindingLayout
-	Sampler    *SamplerBindingLayout
-	Texture    *TextureBindingLayout
+	Binding        uint32
+	Visibility     ShaderStage
+	Buffer         *BufferBindingLayout
+	Sampler        *SamplerBindingLayout
+	Texture        *TextureBindingLayout
+	StorageTexture *StorageTextureBindingLayout
 }
 
 // ShaderStage flags.
@@ -345,6 +350,7 @@ type ShaderStage uint32
 const (
 	ShaderStageVertex   ShaderStage = 1 << iota
 	ShaderStageFragment
+	ShaderStageCompute
 )
 
 // BufferBindingLayout describes a buffer binding.
@@ -357,6 +363,7 @@ type BufferBindingType uint32
 
 const (
 	BufferBindingTypeUniform BufferBindingType = iota
+	BufferBindingTypeStorage
 )
 
 // SamplerBindingLayout describes a sampler binding.
@@ -365,6 +372,22 @@ type SamplerBindingLayout struct{}
 // TextureBindingLayout describes a texture binding.
 type TextureBindingLayout struct {
 	SampleType    TextureSampleType
+	ViewDimension TextureViewDimension
+}
+
+// StorageTextureAccess describes access mode for storage textures.
+type StorageTextureAccess uint32
+
+const (
+	StorageTextureAccessWriteOnly StorageTextureAccess = iota
+	StorageTextureAccessReadOnly
+	StorageTextureAccessReadWrite
+)
+
+// StorageTextureBindingLayout describes a storage texture binding.
+type StorageTextureBindingLayout struct {
+	Access        StorageTextureAccess
+	Format        TextureFormat
 	ViewDimension TextureViewDimension
 }
 
@@ -451,6 +474,27 @@ type RenderPipeline interface {
 	Destroy()
 }
 
+// ComputePipelineDescriptor describes a compute pipeline.
+type ComputePipelineDescriptor struct {
+	Label            string
+	Module           ShaderModule
+	EntryPoint       string
+	BindGroupLayouts []BindGroupLayout
+}
+
+// ComputePipeline represents a compiled compute pipeline.
+type ComputePipeline interface {
+	Destroy()
+}
+
+// ComputePass encodes compute commands.
+type ComputePass interface {
+	SetPipeline(pipeline ComputePipeline)
+	SetBindGroup(index uint32, group BindGroup)
+	Dispatch(x, y, z uint32)
+	End()
+}
+
 // Buffer represents a GPU buffer.
 type Buffer interface {
 	// Write writes data to the buffer via the queue.
@@ -481,6 +525,12 @@ type TextureView interface {
 type CommandEncoder interface {
 	// BeginRenderPass begins a render pass.
 	BeginRenderPass(desc *RenderPassDescriptor) RenderPass
+
+	// BeginComputePass begins a compute pass.
+	BeginComputePass() ComputePass
+
+	// CopyTextureToTexture copies data between textures.
+	CopyTextureToTexture(src, dst *ImageCopyTexture, size Extent3D)
 
 	// Finish finishes encoding and returns the command buffer.
 	Finish() CommandBuffer
