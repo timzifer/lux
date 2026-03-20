@@ -309,8 +309,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 `
 
 // wgslShadowShader renders soft box shadows using SDF with blur falloff.
-// Instanced rendering: unit quad vertices + per-instance rect/color/radius/blurRadius.
-// 10 floats per instance (40 bytes).
+// Instanced rendering: unit quad vertices + per-instance rect/color/radius/blurRadius/inset.
+// 12 floats per instance (48 bytes).
 const wgslShadowShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
@@ -323,6 +323,7 @@ struct VertexInput {
     @location(2) color: vec4<f32>,     // RGBA color
     @location(3) radius: f32,          // corner radius
     @location(4) blur_radius: f32,     // shadow blur spread
+    @location(5) inset: f32,           // 0.0 = outer, 1.0 = inner shadow
 };
 
 struct VertexOutput {
@@ -332,14 +333,21 @@ struct VertexOutput {
     @location(2) color: vec4<f32>,
     @location(3) @interpolate(flat) radius: f32,
     @location(4) @interpolate(flat) blur_radius: f32,
+    @location(5) @interpolate(flat) inset: f32,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    // Expand quad by blur_radius + 0.5px so the soft falloff is fully visible.
-    let expand = vec2<f32>(in.blur_radius + 0.5);
+    // Inset shadows render inside the rect — minimal expand for AA only.
+    // Outer shadows expand by blur_radius + 0.5px so the soft falloff is fully visible.
+    var expand: vec2<f32>;
+    if (in.inset > 0.5) {
+        expand = vec2<f32>(0.5);
+    } else {
+        expand = vec2<f32>(in.blur_radius + 0.5);
+    }
     let expanded_size = in.rect.zw + expand * 2.0;
     let world_pos = in.rect.xy - expand + in.pos * expanded_size;
     out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
@@ -349,6 +357,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.color = in.color;
     out.radius = in.radius;
     out.blur_radius = in.blur_radius;
+    out.inset = in.inset;
     return out;
 }
 
@@ -360,7 +369,22 @@ fn rounded_box_sdf_s(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = rounded_box_sdf_s(in.local_pos, in.half_size, in.radius);
-    let alpha = 1.0 - smoothstep(0.0, in.blur_radius, dist);
+    var alpha: f32;
+    if (in.inset > 0.5) {
+        // Inner shadow: compute a second SDF with blur_radius as effective
+        // corner radius so it reaches blur_radius deep into the shape.
+        // This gives smooth concentric rounded-rect iso-lines (no corner
+        // artifacts from min-of-edges) and the full blur_radius fade depth.
+        let fade_r = min(in.blur_radius, min(in.half_size.x, in.half_size.y));
+        let fade_dist = rounded_box_sdf_s(in.local_pos, in.half_size, fade_r);
+        let fade = smoothstep(-fade_r, 0.0, fade_dist);
+        // Mask to actual rounded shape (original corner radius) with AA.
+        let mask = 1.0 - smoothstep(0.0, 0.5, dist);
+        alpha = fade * mask;
+    } else {
+        // Outer shadow: visible outside the shape, fading outward.
+        alpha = 1.0 - smoothstep(0.0, in.blur_radius, dist);
+    }
     if (alpha < 0.001) {
         discard;
     }

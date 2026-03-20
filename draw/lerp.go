@@ -50,3 +50,22 @@ func LerpCornerRadii(a, b CornerRadii, t float32) CornerRadii {
 		BottomLeft:  a.BottomLeft + (b.BottomLeft-a.BottomLeft)*t,
 	}
 }
+
+// LerpShadow interpolates between two Shadows component-wise.
+// Inset is taken from a when t < 0.5, else from b.
+func LerpShadow(a, b Shadow, t float32) Shadow {
+	s := Shadow{
+		Color:        LerpColor(a.Color, b.Color, t),
+		BlurRadius:   a.BlurRadius + (b.BlurRadius-a.BlurRadius)*t,
+		SpreadRadius: a.SpreadRadius + (b.SpreadRadius-a.SpreadRadius)*t,
+		OffsetX:      a.OffsetX + (b.OffsetX-a.OffsetX)*t,
+		OffsetY:      a.OffsetY + (b.OffsetY-a.OffsetY)*t,
+		Radius:       a.Radius + (b.Radius-a.Radius)*t,
+	}
+	if t < 0.5 {
+		s.Inset = a.Inset
+	} else {
+		s.Inset = b.Inset
+	}
+	return s
+}

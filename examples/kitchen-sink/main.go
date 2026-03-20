@@ -2429,6 +2429,132 @@ func effectsSection() ui.Element {
 		),
 	)
 
+	// --- Inner Shadow (Tier 2) ---
+	items = append(items,
+		ui.Spacer(16),
+		ui.Text("Inner Shadow (light inset, deeper inset):"),
+		ui.Spacer(8),
+	)
+
+	innerShadowCards := []ui.Element{
+		ui.Padding(ui.UniformInsets(12),
+			ui.InnerShadowBox(
+				draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.5}, BlurRadius: 10},
+				8,
+				ui.Stack(
+					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#e2e8f0"))),
+					ui.Padding(ui.UniformInsets(16),
+						ui.SizedBox(100, 50, ui.Text("Light Inset")),
+					),
+				),
+			),
+		),
+		ui.Padding(ui.UniformInsets(12),
+			ui.InnerShadowBox(
+				draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.85}, BlurRadius: 20},
+				8,
+				ui.Stack(
+					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#cbd5e1"))),
+					ui.Padding(ui.UniformInsets(16),
+						ui.SizedBox(100, 50, ui.Text("Deep Inset")),
+					),
+				),
+			),
+		),
+	}
+	items = append(items, ui.Row(innerShadowCards...))
+
+	// --- Elevation / Hover-Responsive Shadows (Tier 2) ---
+	items = append(items,
+		ui.Spacer(16),
+		ui.Text("Elevation (hover to see shadow lift):"),
+		ui.Spacer(8),
+	)
+
+	elevationCards := []ui.Element{
+		ui.Padding(ui.UniformInsets(16),
+			ui.ElevationCard(nil,
+				ui.Stack(
+					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#6366f1"))),
+					ui.Padding(ui.UniformInsets(16),
+						ui.SizedBox(100, 50, ui.Text("Card A")),
+					),
+				),
+			),
+		),
+		ui.Padding(ui.UniformInsets(16),
+			ui.ElevationCard(nil,
+				ui.Stack(
+					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#3b82f6"))),
+					ui.Padding(ui.UniformInsets(16),
+						ui.SizedBox(100, 50, ui.Text("Card B")),
+					),
+				),
+			),
+		),
+		ui.Padding(ui.UniformInsets(16),
+			ui.ElevationCard(nil,
+				ui.Stack(
+					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#0ea5e9"))),
+					ui.Padding(ui.UniformInsets(16),
+						ui.SizedBox(100, 50, ui.Text("Card C")),
+					),
+				),
+			),
+		),
+	}
+	items = append(items, ui.Row(elevationCards...))
+
+	// --- Vibrancy / Tinted Blur (Tier 2) ---
+	items = append(items,
+		ui.Spacer(16),
+		ui.Text("Vibrancy vs Frosted Glass (accent-tinted blur — compare the color cast):"),
+		ui.Spacer(8),
+	)
+
+	items = append(items,
+		ui.Row(
+			// Frosted Glass reference (neutral white tint)
+			ui.Padding(ui.UniformInsets(8),
+				ui.Stack(
+					ui.CheckerRect(210, 160, 16),
+					ui.Padding(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
+						ui.FrostedGlass(16, draw.Color{R: 1, G: 1, B: 1, A: 0.18},
+							ui.SizedBox(178, 120,
+								ui.Padding(ui.UniformInsets(12),
+									ui.Column(
+										ui.Text("Frosted Glass"),
+										ui.Spacer(4),
+										ui.Text("Neutral white tint"),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+			// Vibrancy (accent-tinted, visibly colored)
+			ui.Padding(ui.UniformInsets(8),
+				ui.Stack(
+					ui.CheckerRect(210, 160, 16),
+					ui.Padding(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
+						ui.Vibrancy(0.35,
+							ui.SizedBox(178, 120,
+								ui.Padding(ui.UniformInsets(12),
+									ui.Column(
+										ui.Text("Vibrancy"),
+										ui.Spacer(4),
+										ui.Text("Accent-tinted blur"),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+		),
+	)
+
 	return ui.Column(items...)
 }
 

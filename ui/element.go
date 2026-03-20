@@ -341,6 +341,37 @@ func FrostedGlass(blurRadius float32, tint draw.Color, child Element) Element {
 	return frostedGlassElement{BlurRadius: blurRadius, Tint: tint, Child: child}
 }
 
+// InnerShadowBox draws an inner shadow on top of its child content.
+// The shadow renders inward from the edges of the child's bounds.
+func InnerShadowBox(shadow draw.Shadow, radius float32, child Element) Element {
+	shadow.Inset = true
+	return innerShadowBoxElement{Shadow: shadow, Radius: radius, Child: child}
+}
+
+// ElevationBox renders a hover-responsive shadow behind its child.
+// The shadow interpolates from rest → hover on mouse enter, and hover → rest on leave.
+// If onClick is non-nil, it is invoked on click.
+func ElevationBox(rest, hover, press draw.Shadow, radius float32, onClick func(), child Element) Element {
+	return elevationBoxElement{Rest: rest, Hover: hover, Press: press, Radius: radius, OnClick: onClick, Child: child}
+}
+
+// ElevationCard is a convenience wrapper around ElevationBox using theme elevation presets.
+// Rest = Low, Hover = High, Press = None.
+func ElevationCard(onClick func(), child Element) Element {
+	return elevationCardElement{OnClick: onClick, Child: child}
+}
+
+// TintedBlur is an alias for FrostedGlass with explicit naming for tinted blur effects.
+func TintedBlur(blurRadius float32, tint draw.Color, child Element) Element {
+	return frostedGlassElement{BlurRadius: blurRadius, Tint: tint, Child: child}
+}
+
+// Vibrancy applies a system-accent-tinted blur to its child's backdrop.
+// tintAlpha controls the opacity of the accent tint overlay (0.0–1.0).
+func Vibrancy(tintAlpha float32, child Element) Element {
+	return vibrancyElement{TintAlpha: tintAlpha, Child: child}
+}
+
 // ScrollView constrains a child to a maximum height, clipping overflow
 // and rendering a scrollbar when content exceeds the viewport (RFC-003 §4.1).
 // An optional ScrollState pointer drives the vertical offset; pass nil for static views.
@@ -650,6 +681,39 @@ type frostedGlassElement struct {
 }
 
 func (frostedGlassElement) isElement() {}
+
+type innerShadowBoxElement struct {
+	Shadow draw.Shadow
+	Radius float32
+	Child  Element
+}
+
+func (innerShadowBoxElement) isElement() {}
+
+type elevationBoxElement struct {
+	Rest    draw.Shadow
+	Hover   draw.Shadow
+	Press   draw.Shadow
+	Radius  float32
+	OnClick func()
+	Child   Element
+}
+
+func (elevationBoxElement) isElement() {}
+
+type elevationCardElement struct {
+	OnClick func()
+	Child   Element
+}
+
+func (elevationCardElement) isElement() {}
+
+type vibrancyElement struct {
+	TintAlpha float32
+	Child     Element
+}
+
+func (vibrancyElement) isElement() {}
 
 type scrollViewElement struct {
 	Child     Element
@@ -1375,6 +1439,55 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 			layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 		}
 		return b
+
+	case innerShadowBoxElement:
+		// Layout child first, then draw inner shadow ON TOP of child content.
+		// The GPU renders shadows before rects, so we must emit the inner
+		// shadow into the overlay pass — otherwise the child's rect covers it.
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
+		shadow := node.Shadow
+		shadow.Inset = true
+		if node.Radius > 0 {
+			shadow.Radius = node.Radius
+		}
+		type overlayModeSetter interface{ SetOverlayMode(bool) }
+		if oms, ok := canvas.(overlayModeSetter); ok {
+			oms.SetOverlayMode(true)
+			canvas.DrawShadow(r, shadow)
+			oms.SetOverlayMode(false)
+		} else {
+			canvas.DrawShadow(r, shadow)
+		}
+		return b
+
+	case elevationBoxElement:
+		// Layout child, register hover, interpolate shadow.
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
+		hoverOpacity := ix.RegisterHit(r, node.OnClick)
+		shadow := draw.LerpShadow(node.Rest, node.Hover, hoverOpacity)
+		if node.Radius > 0 {
+			shadow.Radius = node.Radius
+		}
+		canvas.DrawShadow(r, shadow)
+		return b
+
+	case elevationCardElement:
+		// Convenience: uses theme elevation presets (Low → High → None).
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
+		hoverOpacity := ix.RegisterHit(r, node.OnClick)
+		shadow := draw.LerpShadow(tokens.Elevation.Low, tokens.Elevation.High, hoverOpacity)
+		canvas.DrawShadow(r, shadow)
+		return b
+
+	case vibrancyElement:
+		// Vibrancy: accent-tinted blur using frostedGlassElement under the hood.
+		tint := tokens.Colors.Accent.Primary
+		tint.A = node.TintAlpha
+		fg := frostedGlassElement{BlurRadius: 20, Tint: tint, Child: node.Child}
+		return layoutElement(fg, area, canvas, th, tokens, ix, overlays, fs)
 
 	case scrollViewElement:
 		return layoutScrollView(node, area, canvas, th, tokens, ix, overlays, fs)

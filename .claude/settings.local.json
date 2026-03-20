@@ -26,7 +26,8 @@
       "Bash(wc:*)",
       "Bash(ls:*)",
       "Bash(go env:*)",
-      "Read(//g/golang/lux/$\\(go env GOMODCACHE\\)/github.com/gogpu/wgpu@v0.21.3/**)"
+      "Read(//g/golang/lux/$\\(go env GOMODCACHE\\)/github.com/gogpu/wgpu@v0.21.3/**)",
+      "Bash(find /g/golang/lux -type d -name *effect* -o -type d -name *render* -o -type d -name *wgpu* -o -type d -name *frontend*)"
     ]
   }
 }

@@ -188,6 +188,7 @@ type DrawShadowRect struct {
 	Color       Color
 	Radius      float32 // corner radius
 	BlurRadius  float32 // shadow blur spread
+	Inset       bool    // when true, shadow is drawn inside the rect
 }
 
 // ClipBatch groups draw commands that share the same scissor rectangle.

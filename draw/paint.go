@@ -131,6 +131,7 @@ type Shadow struct {
 	OffsetX      float32
 	OffsetY      float32
 	Radius       float32 // corner radius of the shadow shape
+	Inset        bool    // when true, shadow is drawn inside the rect (inner shadow)
 }
 
 // BlendMode controls layer compositing.

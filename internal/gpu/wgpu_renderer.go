@@ -490,8 +490,8 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	})
 	defer shadowShader.Destroy()
 
-	// Shadow instance buffer (10 floats = 40 bytes per instance).
-	r.shadowInstBufCap = 256 * 10 * 4
+	// Shadow instance buffer (12 floats = 48 bytes per instance).
+	r.shadowInstBufCap = 256 * 12 * 4
 	r.shadowInstBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: "shadow-instances",
 		Size:  r.shadowInstBufCap,
@@ -505,11 +505,12 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
 				unitQuadLayout,
-				{ArrayStride: 40, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
+				{ArrayStride: 48, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 16, ShaderLocation: 2}, // color
 					{Format: wgpu.VertexFormatFloat32, Offset: 32, ShaderLocation: 3},   // radius
 					{Format: wgpu.VertexFormatFloat32, Offset: 36, ShaderLocation: 4},   // blur_radius
+					{Format: wgpu.VertexFormatFloat32, Offset: 40, ShaderLocation: 5},   // inset
 				}},
 			},
 		},
@@ -781,24 +782,32 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 	if mainShadowCount+overlayShadowCount > 0 {
 		r.shadowBuf = r.shadowBuf[:0]
 		for _, s := range scene.ShadowRects {
+			var insetFloat float32
+			if s.Inset {
+				insetFloat = 1.0
+			}
 			r.shadowBuf = append(r.shadowBuf,
 				float32(s.X), float32(s.Y), float32(s.W), float32(s.H),
 				s.Color.R, s.Color.G, s.Color.B, s.Color.A,
-				s.Radius, s.BlurRadius,
+				s.Radius, s.BlurRadius, insetFloat, 0.0,
 			)
 		}
 		for _, s := range scene.OverlayShadowRects {
+			var insetFloat float32
+			if s.Inset {
+				insetFloat = 1.0
+			}
 			r.shadowBuf = append(r.shadowBuf,
 				float32(s.X), float32(s.Y), float32(s.W), float32(s.H),
 				s.Color.R, s.Color.G, s.Color.B, s.Color.A,
-				s.Radius, s.BlurRadius,
+				s.Radius, s.BlurRadius, insetFloat, 0.0,
 			)
 		}
 		needed := uint64(len(r.shadowBuf)) * 4
 		r.ensureGPUBuffer(&r.shadowInstBuffer, &r.shadowInstBufCap, needed, "shadow-instances", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
 		r.shadowInstBuffer.Write(r.queue, float32SliceToBytes(r.shadowBuf))
 	}
-	totalShadowBufSize := uint64((mainShadowCount + overlayShadowCount) * 10 * 4)
+	totalShadowBufSize := uint64((mainShadowCount + overlayShadowCount) * 12 * 4)
 
 	// Gradients: pre-upload all gradient uniform data and create per-gradient bind groups.
 	// Each gradient occupies 512 bytes (304 data + 208 padding for 256-byte alignment).

@@ -506,18 +506,25 @@ func (c *SceneCanvas) DrawTexture(tex draw.TextureID, dst draw.Rect) {
 // ── Shadows ──────────────────────────────────────────────────────
 
 func (c *SceneCanvas) DrawShadow(r draw.Rect, s draw.Shadow) {
-	// Compute expanded bounds: shadow extends by offset + spread + blur.
-	expand := s.SpreadRadius + s.BlurRadius
-	x := r.X + s.OffsetX - expand
-	y := r.Y + s.OffsetY - expand
-	w := r.W + 2*expand
-	h := r.H + 2*expand
-	if c.isClipped(x, y, w, h) {
-		return
-	}
 	color := s.Color
 	color.A *= c.effectiveOpacity()
 	if color.A < 0.001 {
+		return
+	}
+
+	var x, y, w, h float32
+	if s.Inset {
+		// Inset shadow: rendered inside the rect, no bound expansion.
+		x, y, w, h = r.X, r.Y, r.W, r.H
+	} else {
+		// Outer shadow: expand bounds by offset + spread + blur.
+		expand := s.SpreadRadius + s.BlurRadius
+		x = r.X + s.OffsetX - expand
+		y = r.Y + s.OffsetY - expand
+		w = r.W + 2*expand
+		h = r.H + 2*expand
+	}
+	if c.isClipped(x, y, w, h) {
 		return
 	}
 	c.emitClipIfChanged()
@@ -526,6 +533,7 @@ func (c *SceneCanvas) DrawShadow(r draw.Rect, s draw.Shadow) {
 		Color:      color,
 		Radius:     s.Radius,
 		BlurRadius: s.BlurRadius,
+		Inset:      s.Inset,
 	}
 	if c.overlayMode {
 		c.scene.OverlayShadowRects = append(c.scene.OverlayShadowRects, sr)
