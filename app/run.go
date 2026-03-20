@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
@@ -71,6 +72,22 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	// Make platform accessible for package-level clipboard functions (RFC §7.1).
 	activePlatform = plat
 	defer func() { activePlatform = nil }()
+
+	// A11y: initialize bridge if the platform supports it (RFC-001 §11).
+	type a11yBridgeProvider interface {
+		A11yBridge() a11y.A11yBridge
+	}
+	type a11ySendSetter interface {
+		SetA11ySend(func(any))
+	}
+	var a11yBridge a11y.A11yBridge
+	if bp, ok := plat.(a11yBridgeProvider); ok {
+		a11yBridge = bp.A11yBridge()
+		if ss, ok2 := plat.(a11ySendSetter); ok2 {
+			ss.SetA11ySend(Send)
+		}
+	}
+	var prevA11yFocusedID a11y.AccessNodeID
 
 	// Apply initial fullscreen setting (RFC §7.1).
 	if cfg.fullscreen {
@@ -436,6 +453,23 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 				// Sort tab order derived from layout tree (RFC-002 §2.3).
 				fm.SortOrder()
+
+				// A11y: build access tree and notify bridge (RFC-001 §11).
+				if a11yBridge != nil {
+					w, h := plat.WindowSize()
+					accessTree := ui.BuildAccessTree(currentTree, reconciler, a11y.Rect{
+						Width: float64(w), Height: float64(h),
+					})
+					a11yBridge.UpdateTree(accessTree)
+
+					// Focus tracking.
+					if accessTree.FocusedID != prevA11yFocusedID {
+						if accessTree.FocusedID != 0 {
+							a11yBridge.NotifyFocus(accessTree.FocusedID)
+						}
+						prevA11yFocusedID = accessTree.FocusedID
+					}
+				}
 			}
 
 			// 3. Update hover target from previous frame's hitMap.

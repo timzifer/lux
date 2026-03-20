@@ -11,6 +11,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/platform"
 )
@@ -124,6 +125,7 @@ type Platform struct {
 	savedRect      rect
 	frameRequested bool
 	windows        map[uint32]*windowState
+	uiaBridge      *UIABridge
 }
 
 // windowState tracks per-window state for multi-window support.
@@ -236,6 +238,10 @@ func (p *Platform) Destroy() {
 	if p.hwnd == 0 {
 		return
 	}
+	if p.uiaBridge != nil {
+		p.uiaBridge.Destroy()
+		p.uiaBridge = nil
+	}
 	platformsByHWND.Delete(p.hwnd)
 	procDestroyWindow.Call(p.hwnd)
 	p.hwnd = 0
@@ -275,6 +281,22 @@ func (p *Platform) ShouldClose() bool {
 // NativeHandle returns the Win32 HWND for the renderer.
 func (p *Platform) NativeHandle() uintptr {
 	return p.hwnd
+}
+
+// A11yBridge returns the UIA accessibility bridge, creating it on first call.
+func (p *Platform) A11yBridge() a11y.A11yBridge {
+	if p.uiaBridge == nil && p.hwnd != 0 {
+		p.uiaBridge = NewUIABridge(p.hwnd, nil)
+	}
+	return p.uiaBridge
+}
+
+// SetA11ySend sets the send function for the UIA bridge to route actions
+// to the app loop.
+func (p *Platform) SetA11ySend(send func(any)) {
+	if p.uiaBridge != nil {
+		p.uiaBridge.send = send
+	}
 }
 
 // SetCursor changes the system cursor shape (RFC-002 §2.7).
@@ -584,6 +606,14 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		}
 
 		switch msg {
+		case wmGetObject:
+			// UIA: respond to automation requests (RFC-001 §11).
+			if uint32(lParam) == uiaRootObjectId {
+				if p.uiaBridge != nil {
+					return uiaReturnRawElementProvider(hwnd, wParam, lParam, p.uiaBridge.RootProvider())
+				}
+			}
+
 		case wmEraseBkgnd:
 			// Suppress GDI background erase to prevent flash during resize/fullscreen toggle.
 			return 1
