@@ -20,6 +20,7 @@ type AXBridge struct {
 	rootNodeID a11y.AccessNodeID
 	elements   map[a11y.AccessNodeID]*axElement
 	send       func(any) // routes actions to the app loop
+	configured bool      // true after first configureViewAccessibility call
 }
 
 // axElement tracks a LuxAccessibilityElement ObjC object.
@@ -36,14 +37,10 @@ func NewAXBridge(view uintptr, send func(any)) *AXBridge {
 		send:     send,
 	}
 	viewAXBridges.Store(view, b)
-
-	// Configure accessibility properties on the view instance via property setters.
-	// This is essential — method overrides via class_addMethod may not be picked up
-	// by the accessibility subsystem, which often queries properties directly.
-	if view != 0 {
-		configureViewAccessibility(view)
-	}
-
+	// NOTE: configureViewAccessibility is called on first non-empty UpdateTree,
+	// NOT here — the system queries accessibilityChildren during configuration
+	// and caches the result. If we configure before the tree is populated,
+	// the system caches an empty children list and never re-queries.
 	return b
 }
 
@@ -95,6 +92,14 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 		updateElementAccessibilityChildren(el, b)
 	}
 	updateViewAccessibilityChildren(b)
+
+	// Configure accessibility on the view AFTER children are populated.
+	// The system queries accessibilityChildren during configuration and caches
+	// the result, so we must ensure elements exist before the first call.
+	if !b.configured && len(elementsCopy) > 0 && b.view != 0 {
+		configureViewAccessibility(b.view)
+		b.configured = true
+	}
 
 	// Post layout changed notification if structure changed.
 	if changed {

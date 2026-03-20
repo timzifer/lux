@@ -210,6 +210,11 @@ func argSize(s nsSize) objcArg {
 	return objcArg{typ: nsSizeType, ptr: unsafe.Pointer(&v), keepAlive: &v}
 }
 
+func argPoint(p nsPoint) objcArg {
+	v := p
+	return objcArg{typ: nsPointType, ptr: unsafe.Pointer(&v), keepAlive: &v}
+}
+
 // msgSend calls objc_msgSend with arbitrary arguments and return type.
 func msgSend(retType *types.TypeDescriptor, rvalue unsafe.Pointer, self, cmd uintptr, args ...objcArg) {
 	argTypes := make([]*types.TypeDescriptor, 0, 2+len(args))
