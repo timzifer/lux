@@ -149,7 +149,7 @@ func TestLuxAutoImplementsThemePair(t *testing.T) {
 }
 
 func TestOverrideColors(t *testing.T) {
-	custom := Override(Slate, OverrideSpec{
+	custom := Override(LuxDark, OverrideSpec{
 		Colors: &ColorScheme{
 			Surface: SurfaceColors{
 				Base: draw.Hex("#ff0000"),
@@ -162,21 +162,21 @@ func TestOverrideColors(t *testing.T) {
 		t.Error("Override should replace Surface.Base")
 	}
 	// Non-overridden fields should keep base values
-	if tokens.Typography.Body.Size != Slate.Tokens().Typography.Body.Size {
+	if tokens.Typography.Body.Size != LuxDark.Tokens().Typography.Body.Size {
 		t.Error("Override should not change non-overridden fields")
 	}
 }
 
 func TestOverridePreservesDrawFunc(t *testing.T) {
-	custom := Override(Slate, OverrideSpec{})
+	custom := Override(LuxDark, OverrideSpec{})
 	if custom.DrawFunc(WidgetKindButton) != nil {
 		t.Error("Override should delegate DrawFunc to base")
 	}
 }
 
 func TestOverrideParentIsBase(t *testing.T) {
-	custom := Override(Slate, OverrideSpec{})
-	if custom.Parent() != Slate {
+	custom := Override(LuxDark, OverrideSpec{})
+	if custom.Parent() != LuxDark {
 		t.Error("Override.Parent() should be base theme")
 	}
 }

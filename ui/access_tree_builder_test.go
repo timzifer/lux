@@ -44,7 +44,7 @@ func TestBuildAccessTree_Button(t *testing.T) {
 		onClick: func() { clicked = true },
 	}
 
-	th := theme.SlateLight
+	th := theme.LuxLight
 	reconciler := NewReconciler()
 	tree := Component(w)
 	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil)
@@ -69,7 +69,7 @@ func TestBuildAccessTree_Button(t *testing.T) {
 func TestBuildAccessTree_PlainWidgetFallback(t *testing.T) {
 	w := testPlainWidget{}
 
-	th := theme.SlateLight
+	th := theme.LuxLight
 	reconciler := NewReconciler()
 	tree := Component(w)
 	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil)

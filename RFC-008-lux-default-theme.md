@@ -993,8 +993,9 @@ Stand: 2026-03-20
   Command Palette / Tooltip (muss Widget-seitig verdrahtet werden)
 - [ ] **§11.6 Tabs/Chips/Badges** — Implementiert, aber aktive Elemente nutzen
   noch vollflächigen Accent statt tonaler Abstufung
-- [ ] **§14 Migration** — Kitchen-Sink und Beispiel-Apps referenzieren `Slate`
-  statt `lux`; Screenshots und Doku noch nicht aktualisiert
+- [x] **§14 Migration** — Kitchen-Sink und Beispiel-Apps verwenden `theme.Default`
+  (= `LuxDark`); Tests und Fallbacks auf Lux-Familie migriert; Slate-Kommentare
+  als Legacy markiert; `app/run.go`-Fallbacks zeigen auf `LuxDark`/`LuxLight`
 
 ### Out-of-Scope (nicht Teil dieses RFCs)
 

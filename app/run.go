@@ -617,17 +617,13 @@ func modelChanged(a, b any) (changed bool) {
 
 // darkVariant returns the dark theme associated with the current active theme.
 // If the theme (or its underlying base) implements ThemePair, its DarkVariant
-// is returned. If the base is a known Lux theme, we return LuxDark.
-// Otherwise we fall back to the legacy Slate theme.
+// is returned. Otherwise we fall back to the default dark theme (LuxDark).
 func darkVariant(active theme.Theme) theme.Theme {
 	base := unwrapBase(active)
 	if tp, ok := base.(theme.ThemePair); ok {
 		return tp.DarkVariant()
 	}
-	if base == theme.LuxDark || base == theme.LuxLight {
-		return theme.LuxDark
-	}
-	return theme.Slate
+	return theme.LuxDark
 }
 
 // lightVariant is the light-mode counterpart of darkVariant.
@@ -636,10 +632,7 @@ func lightVariant(active theme.Theme) theme.Theme {
 	if tp, ok := base.(theme.ThemePair); ok {
 		return tp.LightVariant()
 	}
-	if base == theme.LuxDark || base == theme.LuxLight {
-		return theme.LuxLight
-	}
-	return theme.SlateLight
+	return theme.LuxLight
 }
 
 // unwrapBase extracts the underlying theme from a CachedTheme wrapper.

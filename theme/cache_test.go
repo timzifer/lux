@@ -6,7 +6,7 @@ import "testing"
 var _ Theme = (*CachedTheme)(nil)
 
 func TestCachedThemeTokens(t *testing.T) {
-	ct := NewCachedTheme(Slate)
+	ct := NewCachedTheme(LuxDark)
 	tokens1 := ct.Tokens()
 	tokens2 := ct.Tokens()
 
@@ -16,36 +16,36 @@ func TestCachedThemeTokens(t *testing.T) {
 	}
 
 	// Tokens should match the base theme.
-	if tokens1.Colors.Surface.Base != Slate.Tokens().Colors.Surface.Base {
+	if tokens1.Colors.Surface.Base != LuxDark.Tokens().Colors.Surface.Base {
 		t.Error("cached tokens should match base theme tokens")
 	}
 }
 
 func TestCachedThemeDrawFunc(t *testing.T) {
-	ct := NewCachedTheme(Slate)
+	ct := NewCachedTheme(LuxDark)
 
-	// Slate returns nil for all DrawFuncs.
+	// LuxDark returns nil for all DrawFuncs.
 	if ct.DrawFunc(WidgetKindButton) != nil {
-		t.Error("expected nil DrawFunc for Slate")
+		t.Error("expected nil DrawFunc for LuxDark")
 	}
 }
 
 func TestCachedThemeParent(t *testing.T) {
-	ct := NewCachedTheme(SlateLight)
-	if ct.Parent() != Slate {
-		t.Error("CachedTheme(SlateLight).Parent() should be Slate")
+	ct := NewCachedTheme(LuxLight)
+	if ct.Parent() != LuxDark {
+		t.Error("CachedTheme(LuxLight).Parent() should be LuxDark")
 	}
 }
 
 func TestCachedThemeBase(t *testing.T) {
-	ct := NewCachedTheme(Slate)
-	if ct.Base() != Slate {
+	ct := NewCachedTheme(LuxDark)
+	if ct.Base() != LuxDark {
 		t.Error("Base() should return the wrapped theme")
 	}
 }
 
 func TestCachedThemeInvalidate(t *testing.T) {
-	ct := NewCachedTheme(Slate)
+	ct := NewCachedTheme(LuxDark)
 	ct.WarmUp()
 
 	// Verify cache is populated.
@@ -60,7 +60,7 @@ func TestCachedThemeInvalidate(t *testing.T) {
 
 	// Next access should re-resolve.
 	tokens := ct.Tokens()
-	if tokens.Colors.Surface.Base != Slate.Tokens().Colors.Surface.Base {
+	if tokens.Colors.Surface.Base != LuxDark.Tokens().Colors.Surface.Base {
 		t.Error("tokens after invalidate should match base theme")
 	}
 	if ct.resolved == nil {
@@ -69,7 +69,7 @@ func TestCachedThemeInvalidate(t *testing.T) {
 }
 
 func TestCachedThemeWarmUp(t *testing.T) {
-	ct := NewCachedTheme(Slate)
+	ct := NewCachedTheme(LuxDark)
 	if ct.resolved != nil {
 		t.Error("resolved should be nil before WarmUp")
 	}
@@ -85,7 +85,7 @@ type customTheme struct {
 }
 
 func (ct *customTheme) Tokens() TokenSet {
-	return Slate.Tokens()
+	return LuxDark.Tokens()
 }
 
 func (ct *customTheme) DrawFunc(kind WidgetKind) DrawFunc {
@@ -119,7 +119,7 @@ func TestCachedThemeDrawFuncCaching(t *testing.T) {
 }
 
 func TestCachedThemeWithOverride(t *testing.T) {
-	overridden := Override(Slate, OverrideSpec{
+	overridden := Override(LuxDark, OverrideSpec{
 		Spacing: &SpacingScale{XS: 99},
 	})
 	ct := NewCachedTheme(overridden)

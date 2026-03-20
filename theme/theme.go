@@ -205,11 +205,10 @@ type RadiusScale struct {
 	Pill   float32 // 999dp — pill shapes
 }
 
-// ── theme.Slate — The Default Theme (RFC-003 §2) ────────────────
+// ── theme.Slate — Legacy Theme (RFC-003 §2) ─────────────────────
 
-// Slate is the built-in dark theme. Philosophy: the sobriety of Linear,
-// the precision of Fluent Design — without the platform connotations
-// of Material or Cupertino.
+// Slate is the legacy dark theme, retained for backward compatibility.
+// New applications should use [LuxDark] (or [Default]) instead.
 var Slate Theme = &slateTheme{}
 
 // Default is the recommended theme for new applications (RFC-008 §12.2).
@@ -290,9 +289,10 @@ func (s *slateTheme) Tokens() TokenSet             { return slateTokens }
 func (s *slateTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
 func (s *slateTheme) Parent() Theme                { return nil }
 
-// ── theme.SlateLight (RFC-003 §2) ───────────────────────────────
+// ── theme.SlateLight — Legacy Light Theme (RFC-003 §2) ──────────
 
-// SlateLight is the built-in light theme, derived from Slate.
+// SlateLight is the legacy light theme, derived from Slate.
+// New applications should use [LuxLight] instead.
 var SlateLight Theme = &slateLightTheme{}
 
 // Light is an alias for SlateLight (backward compatibility).
