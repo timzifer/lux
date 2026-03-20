@@ -54,11 +54,16 @@ type Shaper interface {
 
 // GlyphRasterizer can rasterize individual glyphs for atlas insertion.
 // Both SfntShaper and GoTextShaper implement this interface.
+// Bitmap rasterization uses GlyphID (post-GSUB) so that ligature
+// glyphs are rendered correctly. MSDF rasterization uses a hint rune
+// because the msdf library operates on runes; if the hint rune's cmap
+// entry doesn't match the GlyphID (ligature), it returns nil and the
+// caller falls back to bitmap.
 type GlyphRasterizer interface {
 	Shaper
 	ResolveFont(style draw.TextStyle) *fonts.Font
-	RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedGlyph
-	RasterizeMSDFGlyph(r rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph
+	RasterizeGlyph(id GlyphID, style draw.TextStyle) *RasterizedGlyph
+	RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph
 }
 
 // BitmapShaper implements Shaper using the embedded 5×7 bitmap font.

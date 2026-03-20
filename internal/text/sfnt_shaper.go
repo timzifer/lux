@@ -11,7 +11,9 @@ import (
 	"github.com/timzifer/lux/fonts"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/image/vector"
 )
 
 // SfntShaper implements Shaper using golang.org/x/image/font/sfnt.
@@ -218,22 +220,28 @@ type RasterizedGlyph struct {
 }
 
 // RasterizeGlyph draws a single glyph into an image.Gray at the given size.
+// It uses the OpenType GlyphID directly (post-GSUB) so that ligature glyphs
+// such as "ff" are rendered correctly instead of the base rune.
 // The returned bearings use Floor/Ceil to match the rasterized pixel bounds
 // exactly, preventing sub-pixel baseline misalignment.
-func (s *SfntShaper) RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedGlyph {
+func (s *SfntShaper) RasterizeGlyph(id GlyphID, style draw.TextStyle) *RasterizedGlyph {
 	f := s.resolveFont(style)
 	if f == nil {
 		return nil
 	}
-
-	sizePx := DpToPixels(style.Size)
-	face := s.getFace(f, sizePx)
-	if face == nil {
+	sf := f.SfntFont()
+	if sf == nil {
 		return nil
 	}
 
-	bounds, _, ok := face.GlyphBounds(r)
-	if !ok {
+	sizePx := DpToPixels(style.Size)
+	ppem := fixed.I(sizePx)
+
+	glyphIdx := sfnt.GlyphIndex(id)
+	var buf sfnt.Buffer
+
+	bounds, advance, err := sf.GlyphBounds(&buf, glyphIdx, ppem, font.HintingFull)
+	if err != nil {
 		return nil
 	}
 
@@ -248,28 +256,66 @@ func (s *SfntShaper) RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedGly
 		return nil
 	}
 
-	img := image.NewGray(image.Rect(0, 0, w, h))
-
-	d := &font.Drawer{
-		Dst:  img,
-		Src:  image.White,
-		Face: face,
-		Dot:  fixed.Point26_6{X: fixed.I(-minX), Y: fixed.I(-minY)},
+	// Load glyph outline segments by index — this handles ligatures correctly.
+	segments, err := sf.LoadGlyph(&buf, glyphIdx, ppem, &sfnt.LoadGlyphOptions{})
+	if err != nil {
+		return nil
 	}
-	d.DrawString(string(r))
 
-	adv, ok := face.GlyphAdvance(r)
-	if !ok {
-		adv, _ = face.GlyphAdvance('?')
-	}
+	// Rasterize the outline segments into a grayscale image.
+	img := rasterizeSegments(segments, w, h, -minX, -minY)
 
 	return &RasterizedGlyph{
 		Image:    img,
 		Font:     f,
 		BearingX: float32(minX),
-		BearingY: float32(-minY), // negate: minY is negative for ascenders
-		Advance:  fixedToFloat(adv),
+		BearingY: float32(-minY),
+		Advance:  fixedToFloat(advance),
 	}
+}
+
+// rasterizeSegments converts sfnt outline segments into a grayscale image
+// using golang.org/x/image/vector.Rasterizer.
+func rasterizeSegments(segments sfnt.Segments, w, h, offsetX, offsetY int) *image.Gray {
+	r := vector.NewRasterizer(w, h)
+
+	ox := float32(offsetX)
+	oy := float32(offsetY)
+
+	for _, seg := range segments {
+		switch seg.Op {
+		case sfnt.SegmentOpMoveTo:
+			r.MoveTo(
+				fixedToFloat(seg.Args[0].X)+ox,
+				fixedToFloat(seg.Args[0].Y)+oy,
+			)
+		case sfnt.SegmentOpLineTo:
+			r.LineTo(
+				fixedToFloat(seg.Args[0].X)+ox,
+				fixedToFloat(seg.Args[0].Y)+oy,
+			)
+		case sfnt.SegmentOpQuadTo:
+			r.QuadTo(
+				fixedToFloat(seg.Args[0].X)+ox,
+				fixedToFloat(seg.Args[0].Y)+oy,
+				fixedToFloat(seg.Args[1].X)+ox,
+				fixedToFloat(seg.Args[1].Y)+oy,
+			)
+		case sfnt.SegmentOpCubeTo:
+			r.CubeTo(
+				fixedToFloat(seg.Args[0].X)+ox,
+				fixedToFloat(seg.Args[0].Y)+oy,
+				fixedToFloat(seg.Args[1].X)+ox,
+				fixedToFloat(seg.Args[1].Y)+oy,
+				fixedToFloat(seg.Args[2].X)+ox,
+				fixedToFloat(seg.Args[2].Y)+oy,
+			)
+		}
+	}
+
+	dst := image.NewGray(image.Rect(0, 0, w, h))
+	r.Draw(dst, dst.Bounds(), image.White, image.Point{})
+	return dst
 }
 
 // MSDFRasterizedGlyph holds the MSDF-rendered image and metrics.
@@ -283,9 +329,20 @@ type MSDFRasterizedGlyph struct {
 
 // RasterizeMSDFGlyph renders a single glyph as an MSDF image using pierrec/msdf.
 // atlasSize is the ppem size (typically 32), pxRange is the SDF distance range.
-func (s *SfntShaper) RasterizeMSDFGlyph(r rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph {
+// The msdf library works with runes (cmap lookup), so hintRune is used.
+// If hintRune's cmap GlyphIndex doesn't match id (e.g., ligature), returns nil
+// so the caller can fall back to bitmap rasterization.
+func (s *SfntShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph {
 	sf := f.SfntFont()
 	if sf == nil {
+		return nil
+	}
+
+	// Verify hintRune maps to the expected GlyphID via cmap.
+	// If not (ligature glyph), we can't use the rune-based msdf library.
+	var buf sfnt.Buffer
+	cmapIdx, err := sf.GlyphIndex(&buf, hintRune)
+	if err != nil || GlyphID(cmapIdx) != id {
 		return nil
 	}
 
@@ -305,7 +362,7 @@ func (s *SfntShaper) RasterizeMSDFGlyph(r rune, f *fonts.Font, atlasSize int, px
 	}
 	s.mu.Unlock()
 
-	glyph, err := gen.Get(r)
+	glyph, err := gen.Get(hintRune)
 	if err != nil || glyph == nil || glyph.Canvas == nil {
 		return nil
 	}

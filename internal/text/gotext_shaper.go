@@ -14,6 +14,7 @@ import (
 	"github.com/timzifer/lux/fonts"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -388,20 +389,26 @@ func (s *GoTextShaper) shapeSfnt(text string, style draw.TextStyle, f *fonts.Fon
 // ── Rasterization (shared with SfntShaper) ──────────────────────
 
 // RasterizeGlyph draws a single glyph into an image.Gray at the given size.
-func (s *GoTextShaper) RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedGlyph {
+// It uses the OpenType GlyphID directly (post-GSUB) so that ligature glyphs
+// such as "ff" are rendered correctly instead of the base rune.
+func (s *GoTextShaper) RasterizeGlyph(id GlyphID, style draw.TextStyle) *RasterizedGlyph {
 	f := s.resolveFont(style)
 	if f == nil {
 		return nil
 	}
-
-	sizePx := DpToPixels(style.Size)
-	face := s.getFace(f, sizePx)
-	if face == nil {
+	sf := f.SfntFont()
+	if sf == nil {
 		return nil
 	}
 
-	bounds, _, ok := face.GlyphBounds(r)
-	if !ok {
+	sizePx := DpToPixels(style.Size)
+	ppem := fixed.I(sizePx)
+
+	glyphIdx := sfnt.GlyphIndex(id)
+	var buf sfnt.Buffer
+
+	bounds, advance, err := sf.GlyphBounds(&buf, glyphIdx, ppem, font.HintingFull)
+	if err != nil {
 		return nil
 	}
 
@@ -416,34 +423,36 @@ func (s *GoTextShaper) RasterizeGlyph(r rune, style draw.TextStyle) *RasterizedG
 		return nil
 	}
 
-	img := image.NewGray(image.Rect(0, 0, w, h))
-
-	d := &font.Drawer{
-		Dst:  img,
-		Src:  image.White,
-		Face: face,
-		Dot:  fixed.Point26_6{X: fixed.I(-minX), Y: fixed.I(-minY)},
+	segments, err := sf.LoadGlyph(&buf, glyphIdx, ppem, &sfnt.LoadGlyphOptions{})
+	if err != nil {
+		return nil
 	}
-	d.DrawString(string(r))
 
-	adv, ok := face.GlyphAdvance(r)
-	if !ok {
-		adv, _ = face.GlyphAdvance('?')
-	}
+	img := rasterizeSegments(segments, w, h, -minX, -minY)
 
 	return &RasterizedGlyph{
 		Image:    img,
 		Font:     f,
 		BearingX: float32(minX),
 		BearingY: float32(-minY),
-		Advance:  fixedToFloat(adv),
+		Advance:  fixedToFloat(advance),
 	}
 }
 
 // RasterizeMSDFGlyph renders a single glyph as an MSDF image using pierrec/msdf.
-func (s *GoTextShaper) RasterizeMSDFGlyph(r rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph {
+// The msdf library works with runes, so hintRune is used. If hintRune's cmap
+// GlyphIndex doesn't match id (e.g., ligature), returns nil so the caller
+// can fall back to bitmap rasterization.
+func (s *GoTextShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph {
 	sf := f.SfntFont()
 	if sf == nil {
+		return nil
+	}
+
+	// Verify hintRune maps to the expected GlyphID via cmap.
+	var buf sfnt.Buffer
+	cmapIdx, err := sf.GlyphIndex(&buf, hintRune)
+	if err != nil || GlyphID(cmapIdx) != id {
 		return nil
 	}
 
@@ -462,7 +471,7 @@ func (s *GoTextShaper) RasterizeMSDFGlyph(r rune, f *fonts.Font, atlasSize int, 
 	}
 	s.mu.Unlock()
 
-	glyph, err := gen.Get(r)
+	glyph, err := gen.Get(hintRune)
 	if err != nil || glyph == nil || glyph.Canvas == nil {
 		return nil
 	}

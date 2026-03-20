@@ -320,6 +320,8 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.Count++
 	case DecrMsg:
 		m.Count--
+	case app.ModelRestoredMsg:
+		app.Send(app.SetDarkModeMsg{Dark: m.Dark})
 	case ToggleThemeMsg:
 		m.Dark = !m.Dark
 		app.Send(app.SetDarkModeMsg{Dark: m.Dark})

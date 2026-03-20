@@ -29,6 +29,11 @@ type SetThemeMsg struct{ Theme theme.Theme }
 // SetDarkModeMsg toggles between the built-in dark and light themes (RFC §5.5).
 type SetDarkModeMsg struct{ Dark bool }
 
+// ModelRestoredMsg is sent once after a persisted model is successfully loaded (RFC §3.4).
+// Handle this in your update function to apply side effects from the restored state
+// (e.g., sending SetDarkModeMsg to match a persisted theme preference).
+type ModelRestoredMsg struct{}
+
 // TickMsg is sent every frame with the elapsed delta time.
 // Use this to drive animations, timers, or physics.
 type TickMsg struct{ DeltaTime time.Duration }
