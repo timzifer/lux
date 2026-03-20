@@ -131,17 +131,6 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	reconciler := ui.NewReconciler()
 	currentModel := model
 
-	// State persistence: load persisted model on startup (RFC §3.4).
-	var persistPath string
-	if cfg.persistence != nil {
-		persistPath = storagePath(cfg.title, cfg.persistence.key, cfg.storagePath)
-		if restored, err := loadPersistedModel(cfg.persistence, persistPath); err == nil {
-			currentModel = restored.(M)
-		}
-	}
-
-	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil)
-
 	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
 	dispatchCmd := func(cmd Cmd) {
 		if cmd != nil {
@@ -152,6 +141,50 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			}()
 		}
 	}
+
+	// State persistence: load persisted model on startup (RFC §3.4).
+	var persistPath string
+	if cfg.persistence != nil {
+		persistPath = storagePath(cfg.title, cfg.persistence.key, cfg.storagePath)
+		if restored, err := loadPersistedModel(cfg.persistence, persistPath); err == nil {
+			currentModel = restored.(M)
+
+			// Let the user's update function react to the restored model
+			// (e.g., send SetDarkModeMsg to apply a persisted theme preference).
+			restoredModel, cmd := update(currentModel, ModelRestoredMsg{})
+			currentModel = restoredModel
+			dispatchCmd(cmd)
+
+			// Drain any framework messages queued during restore (e.g., SetDarkModeMsg)
+			// so the first reconcile uses the correct theme.
+			appLoop.DrainMessages(func(msg any) bool {
+				switch m := msg.(type) {
+				case SetThemeMsg:
+					cachedTheme = theme.NewCachedTheme(m.Theme)
+					cachedTheme.WarmUp()
+					activeTheme = cachedTheme
+					updateBgColor()
+				case SetDarkModeMsg:
+					if m.Dark {
+						cachedTheme = theme.NewCachedTheme(theme.Slate)
+					} else {
+						cachedTheme = theme.NewCachedTheme(theme.SlateLight)
+					}
+					cachedTheme.WarmUp()
+					activeTheme = cachedTheme
+					updateBgColor()
+				default:
+					// Non-theme messages: feed through update normally.
+					newModel, cmd := update(currentModel, msg)
+					currentModel = newModel
+					dispatchCmd(cmd)
+				}
+				return true
+			})
+		}
+	}
+
+	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map

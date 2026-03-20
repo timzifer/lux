@@ -371,10 +371,13 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 		var ok bool
 
 		if useMSDF {
-			key := text.GlyphKey{FontID: fontID, Rune: sg.Rune, SizePx: uint16(text.MSDFAtlasSize), MSDF: true}
+			key := text.GlyphKey{FontID: fontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: uint16(text.MSDFAtlasSize), MSDF: true}
 			entry, ok = c.atlas.LookupOrInsertMSDF(key, shaper, f)
-		} else {
-			key := text.GlyphKey{FontID: fontID, Rune: sg.Rune, SizePx: sizePx}
+		}
+		if !ok {
+			// Bitmap path (or MSDF fallback for ligature glyphs whose
+			// GlyphID has no single-rune cmap entry).
+			key := text.GlyphKey{FontID: fontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: sizePx}
 			entry, ok = c.atlas.LookupOrInsert(key, shaper, style)
 		}
 		if !ok {
@@ -382,8 +385,13 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			continue
 		}
 
+		// Per-glyph MSDF check: ligature glyphs may fall back to bitmap
+		// even when the text run uses MSDF, since the msdf library can't
+		// render glyphs without a direct cmap rune mapping.
+		glyphIsMSDF := entry.PxRange > 0
+
 		var dstX, dstY, dstW, dstH float32
-		if useMSDF {
+		if glyphIsMSDF {
 			dstW = float32(entry.W) * msdfScale
 			dstH = float32(entry.H) * msdfScale
 			dstX = float32(math.Round(float64(cursorX + entry.BearingX*msdfScale)))
@@ -414,7 +422,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			clip := c.clips[len(c.clips)-1]
 			if tg.DstX < clip.X {
 				d := clip.X - tg.DstX
-				if useMSDF {
+				if glyphIsMSDF {
 					srcD := d / msdfScale
 					tg.SrcX += int(srcD)
 					tg.SrcW -= int(srcD)
@@ -427,7 +435,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			}
 			if tg.DstY < clip.Y {
 				d := clip.Y - tg.DstY
-				if useMSDF {
+				if glyphIsMSDF {
 					srcD := d / msdfScale
 					tg.SrcY += int(srcD)
 					tg.SrcH -= int(srcD)
@@ -440,7 +448,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			}
 			if tg.DstX+tg.DstW > clip.X+clip.W {
 				tg.DstW = clip.X + clip.W - tg.DstX
-				if !useMSDF {
+				if !glyphIsMSDF {
 					tg.SrcW = int(tg.DstW)
 				} else {
 					tg.SrcW = int(tg.DstW / msdfScale)
@@ -448,7 +456,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			}
 			if tg.DstY+tg.DstH > clip.Y+clip.H {
 				tg.DstH = clip.Y + clip.H - tg.DstY
-				if !useMSDF {
+				if !glyphIsMSDF {
 					tg.SrcH = int(tg.DstH)
 				} else {
 					tg.SrcH = int(tg.DstH / msdfScale)
@@ -459,7 +467,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 				continue
 			}
 		}
-		if useMSDF {
+		if glyphIsMSDF {
 			if c.overlayMode {
 				c.scene.OverlayMSDFGlyphs = append(c.scene.OverlayMSDFGlyphs, tg)
 			} else {

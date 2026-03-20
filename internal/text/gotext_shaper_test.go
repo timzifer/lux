@@ -5,6 +5,7 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
+	"golang.org/x/image/font/sfnt"
 )
 
 func newGoTextTestShaper() *GoTextShaper {
@@ -75,7 +76,16 @@ func TestGoTextShaperMeasureConsistency(t *testing.T) {
 
 func TestGoTextShaperRasterizeGlyph(t *testing.T) {
 	s := newGoTextTestShaper()
-	rg := s.RasterizeGlyph('A', goTextBodyStyle)
+	f := s.ResolveFont(goTextBodyStyle)
+	if f == nil {
+		t.Fatal("ResolveFont returned nil")
+	}
+	var buf sfnt.Buffer
+	glyphIdx, err := f.SfntFont().GlyphIndex(&buf, 'A')
+	if err != nil {
+		t.Fatalf("GlyphIndex('A') failed: %v", err)
+	}
+	rg := s.RasterizeGlyph(GlyphID(glyphIdx), goTextBodyStyle)
 	if rg == nil {
 		t.Fatal("RasterizeGlyph('A') returned nil")
 	}

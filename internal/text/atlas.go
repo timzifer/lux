@@ -8,12 +8,16 @@ import (
 )
 
 // GlyphKey uniquely identifies a rasterized glyph in the atlas.
+// It uses the OpenType GlyphID (post-GSUB) so that ligature glyphs
+// like "ff" get their own atlas entry distinct from a regular "f".
+// Rune is kept as a hint for rasterizers that need a cmap rune (e.g., MSDF).
 // When MSDF is true, SizePx is fixed at MSDFAtlasSize.
 type GlyphKey struct {
-	FontID uint64
-	Rune   rune
-	SizePx uint16
-	MSDF   bool
+	FontID  uint64
+	GlyphID GlyphID
+	Rune    rune // hint rune for MSDF rasterization; GlyphID is the real key
+	SizePx  uint16
+	MSDF    bool
 }
 
 // AtlasEntry describes the location and metrics of a glyph in the atlas.
@@ -150,9 +154,9 @@ func (a *GlyphAtlas) LookupOrInsert(key GlyphKey, shaper GlyphRasterizer, style 
 		return entry, true
 	}
 
-	// Rasterize the glyph. The returned bearings are pixel-aligned
-	// (using Floor/Ceil) to match the rasterized bitmap exactly.
-	rg := shaper.RasterizeGlyph(key.Rune, style)
+	// Rasterize the glyph by its OpenType GlyphID (post-GSUB), so that
+	// ligature glyphs are rendered correctly instead of the base rune.
+	rg := shaper.RasterizeGlyph(key.GlyphID, style)
 	if rg == nil {
 		return AtlasEntry{}, false
 	}
@@ -229,7 +233,7 @@ func (a *GlyphAtlas) LookupOrInsertMSDF(key GlyphKey, shaper GlyphRasterizer, f 
 		return entry, true
 	}
 
-	rg := shaper.RasterizeMSDFGlyph(key.Rune, f, MSDFAtlasSize, MSDFPxRange)
+	rg := shaper.RasterizeMSDFGlyph(key.GlyphID, key.Rune, f, MSDFAtlasSize, MSDFPxRange)
 	if rg == nil {
 		return AtlasEntry{}, false
 	}
