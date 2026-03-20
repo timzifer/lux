@@ -2555,6 +2555,80 @@ func effectsSection() ui.Element {
 		),
 	)
 
+	// --- Noise/Grain (Tier 3) ---
+	items = append(items,
+		ui.Spacer(16),
+		ui.Text("Noise/Grain (always-on dither — zoom in to see noise preventing banding):"),
+		ui.Spacer(8),
+	)
+	items = append(items,
+		ui.Row(
+			ui.Padding(ui.UniformInsets(8),
+				ui.GradientRect(200, 80, 8, draw.LinearGradientPaint(
+					draw.Pt(0, 0), draw.Pt(200, 0),
+					draw.GradientStop{Offset: 0, Color: draw.Hex("#1e3a5f")},
+					draw.GradientStop{Offset: 1, Color: draw.Hex("#4a90d9")},
+				)),
+			),
+			ui.Padding(ui.UniformInsets(8),
+				ui.GradientRect(200, 80, 8, draw.LinearGradientPaint(
+					draw.Pt(0, 0), draw.Pt(0, 80),
+					draw.GradientStop{Offset: 0, Color: draw.Hex("#2d1b4e")},
+					draw.GradientStop{Offset: 1, Color: draw.Hex("#7c3aed")},
+				)),
+			),
+		),
+	)
+
+	// --- Glow (Tier 3) ---
+	items = append(items,
+		ui.Spacer(16),
+		ui.Text("Glow (soft outer glow using shadow pipeline):"),
+		ui.Spacer(8),
+	)
+	glowCards := []ui.Element{
+		ui.Padding(ui.UniformInsets(16),
+			ui.Glow(12, 8,
+				ui.SizedBox(120, 80,
+					ui.Padding(ui.UniformInsets(12),
+						ui.Column(
+							ui.Text("Accent"),
+							ui.Spacer(4),
+							ui.Text("blur=12"),
+						),
+					),
+				),
+			),
+		),
+		ui.Padding(ui.UniformInsets(16),
+			ui.GlowBox(draw.Color{R: 0.2, G: 0.9, B: 0.4, A: 0.6}, 16, 8,
+				ui.SizedBox(120, 80,
+					ui.Padding(ui.UniformInsets(12),
+						ui.Column(
+							ui.Text("Green"),
+							ui.Spacer(4),
+							ui.Text("blur=16"),
+						),
+					),
+				),
+			),
+		),
+		ui.Padding(ui.UniformInsets(16),
+			ui.GlowBox(draw.Color{R: 0.9, G: 0.2, B: 0.2, A: 0.6}, 20, 8,
+				ui.SizedBox(120, 80,
+					ui.Padding(ui.UniformInsets(12),
+						ui.Column(
+							ui.Text("Red"),
+							ui.Spacer(4),
+							ui.Text("blur=20"),
+						),
+					),
+				),
+			),
+		),
+	}
+	items = append(items, ui.Row(glowCards...))
+
 	return ui.Column(items...)
 }
 

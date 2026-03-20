@@ -49,6 +49,10 @@ fn rounded_box_sdf(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
     return length(max(q, vec2<f32>(0.0))) - r;
 }
 
+fn noise_hash(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = rounded_box_sdf(in.local_pos, in.half_size, in.radius);
@@ -56,7 +60,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (alpha < 0.001) {
         discard;
     }
-    return vec4<f32>(in.color.rgb, in.color.a * alpha);
+    let n = (noise_hash(in.position.xy) - 0.5) * 0.03;
+    return vec4<f32>(in.color.rgb + n, in.color.a * alpha);
 }
 `
 
@@ -186,6 +191,10 @@ fn rounded_box_sdf_g(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
     return length(max(q, vec2<f32>(0.0))) - r;
 }
 
+fn noise_hash_g(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
 fn sample_gradient(t_raw: f32) -> vec4<f32> {
     let t = clamp(t_raw, 0.0, 1.0);
     let count = i32(grad.stop_count);
@@ -245,7 +254,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let color = sample_gradient(t);
-    return vec4<f32>(color.rgb, color.a * alpha);
+    let n = (noise_hash_g(in.position.xy) - 0.5) * 0.03;
+    return vec4<f32>(color.rgb + n, color.a * alpha);
 }
 `
 

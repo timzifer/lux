@@ -372,6 +372,16 @@ func Vibrancy(tintAlpha float32, child Element) Element {
 	return vibrancyElement{TintAlpha: tintAlpha, Child: child}
 }
 
+// GlowBox renders a soft outer glow around its child using the shadow pipeline.
+func GlowBox(color draw.Color, blurRadius, radius float32, child Element) Element {
+	return glowBoxElement{Color: color, BlurRadius: blurRadius, Radius: radius, Child: child}
+}
+
+// Glow is a convenience GlowBox using the theme's accent color.
+func Glow(blurRadius, radius float32, child Element) Element {
+	return glowBoxElement{BlurRadius: blurRadius, Radius: radius, Child: child}
+}
+
 // ScrollView constrains a child to a maximum height, clipping overflow
 // and rendering a scrollbar when content exceeds the viewport (RFC-003 §4.1).
 // An optional ScrollState pointer drives the vertical offset; pass nil for static views.
@@ -756,6 +766,15 @@ func (expandedElement) isElement() {}
 // ── Tier 2 element structs ──────────────────────────────────────
 
 // ── Tier 3 element structs ──────────────────────────────────────
+
+type glowBoxElement struct {
+	Color      draw.Color
+	BlurRadius float32
+	Radius     float32
+	Child      Element
+}
+
+func (glowBoxElement) isElement() {}
 
 type cardElement struct {
 	Child Element
@@ -1488,6 +1507,21 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		tint.A = node.TintAlpha
 		fg := frostedGlassElement{BlurRadius: 20, Tint: tint, Child: node.Child}
 		return layoutElement(fg, area, canvas, th, tokens, ix, overlays, fs)
+
+	case glowBoxElement:
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
+		glowColor := node.Color
+		if glowColor.A == 0 {
+			glowColor = tokens.Colors.Accent.Primary
+			glowColor.A = 0.6
+		}
+		canvas.DrawShadow(r, draw.Shadow{
+			Color:      glowColor,
+			BlurRadius: node.BlurRadius,
+			Radius:     node.Radius,
+		})
+		return b
 
 	case scrollViewElement:
 		return layoutScrollView(node, area, canvas, th, tokens, ix, overlays, fs)
