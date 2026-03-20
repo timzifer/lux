@@ -212,8 +212,8 @@ type RadiusScale struct {
 // of Material or Cupertino.
 var Slate Theme = &slateTheme{}
 
-// Default is an alias for Slate (backward compatibility).
-var Default Theme = Slate
+// Default is the recommended theme for new applications (RFC-008 §12.2).
+var Default Theme = LuxDark
 
 type slateTheme struct{}
 
@@ -326,6 +326,156 @@ func (s *slateLightTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
 func (s *slateLightTheme) Parent() Theme                { return Slate }
 
 type slateLightTheme struct{}
+
+// ── ThemePair (RFC-008 §12.1) ──────────────────────────────────
+
+// ThemePair is implemented by themes that provide matched dark/light variants.
+// The app loop uses this interface to resolve SetDarkModeMsg without
+// hard-coding theme names.
+type ThemePair interface {
+	DarkVariant() Theme
+	LightVariant() Theme
+}
+
+// ── theme.Lux — The Default Theme (RFC-008) ────────────────────
+
+// LuxDark is the built-in dark theme of the lux family (RFC-008 §5.2).
+var LuxDark Theme = &luxTheme{}
+
+// LuxLight is the built-in light theme of the lux family (RFC-008 §5.3).
+var LuxLight Theme = &luxLightTheme{}
+
+// LuxAuto follows the OS dark-mode signal, starting in dark (RFC-008 §12.1).
+var LuxAuto Theme = &luxAutoTheme{}
+
+type luxTheme struct{}
+
+var luxDarkTokens = TokenSet{
+	Colors: ColorScheme{
+		Surface: SurfaceColors{
+			Base:     draw.Hex("#0f1115"),
+			Elevated: draw.Hex("#171a20"),
+			Hovered:  draw.Hex("#1d222a"),
+			Pressed:  draw.Hex("#252b35"),
+			Scrim:    draw.Color{R: 0, G: 0, B: 0, A: 0.46},
+		},
+		Accent: AccentColors{
+			Primary:         draw.Hex("#4c8dff"),
+			PrimaryContrast: draw.Hex("#ffffff"),
+			Secondary:       draw.Hex("#7aa8ff"),
+		},
+		Stroke: StrokeColors{
+			Border:  draw.Color{R: 1, G: 1, B: 1, A: 0.10},
+			Focus:   draw.Hex("#7aa8ff"),
+			Divider: draw.Color{R: 1, G: 1, B: 1, A: 0.06},
+		},
+		Text: TextColors{
+			Primary:   draw.Hex("#eef2f7"),
+			Secondary: draw.Hex("#a8b0bc"),
+			Disabled:  draw.Hex("#606975"),
+			OnAccent:  draw.Hex("#ffffff"),
+		},
+		Status: StatusColors{
+			Success:   draw.Hex("#3bb273"),
+			Warning:   draw.Hex("#d9a441"),
+			Error:     draw.Hex("#de5b6d"),
+			Info:      draw.Hex("#4c8dff"),
+			OnSuccess: draw.Hex("#ffffff"),
+			OnError:   draw.Hex("#ffffff"),
+		},
+	},
+	Typography: TypographyScale{
+		H1:         draw.TextStyle{Size: 20, Weight: draw.FontWeightSemiBold, LineHeight: 1.25, Tracking: -0.01},
+		H2:         draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold, LineHeight: 1.30},
+		H3:         draw.TextStyle{Size: 14, Weight: draw.FontWeightMedium, LineHeight: 1.35},
+		Body:       draw.TextStyle{Size: 13, Weight: draw.FontWeightRegular, LineHeight: 1.50},
+		BodySmall:  draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular, LineHeight: 1.45},
+		Label:      draw.TextStyle{Size: 12, Weight: draw.FontWeightMedium, LineHeight: 1.00},
+		LabelSmall: draw.TextStyle{Size: 11, Weight: draw.FontWeightMedium, LineHeight: 1.00},
+		Code:       draw.TextStyle{Size: 13, Weight: draw.FontWeightRegular, LineHeight: 1.45, FontFamily: "JetBrains Mono"},
+		CodeSmall:  draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular, LineHeight: 1.40, FontFamily: "JetBrains Mono"},
+	},
+	Spacing: SpacingScale{XS: 4, S: 8, M: 16, L: 24, XL: 32, XXL: 48},
+	Radii:   RadiusScale{Input: 4, Button: 6, Card: 10, Pill: 999},
+	Motion: MotionSpec{
+		Standard:   DurationEasing{220 * time.Millisecond, anim.OutCubic},
+		Emphasized: DurationEasing{320 * time.Millisecond, anim.InOutCubic},
+		Quick:      DurationEasing{110 * time.Millisecond, anim.OutExpo},
+	},
+	Elevation: ElevationScale{
+		None: draw.Shadow{},
+		Low:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.14}, BlurRadius: 10, OffsetY: 2, Radius: 8},
+		Med:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.18}, BlurRadius: 18, OffsetY: 6, Radius: 12},
+		High: draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.22}, BlurRadius: 28, OffsetY: 10, Radius: 14},
+	},
+	Scroll: ScrollSpec{
+		Friction:          0.95,
+		Overscroll:        40,
+		TrackWidth:        8,
+		ThumbRadius:       4,
+		SettlingThreshold: 0.5,
+		StepSize:          48,
+		MultiplierPrecise: 1.5,
+	},
+}
+
+func (l *luxTheme) Tokens() TokenSet             { return luxDarkTokens }
+func (l *luxTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
+func (l *luxTheme) Parent() Theme                { return nil }
+
+// ── theme.LuxLight (RFC-008 §5.3) ──────────────────────────────
+
+type luxLightTheme struct{}
+
+var luxLightTokens = func() TokenSet {
+	t := luxDarkTokens
+	t.Colors.Surface = SurfaceColors{
+		Base:     draw.Hex("#f5f7fb"),
+		Elevated: draw.Hex("#ffffff"),
+		Hovered:  draw.Hex("#edf1f7"),
+		Pressed:  draw.Hex("#e4e9f1"),
+		Scrim:    draw.Color{R: 0, G: 0, B: 0, A: 0.18},
+	}
+	t.Colors.Accent = AccentColors{
+		Primary:         draw.Hex("#2f6fe4"),
+		PrimaryContrast: draw.Hex("#ffffff"),
+		Secondary:       draw.Hex("#5e92ef"),
+	}
+	t.Colors.Stroke = StrokeColors{
+		Border:  draw.Color{R: 0.09, G: 0.12, B: 0.18, A: 0.12},
+		Focus:   draw.Hex("#2f6fe4"),
+		Divider: draw.Color{R: 0.09, G: 0.12, B: 0.18, A: 0.08},
+	}
+	t.Colors.Text = TextColors{
+		Primary:   draw.Hex("#17202b"),
+		Secondary: draw.Hex("#5e6a78"),
+		Disabled:  draw.Hex("#9aa4b2"),
+		OnAccent:  draw.Hex("#ffffff"),
+	}
+	t.Colors.Status = StatusColors{
+		Success:   draw.Hex("#278f5a"),
+		Warning:   draw.Hex("#b27d1f"),
+		Error:     draw.Hex("#c94b5d"),
+		Info:      draw.Hex("#2f6fe4"),
+		OnSuccess: draw.Hex("#ffffff"),
+		OnError:   draw.Hex("#ffffff"),
+	}
+	return t
+}()
+
+func (l *luxLightTheme) Tokens() TokenSet             { return luxLightTokens }
+func (l *luxLightTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
+func (l *luxLightTheme) Parent() Theme                { return LuxDark }
+
+// ── theme.LuxAuto (RFC-008 §12.1) ──────────────────────────────
+
+type luxAutoTheme struct{}
+
+func (l *luxAutoTheme) Tokens() TokenSet             { return luxDarkTokens }
+func (l *luxAutoTheme) DrawFunc(WidgetKind) DrawFunc { return nil }
+func (l *luxAutoTheme) Parent() Theme                { return nil }
+func (l *luxAutoTheme) DarkVariant() Theme           { return LuxDark }
+func (l *luxAutoTheme) LightVariant() Theme          { return LuxLight }
 
 // ── Override (RFC-003 §1.6) ─────────────────────────────────────
 
