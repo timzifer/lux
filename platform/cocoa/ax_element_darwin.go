@@ -62,15 +62,38 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 		// Enabled.
 		msgSendVoid(obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
 
-		// Frame in parent space (relative to parent, not screen).
-		// NSAccessibilityElement handles the conversion to screen coordinates.
+		// Frame – set both parent-space and screen-coordinate frames.
+		// The Accessibility Inspector queries accessibilityFrame (screen coords)
+		// via the cross-process AX C API; setAccessibilityFrameInParentSpace
+		// alone is not reliably converted by NSAccessibilityElement.
 		msgSendVoid(obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 			Origin: nsPoint{X: node.Bounds.X, Y: node.Bounds.Y},
 			Size:   nsSize{Width: node.Bounds.Width, Height: node.Bounds.Height},
 		}))
+		if bridge.view != 0 {
+			screenFrame := axFrameFromBounds(node.Bounds, bridge.view)
+			msgSendVoid(obj, sel("setAccessibilityFrame:"), argRect(screenFrame))
+		}
+
+		// Subrole (e.g. AXDialog for dialog groups).
+		if sr := subroleForRole(node.Node.Role); sr != "" {
+			nsSub := newNSString(sr)
+			msgSendVoid(obj, sel("setAccessibilitySubrole:"), argPtr(nsSub))
+		}
 
 		// Parent.
 		axSetElementParent(obj, bridge, node)
+
+		// Window & top-level element – required for cross-process AX queries
+		// (Accessibility Inspector). Without these the AX system cannot
+		// associate the element with its containing window.
+		if bridge.view != 0 {
+			win := msgSendPtr(bridge.view, sel("window"))
+			if win != 0 {
+				msgSendVoid(obj, sel("setAccessibilityWindow:"), argPtr(win))
+				msgSendVoid(obj, sel("setAccessibilityTopLevelUIElement:"), argPtr(win))
+			}
+		}
 	}
 
 	return &axElement{obj: obj, nodeID: nodeID}
@@ -99,6 +122,10 @@ func updateAXElementFrame(el *axElement, bounds a11y.Rect, view uintptr) {
 		Origin: nsPoint{X: bounds.X, Y: bounds.Y},
 		Size:   nsSize{Width: bounds.Width, Height: bounds.Height},
 	}))
+	if view != 0 {
+		screenFrame := axFrameFromBounds(bounds, view)
+		msgSendVoid(el.obj, sel("setAccessibilityFrame:"), argRect(screenFrame))
+	}
 }
 
 func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.AccessTreeNode) {
@@ -115,6 +142,15 @@ func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.Acces
 	}
 	msgSendVoid(el.obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
 	axSetElementParent(el.obj, bridge, node)
+
+	// Keep window/top-level references current for AX inspector queries.
+	if bridge.view != 0 {
+		win := msgSendPtr(bridge.view, sel("window"))
+		if win != 0 {
+			msgSendVoid(el.obj, sel("setAccessibilityWindow:"), argPtr(win))
+			msgSendVoid(el.obj, sel("setAccessibilityTopLevelUIElement:"), argPtr(win))
+		}
+	}
 }
 
 func releaseAXElement(el *axElement) {
