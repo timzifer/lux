@@ -3333,11 +3333,12 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Them
 				func() { onSelect(idx) })
 		}
 
-		// Tab background — selected tab gets subtle highlight; hover blends on top.
+		// Tab background — selected tab gets tonal accent tint (RFC-008 §11.6); hover blends on top.
 		if i == selected {
+			tonalBg := lerpColor(tokens.Colors.Surface.Base, tokens.Colors.Accent.Primary, 0.08)
 			canvas.FillRect(
 				draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH)),
-				draw.SolidPaint(tokens.Colors.Surface.Hovered))
+				draw.SolidPaint(tonalBg))
 		} else if hoverOpacity > 0 {
 			hc := tokens.Colors.Surface.Hovered
 			hc.A *= hoverOpacity
@@ -3530,8 +3531,8 @@ func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Th
 		h = badgeMinSize
 	}
 
-	// Pill background
-	bgColor := tokens.Colors.Accent.Primary
+	// Pill background — RFC-008 §11.6: tonal but still readable.
+	bgColor := lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.75)
 	if node.Color.A > 0 {
 		bgColor = node.Color
 	}
@@ -3580,8 +3581,9 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 	// Background
 	var bgColor, borderColor draw.Color
 	if node.Selected {
-		bgColor = tokens.Colors.Accent.Primary
-		borderColor = tokens.Colors.Accent.Primary
+		// RFC-008 §11.6: tonal fill — accent blended over surface, not full accent.
+		bgColor = lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.15)
+		borderColor = lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.30)
 	} else {
 		bgColor = tokens.Colors.Surface.Hovered
 		borderColor = tokens.Colors.Surface.Pressed
@@ -3609,7 +3611,7 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 		dismissStyle := tokens.Typography.LabelSmall
 		textColor := tokens.Colors.Text.Primary
 		if node.Selected {
-			textColor = tokens.Colors.Text.OnAccent
+			textColor = tokens.Colors.Accent.Primary // RFC-008 §11.6: accent text on tonal bg
 		}
 		canvas.DrawText("×", draw.Pt(float32(dismissX), float32(dismissY)), dismissStyle, textColor)
 

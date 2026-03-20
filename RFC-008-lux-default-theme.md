@@ -1005,8 +1005,11 @@ Stand: 2026-03-20
   (`TooltipBlur`) und ContextMenu (`ContextMenuBlur`) via `PushClipRoundRect` +
   `PushBlur(8)` + halbtransparenter Tint-Fill. Nicht-Blur-Pfad behält opaken
   Fill bei. Shared Border-Stroke auf beiden Pfaden.
-- [ ] **§11.6 Tabs/Chips/Badges** — Implementiert, aber aktive Elemente nutzen
-  noch vollflächigen Accent statt tonaler Abstufung
+- [x] **§11.6 Tabs/Chips/Badges** — Tonal statt vollflächig:
+  Chip-Selected = 15 % Accent über Elevated Surface + 30 % Accent-Border,
+  Tab-Selected-Bg = 8 % Accent über Surface.Base,
+  Badge-Default = 75 % Accent-Blend (lesbar, aber zurückhaltender).
+  Dismiss-Icon auf Selected-Chip nutzt Accent-Textfarbe statt OnAccent.
 - [ ] **§14 Migration** — Kitchen-Sink und Beispiel-Apps referenzieren `Slate`
   statt `lux`; Screenshots und Doku noch nicht aktualisiert
 
