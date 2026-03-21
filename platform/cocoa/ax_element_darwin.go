@@ -3,6 +3,7 @@
 package cocoa
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -47,20 +48,27 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 		nsRole := newNSString(roleToAXRole(node.Node.Role))
 		msgSendVoid(obj, sel("setAccessibilityRole:"), argPtr(nsRole))
 
-		// Label.
-		if node.Node.Label != "" {
-			nsLabel := newNSString(node.Node.Label)
-			msgSendVoid(obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+		// Subrole.
+		if subrole := subroleForRole(node.Node.Role); subrole != "" {
+			nsSubrole := newNSString(subrole)
+			msgSendVoid(obj, sel("setAccessibilitySubrole:"), argPtr(nsSubrole))
 		}
 
+		// Label/title.
+		nsLabel := newNSString(node.Node.Label)
+		msgSendVoid(obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+		msgSendVoid(obj, sel("setAccessibilityTitle:"), argPtr(nsLabel))
+
 		// Value.
-		if node.Node.Value != "" {
-			nsVal := newNSString(node.Node.Value)
-			msgSendVoid(obj, sel("setAccessibilityValue:"), argPtr(nsVal))
-		}
+		nsVal := newNSString(node.Node.Value)
+		msgSendVoid(obj, sel("setAccessibilityValue:"), argPtr(nsVal))
 
 		// Enabled.
 		msgSendVoid(obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
+
+		// Identifier.
+		nsIdentifier := newNSString(fmt.Sprintf("lux_%d", nodeID))
+		msgSendVoid(obj, sel("setAccessibilityIdentifier:"), argPtr(nsIdentifier))
 
 		// Frame in parent space (relative to parent, not screen).
 		// NSAccessibilityElement handles the conversion to screen coordinates.
@@ -68,6 +76,18 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 			Origin: nsPoint{X: node.Bounds.X, Y: node.Bounds.Y},
 			Size:   nsSize{Width: node.Bounds.Width, Height: node.Bounds.Height},
 		}))
+
+		// Supported actions.
+		if actions := actionsForRole(node.Node.Role); len(actions) > 0 {
+			actionNames := make([]uintptr, 0, len(actions))
+			for _, action := range actions {
+				actionNames = append(actionNames, newNSString(action))
+			}
+			msgSendVoid(obj, sel("setAccessibilityActionNames:"), argPtr(newNSArray(actionNames)))
+		}
+
+		// Initialize children to an empty array so AppKit never sees stale/nil state.
+		msgSendVoid(obj, sel("setAccessibilityChildren:"), argPtr(newNSArray(nil)))
 
 		// Parent.
 		axSetElementParent(obj, bridge, node)
@@ -105,15 +125,27 @@ func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.Acces
 	if el.obj == 0 {
 		return
 	}
-	if node.Node.Label != "" {
-		nsLabel := newNSString(node.Node.Label)
-		msgSendVoid(el.obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+	nsRole := newNSString(roleToAXRole(node.Node.Role))
+	msgSendVoid(el.obj, sel("setAccessibilityRole:"), argPtr(nsRole))
+	if subrole := subroleForRole(node.Node.Role); subrole != "" {
+		nsSubrole := newNSString(subrole)
+		msgSendVoid(el.obj, sel("setAccessibilitySubrole:"), argPtr(nsSubrole))
 	}
-	if node.Node.Value != "" {
-		nsVal := newNSString(node.Node.Value)
-		msgSendVoid(el.obj, sel("setAccessibilityValue:"), argPtr(nsVal))
-	}
+	nsLabel := newNSString(node.Node.Label)
+	msgSendVoid(el.obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+	msgSendVoid(el.obj, sel("setAccessibilityTitle:"), argPtr(nsLabel))
+	nsVal := newNSString(node.Node.Value)
+	msgSendVoid(el.obj, sel("setAccessibilityValue:"), argPtr(nsVal))
 	msgSendVoid(el.obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
+	if actions := actionsForRole(node.Node.Role); len(actions) > 0 {
+		actionNames := make([]uintptr, 0, len(actions))
+		for _, action := range actions {
+			actionNames = append(actionNames, newNSString(action))
+		}
+		msgSendVoid(el.obj, sel("setAccessibilityActionNames:"), argPtr(newNSArray(actionNames)))
+	} else {
+		msgSendVoid(el.obj, sel("setAccessibilityActionNames:"), argPtr(newNSArray(nil)))
+	}
 	axSetElementParent(el.obj, bridge, node)
 }
 

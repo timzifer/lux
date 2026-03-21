@@ -73,20 +73,20 @@ func updateElementAccessibilityChildren(el *axElement, bridge *AXBridge) {
 		return
 	}
 	node := bridge.tree.FindByID(el.nodeID)
-	if node == nil || node.FirstChild < 0 {
+	if node == nil {
 		return
 	}
-	children := bridge.tree.Children(node)
-	objs := make([]uintptr, 0, len(children))
-	for _, child := range children {
-		if childEl := bridge.elementFor(child.ID); childEl != nil && childEl.obj != 0 {
-			objs = append(objs, childEl.obj)
+	objs := make([]uintptr, 0, node.ChildCount)
+	if node.FirstChild >= 0 {
+		children := bridge.tree.Children(node)
+		for _, child := range children {
+			if childEl := bridge.elementFor(child.ID); childEl != nil && childEl.obj != 0 {
+				objs = append(objs, childEl.obj)
+			}
 		}
 	}
-	if len(objs) > 0 {
-		arr := newNSArray(objs)
-		msgSendVoid(el.obj, sel("setAccessibilityChildren:"), argPtr(arr))
-	}
+	arr := newNSArray(objs)
+	msgSendVoid(el.obj, sel("setAccessibilityChildren:"), argPtr(arr))
 }
 
 func bridgeForView(view uintptr) *AXBridge {
