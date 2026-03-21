@@ -33,24 +33,22 @@ func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.Cal
 		log.Printf("[AX-VIEW] class_addMethod %q → result=%d", selName, result)
 	}
 
-	// Override only the 3 methods that AccessKit uses on the view.
-	// Do NOT override isAccessibilityElement, accessibilityIsIgnored, or
-	// accessibilityRole — the NSView defaults work correctly and overriding
-	// them can interfere with macOS's accessibility hierarchy traversal.
+	// Override accessibility methods on LuxMetalView so macOS treats it as
+	// a real accessibility container. Without isAccessibilityElement returning YES,
+	// macOS skips the view entirely (NSView defaults to NO). Without accessibilityRole
+	// returning AXGroup, macOS doesn't know the view is a container.
+	addMethod("isAccessibilityElement", ffi.NewCallback(axViewIsElement), "B@:")
+	addMethod("accessibilityRole", ffi.NewCallback(axViewRole), "@@:")
 	addMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
 	addMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
 	addMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
 }
 
-// configureViewAccessibility marks the view as an accessibility element.
-// NSView defaults isAccessibilityElement to false — without setting it to true,
-// the AX server skips the view entirely (no children queries, no tree traversal).
-// Do NOT set other properties (role, children, label) via setters — those are
-// handled by method overrides and setting them would shadow the overrides.
+// configureViewAccessibility is a no-op. All accessibility properties are
+// handled by method overrides on the LuxMetalView class (axViewHook).
+// Property setters can conflict with method overrides, so we avoid them.
 func configureViewAccessibility(view uintptr) {
-	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x", view)
-	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(true))
-	log.Printf("[AX-VIEW] configureViewAccessibility: done (setAccessibilityElement:YES)")
+	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x (no-op, methods handle everything)", view)
 }
 
 // updateViewAccessibilityChildren is now a no-op: the view's accessibilityChildren
@@ -77,6 +75,16 @@ func bridgeForView(view uintptr) *AXBridge {
 }
 
 // ── Callbacks ──
+
+func axViewIsElement(self, _cmd uintptr) uintptr {
+	log.Printf("[AX-CB] isAccessibilityElement: self=%#x → YES", self)
+	return 1 // YES — required so macOS doesn't skip this view
+}
+
+func axViewRole(self, _cmd uintptr) uintptr {
+	log.Printf("[AX-CB] accessibilityRole: self=%#x → AXGroup", self)
+	return newNSString("AXGroup")
+}
 
 func axViewChildren(self, _cmd uintptr) uintptr {
 	bridge := bridgeForView(self)
