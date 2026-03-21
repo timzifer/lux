@@ -33,18 +33,16 @@ func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.Cal
 	addMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
 	addMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
 	addMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
-	addMethod("accessibilityRole", ffi.NewCallback(axViewRole), "@@:")
-	addMethod("isAccessibilityElement", ffi.NewCallback(axViewYES), "B@:")
-	addMethod("accessibilityIsIgnored", ffi.NewCallback(axViewNO), "B@:")
+	addMethod("isAccessibilityElement", ffi.NewCallback(axViewNO), "B@:")
+	addMethod("accessibilityIsIgnored", ffi.NewCallback(axViewYES), "B@:")
 }
 
 // configureViewAccessibility sets properties on the view via setters.
 func configureViewAccessibility(view uintptr) {
-	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(true))
-	nsRole := newNSString("AXGroup")
-	msgSendVoid(view, sel("setAccessibilityRole:"), argPtr(nsRole))
-	nsLabel := newNSString("application")
-	msgSendVoid(view, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+	// The LuxMetalView is a container for virtual accessibility children, not a
+	// user-facing control of its own. Let AppKit expose the window/application
+	// hierarchy and tunnel through this ignored container to its children.
+	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(false))
 }
 
 // updateViewAccessibilityChildren sets the view's children array.
@@ -101,10 +99,6 @@ func bridgeForView(view uintptr) *AXBridge {
 
 func axViewYES(self, _cmd uintptr) uintptr { return 1 }
 func axViewNO(self, _cmd uintptr) uintptr  { return 0 }
-
-func axViewRole(self, _cmd uintptr) uintptr {
-	return newNSString("AXGroup")
-}
 
 func axViewChildren(self, _cmd uintptr) uintptr {
 	bridge := bridgeForView(self)
