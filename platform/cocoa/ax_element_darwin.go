@@ -51,13 +51,13 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 		// Subrole.
 		if subrole := subroleForRole(node.Node.Role); subrole != "" {
 			nsSubrole := newNSString(subrole)
-			msgSendVoid(obj, sel("setAccessibilitySubrole:"), argPtr(nsSubrole))
+			msgSendOptionalPtr(obj, "setAccessibilitySubrole:", nsSubrole)
 		}
 
 		// Label/title.
 		nsLabel := newNSString(node.Node.Label)
 		msgSendVoid(obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
-		msgSendVoid(obj, sel("setAccessibilityTitle:"), argPtr(nsLabel))
+		msgSendOptionalPtr(obj, "setAccessibilityTitle:", nsLabel)
 
 		// Value.
 		nsVal := newNSString(node.Node.Value)
@@ -68,7 +68,7 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 
 		// Identifier.
 		nsIdentifier := newNSString(fmt.Sprintf("lux_%d", nodeID))
-		msgSendVoid(obj, sel("setAccessibilityIdentifier:"), argPtr(nsIdentifier))
+		msgSendOptionalPtr(obj, "setAccessibilityIdentifier:", nsIdentifier)
 
 		// Frame in parent space (relative to parent, not screen).
 		// NSAccessibilityElement handles the conversion to screen coordinates.
@@ -83,7 +83,7 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 			for _, action := range actions {
 				actionNames = append(actionNames, newNSString(action))
 			}
-			msgSendVoid(obj, sel("setAccessibilityActionNames:"), argPtr(newNSArray(actionNames)))
+			msgSendOptionalPtr(obj, "setAccessibilityActionNames:", newNSArray(actionNames))
 		}
 
 		// Initialize children to an empty array so AppKit never sees stale/nil state.
@@ -129,11 +129,11 @@ func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.Acces
 	msgSendVoid(el.obj, sel("setAccessibilityRole:"), argPtr(nsRole))
 	if subrole := subroleForRole(node.Node.Role); subrole != "" {
 		nsSubrole := newNSString(subrole)
-		msgSendVoid(el.obj, sel("setAccessibilitySubrole:"), argPtr(nsSubrole))
+		msgSendOptionalPtr(el.obj, "setAccessibilitySubrole:", nsSubrole)
 	}
 	nsLabel := newNSString(node.Node.Label)
 	msgSendVoid(el.obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
-	msgSendVoid(el.obj, sel("setAccessibilityTitle:"), argPtr(nsLabel))
+	msgSendOptionalPtr(el.obj, "setAccessibilityTitle:", nsLabel)
 	nsVal := newNSString(node.Node.Value)
 	msgSendVoid(el.obj, sel("setAccessibilityValue:"), argPtr(nsVal))
 	msgSendVoid(el.obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
@@ -142,11 +142,20 @@ func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.Acces
 		for _, action := range actions {
 			actionNames = append(actionNames, newNSString(action))
 		}
-		msgSendVoid(el.obj, sel("setAccessibilityActionNames:"), argPtr(newNSArray(actionNames)))
-	} else {
+		msgSendOptionalPtr(el.obj, "setAccessibilityActionNames:", newNSArray(actionNames))
+	} else if respondsToSelector(el.obj, sel("setAccessibilityActionNames:")) {
 		msgSendVoid(el.obj, sel("setAccessibilityActionNames:"), argPtr(newNSArray(nil)))
 	}
 	axSetElementParent(el.obj, bridge, node)
+}
+
+func msgSendOptionalPtr(self uintptr, selectorName string, value uintptr) bool {
+	cmd := sel(selectorName)
+	if !respondsToSelector(self, cmd) {
+		return false
+	}
+	msgSendVoid(self, cmd, argPtr(value))
+	return true
 }
 
 func releaseAXElement(el *axElement) {
