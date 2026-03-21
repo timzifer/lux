@@ -73,7 +73,9 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 		msgSendOptionalPtr(obj, "setAccessibilityIdentifier:", nsIdentifier)
 
 		// Frame in parent space (relative to parent, not screen).
-		// NSAccessibilityElement handles the conversion to screen coordinates.
+		// Also set the absolute accessibility frame so Inspector/AX clients can
+		// highlight the element even if parent-space conversion is not enough.
+		msgSendOptionalRect(obj, "setAccessibilityFrame:", axFrameFromBounds(node.Bounds, bridge.view))
 		msgSendVoid(obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 			Origin: nsPoint{X: node.Bounds.X, Y: node.Bounds.Y},
 			Size:   nsSize{Width: node.Bounds.Width, Height: node.Bounds.Height},
@@ -117,6 +119,7 @@ func updateAXElementFrame(el *axElement, bounds a11y.Rect, view uintptr) {
 	if el.obj == 0 {
 		return
 	}
+	msgSendOptionalRect(el.obj, "setAccessibilityFrame:", axFrameFromBounds(bounds, view))
 	msgSendVoid(el.obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 		Origin: nsPoint{X: bounds.X, Y: bounds.Y},
 		Size:   nsSize{Width: bounds.Width, Height: bounds.Height},
@@ -157,6 +160,15 @@ func msgSendOptionalPtr(self uintptr, selectorName string, value uintptr) bool {
 		return false
 	}
 	msgSendVoid(self, cmd, argPtr(value))
+	return true
+}
+
+func msgSendOptionalRect(self uintptr, selectorName string, value nsRect) bool {
+	cmd := sel(selectorName)
+	if !respondsToSelector(self, cmd) {
+		return false
+	}
+	msgSendVoid(self, cmd, argRect(value))
 	return true
 }
 
