@@ -24,7 +24,7 @@ type AXBridge struct {
 	configured bool      // true after first configureViewAccessibility call
 }
 
-// axElement tracks a LuxAccessibilityElement ObjC object.
+// axElement tracks a LuxAccessibilityElement ObjC object (subclass of NSAccessibilityElement).
 type axElement struct {
 	obj    uintptr // LuxAccessibilityElement*
 	nodeID a11y.AccessNodeID
