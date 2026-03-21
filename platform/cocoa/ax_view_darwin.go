@@ -42,13 +42,15 @@ func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.Cal
 	addMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
 }
 
-// configureViewAccessibility is intentionally minimal.
-// Following AccessKit's pattern: do NOT set properties on the view via setters
-// (setAccessibilityElement:, setAccessibilityRole:, setAccessibilityLabel:, etc.)
-// as this can interfere with macOS's accessibility hierarchy traversal.
-// All accessibility is handled through method overrides on the LuxMetalView class.
+// configureViewAccessibility marks the view as an accessibility element.
+// NSView defaults isAccessibilityElement to false — without setting it to true,
+// the AX server skips the view entirely (no children queries, no tree traversal).
+// Do NOT set other properties (role, children, label) via setters — those are
+// handled by method overrides and setting them would shadow the overrides.
 func configureViewAccessibility(view uintptr) {
-	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x (no-op, methods handle everything)", view)
+	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x", view)
+	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(true))
+	log.Printf("[AX-VIEW] configureViewAccessibility: done (setAccessibilityElement:YES)")
 }
 
 // updateViewAccessibilityChildren is now a no-op: the view's accessibilityChildren
