@@ -8,6 +8,8 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/go-webgpu/goffi/ffi"
+	"github.com/go-webgpu/goffi/types"
 	"github.com/timzifer/lux/a11y"
 )
 
@@ -105,7 +107,7 @@ func axSetElementParent(obj uintptr, bridge *AXBridge, node *a11y.AccessTreeNode
 		return
 	}
 	if parent.ID == bridge.rootNodeID {
-		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(bridge.view))
+		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(axUnignoredAncestor(bridge.view)))
 	} else if parentEl := bridge.elementFor(parent.ID); parentEl != nil && parentEl.obj != 0 {
 		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(parentEl.obj))
 	}
@@ -156,6 +158,44 @@ func msgSendOptionalPtr(self uintptr, selectorName string, value uintptr) bool {
 	}
 	msgSendVoid(self, cmd, argPtr(value))
 	return true
+}
+
+var (
+	axUnignoredAncestorOnce sync.Once
+	fnAXUnignoredAncestor   unsafe.Pointer
+	cifAXUnignoredAncestor  types.CallInterface
+)
+
+func ensureAXUnignoredAncestor() {
+	axUnignoredAncestorOnce.Do(func() {
+		if rt == nil {
+			return
+		}
+		var err error
+		fnAXUnignoredAncestor, err = ffi.GetSymbol(rt.appKit, "NSAccessibilityUnignoredAncestor")
+		if err != nil {
+			return
+		}
+		_ = ffi.PrepareCallInterface(&cifAXUnignoredAncestor, types.DefaultCall, types.PointerTypeDescriptor,
+			[]*types.TypeDescriptor{types.PointerTypeDescriptor})
+	})
+}
+
+func axUnignoredAncestor(obj uintptr) uintptr {
+	if obj == 0 {
+		return 0
+	}
+	ensureAXUnignoredAncestor()
+	if fnAXUnignoredAncestor == nil {
+		return obj
+	}
+	var result uintptr
+	_ = ffi.CallFunction(&cifAXUnignoredAncestor, fnAXUnignoredAncestor, unsafe.Pointer(&result),
+		[]unsafe.Pointer{unsafe.Pointer(&obj)})
+	if result == 0 {
+		return obj
+	}
+	return result
 }
 
 func releaseAXElement(el *axElement) {
