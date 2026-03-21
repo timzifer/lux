@@ -39,6 +39,9 @@ func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.Cal
 	// returning AXGroup, macOS doesn't know the view is a container.
 	addMethod("isAccessibilityElement", ffi.NewCallback(axViewIsElement), "B@:")
 	addMethod("accessibilityRole", ffi.NewCallback(axViewRole), "@@:")
+	addMethod("accessibilityParent", ffi.NewCallback(axViewParent), "@@:")
+	addMethod("accessibilityWindow", ffi.NewCallback(axViewWindow), "@@:")
+	addMethod("accessibilityTopLevelUIElement", ffi.NewCallback(axViewWindow), "@@:")
 	addMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
 	addMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
 	addMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
@@ -84,6 +87,18 @@ func axViewIsElement(self, _cmd uintptr) uintptr {
 func axViewRole(self, _cmd uintptr) uintptr {
 	log.Printf("[AX-CB] accessibilityRole: self=%#x → AXGroup", self)
 	return newNSString("AXGroup")
+}
+
+func axViewParent(self, _cmd uintptr) uintptr {
+	win := msgSendPtr(self, sel("window"))
+	log.Printf("[AX-CB] accessibilityParent(view): self=%#x → window=%#x", self, win)
+	return win
+}
+
+func axViewWindow(self, _cmd uintptr) uintptr {
+	win := msgSendPtr(self, sel("window"))
+	log.Printf("[AX-CB] accessibilityWindow(view): self=%#x → window=%#x", self, win)
+	return win
 }
 
 func axViewChildren(self, _cmd uintptr) uintptr {
