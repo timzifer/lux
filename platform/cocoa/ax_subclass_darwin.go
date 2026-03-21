@@ -43,9 +43,9 @@ func registerLuxAccessibilityElementClass() uintptr {
 			log.Printf("[AX-SUBCLASS] failed to load objc_registerClassPair: %v", err)
 			return
 		}
-		fnReplaceMethod, err := ffi.GetSymbol(rt.libobjc, "class_replaceMethod")
+		fnAddMethod, err := ffi.GetSymbol(rt.libobjc, "class_addMethod")
 		if err != nil {
-			log.Printf("[AX-SUBCLASS] failed to load class_replaceMethod: %v", err)
+			log.Printf("[AX-SUBCLASS] failed to load class_addMethod: %v", err)
 			return
 		}
 
@@ -73,8 +73,8 @@ func registerLuxAccessibilityElementClass() uintptr {
 			return
 		}
 
-		var cifReplaceMethod types.CallInterface
-		_ = ffi.PrepareCallInterface(&cifReplaceMethod, types.DefaultCall, types.PointerTypeDescriptor,
+		var cifAddMethod types.CallInterface
+		_ = ffi.PrepareCallInterface(&cifAddMethod, types.DefaultCall, types.UInt8TypeDescriptor,
 			[]*types.TypeDescriptor{types.PointerTypeDescriptor, types.PointerTypeDescriptor,
 				types.PointerTypeDescriptor, types.PointerTypeDescriptor})
 
@@ -82,11 +82,11 @@ func registerLuxAccessibilityElementClass() uintptr {
 			s := sel(selName)
 			enc := append([]byte(typeEncoding), 0)
 			encPtr := unsafe.Pointer(&enc[0])
-			var prevIMP uintptr
-			_ = ffi.CallFunction(&cifReplaceMethod, fnReplaceMethod, unsafe.Pointer(&prevIMP),
+			var result uint8
+			_ = ffi.CallFunction(&cifAddMethod, fnAddMethod, unsafe.Pointer(&result),
 				[]unsafe.Pointer{unsafe.Pointer(&newClass), unsafe.Pointer(&s),
 					unsafe.Pointer(&imp), unsafe.Pointer(&encPtr)})
-			log.Printf("[AX-SUBCLASS] class_replaceMethod %q → prevIMP=%#x", selName, prevIMP)
+			log.Printf("[AX-SUBCLASS] class_addMethod %q → result=%d", selName, result)
 		}
 
 		// Override NSAccessibility protocol methods so the AX server can query

@@ -21,50 +21,34 @@ func init() {
 }
 
 // axViewHook adds accessibility method overrides to LuxMetalView.
-// Uses class_replaceMethod instead of class_addMethod because NSView already
-// implements NSAccessibility protocol methods; class_addMethod would silently
-// fail for methods that already exist on the class.
 func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.CallInterface) {
-	// Load class_replaceMethod for reliable overriding.
-	fnReplaceMethod, err := ffi.GetSymbol(rt.libobjc, "class_replaceMethod")
-	if err != nil {
-		log.Printf("[AX-VIEW] failed to load class_replaceMethod: %v, falling back to class_addMethod", err)
-		fnReplaceMethod = fnAddMethod
-	}
-
-	var cifReplaceMethod types.CallInterface
-	_ = ffi.PrepareCallInterface(&cifReplaceMethod, types.DefaultCall, types.PointerTypeDescriptor,
-		[]*types.TypeDescriptor{types.PointerTypeDescriptor, types.PointerTypeDescriptor,
-			types.PointerTypeDescriptor, types.PointerTypeDescriptor})
-
-	replaceMethod := func(selName string, imp uintptr, typeEncoding string) {
+	addMethod := func(selName string, imp uintptr, typeEncoding string) {
 		s := sel(selName)
 		enc := append([]byte(typeEncoding), 0)
 		encPtr := unsafe.Pointer(&enc[0])
-		var prevIMP uintptr
-		_ = ffi.CallFunction(&cifReplaceMethod, fnReplaceMethod, unsafe.Pointer(&prevIMP),
+		var result uint8
+		_ = ffi.CallFunction(cifAddMethod, fnAddMethod, unsafe.Pointer(&result),
 			[]unsafe.Pointer{unsafe.Pointer(&cls), unsafe.Pointer(&s),
 				unsafe.Pointer(&imp), unsafe.Pointer(&encPtr)})
-		log.Printf("[AX-VIEW] class_replaceMethod %q → prevIMP=%#x", selName, prevIMP)
+		log.Printf("[AX-VIEW] class_addMethod %q → result=%d", selName, result)
 	}
 
-	// Modern protocol overrides.
-	replaceMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
-	replaceMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
-	replaceMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
-	replaceMethod("accessibilityRole", ffi.NewCallback(axViewRole), "@@:")
-	replaceMethod("isAccessibilityElement", ffi.NewCallback(axViewYES), "B@:")
-	replaceMethod("accessibilityIsIgnored", ffi.NewCallback(axViewNO), "B@:")
+	// Override only the 3 methods that AccessKit uses on the view.
+	// Do NOT override isAccessibilityElement, accessibilityIsIgnored, or
+	// accessibilityRole — the NSView defaults work correctly and overriding
+	// them can interfere with macOS's accessibility hierarchy traversal.
+	addMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
+	addMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
+	addMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
 }
 
-// configureViewAccessibility marks the view as an accessibility element.
-// Role and children are handled by method overrides (axViewRole, axViewChildren).
+// configureViewAccessibility is intentionally minimal.
+// Following AccessKit's pattern: do NOT set properties on the view via setters
+// (setAccessibilityElement:, setAccessibilityRole:, setAccessibilityLabel:, etc.)
+// as this can interfere with macOS's accessibility hierarchy traversal.
+// All accessibility is handled through method overrides on the LuxMetalView class.
 func configureViewAccessibility(view uintptr) {
-	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x", view)
-	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(true))
-	nsLabel := newNSString("application")
-	msgSendVoid(view, sel("setAccessibilityLabel:"), argPtr(nsLabel))
-	log.Printf("[AX-VIEW] configureViewAccessibility: done")
+	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x (no-op, methods handle everything)", view)
 }
 
 // updateViewAccessibilityChildren is now a no-op: the view's accessibilityChildren
@@ -91,20 +75,6 @@ func bridgeForView(view uintptr) *AXBridge {
 }
 
 // ── Callbacks ──
-
-func axViewYES(self, _cmd uintptr) uintptr {
-	log.Printf("[AX-CB] isAccessibilityElement: self=%#x → YES", self)
-	return 1
-}
-func axViewNO(self, _cmd uintptr) uintptr {
-	log.Printf("[AX-CB] accessibilityIsIgnored: self=%#x → NO", self)
-	return 0
-}
-
-func axViewRole(self, _cmd uintptr) uintptr {
-	log.Printf("[AX-CB] accessibilityRole: self=%#x → AXGroup", self)
-	return newNSString("AXGroup")
-}
 
 func axViewChildren(self, _cmd uintptr) uintptr {
 	bridge := bridgeForView(self)
