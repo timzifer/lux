@@ -50,64 +50,19 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 
 	node := bridge.tree.FindByID(nodeID)
 	if node != nil {
-		axRole := roleToAXRole(node.Node.Role)
-		log.Printf("[AX-ELEM] newAXElement: nodeID=%d role=%v→%s label=%q value=%q disabled=%v bounds={%.0f,%.0f,%.0f,%.0f}",
-			nodeID, node.Node.Role, axRole, node.Node.Label, node.Node.Value, node.Node.States.Disabled,
+		log.Printf("[AX-ELEM] newAXElement: nodeID=%d role=%v label=%q bounds={%.0f,%.0f,%.0f,%.0f}",
+			nodeID, node.Node.Role, node.Node.Label,
 			node.Bounds.X, node.Bounds.Y, node.Bounds.Width, node.Bounds.Height)
-
-		// Role.
-		nsRole := newNSString(axRole)
-		msgSendVoid(obj, sel("setAccessibilityRole:"), argPtr(nsRole))
-
-		// Label.
-		if node.Node.Label != "" {
-			nsLabel := newNSString(node.Node.Label)
-			msgSendVoid(obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
-		}
-
-		// Value.
-		if node.Node.Value != "" {
-			nsVal := newNSString(node.Node.Value)
-			msgSendVoid(obj, sel("setAccessibilityValue:"), argPtr(nsVal))
-		}
-
-		// Enabled.
-		msgSendVoid(obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
-
-		// Frame – set both parent-space and screen-coordinate frames.
+		// Most properties (role, label, value, parent, children, window, etc.)
+		// are resolved dynamically by the LuxAccessibilityElement subclass overrides.
+		// Frame is set via property since returning CGRect from ffi callback is unreliable.
 		msgSendVoid(obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 			Origin: nsPoint{X: node.Bounds.X, Y: node.Bounds.Y},
 			Size:   nsSize{Width: node.Bounds.Width, Height: node.Bounds.Height},
 		}))
 		if bridge.view != 0 {
 			screenFrame := axFrameFromBounds(node.Bounds, bridge.view)
-			log.Printf("[AX-ELEM] newAXElement: nodeID=%d screenFrame={%.0f,%.0f,%.0f,%.0f}",
-				nodeID, screenFrame.Origin.X, screenFrame.Origin.Y, screenFrame.Size.Width, screenFrame.Size.Height)
 			msgSendVoid(obj, sel("setAccessibilityFrame:"), argRect(screenFrame))
-		}
-
-		// Subrole (e.g. AXDialog for dialog groups).
-		if sr := subroleForRole(node.Node.Role); sr != "" {
-			log.Printf("[AX-ELEM] newAXElement: nodeID=%d subrole=%s", nodeID, sr)
-			nsSub := newNSString(sr)
-			msgSendVoid(obj, sel("setAccessibilitySubrole:"), argPtr(nsSub))
-		}
-
-		// Parent.
-		axSetElementParent(obj, bridge, node)
-
-		// Window & top-level element – required for cross-process AX queries
-		if bridge.view != 0 {
-			win := msgSendPtr(bridge.view, sel("window"))
-			log.Printf("[AX-ELEM] newAXElement: nodeID=%d view=%#x window=%#x", nodeID, bridge.view, win)
-			if win != 0 {
-				msgSendVoid(obj, sel("setAccessibilityWindow:"), argPtr(win))
-				msgSendVoid(obj, sel("setAccessibilityTopLevelUIElement:"), argPtr(win))
-			} else {
-				log.Printf("[AX-ELEM] WARNING: nodeID=%d window is nil!", nodeID)
-			}
-		} else {
-			log.Printf("[AX-ELEM] WARNING: nodeID=%d bridge.view is 0!", nodeID)
 		}
 	} else {
 		log.Printf("[AX-ELEM] WARNING: newAXElement nodeID=%d — node NOT FOUND in tree!", nodeID)
@@ -117,72 +72,24 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 	return &axElement{obj: obj, nodeID: nodeID}
 }
 
-func axSetElementParent(obj uintptr, bridge *AXBridge, node *a11y.AccessTreeNode) {
-	log.Printf("[AX-ELEM] axSetElementParent: obj=%#x nodeID=%d parentIndex=%d", obj, node.ID, node.ParentIndex)
-	if node.ParentIndex < 0 {
-		log.Printf("[AX-ELEM] axSetElementParent: no parent (parentIndex<0)")
-		return
-	}
-	parent := bridge.tree.NodeByIndex(int(node.ParentIndex))
-	if parent == nil {
-		log.Printf("[AX-ELEM] axSetElementParent: parent node at index %d is nil", node.ParentIndex)
-		return
-	}
-	if parent.ID == bridge.rootNodeID {
-		log.Printf("[AX-ELEM] axSetElementParent: parent is root → setting parent to view=%#x", bridge.view)
-		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(bridge.view))
-	} else if parentEl := bridge.elementFor(parent.ID); parentEl != nil && parentEl.obj != 0 {
-		log.Printf("[AX-ELEM] axSetElementParent: parent nodeID=%d obj=%#x", parent.ID, parentEl.obj)
-		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(parentEl.obj))
-	} else {
-		log.Printf("[AX-ELEM] WARNING: axSetElementParent: parent nodeID=%d has no element!", parent.ID)
-	}
-}
-
 func updateAXElementFrame(el *axElement, bounds a11y.Rect, view uintptr) {
 	if el.obj == 0 {
 		return
 	}
-	log.Printf("[AX-ELEM] updateAXElementFrame: nodeID=%d obj=%#x bounds={%.0f,%.0f,%.0f,%.0f}",
-		el.nodeID, el.obj, bounds.X, bounds.Y, bounds.Width, bounds.Height)
 	msgSendVoid(el.obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 		Origin: nsPoint{X: bounds.X, Y: bounds.Y},
 		Size:   nsSize{Width: bounds.Width, Height: bounds.Height},
 	}))
 	if view != 0 {
 		screenFrame := axFrameFromBounds(bounds, view)
-		log.Printf("[AX-ELEM] updateAXElementFrame: nodeID=%d screenFrame={%.0f,%.0f,%.0f,%.0f}",
-			el.nodeID, screenFrame.Origin.X, screenFrame.Origin.Y, screenFrame.Size.Width, screenFrame.Size.Height)
 		msgSendVoid(el.obj, sel("setAccessibilityFrame:"), argRect(screenFrame))
 	}
 }
 
+// updateAXElementProperties is now a no-op: all properties are resolved
+// dynamically by the LuxAccessibilityElement subclass method overrides.
 func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.AccessTreeNode) {
-	if el.obj == 0 {
-		return
-	}
-	log.Printf("[AX-ELEM] updateAXElementProperties: nodeID=%d obj=%#x label=%q value=%q disabled=%v",
-		el.nodeID, el.obj, node.Node.Label, node.Node.Value, node.Node.States.Disabled)
-	if node.Node.Label != "" {
-		nsLabel := newNSString(node.Node.Label)
-		msgSendVoid(el.obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
-	}
-	if node.Node.Value != "" {
-		nsVal := newNSString(node.Node.Value)
-		msgSendVoid(el.obj, sel("setAccessibilityValue:"), argPtr(nsVal))
-	}
-	msgSendVoid(el.obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
-	axSetElementParent(el.obj, bridge, node)
-
-	// Keep window/top-level references current for AX inspector queries.
-	if bridge.view != 0 {
-		win := msgSendPtr(bridge.view, sel("window"))
-		log.Printf("[AX-ELEM] updateAXElementProperties: nodeID=%d view=%#x window=%#x", el.nodeID, bridge.view, win)
-		if win != 0 {
-			msgSendVoid(el.obj, sel("setAccessibilityWindow:"), argPtr(win))
-			msgSendVoid(el.obj, sel("setAccessibilityTopLevelUIElement:"), argPtr(win))
-		}
-	}
+	// No-op: properties are resolved dynamically via subclass callbacks.
 }
 
 func releaseAXElement(el *axElement) {

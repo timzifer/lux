@@ -21,82 +21,65 @@ func init() {
 }
 
 // axViewHook adds accessibility method overrides to LuxMetalView.
+// Uses class_replaceMethod instead of class_addMethod because NSView already
+// implements NSAccessibility protocol methods; class_addMethod would silently
+// fail for methods that already exist on the class.
 func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.CallInterface) {
-	addMethod := func(selName string, imp uintptr, typeEncoding string) {
+	// Load class_replaceMethod for reliable overriding.
+	fnReplaceMethod, err := ffi.GetSymbol(rt.libobjc, "class_replaceMethod")
+	if err != nil {
+		log.Printf("[AX-VIEW] failed to load class_replaceMethod: %v, falling back to class_addMethod", err)
+		fnReplaceMethod = fnAddMethod
+	}
+
+	var cifReplaceMethod types.CallInterface
+	_ = ffi.PrepareCallInterface(&cifReplaceMethod, types.DefaultCall, types.PointerTypeDescriptor,
+		[]*types.TypeDescriptor{types.PointerTypeDescriptor, types.PointerTypeDescriptor,
+			types.PointerTypeDescriptor, types.PointerTypeDescriptor})
+
+	replaceMethod := func(selName string, imp uintptr, typeEncoding string) {
 		s := sel(selName)
 		enc := append([]byte(typeEncoding), 0)
 		encPtr := unsafe.Pointer(&enc[0])
-		var result uint8
-		_ = ffi.CallFunction(cifAddMethod, fnAddMethod, unsafe.Pointer(&result),
+		var prevIMP uintptr
+		_ = ffi.CallFunction(&cifReplaceMethod, fnReplaceMethod, unsafe.Pointer(&prevIMP),
 			[]unsafe.Pointer{unsafe.Pointer(&cls), unsafe.Pointer(&s),
 				unsafe.Pointer(&imp), unsafe.Pointer(&encPtr)})
+		log.Printf("[AX-VIEW] class_replaceMethod %q → prevIMP=%#x", selName, prevIMP)
 	}
 
 	// Modern protocol overrides.
-	addMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
-	addMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
-	addMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
-	addMethod("accessibilityRole", ffi.NewCallback(axViewRole), "@@:")
-	addMethod("isAccessibilityElement", ffi.NewCallback(axViewYES), "B@:")
-	addMethod("accessibilityIsIgnored", ffi.NewCallback(axViewNO), "B@:")
+	replaceMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
+	replaceMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
+	replaceMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
+	replaceMethod("accessibilityRole", ffi.NewCallback(axViewRole), "@@:")
+	replaceMethod("isAccessibilityElement", ffi.NewCallback(axViewYES), "B@:")
+	replaceMethod("accessibilityIsIgnored", ffi.NewCallback(axViewNO), "B@:")
 }
 
-// configureViewAccessibility sets properties on the view via setters.
+// configureViewAccessibility marks the view as an accessibility element.
+// Role and children are handled by method overrides (axViewRole, axViewChildren).
 func configureViewAccessibility(view uintptr) {
 	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x", view)
 	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(true))
-	nsRole := newNSString("AXGroup")
-	msgSendVoid(view, sel("setAccessibilityRole:"), argPtr(nsRole))
 	nsLabel := newNSString("application")
 	msgSendVoid(view, sel("setAccessibilityLabel:"), argPtr(nsLabel))
-	log.Printf("[AX-VIEW] configureViewAccessibility: done (role=AXGroup, label=application)")
+	log.Printf("[AX-VIEW] configureViewAccessibility: done")
 }
 
-// updateViewAccessibilityChildren sets the view's children array.
+// updateViewAccessibilityChildren is now a no-op: the view's accessibilityChildren
+// method override (axViewChildren) dynamically returns children from the bridge tree.
+// Calling setAccessibilityChildren: would conflict with the method override by storing
+// a property value that macOS might return instead of calling our override.
 func updateViewAccessibilityChildren(bridge *AXBridge) {
-	log.Printf("[AX-VIEW] updateViewAccessibilityChildren: view=%#x, rt=%v, nodes=%d", bridge.view, rt != nil, len(bridge.tree.Nodes))
-	if rt == nil || bridge.view == 0 {
-		log.Printf("[AX-VIEW] updateViewAccessibilityChildren: EARLY RETURN (rt==nil: %v, view==0: %v)", rt == nil, bridge.view == 0)
-		return
-	}
-	if len(bridge.tree.Nodes) == 0 {
-		log.Printf("[AX-VIEW] updateViewAccessibilityChildren: EARLY RETURN (no nodes)")
-		return
-	}
-	root := &bridge.tree.Nodes[0]
-	children := bridge.tree.Children(root)
-	objs := make([]uintptr, 0, len(children))
-	for _, child := range children {
-		if el := bridge.elementFor(child.ID); el != nil && el.obj != 0 {
-			objs = append(objs, el.obj)
-		}
-	}
-	log.Printf("[AX-VIEW] updateViewAccessibilityChildren: setting %d children (of %d tree children) on view=%#x", len(objs), len(children), bridge.view)
-	arr := newNSArray(objs)
-	msgSendVoid(bridge.view, sel("setAccessibilityChildren:"), argPtr(arr))
+	// No-op: children are resolved dynamically via axViewChildren callback.
 }
 
-// updateElementAccessibilityChildren sets children on NSAccessibilityElement instances.
+// updateElementAccessibilityChildren is now a no-op: the LuxAccessibilityElement
+// subclass overrides accessibilityChildren to dynamically return children from
+// the bridge tree via luxAXChildren.
 func updateElementAccessibilityChildren(el *axElement, bridge *AXBridge) {
-	if rt == nil || el.obj == 0 {
-		return
-	}
-	node := bridge.tree.FindByID(el.nodeID)
-	if node == nil || node.FirstChild < 0 {
-		return
-	}
-	children := bridge.tree.Children(node)
-	objs := make([]uintptr, 0, len(children))
-	for _, child := range children {
-		if childEl := bridge.elementFor(child.ID); childEl != nil && childEl.obj != 0 {
-			objs = append(objs, childEl.obj)
-		}
-	}
-	if len(objs) > 0 {
-		log.Printf("[AX-VIEW] updateElementAccessibilityChildren: nodeID=%d obj=%#x → %d children", el.nodeID, el.obj, len(objs))
-		arr := newNSArray(objs)
-		msgSendVoid(el.obj, sel("setAccessibilityChildren:"), argPtr(arr))
-	}
+	// No-op: children are resolved dynamically via luxAXChildren callback.
 }
 
 func bridgeForView(view uintptr) *AXBridge {
