@@ -454,22 +454,6 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				// Sort tab order derived from layout tree (RFC-002 §2.3).
 				fm.SortOrder()
 
-				// A11y: build access tree and notify bridge (RFC-001 §11).
-				if a11yBridge != nil {
-					w, h := plat.WindowSize()
-					accessTree := ui.BuildAccessTree(currentTree, reconciler, a11y.Rect{
-						Width: float64(w), Height: float64(h),
-					}, dispatcher)
-					a11yBridge.UpdateTree(accessTree)
-
-					// Focus tracking.
-					if accessTree.FocusedID != prevA11yFocusedID {
-						if accessTree.FocusedID != 0 {
-							a11yBridge.NotifyFocus(accessTree.FocusedID)
-						}
-						prevA11yFocusedID = accessTree.FocusedID
-					}
-				}
 			}
 
 			// 3. Update hover target from previous frame's hitMap.
@@ -485,6 +469,26 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			hitMap.Reset()
 			ix := ui.NewInteractor(&hitMap, &hoverState)
 			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
+			dispatcher.SwapBounds()
+
+			// A11y: build access tree only AFTER the layout pass has registered
+			// current-frame widget bounds. Otherwise the tree falls back to
+			// window-sized bounds and AX clients/Inspector can't resolve the
+			// actual element geometry.
+			if a11yBridge != nil {
+				accessTree := ui.BuildAccessTree(currentTree, reconciler, a11y.Rect{
+					Width: float64(w), Height: float64(h),
+				}, dispatcher)
+				a11yBridge.UpdateTree(accessTree)
+
+				// Focus tracking.
+				if accessTree.FocusedID != prevA11yFocusedID {
+					if accessTree.FocusedID != 0 {
+						a11yBridge.NotifyFocus(accessTree.FocusedID)
+					}
+					prevA11yFocusedID = accessTree.FocusedID
+				}
+			}
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)

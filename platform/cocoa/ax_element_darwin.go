@@ -3,10 +3,13 @@
 package cocoa
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 	"unsafe"
 
+	"github.com/go-webgpu/goffi/ffi"
+	"github.com/go-webgpu/goffi/types"
 	"github.com/timzifer/lux/a11y"
 )
 
@@ -38,6 +41,7 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 	if obj == 0 {
 		return &axElement{nodeID: nodeID}
 	}
+	axDebugf("new AX element: node=%d obj=%#x", nodeID, obj)
 
 	elementInfoMap.Store(obj, axElementInfo{bridge: bridge, nodeID: nodeID})
 
@@ -47,30 +51,52 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 		nsRole := newNSString(roleToAXRole(node.Node.Role))
 		msgSendVoid(obj, sel("setAccessibilityRole:"), argPtr(nsRole))
 
-		// Label.
-		if node.Node.Label != "" {
-			nsLabel := newNSString(node.Node.Label)
-			msgSendVoid(obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+		// Subrole.
+		if subrole := subroleForRole(node.Node.Role); subrole != "" {
+			nsSubrole := newNSString(subrole)
+			msgSendOptionalPtr(obj, "setAccessibilitySubrole:", nsSubrole)
 		}
 
+		// Label/title.
+		nsLabel := newNSString(node.Node.Label)
+		msgSendVoid(obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+		msgSendOptionalPtr(obj, "setAccessibilityTitle:", nsLabel)
+
 		// Value.
-		if node.Node.Value != "" {
-			nsVal := newNSString(node.Node.Value)
-			msgSendVoid(obj, sel("setAccessibilityValue:"), argPtr(nsVal))
-		}
+		nsVal := newNSString(node.Node.Value)
+		msgSendVoid(obj, sel("setAccessibilityValue:"), argPtr(nsVal))
 
 		// Enabled.
 		msgSendVoid(obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
 
+		// Identifier.
+		nsIdentifier := newNSString(fmt.Sprintf("lux_%d", nodeID))
+		msgSendOptionalPtr(obj, "setAccessibilityIdentifier:", nsIdentifier)
+
 		// Frame in parent space (relative to parent, not screen).
-		// NSAccessibilityElement handles the conversion to screen coordinates.
+		// Also set the absolute accessibility frame so Inspector/AX clients can
+		// highlight the element even if parent-space conversion is not enough.
+		msgSendOptionalRect(obj, "setAccessibilityFrame:", axFrameFromBounds(node.Bounds, bridge.view))
 		msgSendVoid(obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 			Origin: nsPoint{X: node.Bounds.X, Y: node.Bounds.Y},
 			Size:   nsSize{Width: node.Bounds.Width, Height: node.Bounds.Height},
 		}))
 
+		// Supported actions.
+		if actions := actionsForRole(node.Node.Role); len(actions) > 0 {
+			actionNames := make([]uintptr, 0, len(actions))
+			for _, action := range actions {
+				actionNames = append(actionNames, newNSString(action))
+			}
+			msgSendOptionalPtr(obj, "setAccessibilityActionNames:", newNSArray(actionNames))
+		}
+
+		// Initialize children to an empty array so AppKit never sees stale/nil state.
+		msgSendVoid(obj, sel("setAccessibilityChildren:"), argPtr(newNSArray(nil)))
+
 		// Parent.
 		axSetElementParent(obj, bridge, node)
+		axDebugf("element initialized: node=%d obj=%#x role=%d label=%q value=%q bounds=%+v", nodeID, obj, node.Node.Role, node.Node.Label, node.Node.Value, node.Bounds)
 	}
 
 	return &axElement{obj: obj, nodeID: nodeID}
@@ -85,8 +111,11 @@ func axSetElementParent(obj uintptr, bridge *AXBridge, node *a11y.AccessTreeNode
 		return
 	}
 	if parent.ID == bridge.rootNodeID {
-		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(bridge.view))
+		parentObj := axUnignoredAncestor(bridge.view)
+		axDebugf("set parent: node=%d obj=%#x rootParent view=%#x -> parent=%#x", node.ID, obj, bridge.view, parentObj)
+		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(parentObj))
 	} else if parentEl := bridge.elementFor(parent.ID); parentEl != nil && parentEl.obj != 0 {
+		axDebugf("set parent: node=%d obj=%#x parentNode=%d parentObj=%#x", node.ID, obj, parent.ID, parentEl.obj)
 		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(parentEl.obj))
 	}
 }
@@ -95,6 +124,8 @@ func updateAXElementFrame(el *axElement, bounds a11y.Rect, view uintptr) {
 	if el.obj == 0 {
 		return
 	}
+	axDebugf("update frame: node=%d obj=%#x parentSpace=%+v screen=%+v", el.nodeID, el.obj, bounds, axFrameFromBounds(bounds, view))
+	msgSendOptionalRect(el.obj, "setAccessibilityFrame:", axFrameFromBounds(bounds, view))
 	msgSendVoid(el.obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 		Origin: nsPoint{X: bounds.X, Y: bounds.Y},
 		Size:   nsSize{Width: bounds.Width, Height: bounds.Height},
@@ -105,20 +136,97 @@ func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.Acces
 	if el.obj == 0 {
 		return
 	}
-	if node.Node.Label != "" {
-		nsLabel := newNSString(node.Node.Label)
-		msgSendVoid(el.obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+	axDebugf("update properties: node=%d obj=%#x role=%d label=%q value=%q disabled=%v", node.ID, el.obj, node.Node.Role, node.Node.Label, node.Node.Value, node.Node.States.Disabled)
+	nsRole := newNSString(roleToAXRole(node.Node.Role))
+	msgSendVoid(el.obj, sel("setAccessibilityRole:"), argPtr(nsRole))
+	if subrole := subroleForRole(node.Node.Role); subrole != "" {
+		nsSubrole := newNSString(subrole)
+		msgSendOptionalPtr(el.obj, "setAccessibilitySubrole:", nsSubrole)
 	}
-	if node.Node.Value != "" {
-		nsVal := newNSString(node.Node.Value)
-		msgSendVoid(el.obj, sel("setAccessibilityValue:"), argPtr(nsVal))
-	}
+	nsLabel := newNSString(node.Node.Label)
+	msgSendVoid(el.obj, sel("setAccessibilityLabel:"), argPtr(nsLabel))
+	msgSendOptionalPtr(el.obj, "setAccessibilityTitle:", nsLabel)
+	nsVal := newNSString(node.Node.Value)
+	msgSendVoid(el.obj, sel("setAccessibilityValue:"), argPtr(nsVal))
 	msgSendVoid(el.obj, sel("setAccessibilityEnabled:"), argBool(!node.Node.States.Disabled))
+	if actions := actionsForRole(node.Node.Role); len(actions) > 0 {
+		actionNames := make([]uintptr, 0, len(actions))
+		for _, action := range actions {
+			actionNames = append(actionNames, newNSString(action))
+		}
+		msgSendOptionalPtr(el.obj, "setAccessibilityActionNames:", newNSArray(actionNames))
+	} else if respondsToSelector(el.obj, sel("setAccessibilityActionNames:")) {
+		msgSendVoid(el.obj, sel("setAccessibilityActionNames:"), argPtr(newNSArray(nil)))
+	}
 	axSetElementParent(el.obj, bridge, node)
+}
+
+func msgSendOptionalPtr(self uintptr, selectorName string, value uintptr) bool {
+	cmd := sel(selectorName)
+	if !respondsToSelector(self, cmd) {
+		axDebugf("optional selector missing: obj=%#x selector=%s", self, selectorName)
+		return false
+	}
+	axDebugf("optional selector call: obj=%#x selector=%s", self, selectorName)
+	msgSendVoid(self, cmd, argPtr(value))
+	return true
+}
+
+func msgSendOptionalRect(self uintptr, selectorName string, value nsRect) bool {
+	cmd := sel(selectorName)
+	if !respondsToSelector(self, cmd) {
+		axDebugf("optional rect selector missing: obj=%#x selector=%s", self, selectorName)
+		return false
+	}
+	axDebugf("optional rect selector call: obj=%#x selector=%s rect=%+v", self, selectorName, value)
+	msgSendVoid(self, cmd, argRect(value))
+	return true
+}
+
+var (
+	axUnignoredAncestorOnce sync.Once
+	fnAXUnignoredAncestor   unsafe.Pointer
+	cifAXUnignoredAncestor  types.CallInterface
+)
+
+func ensureAXUnignoredAncestor() {
+	axUnignoredAncestorOnce.Do(func() {
+		if rt == nil {
+			return
+		}
+		var err error
+		fnAXUnignoredAncestor, err = ffi.GetSymbol(rt.appKit, "NSAccessibilityUnignoredAncestor")
+		if err != nil {
+			return
+		}
+		_ = ffi.PrepareCallInterface(&cifAXUnignoredAncestor, types.DefaultCall, types.PointerTypeDescriptor,
+			[]*types.TypeDescriptor{types.PointerTypeDescriptor})
+	})
+}
+
+func axUnignoredAncestor(obj uintptr) uintptr {
+	if obj == 0 {
+		return 0
+	}
+	ensureAXUnignoredAncestor()
+	if fnAXUnignoredAncestor == nil {
+		axDebugf("unignored ancestor unavailable: obj=%#x", obj)
+		return obj
+	}
+	var result uintptr
+	_ = ffi.CallFunction(&cifAXUnignoredAncestor, fnAXUnignoredAncestor, unsafe.Pointer(&result),
+		[]unsafe.Pointer{unsafe.Pointer(&obj)})
+	if result == 0 {
+		axDebugf("unignored ancestor empty: obj=%#x", obj)
+		return obj
+	}
+	axDebugf("unignored ancestor: obj=%#x -> %#x", obj, result)
+	return result
 }
 
 func releaseAXElement(el *axElement) {
 	if el.obj != 0 {
+		axDebugf("release element: node=%d obj=%#x", el.nodeID, el.obj)
 		elementInfoMap.Delete(el.obj)
 		msgSendVoid(el.obj, sel("release"))
 		el.obj = 0

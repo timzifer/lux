@@ -45,7 +45,7 @@ var (
 		},
 	}
 	nsRectType = &types.TypeDescriptor{
-		Kind: types.StructType,
+		Kind:    types.StructType,
 		Members: []*types.TypeDescriptor{nsPointType, nsSizeType},
 	}
 )
@@ -254,6 +254,13 @@ func msgSendBool(self, cmd uintptr, args ...objcArg) bool {
 	var result uint8
 	msgSend(types.UInt8TypeDescriptor, unsafe.Pointer(&result), self, cmd, args...)
 	return result != 0
+}
+
+func respondsToSelector(self, selector uintptr) bool {
+	if self == 0 || selector == 0 {
+		return false
+	}
+	return msgSendBool(self, sel("respondsToSelector:"), argPtr(selector))
 }
 
 func msgSendUInt64(self, cmd uintptr, args ...objcArg) uint64 {
