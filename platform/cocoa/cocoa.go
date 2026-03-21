@@ -130,6 +130,11 @@ func (p *Platform) Init(cfg platform.Config) error {
 	// [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular]
 	msgSendVoid(p.app, sel("setActivationPolicy:"), argUInt64(nsApplicationActivationPolicyRegular))
 
+	// Inject minimal Info.plist keys into the main bundle's infoDictionary.
+	// Without these, the macOS accessibility server (Accessibility Inspector,
+	// VoiceOver) cannot discover unbundled binaries.
+	injectBundleInfo()
+
 	// Create window.
 	frame := nsRect{
 		Origin: nsPoint{X: 100, Y: 100},
@@ -677,6 +682,36 @@ func (p *Platform) CreateWGPUSurface(_ uintptr) uintptr {
 // The wgpu Metal backend expects a CAMetalLayer* as the native handle.
 func (p *Platform) NativeHandle() uintptr {
 	return p.metalLayer
+}
+
+// ── Bundle Info Injection ────────────────────────────────────
+
+// injectBundleInfo sets minimal Info.plist keys on [NSBundle mainBundle]
+// so macOS subsystems (Accessibility Inspector, VoiceOver, etc.) can
+// discover unbundled binaries. The infoDictionary is a mutable NSDictionary;
+// modifying it before [NSApp run] is equivalent to having an Info.plist on disk.
+func injectBundleInfo() {
+	bundle := msgSendPtr(getClass("NSBundle"), sel("mainBundle"))
+	if bundle == 0 {
+		return
+	}
+	info := msgSendPtr(bundle, sel("infoDictionary"))
+	if info == 0 {
+		return
+	}
+
+	set := func(key, value string) {
+		nsKey := newNSString(key)
+		nsVal := newNSString(value)
+		msgSendVoid(info, sel("setObject:forKey:"), argPtr(nsVal), argPtr(nsKey))
+	}
+
+	set("CFBundleName", "Lux")
+	set("CFBundleIdentifier", "com.timzifer.lux")
+	set("CFBundleInfoDictionaryVersion", "6.0")
+	set("CFBundlePackageType", "APPL")
+	set("CFBundleVersion", "1")
+	set("CFBundleShortVersionString", "1.0")
 }
 
 // ── MultiWindowPlatform ──────────────────────────────────────
