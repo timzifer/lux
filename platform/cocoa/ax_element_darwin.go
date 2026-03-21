@@ -20,10 +20,10 @@ type axElementInfo struct {
 // elementInfoMap maps ObjC element pointers to axElementInfo.
 var elementInfoMap sync.Map
 
-// newAXElement creates an NSAccessibilityElement and configures it via property setters.
-// This is Apple's recommended approach for virtual (non-view-backed) elements.
-// No subclass or method overrides — NSAccessibilityElement handles all protocol queries
-// from its internal property storage.
+// newAXElement creates a LuxAccessibilityElement (custom subclass of NSAccessibilityElement)
+// and configures it via property setters. The subclass overrides NSAccessibility protocol
+// methods so the macOS accessibility server can query element properties cross-process
+// (required for Accessibility Inspector, VoiceOver, etc.).
 func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 	log.Printf("[AX-ELEM] newAXElement: nodeID=%d, rt=%v", nodeID, rt != nil)
 	if rt == nil {
@@ -31,8 +31,8 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 		return &axElement{nodeID: nodeID}
 	}
 
-	cls := getClass("NSAccessibilityElement")
-	log.Printf("[AX-ELEM] newAXElement: NSAccessibilityElement class=%#x", cls)
+	cls := registerLuxAccessibilityElementClass()
+	log.Printf("[AX-ELEM] newAXElement: LuxAccessibilityElement class=%#x", cls)
 	if cls == 0 {
 		log.Printf("[AX-ELEM] newAXElement: EARLY RETURN (class==0)")
 		return &axElement{nodeID: nodeID}
