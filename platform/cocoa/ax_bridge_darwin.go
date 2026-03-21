@@ -3,6 +3,7 @@
 package cocoa
 
 import (
+	"log"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -31,21 +32,21 @@ type axElement struct {
 
 // NewAXBridge creates a macOS accessibility bridge for the given view.
 func NewAXBridge(view uintptr, send func(any)) *AXBridge {
+	log.Printf("[AX-BRIDGE] NewAXBridge: view=%#x", view)
 	b := &AXBridge{
 		view:     view,
 		elements: make(map[a11y.AccessNodeID]*axElement),
 		send:     send,
 	}
 	viewAXBridges.Store(view, b)
-	// NOTE: configureViewAccessibility is called on first non-empty UpdateTree,
-	// NOT here — the system queries accessibilityChildren during configuration
-	// and caches the result. If we configure before the tree is populated,
-	// the system caches an empty children list and never re-queries.
+	log.Printf("[AX-BRIDGE] NewAXBridge: stored in viewAXBridges, view=%#x", view)
 	return b
 }
 
 // UpdateTree replaces the current access tree and manages element lifecycle.
 func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
+	log.Printf("[AX-BRIDGE] UpdateTree: incoming nodes=%d, current elements=%d, view=%#x, configured=%v",
+		len(tree.Nodes), len(b.elements), b.view, b.configured)
 	b.mu.Lock()
 
 	tree.EnsureIndex()
@@ -54,27 +55,44 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 
 	if len(tree.Nodes) > 0 {
 		b.rootNodeID = tree.Nodes[0].ID
+		log.Printf("[AX-BRIDGE] UpdateTree: rootNodeID=%d", b.rootNodeID)
+	}
+
+	// Log all incoming nodes.
+	for i, n := range tree.Nodes {
+		log.Printf("[AX-BRIDGE] UpdateTree: node[%d] id=%d role=%v label=%q value=%q bounds={%.0f,%.0f,%.0f,%.0f} parent=%d children=%d",
+			i, n.ID, n.Node.Role, n.Node.Label, n.Node.Value,
+			n.Bounds.X, n.Bounds.Y, n.Bounds.Width, n.Bounds.Height,
+			n.ParentIndex, n.ChildCount)
 	}
 
 	// Prune elements for removed nodes.
+	pruned := 0
 	for id, el := range b.elements {
 		if tree.FindByID(id) == nil {
+			log.Printf("[AX-BRIDGE] UpdateTree: pruning element id=%d obj=%#x", id, el.obj)
 			releaseAXElement(el)
 			delete(b.elements, id)
+			pruned++
 		}
 	}
+	log.Printf("[AX-BRIDGE] UpdateTree: pruned %d elements", pruned)
 
 	// Create elements for new nodes and update properties for existing ones
 	// (skip synthetic root at index 0).
+	created, updated := 0, 0
 	for i := 1; i < len(tree.Nodes); i++ {
 		id := tree.Nodes[i].ID
 		if el, exists := b.elements[id]; exists {
 			updateAXElementFrame(el, tree.Nodes[i].Bounds, b.view)
 			updateAXElementProperties(el, b, &tree.Nodes[i])
+			updated++
 		} else {
 			b.elements[id] = newAXElement(b, id)
+			created++
 		}
 	}
+	log.Printf("[AX-BRIDGE] UpdateTree: created=%d updated=%d total_elements=%d", created, updated, len(b.elements))
 
 	// Snapshot elements for use after unlock.
 	elementsCopy := make([]*axElement, 0, len(b.elements))
@@ -83,32 +101,33 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 	}
 
 	changed := len(oldTree.Nodes) != len(tree.Nodes) || structureChanged(oldTree, tree)
+	log.Printf("[AX-BRIDGE] UpdateTree: structureChanged=%v (old=%d new=%d)", changed, len(oldTree.Nodes), len(tree.Nodes))
 	b.mu.Unlock()
 
 	// Rebuild the accessibility children arrays via property setters.
-	// MUST happen outside the lock — setAccessibilityChildren: can trigger
-	// synchronous accessibility callbacks (axViewChildren) that acquire RLock.
 	for _, el := range elementsCopy {
 		updateElementAccessibilityChildren(el, b)
 	}
 	updateViewAccessibilityChildren(b)
 
 	// Configure accessibility on the view AFTER children are populated.
-	// The system queries accessibilityChildren during configuration and caches
-	// the result, so we must ensure elements exist before the first call.
 	if !b.configured && len(elementsCopy) > 0 && b.view != 0 {
+		log.Printf("[AX-BRIDGE] UpdateTree: FIRST CONFIGURE — calling configureViewAccessibility view=%#x", b.view)
 		configureViewAccessibility(b.view)
 		b.configured = true
 	}
 
 	// Post layout changed notification if structure changed.
 	if changed {
+		log.Printf("[AX-BRIDGE] UpdateTree: posting AXLayoutChanged on view=%#x", b.view)
 		axPostNotification(b.view, axNotificationLayoutChanged)
 	}
+	log.Printf("[AX-BRIDGE] UpdateTree: DONE")
 }
 
 // NotifyFocus raises a focus changed notification for the given node.
 func (b *AXBridge) NotifyFocus(nodeID a11y.AccessNodeID) {
+	log.Printf("[AX-BRIDGE] NotifyFocus: nodeID=%d", nodeID)
 	b.mu.Lock()
 	oldFocusID := b.tree.FocusedID
 	b.tree.FocusedID = nodeID
@@ -125,18 +144,22 @@ func (b *AXBridge) NotifyFocus(nodeID a11y.AccessNodeID) {
 	}
 	b.mu.Unlock()
 
+	log.Printf("[AX-BRIDGE] NotifyFocus: oldFocusID=%d oldObj=%#x → newFocusID=%d newObj=%#x", oldFocusID, oldObj, nodeID, newObj)
+
 	// Set focused state outside the lock to avoid deadlock with ObjC callbacks.
 	if oldObj != 0 {
 		msgSendVoid(oldObj, sel("setAccessibilityFocused:"), argBool(false))
 	}
 	if newObj != 0 {
 		msgSendVoid(newObj, sel("setAccessibilityFocused:"), argBool(true))
+		log.Printf("[AX-BRIDGE] NotifyFocus: posting AXFocusedUIElementChanged for obj=%#x", newObj)
 		axPostNotification(newObj, axNotificationFocusedUIElementChanged)
 	}
 }
 
 // NotifyLiveRegion posts an announcement notification for live region changes.
 func (b *AXBridge) NotifyLiveRegion(nodeID a11y.AccessNodeID, text string) {
+	log.Printf("[AX-BRIDGE] NotifyLiveRegion: nodeID=%d text=%q", nodeID, text)
 	b.mu.RLock()
 	b.mu.RUnlock()
 
@@ -150,27 +173,38 @@ func (b *AXBridge) NotifyLiveRegion(nodeID a11y.AccessNodeID, text string) {
 
 // Destroy releases all ObjC elements and cleans up.
 func (b *AXBridge) Destroy() {
+	log.Printf("[AX-BRIDGE] Destroy: view=%#x, elements=%d", b.view, len(b.elements))
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	for _, el := range b.elements {
+	for id, el := range b.elements {
+		log.Printf("[AX-BRIDGE] Destroy: releasing element id=%d obj=%#x", id, el.obj)
 		releaseAXElement(el)
 	}
 	b.elements = nil
 	viewAXBridges.Delete(b.view)
+	log.Printf("[AX-BRIDGE] Destroy: DONE")
 }
 
 // elementFor returns the element for the given node ID.
 // Must be called with at least a read lock held.
 func (b *AXBridge) elementFor(nodeID a11y.AccessNodeID) *axElement {
-	return b.elements[nodeID]
+	el := b.elements[nodeID]
+	if el != nil {
+		log.Printf("[AX-BRIDGE] elementFor: nodeID=%d → obj=%#x", nodeID, el.obj)
+	} else {
+		log.Printf("[AX-BRIDGE] elementFor: nodeID=%d → nil", nodeID)
+	}
+	return el
 }
 
 // ensureElement returns or creates an element under write lock.
 func (b *AXBridge) ensureElement(nodeID a11y.AccessNodeID) *axElement {
 	if el, ok := b.elements[nodeID]; ok {
+		log.Printf("[AX-BRIDGE] ensureElement: nodeID=%d found existing obj=%#x", nodeID, el.obj)
 		return el
 	}
+	log.Printf("[AX-BRIDGE] ensureElement: nodeID=%d creating new element", nodeID)
 	el := newAXElement(b, nodeID)
 	b.elements[nodeID] = el
 	return el
@@ -222,11 +256,14 @@ func ensureAXPostNotif() {
 
 // axPostNotification posts an NSAccessibility notification.
 func axPostNotification(element uintptr, notifName string) {
+	log.Printf("[AX-NOTIF] axPostNotification: element=%#x notif=%s", element, notifName)
 	if rt == nil {
+		log.Printf("[AX-NOTIF] axPostNotification: SKIP (rt==nil)")
 		return
 	}
 	ensureAXPostNotif()
 	if fnAXPostNotif == nil || element == 0 {
+		log.Printf("[AX-NOTIF] axPostNotification: SKIP (fn=%v element=%#x)", fnAXPostNotif != nil, element)
 		return
 	}
 
