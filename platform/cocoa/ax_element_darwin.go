@@ -41,6 +41,7 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 	if obj == 0 {
 		return &axElement{nodeID: nodeID}
 	}
+	axDebugf("new AX element: node=%d obj=%#x", nodeID, obj)
 
 	elementInfoMap.Store(obj, axElementInfo{bridge: bridge, nodeID: nodeID})
 
@@ -95,6 +96,7 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 
 		// Parent.
 		axSetElementParent(obj, bridge, node)
+		axDebugf("element initialized: node=%d obj=%#x role=%d label=%q value=%q bounds=%+v", nodeID, obj, node.Node.Role, node.Node.Label, node.Node.Value, node.Bounds)
 	}
 
 	return &axElement{obj: obj, nodeID: nodeID}
@@ -109,8 +111,11 @@ func axSetElementParent(obj uintptr, bridge *AXBridge, node *a11y.AccessTreeNode
 		return
 	}
 	if parent.ID == bridge.rootNodeID {
-		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(axUnignoredAncestor(bridge.view)))
+		parentObj := axUnignoredAncestor(bridge.view)
+		axDebugf("set parent: node=%d obj=%#x rootParent view=%#x -> parent=%#x", node.ID, obj, bridge.view, parentObj)
+		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(parentObj))
 	} else if parentEl := bridge.elementFor(parent.ID); parentEl != nil && parentEl.obj != 0 {
+		axDebugf("set parent: node=%d obj=%#x parentNode=%d parentObj=%#x", node.ID, obj, parent.ID, parentEl.obj)
 		msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(parentEl.obj))
 	}
 }
@@ -119,6 +124,7 @@ func updateAXElementFrame(el *axElement, bounds a11y.Rect, view uintptr) {
 	if el.obj == 0 {
 		return
 	}
+	axDebugf("update frame: node=%d obj=%#x parentSpace=%+v screen=%+v", el.nodeID, el.obj, bounds, axFrameFromBounds(bounds, view))
 	msgSendOptionalRect(el.obj, "setAccessibilityFrame:", axFrameFromBounds(bounds, view))
 	msgSendVoid(el.obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 		Origin: nsPoint{X: bounds.X, Y: bounds.Y},
@@ -130,6 +136,7 @@ func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.Acces
 	if el.obj == 0 {
 		return
 	}
+	axDebugf("update properties: node=%d obj=%#x role=%d label=%q value=%q disabled=%v", node.ID, el.obj, node.Node.Role, node.Node.Label, node.Node.Value, node.Node.States.Disabled)
 	nsRole := newNSString(roleToAXRole(node.Node.Role))
 	msgSendVoid(el.obj, sel("setAccessibilityRole:"), argPtr(nsRole))
 	if subrole := subroleForRole(node.Node.Role); subrole != "" {
@@ -157,8 +164,10 @@ func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.Acces
 func msgSendOptionalPtr(self uintptr, selectorName string, value uintptr) bool {
 	cmd := sel(selectorName)
 	if !respondsToSelector(self, cmd) {
+		axDebugf("optional selector missing: obj=%#x selector=%s", self, selectorName)
 		return false
 	}
+	axDebugf("optional selector call: obj=%#x selector=%s", self, selectorName)
 	msgSendVoid(self, cmd, argPtr(value))
 	return true
 }
@@ -166,8 +175,10 @@ func msgSendOptionalPtr(self uintptr, selectorName string, value uintptr) bool {
 func msgSendOptionalRect(self uintptr, selectorName string, value nsRect) bool {
 	cmd := sel(selectorName)
 	if !respondsToSelector(self, cmd) {
+		axDebugf("optional rect selector missing: obj=%#x selector=%s", self, selectorName)
 		return false
 	}
+	axDebugf("optional rect selector call: obj=%#x selector=%s rect=%+v", self, selectorName, value)
 	msgSendVoid(self, cmd, argRect(value))
 	return true
 }
@@ -199,19 +210,23 @@ func axUnignoredAncestor(obj uintptr) uintptr {
 	}
 	ensureAXUnignoredAncestor()
 	if fnAXUnignoredAncestor == nil {
+		axDebugf("unignored ancestor unavailable: obj=%#x", obj)
 		return obj
 	}
 	var result uintptr
 	_ = ffi.CallFunction(&cifAXUnignoredAncestor, fnAXUnignoredAncestor, unsafe.Pointer(&result),
 		[]unsafe.Pointer{unsafe.Pointer(&obj)})
 	if result == 0 {
+		axDebugf("unignored ancestor empty: obj=%#x", obj)
 		return obj
 	}
+	axDebugf("unignored ancestor: obj=%#x -> %#x", obj, result)
 	return result
 }
 
 func releaseAXElement(el *axElement) {
 	if el.obj != 0 {
+		axDebugf("release element: node=%d obj=%#x", el.nodeID, el.obj)
 		elementInfoMap.Delete(el.obj)
 		msgSendVoid(el.obj, sel("release"))
 		el.obj = 0

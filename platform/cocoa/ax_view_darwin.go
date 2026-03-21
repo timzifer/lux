@@ -42,6 +42,7 @@ func configureViewAccessibility(view uintptr) {
 	// The LuxMetalView is a container for virtual accessibility children, not a
 	// user-facing control of its own. Let AppKit expose the window/application
 	// hierarchy and tunnel through this ignored container to its children.
+	axDebugf("configure view: view=%#x accessibilityElement=false", view)
 	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(false))
 }
 
@@ -55,6 +56,7 @@ func updateViewAccessibilityChildren(bridge *AXBridge) {
 	}
 	root := &bridge.tree.Nodes[0]
 	children := bridge.tree.Children(root)
+	axDebugf("set view children: view=%#x count=%d", bridge.view, len(children))
 	objs := make([]uintptr, 0, len(children))
 	for _, child := range children {
 		if el := bridge.elementFor(child.ID); el != nil && el.obj != 0 {
@@ -74,6 +76,7 @@ func updateElementAccessibilityChildren(el *axElement, bridge *AXBridge) {
 	if node == nil {
 		return
 	}
+	axDebugf("set element children: node=%d obj=%#x count=%d", el.nodeID, el.obj, node.ChildCount)
 	objs := make([]uintptr, 0, node.ChildCount)
 	if node.FirstChild >= 0 {
 		children := bridge.tree.Children(node)
@@ -103,16 +106,19 @@ func axViewNO(self, _cmd uintptr) uintptr  { return 0 }
 func axViewChildren(self, _cmd uintptr) uintptr {
 	bridge := bridgeForView(self)
 	if bridge == nil {
+		axDebugf("view children callback: view=%#x bridge=nil", self)
 		return newNSArray(nil)
 	}
 	bridge.mu.RLock()
 	defer bridge.mu.RUnlock()
 
 	if len(bridge.tree.Nodes) == 0 {
+		axDebugf("view children callback: view=%#x nodes=0", self)
 		return newNSArray(nil)
 	}
 	root := &bridge.tree.Nodes[0]
 	children := bridge.tree.Children(root)
+	axDebugf("view children callback: view=%#x count=%d", self, len(children))
 	objs := make([]uintptr, 0, len(children))
 	for _, child := range children {
 		if el := bridge.elementFor(child.ID); el != nil && el.obj != 0 {
@@ -125,6 +131,7 @@ func axViewChildren(self, _cmd uintptr) uintptr {
 func axViewHitTest(self, _cmd uintptr, pointX, pointY float64) uintptr {
 	bridge := bridgeForView(self)
 	if bridge == nil {
+		axDebugf("hit test: view=%#x bridge=nil point=(%.1f,%.1f)", self, pointX, pointY)
 		return self
 	}
 	bridge.mu.RLock()
@@ -147,8 +154,10 @@ func axViewHitTest(self, _cmd uintptr, pointX, pointY float64) uintptr {
 		}
 	}
 	if deepest != nil {
+		axDebugf("hit test: view=%#x point=(%.1f,%.1f) local=(%.1f,%.1f) -> node=%d obj=%#x", self, pointX, pointY, localX, localY, deepest.nodeID, deepest.obj)
 		return deepest.obj
 	}
+	axDebugf("hit test: view=%#x point=(%.1f,%.1f) local=(%.1f,%.1f) -> self", self, pointX, pointY, localX, localY)
 	return self
 }
 
@@ -161,11 +170,14 @@ func axViewFocusedElement(self, _cmd uintptr) uintptr {
 	defer bridge.mu.RUnlock()
 
 	if bridge.tree.FocusedID == 0 {
+		axDebugf("focused element callback: view=%#x focused=0 -> self", self)
 		return self
 	}
 	el := bridge.elementFor(bridge.tree.FocusedID)
 	if el != nil && el.obj != 0 {
+		axDebugf("focused element callback: view=%#x focusedNode=%d obj=%#x", self, bridge.tree.FocusedID, el.obj)
 		return el.obj
 	}
+	axDebugf("focused element callback: view=%#x focusedNode=%d missing -> self", self, bridge.tree.FocusedID)
 	return self
 }

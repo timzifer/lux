@@ -36,6 +36,7 @@ func NewAXBridge(view uintptr, send func(any)) *AXBridge {
 		elements: make(map[a11y.AccessNodeID]*axElement),
 		send:     send,
 	}
+	axDebugf("bridge created: view=%#x", view)
 	viewAXBridges.Store(view, b)
 	// NOTE: configureViewAccessibility is called on first non-empty UpdateTree,
 	// NOT here — the system queries accessibilityChildren during configuration
@@ -51,6 +52,7 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 	tree.EnsureIndex()
 	oldTree := b.tree
 	b.tree = tree
+	axDebugf("update tree: nodes=%d focused=%d configured=%v", len(tree.Nodes), tree.FocusedID, b.configured)
 
 	if len(tree.Nodes) > 0 {
 		b.rootNodeID = tree.Nodes[0].ID
@@ -59,6 +61,7 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 	// Prune elements for removed nodes.
 	for id, el := range b.elements {
 		if tree.FindByID(id) == nil {
+			axDebugf("prune element: node=%d obj=%#x", id, el.obj)
 			releaseAXElement(el)
 			delete(b.elements, id)
 		}
@@ -69,9 +72,11 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 	for i := 1; i < len(tree.Nodes); i++ {
 		id := tree.Nodes[i].ID
 		if el, exists := b.elements[id]; exists {
+			axDebugf("update element: node=%d obj=%#x bounds=%+v", id, el.obj, tree.Nodes[i].Bounds)
 			updateAXElementFrame(el, tree.Nodes[i].Bounds, b.view)
 			updateAXElementProperties(el, b, &tree.Nodes[i])
 		} else {
+			axDebugf("create element: node=%d role=%d label=%q bounds=%+v", id, tree.Nodes[i].Node.Role, tree.Nodes[i].Node.Label, tree.Nodes[i].Bounds)
 			b.elements[id] = newAXElement(b, id)
 		}
 	}
@@ -97,12 +102,14 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 	// The system queries accessibilityChildren during configuration and caches
 	// the result, so we must ensure elements exist before the first call.
 	if !b.configured && len(elementsCopy) > 0 && b.view != 0 {
+		axDebugf("configure view accessibility: view=%#x childElements=%d", b.view, len(elementsCopy))
 		configureViewAccessibility(b.view)
 		b.configured = true
 	}
 
 	// Post layout changed notification if structure changed.
 	if changed {
+		axDebugf("post layout changed: view=%#x", b.view)
 		axPostNotification(b.view, axNotificationLayoutChanged)
 	}
 }
@@ -127,9 +134,11 @@ func (b *AXBridge) NotifyFocus(nodeID a11y.AccessNodeID) {
 
 	// Set focused state outside the lock to avoid deadlock with ObjC callbacks.
 	if oldObj != 0 {
+		axDebugf("clear focus: obj=%#x oldNode=%d", oldObj, oldFocusID)
 		msgSendVoid(oldObj, sel("setAccessibilityFocused:"), argBool(false))
 	}
 	if newObj != 0 {
+		axDebugf("set focus: obj=%#x newNode=%d", newObj, nodeID)
 		msgSendVoid(newObj, sel("setAccessibilityFocused:"), argBool(true))
 		axPostNotification(newObj, axNotificationFocusedUIElementChanged)
 	}
@@ -152,6 +161,7 @@ func (b *AXBridge) NotifyLiveRegion(nodeID a11y.AccessNodeID, text string) {
 func (b *AXBridge) Destroy() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	axDebugf("destroy bridge: view=%#x elements=%d", b.view, len(b.elements))
 
 	for _, el := range b.elements {
 		releaseAXElement(el)
@@ -202,10 +212,10 @@ var (
 )
 
 const (
-	axNotificationLayoutChanged              = "AXLayoutChanged"
-	axNotificationFocusedUIElementChanged    = "AXFocusedUIElementChanged"
-	axNotificationAnnouncementRequested      = "AXAnnouncementRequested"
-	axNotificationUIElementDestroyed         = "AXUIElementDestroyed"
+	axNotificationLayoutChanged           = "AXLayoutChanged"
+	axNotificationFocusedUIElementChanged = "AXFocusedUIElementChanged"
+	axNotificationAnnouncementRequested   = "AXAnnouncementRequested"
+	axNotificationUIElementDestroyed      = "AXUIElementDestroyed"
 )
 
 func ensureAXPostNotif() {
