@@ -468,7 +468,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 			hitMap.Reset()
 			ix := ui.NewInteractor(&hitMap, &hoverState)
+			ui.SetLayoutBoundsDispatcher(dispatcher)
 			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
+			ui.SetLayoutBoundsDispatcher(nil)
 			dispatcher.SwapBounds()
 
 			// A11y: build access tree only AFTER the layout pass has registered

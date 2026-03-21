@@ -91,6 +91,27 @@ func TestBuildSceneButtonText(t *testing.T) {
 	}
 }
 
+func TestBuildSceneRegistersWidgetBounds(t *testing.T) {
+	dispatcher := NewEventDispatcher(NewFocusManager())
+	SetLayoutBoundsDispatcher(dispatcher)
+	defer SetLayoutBoundsDispatcher(nil)
+
+	canvas := render.NewSceneCanvas(400, 300)
+	BuildScene(widgetBoundsElement{
+		WidgetUID: UID(42),
+		Child:     ButtonText("OK", nil),
+	}, canvas, theme.Default, 400, 300, nil)
+	dispatcher.SwapBounds()
+
+	b, ok := dispatcher.BoundsForWidget(UID(42))
+	if !ok {
+		t.Fatal("expected widget bounds to be registered")
+	}
+	if b.W <= 0 || b.H <= 0 {
+		t.Fatalf("expected positive bounds, got %+v", b)
+	}
+}
+
 func TestBuildSceneColumnTextAndButtonText(t *testing.T) {
 	scene := buildTestScene(Column(
 		Text("HELLO WORLD"),
@@ -470,7 +491,7 @@ func TestScrollStateClamp(t *testing.T) {
 		t.Errorf("Offset = %f, want 100", s.Offset)
 	}
 	s.ScrollBy(-500, 500, 200) // try to scroll past max
-	if s.Offset != 300 {        // max = 500 - 200 = 300
+	if s.Offset != 300 {       // max = 500 - 200 = 300
 		t.Errorf("Offset = %f, want 300 (clamped)", s.Offset)
 	}
 	s.ScrollBy(1000, 500, 200) // scroll back up past 0
@@ -1410,8 +1431,8 @@ type customDrawTheme struct {
 	drawF theme.DrawFunc
 }
 
-func (c *customDrawTheme) Tokens() theme.TokenSet         { return c.base.Tokens() }
-func (c *customDrawTheme) Parent() theme.Theme             { return c.base }
+func (c *customDrawTheme) Tokens() theme.TokenSet { return c.base.Tokens() }
+func (c *customDrawTheme) Parent() theme.Theme    { return c.base }
 func (c *customDrawTheme) DrawFunc(k theme.WidgetKind) theme.DrawFunc {
 	if k == c.kind {
 		return c.drawF

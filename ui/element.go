@@ -1336,6 +1336,14 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	return draw.Scene{}
 }
 
+var layoutBoundsDispatcher *EventDispatcher
+
+// SetLayoutBoundsDispatcher configures the dispatcher that receives widget
+// bounds during the layout pass. Passing nil disables bounds registration.
+func SetLayoutBoundsDispatcher(d *EventDispatcher) {
+	layoutBoundsDispatcher = d
+}
+
 func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
@@ -1349,7 +1357,11 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 	case widgetBoundsElement:
 		// Layout the child subtree. The bounds are tracked so the
 		// EventDispatcher can route mouse events to this widget UID.
-		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		if layoutBoundsDispatcher != nil {
+			layoutBoundsDispatcher.RegisterWidgetBounds(node.WidgetUID, draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H)))
+		}
+		return b
 
 	case keyedElement:
 		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
