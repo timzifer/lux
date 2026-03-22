@@ -111,14 +111,24 @@ type AccessNumericValue struct {
 	Step    float64 // 0 = continuous
 }
 
+// TextSelection describes a single contiguous selection range as rune offsets.
+type TextSelection struct {
+	Start int
+	End   int
+}
+
 // AccessTextState describes caret and selection state for editable text nodes.
-// Used by platform bridges (UIA ITextProvider, AT-SPI2 Text interface,
+// Used by platform bridges (UIA ITextProvider/ITextProvider2, AT-SPI2 Text interface,
 // NSAccessibility text attributes) to expose cursor and selection.
+//
+// Selections is a slice to support multi-cursor/column-selection scenarios
+// (AT-SPI2: GetNSelections/GetSelection, UIA: ITextProvider2.GetSelection → ITextRangeArray,
+// NSAccessibility: accessibilitySelectedTextRanges).
+// Single selection is []TextSelection{{Start, End}}; empty/nil means no selection.
 type AccessTextState struct {
-	Length         int // Total number of characters (rune count).
-	CaretOffset    int // Caret position as rune offset; -1 if not applicable.
-	SelectionStart int // Start of selection range (rune offset); -1 if no selection.
-	SelectionEnd   int // End of selection range (rune offset); -1 if no selection.
+	Length      int             // Total number of characters (rune count).
+	CaretOffset int            // Primary caret position as rune offset; -1 if not applicable.
+	Selections  []TextSelection // Active selection ranges; nil/empty = no selection.
 }
 
 // AccessNode represents a single node in the accessibility tree.

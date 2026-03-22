@@ -281,10 +281,8 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 			Value:  node.Value,
 			States: a11y.AccessStates{Disabled: node.Disabled},
 			TextState: &a11y.AccessTextState{
-				Length:         len([]rune(node.Value)),
-				CaretOffset:    -1,
-				SelectionStart: -1,
-				SelectionEnd:   -1,
+				Length:      len([]rune(node.Value)),
+				CaretOffset: -1,
 			},
 		}
 		b.addNode(an, parentIdx, a11y.Rect{})

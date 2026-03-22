@@ -497,24 +497,31 @@ Soll ein PDF-Renderer Absätze, Zeilen oder einzelne Text-Runs exportieren? Mehr
 
 ### 11.3 Selection & Caret — *Gelöst*
 
-Gelöst durch `a11y.AccessTextState` im globalen `a11y`-Paket:
+Gelöst durch `a11y.AccessTextState` und `a11y.TextSelection` im globalen `a11y`-Paket:
 
 ```go
+type TextSelection struct {
+    Start int
+    End   int
+}
+
 type AccessTextState struct {
-    Length         int // Gesamtzahl Zeichen (Rune-Count).
-    CaretOffset    int // Caret-Position als Rune-Offset; -1 falls nicht anwendbar.
-    SelectionStart int // Start der Selektion (Rune-Offset); -1 falls keine Selektion.
-    SelectionEnd   int // Ende der Selektion (Rune-Offset); -1 falls keine Selektion.
+    Length      int             // Gesamtzahl Zeichen (Rune-Count).
+    CaretOffset int            // Primäre Caret-Position als Rune-Offset; -1 falls nicht anwendbar.
+    Selections  []TextSelection // Aktive Selektionsbereiche; nil/leer = keine Selektion.
 }
 ```
 
+`Selections` ist bewusst ein Slice, um Multi-Cursor- und Column-Selection-Szenarien zu unterstützen (z.B. JetBrains Column Mode, VS Code Multi-Cursor). Alle drei Plattform-APIs unterstützen dies nativ:
+
+- **UIA:** `ITextProvider2.GetSelection()` → `ITextRangeArray` (mehrere Ranges)
+- **AT-SPI2:** `Text.GetNSelections()`, `Text.GetSelection(index)` — explizit multi-fähig
+- **NSAccessibility:** `accessibilitySelectedTextRanges` → `[NSValue<NSRange>]`
+
+Einfache Selektion ist `[]TextSelection{{3, 8}}`; keine Selektion ist `nil`.
+
 `AccessNode.TextState` ist `*AccessTextState` — nil bedeutet, der Knoten hat keinen Textzustand.
 Dasselbe Feld existiert als `SurfaceAccessNode.TextState` für externe Surfaces.
-
-Plattform-Mapping:
-- **UIA:** `ITextProvider` / `ITextProvider2` → `CaretOffset`, `SelectionStart/End`
-- **AT-SPI2:** `Text`-Interface → `GetCaretOffset()`, `GetSelection()`
-- **NSAccessibility:** `accessibilitySelectedTextRange`, `accessibilityInsertionPointLineNumber`
 
 **Noch nicht spezifiziert:** `setSelection` / `replaceText` als Schreiboperationen. Diese können als semantische Aktionen (`PerformSemanticAction`) oder als Folge-RFC ergänzt werden.
 

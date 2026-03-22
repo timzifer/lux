@@ -155,11 +155,11 @@ func TestAccessNumericValue(t *testing.T) {
 }
 
 func TestAccessTextState(t *testing.T) {
+	// Single selection
 	ts := AccessTextState{
-		Length:         12,
-		CaretOffset:    5,
-		SelectionStart: 3,
-		SelectionEnd:   8,
+		Length:      12,
+		CaretOffset: 5,
+		Selections:  []TextSelection{{Start: 3, End: 8}},
 	}
 	if ts.Length != 12 {
 		t.Errorf("expected Length=12, got %d", ts.Length)
@@ -167,14 +167,42 @@ func TestAccessTextState(t *testing.T) {
 	if ts.CaretOffset != 5 {
 		t.Errorf("expected CaretOffset=5, got %d", ts.CaretOffset)
 	}
-	if ts.SelectionStart != 3 || ts.SelectionEnd != 8 {
-		t.Errorf("expected selection 3..8, got %d..%d", ts.SelectionStart, ts.SelectionEnd)
+	if len(ts.Selections) != 1 {
+		t.Fatalf("expected 1 selection, got %d", len(ts.Selections))
+	}
+	if ts.Selections[0].Start != 3 || ts.Selections[0].End != 8 {
+		t.Errorf("expected selection 3..8, got %d..%d", ts.Selections[0].Start, ts.Selections[0].End)
 	}
 
-	// No selection / no caret: -1 sentinel
-	noSel := AccessTextState{Length: 0, CaretOffset: -1, SelectionStart: -1, SelectionEnd: -1}
+	// No selection / no caret
+	noSel := AccessTextState{Length: 0, CaretOffset: -1}
 	if noSel.CaretOffset != -1 {
 		t.Error("expected CaretOffset=-1 for no caret")
+	}
+	if len(noSel.Selections) != 0 {
+		t.Error("expected empty selections for no selection")
+	}
+}
+
+func TestAccessTextStateMultiSelection(t *testing.T) {
+	// Multi-cursor / column selection: three separate ranges
+	ts := AccessTextState{
+		Length:      100,
+		CaretOffset: 75,
+		Selections: []TextSelection{
+			{Start: 10, End: 15},
+			{Start: 30, End: 35},
+			{Start: 70, End: 75},
+		},
+	}
+	if len(ts.Selections) != 3 {
+		t.Fatalf("expected 3 selections, got %d", len(ts.Selections))
+	}
+	// Each range should be 5 runes wide
+	for i, sel := range ts.Selections {
+		if sel.End-sel.Start != 5 {
+			t.Errorf("selection %d: expected width 5, got %d", i, sel.End-sel.Start)
+		}
 	}
 }
 
@@ -211,10 +239,8 @@ func TestAccessNodeWithTextState(t *testing.T) {
 		Role:  RoleTextInput,
 		Value: "Hello",
 		TextState: &AccessTextState{
-			Length:         5,
-			CaretOffset:    5,
-			SelectionStart: -1,
-			SelectionEnd:   -1,
+			Length:      5,
+			CaretOffset: 5,
 		},
 	}
 	if node.TextState == nil {
@@ -222,5 +248,8 @@ func TestAccessNodeWithTextState(t *testing.T) {
 	}
 	if node.TextState.Length != 5 {
 		t.Errorf("expected Length=5, got %d", node.TextState.Length)
+	}
+	if len(node.TextState.Selections) != 0 {
+		t.Error("expected no selections for caret-only state")
 	}
 }
