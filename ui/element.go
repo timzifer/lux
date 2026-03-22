@@ -184,17 +184,19 @@ type SurfaceSemantics struct {
 // SurfaceAccessNode represents a single node in a surface's semantic subtree.
 // Bounds are relative to the surface origin in dp.
 type SurfaceAccessNode struct {
-	ID          SurfaceNodeID
-	Parent      SurfaceNodeID // 0 = root within the surface.
-	Role        a11y.AccessRole
-	Label       string
-	Description string
-	Value       string
-	Bounds      draw.Rect // Relative to the surface in dp.
-	Lang        string    // BCP 47 language tag (e.g. "de", "ar-EG"). Empty inherits from parent.
-	States      a11y.AccessStates
-	Actions     []a11y.AccessActionDesc
-	Relations   []a11y.AccessRelationDesc
+	ID           SurfaceNodeID
+	Parent       SurfaceNodeID // 0 = root within the surface.
+	Role         a11y.AccessRole
+	Label        string
+	Description  string
+	Value        string
+	Bounds       draw.Rect // Relative to the surface in dp.
+	Lang         string    // BCP 47 language tag (e.g. "de", "ar-EG"). Empty inherits from parent.
+	States       a11y.AccessStates
+	Actions      []a11y.AccessActionDesc
+	Relations    []a11y.AccessRelationDesc
+	NumericValue *a11y.AccessNumericValue // Non-nil for nodes with numeric range.
+	TextState    *a11y.AccessTextState    // Non-nil for editable or selectable text nodes.
 }
 
 // ── Element Types (RFC §4.3) ─────────────────────────────────────

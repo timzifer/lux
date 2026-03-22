@@ -248,19 +248,46 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 		}
 		b.addNode(an, parentIdx, a11y.Rect{})
 	case sliderElement:
-		b.addNode(a11y.AccessNode{
-			Role: a11y.RoleSlider,
-		}, parentIdx, a11y.Rect{})
+		an := a11y.AccessNode{
+			Role:   a11y.RoleSlider,
+			States: a11y.AccessStates{Disabled: node.Disabled},
+			NumericValue: &a11y.AccessNumericValue{
+				Current: float64(node.Value),
+				Min:     0,
+				Max:     1,
+				Step:    0, // continuous
+			},
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
 	case progressBarElement:
-		b.addNode(a11y.AccessNode{
-			Role: a11y.RoleProgressBar,
-		}, parentIdx, a11y.Rect{})
+		an := a11y.AccessNode{
+			Role:   a11y.RoleProgressBar,
+			States: a11y.AccessStates{ReadOnly: true},
+		}
+		if !node.Indeterminate {
+			an.NumericValue = &a11y.AccessNumericValue{
+				Current: float64(node.Value),
+				Min:     0,
+				Max:     1,
+			}
+		} else {
+			an.States.Busy = true
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
 	case textFieldElement:
-		b.addNode(a11y.AccessNode{
-			Role:  a11y.RoleTextInput,
-			Label: node.Placeholder,
-			Value: node.Value,
-		}, parentIdx, a11y.Rect{})
+		an := a11y.AccessNode{
+			Role:   a11y.RoleTextInput,
+			Label:  node.Placeholder,
+			Value:  node.Value,
+			States: a11y.AccessStates{Disabled: node.Disabled},
+			TextState: &a11y.AccessTextState{
+				Length:         len([]rune(node.Value)),
+				CaretOffset:    -1,
+				SelectionStart: -1,
+				SelectionEnd:   -1,
+			},
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
 	case radioElement:
 		b.addNode(a11y.AccessNode{
 			Role:   a11y.RoleCheckbox,
@@ -319,11 +346,13 @@ func (b *accessTreeBuilder) mergeSurfaceSemantics(sem SurfaceSemantics, parentId
 
 func surfaceAccessNodeToAccessNode(sn SurfaceAccessNode) a11y.AccessNode {
 	return a11y.AccessNode{
-		Role:        sn.Role,
-		Label:       sn.Label,
-		Description: sn.Description,
-		Value:       sn.Value,
-		States:      sn.States,
+		Role:         sn.Role,
+		Label:        sn.Label,
+		Description:  sn.Description,
+		Value:        sn.Value,
+		States:       sn.States,
+		NumericValue: sn.NumericValue,
+		TextState:    sn.TextState,
 	}
 }
 

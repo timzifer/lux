@@ -101,14 +101,36 @@ type AccessRelationDesc struct {
 	TargetID uint64
 }
 
+// AccessNumericValue describes a numeric value with bounds and step size.
+// Used by platform bridges (UIA IRangeValueProvider, AT-SPI2 Value interface,
+// NSAccessibility accessibilityValue) to expose sliders, progress bars, etc.
+type AccessNumericValue struct {
+	Current float64
+	Min     float64
+	Max     float64
+	Step    float64 // 0 = continuous
+}
+
+// AccessTextState describes caret and selection state for editable text nodes.
+// Used by platform bridges (UIA ITextProvider, AT-SPI2 Text interface,
+// NSAccessibility text attributes) to expose cursor and selection.
+type AccessTextState struct {
+	Length         int // Total number of characters (rune count).
+	CaretOffset    int // Caret position as rune offset; -1 if not applicable.
+	SelectionStart int // Start of selection range (rune offset); -1 if no selection.
+	SelectionEnd   int // End of selection range (rune offset); -1 if no selection.
+}
+
 // AccessNode represents a single node in the accessibility tree.
 type AccessNode struct {
-	Role        AccessRole
-	Label       string       // Primary name (aria-label equivalent).
-	Description string       // Longer description (aria-describedby equivalent).
-	Value       string       // Current value (for sliders, inputs, etc.).
-	Lang        language.Tag // BCP 47 language tag; empty inherits from parent.
-	States      AccessStates
-	Actions     []AccessAction
-	Relations   []AccessRelation
+	Role         AccessRole
+	Label        string       // Primary name (aria-label equivalent).
+	Description  string       // Longer description (aria-describedby equivalent).
+	Value        string       // Current value (for sliders, inputs, etc.).
+	Lang         language.Tag // BCP 47 language tag; empty inherits from parent.
+	States       AccessStates
+	Actions      []AccessAction
+	Relations    []AccessRelation
+	NumericValue *AccessNumericValue // Non-nil for nodes with numeric range (slider, progress bar, spin button).
+	TextState    *AccessTextState    // Non-nil for editable or selectable text nodes.
 }

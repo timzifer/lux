@@ -132,3 +132,95 @@ func TestAccessRelationKindConstants(t *testing.T) {
 		seen[k] = true
 	}
 }
+
+func TestAccessNumericValue(t *testing.T) {
+	nv := AccessNumericValue{
+		Current: 0.5,
+		Min:     0,
+		Max:     1,
+		Step:    0.1,
+	}
+	if nv.Current != 0.5 {
+		t.Errorf("expected Current=0.5, got %f", nv.Current)
+	}
+	if nv.Step != 0.1 {
+		t.Errorf("expected Step=0.1, got %f", nv.Step)
+	}
+
+	// Continuous slider: Step == 0
+	continuous := AccessNumericValue{Current: 42, Min: 0, Max: 100, Step: 0}
+	if continuous.Step != 0 {
+		t.Error("expected Step=0 for continuous value")
+	}
+}
+
+func TestAccessTextState(t *testing.T) {
+	ts := AccessTextState{
+		Length:         12,
+		CaretOffset:    5,
+		SelectionStart: 3,
+		SelectionEnd:   8,
+	}
+	if ts.Length != 12 {
+		t.Errorf("expected Length=12, got %d", ts.Length)
+	}
+	if ts.CaretOffset != 5 {
+		t.Errorf("expected CaretOffset=5, got %d", ts.CaretOffset)
+	}
+	if ts.SelectionStart != 3 || ts.SelectionEnd != 8 {
+		t.Errorf("expected selection 3..8, got %d..%d", ts.SelectionStart, ts.SelectionEnd)
+	}
+
+	// No selection / no caret: -1 sentinel
+	noSel := AccessTextState{Length: 0, CaretOffset: -1, SelectionStart: -1, SelectionEnd: -1}
+	if noSel.CaretOffset != -1 {
+		t.Error("expected CaretOffset=-1 for no caret")
+	}
+}
+
+func TestAccessNodeNumericValueNil(t *testing.T) {
+	node := AccessNode{Role: RoleButton, Label: "Click"}
+	if node.NumericValue != nil {
+		t.Error("expected nil NumericValue for button")
+	}
+	if node.TextState != nil {
+		t.Error("expected nil TextState for button")
+	}
+}
+
+func TestAccessNodeWithNumericValue(t *testing.T) {
+	node := AccessNode{
+		Role: RoleSlider,
+		NumericValue: &AccessNumericValue{
+			Current: 75,
+			Min:     0,
+			Max:     100,
+			Step:    5,
+		},
+	}
+	if node.NumericValue == nil {
+		t.Fatal("expected non-nil NumericValue for slider")
+	}
+	if node.NumericValue.Current != 75 {
+		t.Errorf("expected Current=75, got %f", node.NumericValue.Current)
+	}
+}
+
+func TestAccessNodeWithTextState(t *testing.T) {
+	node := AccessNode{
+		Role:  RoleTextInput,
+		Value: "Hello",
+		TextState: &AccessTextState{
+			Length:         5,
+			CaretOffset:    5,
+			SelectionStart: -1,
+			SelectionEnd:   -1,
+		},
+	}
+	if node.TextState == nil {
+		t.Fatal("expected non-nil TextState for text input")
+	}
+	if node.TextState.Length != 5 {
+		t.Errorf("expected Length=5, got %d", node.TextState.Length)
+	}
+}
