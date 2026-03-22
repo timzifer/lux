@@ -315,6 +315,42 @@ func Icon(name string) Element { return iconElement{Name: name, Size: 0} }
 // IconSize renders a text symbol at a specific size in dp.
 func IconSize(name string, size float32) Element { return iconElement{Name: name, Size: size} }
 
+// ImageOption configures an Image element.
+type ImageOption func(*imageElement)
+
+// WithImageSize sets explicit width and height in dp.
+func WithImageSize(w, h float32) ImageOption {
+	return func(e *imageElement) {
+		e.Width = w
+		e.Height = h
+	}
+}
+
+// WithImageScaleMode sets the scale mode (Fit, Fill, Stretch).
+func WithImageScaleMode(mode draw.ImageScaleMode) ImageOption {
+	return func(e *imageElement) { e.ScaleMode = mode }
+}
+
+// WithImageAlt sets the alt-text for accessibility.
+func WithImageAlt(alt string) ImageOption {
+	return func(e *imageElement) { e.Alt = alt }
+}
+
+// WithImageOpacity sets the opacity (0.0–1.0).
+func WithImageOpacity(opacity float32) ImageOption {
+	return func(e *imageElement) { e.Opacity = opacity }
+}
+
+// Image renders a loaded image. Use WithImageSize to set explicit dimensions.
+// If no size is given, the element uses 0×0 (the caller should specify size).
+func Image(id draw.ImageID, opts ...ImageOption) Element {
+	e := imageElement{ImageID: id, Opacity: 1}
+	for _, opt := range opts {
+		opt(&e)
+	}
+	return e
+}
+
 // Stack overlays children on top of each other (z-axis, RFC-003 §4.1).
 // First child is the bottom layer, last child is the top layer.
 func Stack(children ...Element) Element {
@@ -682,6 +718,18 @@ func (gradientRectElement) isElement() {}
 type spacerElement struct{ Size float32 }
 
 func (spacerElement) isElement() {}
+
+// imageElement renders a loaded image at a specified or natural size.
+type imageElement struct {
+	ImageID   draw.ImageID
+	Width     float32        // dp; 0 = use natural width
+	Height    float32        // dp; 0 = use natural height
+	ScaleMode draw.ImageScaleMode
+	Alt       string  // alt-text for accessibility
+	Opacity   float32 // 0 = default (1.0)
+}
+
+func (imageElement) isElement() {}
 
 type iconElement struct {
 	Name string
@@ -1404,6 +1452,29 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		} else {
 			canvas.FillRect(r, node.Paint)
 		}
+		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+
+	case imageElement:
+		w := int(node.Width)
+		h := int(node.Height)
+		if w == 0 {
+			w = area.W
+		}
+		if h == 0 {
+			h = area.H
+		}
+		if w > area.W {
+			w = area.W
+		}
+		if h > area.H {
+			h = area.H
+		}
+		opacity := node.Opacity
+		if opacity == 0 {
+			opacity = 1
+		}
+		r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+		canvas.DrawImage(node.ImageID, r, draw.ImageOptions{Opacity: opacity})
 		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
 	case iconElement:
