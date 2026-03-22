@@ -1590,6 +1590,57 @@ func buildAccessTree(vTree []VNode, registry stateRegistry) AccessTree {
 
 Der AccessTree ist eine flache Slice mit Parent-Indizes (cache-freundlich), keine verschachtelte Baumstruktur.
 
+#### 11.4.1 Entkopplung von Layout-Daten via Closures
+
+Die Bounds eines Widgets werden durch die Layout-Engine bestimmt, nicht durch das Widget
+selbst. Da der AccessTree keine direkte Abhängigkeit zum Layout-Layer haben soll, wird
+`EffectiveBounds` als **Closure** (`func() Rect`) auf dem AccessNode gespeichert:
+
+```go
+type AccessNode struct {
+    // ... bestehende Felder (Role, Label, etc.) ...
+
+    // Statische Bounds zum Zeitpunkt des Tree-Builds (Fallback).
+    Bounds          Rect
+
+    // EffectiveBounds liefert die aktuellen Layout-Bounds.
+    // Wird beim Tree-Build als Closure zugewiesen — der AccessNode
+    // kennt weder den Widget-Typ noch das Layout-System.
+    // nil = Bounds verwenden.
+    EffectiveBounds func() Rect
+}
+```
+
+Beim Tree-Build wird die Closure direkt zugewiesen:
+
+```go
+uid := node.WidgetUID
+n := b.addNode(accessNode, parentIdx, bounds)
+b.nodes[n].EffectiveBounds = func() Rect {
+    return b.boundsForWidget(uid)  // uid captured, kein Pointer auf Widget
+}
+```
+
+**Warum nur Bounds als Closure?**
+
+| Property | Quelle | Closure nötig? |
+|----------|--------|----------------|
+| `EffectiveBounds` | Layout-Engine (anderer Layer) | **Ja** — Widget kennt seine Bounds nicht; Bounds ändern sich zwischen Rebuilds (Scroll, Animation, Resize) |
+| `Role`, `Label`, `Description`, `Value` | `Accessibility(state)` | Nein — beim Rebuild direkt vom Widget bekannt |
+| `States` | `Accessibility(state)` | Nein — statisch zum Build-Zeitpunkt |
+| `Actions[].Trigger` | Widget | Bereits `func()` — ist schon eine Closure |
+| Children | Tree-Walk | Nein — strukturell, ergibt sich aus Traversal |
+| `Relations` | Widget | Nein — statische Referenzen |
+
+Alle anderen Properties werden vom Widget selbst über `Accessibility(state)` geliefert und
+sind zum Build-Zeitpunkt bekannt. Nur die Bounds kommen aus einem fremden Layer und können
+sich unabhängig vom Reconcile ändern.
+
+**Hinweis zu `weak.Pointer` (Go 1.24+):** Die Closure könnte eine `weak.Pointer[T]`-Referenz
+auf das Widget halten statt einer starken Referenz. Da der AccessTree jedoch bei jedem
+Reconcile neu aufgebaut wird und das alte Widget somit im nächsten GC-Zyklus freigegeben
+wird, ist eine Weak Reference hier korrekt aber nicht notwendig. Die einfache Closure reicht.
+
 ### 11.5 Plattform-Bridges
 
 Jede Platform-Implementierung (§7) implementiert optional die `A11yBridge`:
