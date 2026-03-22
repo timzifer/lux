@@ -112,6 +112,14 @@ func (c *SceneCanvas) FillRect(r draw.Rect, paint draw.Paint) {
 		c.appendGradientRect(r, 0, paint)
 		return
 	}
+	if paint.Kind == draw.PaintImage {
+		c.appendImageFill(r, paint)
+		return
+	}
+	if paint.Kind == draw.PaintShader || paint.Kind == draw.PaintShaderImage {
+		c.appendShaderFill(r, 0, paint)
+		return
+	}
 	c.emitClipIfChanged()
 	// Intersect with clip rect to clamp visible portion.
 	x, y, w, h := r.X, r.Y, r.W, r.H
@@ -155,6 +163,14 @@ func (c *SceneCanvas) FillRoundRect(r draw.Rect, radius float32, paint draw.Pain
 	// Route gradient paints to the gradient pipeline.
 	if paint.Kind == draw.PaintLinearGradient || paint.Kind == draw.PaintRadialGradient {
 		c.appendGradientRect(r, radius, paint)
+		return
+	}
+	if paint.Kind == draw.PaintImage {
+		c.appendImageFill(r, paint)
+		return
+	}
+	if paint.Kind == draw.PaintShader || paint.Kind == draw.PaintShaderImage {
+		c.appendShaderFill(r, radius, paint)
 		return
 	}
 	c.emitClipIfChanged()
@@ -241,6 +257,65 @@ func (c *SceneCanvas) appendGradientRect(r draw.Rect, radius float32, paint draw
 		c.scene.OverlayGradientRects = append(c.scene.OverlayGradientRects, gr)
 	} else {
 		c.scene.GradientRects = append(c.scene.GradientRects, gr)
+	}
+}
+
+// appendImageFill appends an image-filled rect to the scene.
+func (c *SceneCanvas) appendImageFill(r draw.Rect, paint draw.Paint) {
+	if paint.Image == nil || paint.Image.Image == 0 {
+		return
+	}
+	c.emitClipIfChanged()
+	opacity := c.effectiveOpacity()
+	if opacity < 0.001 {
+		return
+	}
+	ir := draw.DrawImageRect{
+		X: int(r.X), Y: int(r.Y), W: int(r.W), H: int(r.H),
+		ImageID: paint.Image.Image,
+		Opacity: opacity,
+		U0: 0, V0: 0, U1: 1, V1: 1,
+	}
+	if c.overlayMode {
+		c.scene.OverlayImageRects = append(c.scene.OverlayImageRects, ir)
+	} else {
+		c.scene.ImageRects = append(c.scene.ImageRects, ir)
+	}
+}
+
+// appendShaderFill appends a shader-filled rect to the scene.
+func (c *SceneCanvas) appendShaderFill(r draw.Rect, radius float32, paint draw.Paint) {
+	if paint.Shader == nil {
+		return
+	}
+	c.emitClipIfChanged()
+
+	// Build the cache key from effect name or source hash.
+	key := paint.Shader.Source
+	if key == "" {
+		switch paint.Shader.Effect {
+		case draw.ShaderEffectNoise:
+			key = "_builtin:noise"
+		case draw.ShaderEffectPlasma:
+			key = "_builtin:plasma"
+		case draw.ShaderEffectVoronoi:
+			key = "_builtin:voronoi"
+		default:
+			return // no shader specified
+		}
+	}
+
+	sr := draw.DrawShaderRect{
+		X: int(r.X), Y: int(r.Y), W: int(r.W), H: int(r.H),
+		Radius:    radius,
+		ShaderKey: key,
+		Params:    paint.Shader.Params,
+		ImageID:   paint.Shader.Image,
+	}
+	if c.overlayMode {
+		c.scene.OverlayShaderRects = append(c.scene.OverlayShaderRects, sr)
+	} else {
+		c.scene.ShaderRects = append(c.scene.ShaderRects, sr)
 	}
 }
 
@@ -498,8 +573,118 @@ func (c *SceneCanvas) DrawTextLayout(layout draw.TextLayout, origin draw.Point, 
 
 // ── Images ───────────────────────────────────────────────────────
 
-func (c *SceneCanvas) DrawImage(_ draw.ImageID, _ draw.Rect, _ draw.ImageOptions)       {}
-func (c *SceneCanvas) DrawImageSlice(_ draw.ImageSlice, _ draw.Rect, _ draw.ImageOptions) {}
+func (c *SceneCanvas) DrawImage(img draw.ImageID, dst draw.Rect, opts draw.ImageOptions) {
+	if img == 0 || c.isClipped(dst.X, dst.Y, dst.W, dst.H) {
+		return
+	}
+	c.emitClipIfChanged()
+	opacity := opts.Opacity
+	if opacity == 0 {
+		opacity = 1
+	}
+	opacity *= c.effectiveOpacity()
+	if opacity < 0.001 {
+		return
+	}
+	ir := draw.DrawImageRect{
+		X: int(dst.X), Y: int(dst.Y), W: int(dst.W), H: int(dst.H),
+		ImageID: img, Opacity: opacity,
+		U0: 0, V0: 0, U1: 1, V1: 1,
+	}
+	if c.overlayMode {
+		c.scene.OverlayImageRects = append(c.scene.OverlayImageRects, ir)
+	} else {
+		c.scene.ImageRects = append(c.scene.ImageRects, ir)
+	}
+}
+
+func (c *SceneCanvas) DrawImageSlice(slice draw.ImageSlice, dst draw.Rect, opts draw.ImageOptions) {
+	if slice.Image == 0 || c.isClipped(dst.X, dst.Y, dst.W, dst.H) {
+		return
+	}
+	// 9-slice rendering: split destination rect into 9 regions based on insets.
+	// The insets define border widths; corners are fixed-size, edges stretch
+	// in one direction, and the center stretches in both.
+	ins := slice.Insets
+	left, top, right, bottom := ins.Left, ins.Top, ins.Right, ins.Bottom
+
+	// Clamp insets to destination size.
+	if left+right > dst.W {
+		scale := dst.W / (left + right)
+		left *= scale
+		right *= scale
+	}
+	if top+bottom > dst.H {
+		scale := dst.H / (top + bottom)
+		top *= scale
+		bottom *= scale
+	}
+
+	// We need the image's natural size to compute UV coordinates.
+	// Since we don't have access to the image store here, we use
+	// normalized UV coordinates (0→1) and let the insets define
+	// proportional regions. The caller should set insets in the
+	// same coordinate space as the image dimensions.
+	//
+	// For now, insets are interpreted as fractions of the destination
+	// rect when the image size is unknown. A future enhancement will
+	// pass image dimensions to compute exact UVs.
+
+	// UV boundaries (assuming insets are in pixel units of the source image
+	// and the image maps to 0→1 UV space; the GPU will handle the mapping).
+	// For correct 9-slice, we'd need image width/height. As a reasonable
+	// approximation, we use the destination dimensions.
+	uL := left / dst.W
+	uR := 1.0 - right/dst.W
+	vT := top / dst.H
+	vB := 1.0 - bottom/dst.H
+
+	type region struct {
+		x, y, w, h         float32
+		u0, v0, u1, v1     float32
+	}
+
+	regions := [9]region{
+		// Top row
+		{dst.X, dst.Y, left, top, 0, 0, uL, vT},
+		{dst.X + left, dst.Y, dst.W - left - right, top, uL, 0, uR, vT},
+		{dst.X + dst.W - right, dst.Y, right, top, uR, 0, 1, vT},
+		// Middle row
+		{dst.X, dst.Y + top, left, dst.H - top - bottom, 0, vT, uL, vB},
+		{dst.X + left, dst.Y + top, dst.W - left - right, dst.H - top - bottom, uL, vT, uR, vB},
+		{dst.X + dst.W - right, dst.Y + top, right, dst.H - top - bottom, uR, vT, 1, vB},
+		// Bottom row
+		{dst.X, dst.Y + dst.H - bottom, left, bottom, 0, vB, uL, 1},
+		{dst.X + left, dst.Y + dst.H - bottom, dst.W - left - right, bottom, uL, vB, uR, 1},
+		{dst.X + dst.W - right, dst.Y + dst.H - bottom, right, bottom, uR, vB, 1, 1},
+	}
+
+	opacity := opts.Opacity
+	if opacity == 0 {
+		opacity = 1
+	}
+	opacity *= c.effectiveOpacity()
+	if opacity < 0.001 {
+		return
+	}
+
+	c.emitClipIfChanged()
+	for _, r := range regions {
+		if r.w <= 0 || r.h <= 0 {
+			continue
+		}
+		ir := draw.DrawImageRect{
+			X: int(r.x), Y: int(r.y), W: int(r.w), H: int(r.h),
+			ImageID: slice.Image, Opacity: opacity,
+			U0: r.u0, V0: r.v0, U1: r.u1, V1: r.v1,
+		}
+		if c.overlayMode {
+			c.scene.OverlayImageRects = append(c.scene.OverlayImageRects, ir)
+		} else {
+			c.scene.ImageRects = append(c.scene.ImageRects, ir)
+		}
+	}
+}
 func (c *SceneCanvas) DrawTexture(tex draw.TextureID, dst draw.Rect) {
 	if c.isClipped(dst.X, dst.Y, dst.W, dst.H) {
 		return

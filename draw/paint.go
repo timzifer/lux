@@ -5,9 +5,12 @@ type PaintKind uint8
 
 const (
 	PaintSolid          PaintKind = iota
-	PaintLinearGradient           // reserved for later milestones
-	PaintRadialGradient           // reserved for later milestones
-	PaintPattern                  // reserved for later milestones
+	PaintLinearGradient
+	PaintRadialGradient
+	PaintPattern
+	PaintImage       // stretched/fitted image fill
+	PaintShader      // custom WGSL or predefined effect fill
+	PaintShaderImage // shader with an image texture input
 )
 
 // GradientStop defines a color at a specific position along a gradient.
@@ -36,6 +39,40 @@ type PatternDesc struct {
 	TileSize Size
 }
 
+// ImageScaleMode controls how an image is fitted into a rectangle.
+type ImageScaleMode uint8
+
+const (
+	ImageScaleFit     ImageScaleMode = iota // maintain aspect ratio, letterbox
+	ImageScaleFill                          // maintain aspect ratio, crop
+	ImageScaleStretch                       // distort to fill
+)
+
+// ImageFill describes an image used as a background fill.
+type ImageFill struct {
+	Image     ImageID
+	ScaleMode ImageScaleMode
+}
+
+// ShaderEffect identifies a built-in shader effect.
+type ShaderEffect uint8
+
+const (
+	ShaderEffectNone    ShaderEffect = iota
+	ShaderEffectNoise                // Simplex/Perlin noise pattern
+	ShaderEffectPlasma               // Animated plasma effect
+	ShaderEffectVoronoi              // Voronoi cell pattern
+)
+
+// ShaderDesc describes a shader-based fill — either a built-in effect
+// or custom WGSL fragment code.
+type ShaderDesc struct {
+	Source string       // custom WGSL fragment code (empty = use Effect)
+	Effect ShaderEffect // built-in effect (used when Source is empty)
+	Params [8]float32   // user-defined uniforms passed to the shader
+	Image  ImageID      // optional texture input (for PaintShaderImage)
+}
+
 // Paint describes how a surface is filled (RFC §6.2.3).
 // Tagged union — exactly one variant is active, determined by Kind.
 type Paint struct {
@@ -44,6 +81,8 @@ type Paint struct {
 	Linear  *LinearGradient  // used when Kind == PaintLinearGradient
 	Radial  *RadialGradient  // used when Kind == PaintRadialGradient
 	Pattern *PatternDesc     // used when Kind == PaintPattern
+	Image   *ImageFill       // used when Kind == PaintImage
+	Shader  *ShaderDesc      // used when Kind == PaintShader or PaintShaderImage
 }
 
 // SolidPaint creates a solid-color Paint.
@@ -75,9 +114,47 @@ func PatternPaint(img ImageID, tileSize Size) Paint {
 	}
 }
 
+// ImagePaint creates an image-fill Paint.
+func ImagePaint(img ImageID, mode ImageScaleMode) Paint {
+	return Paint{
+		Kind:  PaintImage,
+		Image: &ImageFill{Image: img, ScaleMode: mode},
+	}
+}
+
+// ShaderPaint creates a custom-shader Paint from WGSL fragment source.
+func ShaderPaint(source string, params ...float32) Paint {
+	var p [8]float32
+	copy(p[:], params)
+	return Paint{
+		Kind:   PaintShader,
+		Shader: &ShaderDesc{Source: source, Params: p},
+	}
+}
+
+// ShaderEffectPaint creates a Paint using a built-in shader effect.
+func ShaderEffectPaint(effect ShaderEffect, params ...float32) Paint {
+	var p [8]float32
+	copy(p[:], params)
+	return Paint{
+		Kind:   PaintShader,
+		Shader: &ShaderDesc{Effect: effect, Params: p},
+	}
+}
+
+// ShaderImagePaint creates a shader Paint that receives an image as texture input.
+func ShaderImagePaint(img ImageID, source string, params ...float32) Paint {
+	var p [8]float32
+	copy(p[:], params)
+	return Paint{
+		Kind:   PaintShaderImage,
+		Shader: &ShaderDesc{Source: source, Params: p, Image: img},
+	}
+}
+
 // FallbackColor returns the effective solid color for a Paint.
 // For gradients, it returns the first stop's color as a fallback.
-// For patterns and empty gradients, it returns transparent black.
+// For patterns, images, shaders, and empty gradients, it returns transparent black.
 func (p Paint) FallbackColor() Color {
 	switch p.Kind {
 	case PaintSolid:
