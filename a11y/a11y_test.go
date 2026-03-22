@@ -132,3 +132,124 @@ func TestAccessRelationKindConstants(t *testing.T) {
 		seen[k] = true
 	}
 }
+
+func TestAccessNumericValue(t *testing.T) {
+	nv := AccessNumericValue{
+		Current: 0.5,
+		Min:     0,
+		Max:     1,
+		Step:    0.1,
+	}
+	if nv.Current != 0.5 {
+		t.Errorf("expected Current=0.5, got %f", nv.Current)
+	}
+	if nv.Step != 0.1 {
+		t.Errorf("expected Step=0.1, got %f", nv.Step)
+	}
+
+	// Continuous slider: Step == 0
+	continuous := AccessNumericValue{Current: 42, Min: 0, Max: 100, Step: 0}
+	if continuous.Step != 0 {
+		t.Error("expected Step=0 for continuous value")
+	}
+}
+
+func TestAccessTextState(t *testing.T) {
+	// Single selection
+	ts := AccessTextState{
+		Length:      12,
+		CaretOffset: 5,
+		Selections:  []TextSelection{{Start: 3, End: 8}},
+	}
+	if ts.Length != 12 {
+		t.Errorf("expected Length=12, got %d", ts.Length)
+	}
+	if ts.CaretOffset != 5 {
+		t.Errorf("expected CaretOffset=5, got %d", ts.CaretOffset)
+	}
+	if len(ts.Selections) != 1 {
+		t.Fatalf("expected 1 selection, got %d", len(ts.Selections))
+	}
+	if ts.Selections[0].Start != 3 || ts.Selections[0].End != 8 {
+		t.Errorf("expected selection 3..8, got %d..%d", ts.Selections[0].Start, ts.Selections[0].End)
+	}
+
+	// No selection / no caret
+	noSel := AccessTextState{Length: 0, CaretOffset: -1}
+	if noSel.CaretOffset != -1 {
+		t.Error("expected CaretOffset=-1 for no caret")
+	}
+	if len(noSel.Selections) != 0 {
+		t.Error("expected empty selections for no selection")
+	}
+}
+
+func TestAccessTextStateMultiSelection(t *testing.T) {
+	// Multi-cursor / column selection: three separate ranges
+	ts := AccessTextState{
+		Length:      100,
+		CaretOffset: 75,
+		Selections: []TextSelection{
+			{Start: 10, End: 15},
+			{Start: 30, End: 35},
+			{Start: 70, End: 75},
+		},
+	}
+	if len(ts.Selections) != 3 {
+		t.Fatalf("expected 3 selections, got %d", len(ts.Selections))
+	}
+	// Each range should be 5 runes wide
+	for i, sel := range ts.Selections {
+		if sel.End-sel.Start != 5 {
+			t.Errorf("selection %d: expected width 5, got %d", i, sel.End-sel.Start)
+		}
+	}
+}
+
+func TestAccessNodeNumericValueNil(t *testing.T) {
+	node := AccessNode{Role: RoleButton, Label: "Click"}
+	if node.NumericValue != nil {
+		t.Error("expected nil NumericValue for button")
+	}
+	if node.TextState != nil {
+		t.Error("expected nil TextState for button")
+	}
+}
+
+func TestAccessNodeWithNumericValue(t *testing.T) {
+	node := AccessNode{
+		Role: RoleSlider,
+		NumericValue: &AccessNumericValue{
+			Current: 75,
+			Min:     0,
+			Max:     100,
+			Step:    5,
+		},
+	}
+	if node.NumericValue == nil {
+		t.Fatal("expected non-nil NumericValue for slider")
+	}
+	if node.NumericValue.Current != 75 {
+		t.Errorf("expected Current=75, got %f", node.NumericValue.Current)
+	}
+}
+
+func TestAccessNodeWithTextState(t *testing.T) {
+	node := AccessNode{
+		Role:  RoleTextInput,
+		Value: "Hello",
+		TextState: &AccessTextState{
+			Length:      5,
+			CaretOffset: 5,
+		},
+	}
+	if node.TextState == nil {
+		t.Fatal("expected non-nil TextState for text input")
+	}
+	if node.TextState.Length != 5 {
+		t.Errorf("expected Length=5, got %d", node.TextState.Length)
+	}
+	if len(node.TextState.Selections) != 0 {
+		t.Error("expected no selections for caret-only state")
+	}
+}
