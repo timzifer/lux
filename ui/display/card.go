@@ -32,8 +32,8 @@ func (n CardElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	childArea := ui.Bounds{
 		X: ctx.Area.X + cardPadding,
 		Y: ctx.Area.Y + cardPadding,
-		W: max0(ctx.Area.W - cardPadding*2),
-		H: max0(ctx.Area.H - cardPadding*2),
+		W: max(ctx.Area.W-cardPadding*2, 0),
+		H: max(ctx.Area.H-cardPadding*2, 0),
 	}
 	cb := ctx.MeasureChild(n.Child, childArea)
 

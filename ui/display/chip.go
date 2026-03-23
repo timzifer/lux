@@ -80,13 +80,13 @@ func (n ChipElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		bgColor = ui.LerpColor(bgColor, ui.HoverHighlight(bgColor), hoverOpacity)
 	}
 
-	radius := minf(ctx.Tokens.Radii.Pill, float32(min(w, h))/2)
+	radius := min(ctx.Tokens.Radii.Pill, float32(min(w, h))/2)
 	ctx.Canvas.FillRoundRect(
 		draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(w), float32(h)),
 		radius, draw.SolidPaint(borderColor))
 	ctx.Canvas.FillRoundRect(
-		draw.R(float32(ctx.Area.X+1), float32(ctx.Area.Y+1), float32(max0(w-2)), float32(max0(h-2))),
-		maxf(radius-1, 0), draw.SolidPaint(bgColor))
+		draw.R(float32(ctx.Area.X+1), float32(ctx.Area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
+		max(radius-1, 0), draw.SolidPaint(bgColor))
 
 	// Label content.
 	labelArea := ui.Bounds{X: ctx.Area.X + chipPadX, Y: ctx.Area.Y + chipPadY, W: labelW, H: cb.H}
@@ -127,16 +127,3 @@ func (n ChipElement) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	b.Walk(n.Label, parentIdx)
 }
 
-func maxf(a, b float32) float32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func max0(a int) int {
-	if a > 0 {
-		return a
-	}
-	return 0
-}

@@ -2853,7 +2853,7 @@ func layoutToggle(node ToggleElement, area Bounds, canvas draw.Canvas, th theme.
 	// Animation progress: 0 = off, 1 = on.
 	var t float32
 	if node.State != nil {
-		t = node.State.update(node.On, tokens.Motion.Quick)
+		t = node.State.Update(node.On, tokens.Motion.Quick)
 	} else {
 		if node.On {
 			t = 1

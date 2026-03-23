@@ -54,9 +54,8 @@ func (n Tooltip) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		content := n.Content
 		blur := n.Blur
 		th := ctx.Theme
-		canvas := ctx.Canvas
 		ctx.Overlays.Push(ui.OverlayEntry{
-			Render: func(canvas draw.Canvas, tokens ui.TokenSet, ix *ui.Interactor) {
+			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
 				// Measure content.
 				nc := ui.NullCanvas{Delegate: canvas}
 				measureCtx := &ui.LayoutContext{
