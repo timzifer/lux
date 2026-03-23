@@ -4,14 +4,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
-	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/internal/text"
@@ -20,29 +17,22 @@ import (
 	"github.com/timzifer/lux/ui"
 )
 
-// Run starts the application. It blocks until the window is closed (RFC §3.1).
-//
-// The model, update, and view form the Elm architecture triad:
-//   - model:  initial application state
-//   - update: processes a Msg and returns a new model (pure function)
-//   - view:   renders the model as an Element tree (pure function)
-//
-// Both update and view run exclusively on the calling goroutine.
-func Run[M any](model M, update UpdateFunc[M], view ViewFunc[M], opts ...Option) error {
-	return runInternal(model, func(m M, msg Msg) (M, Cmd) {
+// RunMultiView starts a multi-window application.
+// The multiView function returns a map of window IDs to their element trees.
+// The main window (MainWindow = 0) must always be present in the returned map.
+func RunMultiView[M any](model M, update UpdateFunc[M], multiView MultiViewFunc[M], opts ...Option) error {
+	return runMultiViewInternal(model, func(m M, msg Msg) (M, Cmd) {
 		return update(m, msg), nil
-	}, view, opts...)
+	}, multiView, opts...)
 }
 
-// RunWithCmd starts the application with an update function that returns commands (RFC §3.6).
-// Commands are side-effect functions dispatched asynchronously after each update.
-func RunWithCmd[M any](model M, update UpdateWithCmd[M], view ViewFunc[M], opts ...Option) error {
-	return runInternal(model, update, view, opts...)
+// RunMultiViewWithCmd starts a multi-window application with command support.
+func RunMultiViewWithCmd[M any](model M, update UpdateWithCmd[M], multiView MultiViewFunc[M], opts ...Option) error {
+	return runMultiViewInternal(model, update, multiView, opts...)
 }
 
-// runInternal contains the full run-loop logic, parameterized over an update
-// function that returns (M, Cmd).
-func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M], opts ...Option) error {
+// runMultiViewInternal is the core multi-window run loop.
+func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiView MultiViewFunc[M], opts ...Option) error {
 	cfg := defaultOptions()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -56,7 +46,6 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	globalLoop = appLoop
 	defer func() { globalLoop = nil }()
 
-	// Wire anim.SendFunc so AnimationEnded msgs reach the app loop (RFC-002 §1.8).
 	anim.SendFunc = func(msg any) { Send(msg) }
 	defer func() { anim.SendFunc = nil }()
 
@@ -70,27 +59,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	}
 	defer plat.Destroy()
 
-	// Make platform accessible for package-level clipboard functions (RFC §7.1).
 	activePlatform = plat
 	defer func() { activePlatform = nil }()
 
-	// A11y: initialize bridge if the platform supports it (RFC-001 §11).
-	type a11yBridgeProvider interface {
-		A11yBridge() a11y.A11yBridge
-	}
-	type a11ySendSetter interface {
-		SetA11ySend(func(any))
-	}
-	var a11yBridge a11y.A11yBridge
-	if bp, ok := plat.(a11yBridgeProvider); ok {
-		a11yBridge = bp.A11yBridge()
-		if ss, ok2 := plat.(a11ySendSetter); ok2 {
-			ss.SetA11ySend(Send)
-		}
-	}
-	var prevA11yFocusedID a11y.AccessNodeID
-
-	// Apply initial fullscreen setting (RFC §7.1).
 	if cfg.fullscreen {
 		plat.SetFullscreen(true)
 	}
@@ -112,18 +83,15 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	}
 	defer renderer.Destroy()
 
-	// Initialize the font rendering pipeline (RFC-003 §3).
 	atlas := text.NewGlyphAtlas(512, 512)
 	shaper := text.NewGoTextShaper(fonts.Fallback)
 	shaper.RegisterFamily(fonts.PhosphorFamily)
 
-	// If the renderer supports atlas-based text, wire it up.
 	type atlasSetter interface{ SetAtlas(*text.GlyphAtlas) }
 	if as, ok := renderer.(atlasSetter); ok {
 		as.SetAtlas(atlas)
 	}
 
-	// Apply initial locale → layout direction (RFC-003 §3.8).
 	if cfg.locale != "" {
 		applyLocale(cfg.locale)
 	}
@@ -133,7 +101,6 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var activeTheme theme.Theme = cachedTheme
 	bgColor := activeTheme.Tokens().Colors.Surface.Base
 
-	// Tell the renderer about the background color if it supports it.
 	updateBgColor := func() {
 		bgColor = activeTheme.Tokens().Colors.Surface.Base
 		if bgs, ok := renderer.(interface{ SetBackgroundColor(draw.Color) }); ok {
@@ -142,15 +109,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	}
 	updateBgColor()
 
-	// Focus management (RFC-002 §2.3).
 	fm := globalFocus
-	dispatcher := ui.NewEventDispatcher(fm)
-
-	reconciler := ui.NewReconciler()
 	currentModel := model
-	currentLocale := cfg.locale // BCP 47 tag, propagated to RenderCtx (RFC-003 §3.8)
+	currentLocale := cfg.locale
 
-	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
 	dispatchCmd := func(cmd Cmd) {
 		if cmd != nil {
 			go func() {
@@ -161,21 +123,36 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		}
 	}
 
-	// State persistence: load persisted model on startup (RFC §3.4).
+	// Per-window state. MainWindow always has a context.
+	windows := make(map[WindowID]*windowContext)
+	mainWC := &windowContext{
+		id:         MainWindow,
+		reconciler: ui.NewReconciler(),
+		dispatcher: ui.NewEventDispatcher(fm),
+		width:      fbW,
+		height:     fbH,
+	}
+	windows[MainWindow] = mainWC
+
+	// Initial reconcile for main window.
+	views := multiView(currentModel)
+	if mainElem, ok := views[MainWindow]; ok {
+		mainWC.currentTree, _ = mainWC.reconciler.Reconcile(mainElem, activeTheme, Send, nil, nil, currentLocale)
+	}
+
+	lastFrame := time.Now()
+	var dynamicHandlers []globalHandlerEntry
+
+	// State persistence.
 	var persistPath string
 	if cfg.persistence != nil {
 		persistPath = storagePath(cfg.title, cfg.persistence.key, cfg.storagePath)
 		if restored, err := loadPersistedModel(cfg.persistence, persistPath); err == nil {
 			currentModel = restored.(M)
-
-			// Let the user's update function react to the restored model
-			// (e.g., send SetDarkModeMsg to apply a persisted theme preference).
 			restoredModel, cmd := update(currentModel, ModelRestoredMsg{})
 			currentModel = restoredModel
 			dispatchCmd(cmd)
 
-			// Drain any framework messages queued during restore (e.g., SetDarkModeMsg)
-			// so the first reconcile uses the correct theme.
 			appLoop.DrainMessages(func(msg any) bool {
 				switch m := msg.(type) {
 				case SetThemeMsg:
@@ -193,7 +170,6 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					activeTheme = cachedTheme
 					updateBgColor()
 				default:
-					// Non-theme messages: feed through update normally.
 					newModel, cmd := update(currentModel, msg)
 					currentModel = newModel
 					dispatchCmd(cmd)
@@ -202,34 +178,26 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			})
 		}
 	}
-
-	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil, currentLocale)
-
-	lastFrame := time.Now()
-	var hitMap hit.Map
-	var hoverState ui.HoverState
-	var mouseX, mouseY float32
-	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
-	var dragRelease func(x, y float32)  // called once when drag ends
-	var currentCursor input.CursorKind
-	var dynamicHandlers []globalHandlerEntry
-
-	// State persistence: save persisted model on shutdown (RFC §3.4).
 	if cfg.persistence != nil {
 		defer func() {
 			_ = savePersistedModel(cfg.persistence, any(currentModel), persistPath)
 		}()
 	}
 
+	_ = bgColor // used via updateBgColor side-effect on renderer
+
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
-			// 1. Drain messages — intercept theme switches and focus requests
-			// before user update (RFC §5.5). Collect input events for dispatch.
+			// 1. Drain messages.
 			modelDirty := false
-			dispatcher.ResetEvents()
+			mainWC.dispatcher.ResetEvents()
+			for _, wc := range windows {
+				if wc.id != MainWindow {
+					wc.dispatcher.ResetEvents()
+				}
+			}
 
 			appLoop.DrainMessages(func(msg any) bool {
-				// Handle framework-internal messages.
 				switch m := msg.(type) {
 				case SetThemeMsg:
 					cachedTheme = theme.NewCachedTheme(m.Theme)
@@ -251,7 +219,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				case SetLocaleMsg:
 					currentLocale = m.Locale
 					applyLocale(m.Locale)
-					modelDirty = true // triggers full layout invalidation
+					modelDirty = true
 
 				case SetSizeMsg:
 					plat.SetSize(m.Width, m.Height)
@@ -259,23 +227,27 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					plat.SetFullscreen(m.Fullscreen)
 
 				case OpenWindowMsg:
-					handleOpenWindow(m, plat, renderer, fm)
+					wc := handleOpenWindow(m, plat, renderer, fm)
+					if wc != nil {
+						windows[m.ID] = wc
+					}
 					return true
 				case CloseWindowMsg:
+					delete(windows, m.ID)
 					handleCloseWindow(m, plat, renderer)
 					return true
 
 				case ui.RequestFocusMsg:
 					oldUID := fm.FocusedUID()
 					fm.SetFocusedUID(m.Target)
-					dispatcher.QueueFocusChange(oldUID, m.Target, ui.FocusSourceProgram)
+					mainWC.dispatcher.QueueFocusChange(oldUID, m.Target, ui.FocusSourceProgram)
 					modelDirty = true
 					return true
 
 				case ui.ReleaseFocusMsg:
 					oldUID := fm.FocusedUID()
 					fm.Blur()
-					dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceProgram)
+					mainWC.dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceProgram)
 					modelDirty = true
 					return true
 
@@ -292,10 +264,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					return true
 
 				case input.KeyMsg:
-					// Collect for widget-level dispatch.
-					dispatcher.Collect(m)
-
-					// Check registered shortcuts before other handling (RFC-002 §2.5).
+					mainWC.dispatcher.Collect(m)
 					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
 						for _, sc := range cfg.shortcuts {
 							if m.Key == sc.shortcut.Key && m.Modifiers == sc.shortcut.Modifiers {
@@ -305,12 +274,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 								}
 								currentModel = newModel
 								dispatchCmd(cmd)
-								return true // consumed
+								return true
 							}
 						}
 					}
-
-					// Handle Tab/Shift+Tab for focus navigation.
 					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
 						if m.Key == input.KeyTab {
 							oldUID := fm.FocusedUID()
@@ -321,13 +288,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 								newUID = fm.FocusNext()
 							}
 							if newUID != oldUID {
-								dispatcher.QueueFocusChange(oldUID, newUID, ui.FocusSourceTab)
+								mainWC.dispatcher.QueueFocusChange(oldUID, newUID, ui.FocusSourceTab)
 								modelDirty = true
 							}
 							return true
 						}
-
-						// Framework-internal keyboard handling for TextFields.
 						if is := fm.Input; is != nil {
 							switch m.Key {
 							case input.KeyBackspace:
@@ -341,7 +306,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 							case input.KeyEscape:
 								oldUID := fm.FocusedUID()
 								fm.Blur()
-								dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceProgram)
+								mainWC.dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceProgram)
 								modelDirty = true
 							}
 						}
@@ -349,9 +314,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					return true
 
 				case input.CharMsg:
-					// Collect for widget-level dispatch.
-					dispatcher.Collect(m)
-					// Framework-internal character input for TextFields.
+					mainWC.dispatcher.Collect(m)
 					if is := fm.Input; is != nil && m.Char >= 32 {
 						v := is.Value + string(m.Char)
 						is.Value = v
@@ -361,9 +324,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					return true
 
 				case input.TextInputMsg:
-					// Collect for widget-level dispatch.
-					dispatcher.Collect(m)
-					// Framework-internal IME input for TextFields.
+					mainWC.dispatcher.Collect(m)
 					if is := fm.Input; is != nil && m.Text != "" {
 						v := is.Value + m.Text
 						is.Value = v
@@ -373,8 +334,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					return true
 
 				case input.IMEComposeMsg:
-					dispatcher.Collect(m)
-					// Update FocusManager's compose state for TextField rendering.
+					mainWC.dispatcher.Collect(m)
 					if is := fm.Input; is != nil {
 						is.ComposeText = m.Text
 						is.ComposeCursorStart = m.CursorStart
@@ -384,10 +344,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					return true
 
 				case input.IMECommitMsg:
-					dispatcher.Collect(m)
-					// Insert committed text into focused TextField.
+					mainWC.dispatcher.Collect(m)
 					if is := fm.Input; is != nil && m.Text != "" {
-						is.ComposeText = "" // clear composition
+						is.ComposeText = ""
 						v := is.Value + m.Text
 						is.Value = v
 						is.OnChange(v)
@@ -396,11 +355,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					return true
 
 				case input.MouseMsg:
-					dispatcher.Collect(m)
+					mainWC.dispatcher.Collect(m)
 				case input.ScrollMsg:
-					dispatcher.Collect(m)
+					mainWC.dispatcher.Collect(m)
 				case input.TouchMsg:
-					dispatcher.Collect(m)
+					mainWC.dispatcher.Collect(m)
 				}
 				newModel, cmd := update(currentModel, msg)
 				if modelChanged(any(newModel), any(currentModel)) {
@@ -417,93 +376,105 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			dt := appLoop.ClampDt(rawDt)
 			lastFrame = now
 
-			// 2b. Animation pass — tick all WidgetStates that implement
-			// Animator before reconcile (RFC-002 §1.3). If any animation
-			// is still running, force a repaint.
-			animDirty := reconciler.TickAnimators(dt)
+			// 2b. Animation + dirty passes for all windows.
+			animDirty := false
+			stateDirty := false
+			for _, wc := range windows {
+				if wc.reconciler.TickAnimators(dt) {
+					animDirty = true
+				}
+				if wc.reconciler.CheckDirtyTrackers() {
+					stateDirty = true
+				}
+			}
 
-			// 2c. DirtyTracker pass — check WidgetStates that explicitly
-			// marked themselves dirty (RFC-001 §6.4), e.g. video surfaces
-			// or external data feeds that change independently of the model.
-			stateDirty := reconciler.CheckDirtyTrackers()
-
-			// Deliver TickMsg directly — always call update, but only
-			// force a rebuild if the model is modified.
 			tickModel, tickCmd := update(currentModel, TickMsg{DeltaTime: dt})
 			tickDirty := modelChanged(any(tickModel), any(currentModel))
 			currentModel = tickModel
 			dispatchCmd(tickCmd)
 			modelDirty = modelDirty || tickDirty || animDirty || stateDirty
 
-			// Re-run view and reconcile only when the model changed.
+			// 3. Get views for all windows and reconcile/render.
 			if modelDirty {
-				// Reset focus order for this frame (rebuilt during reconcile + layout).
 				fm.ResetOrder()
 
-				// Global Handler Layer: filter events before widget dispatch (RFC-002 §2.8).
 				for _, h := range cfg.globalHandlers {
-					dispatcher.FilterCollectedEvents(h.handler)
+					mainWC.dispatcher.FilterCollectedEvents(h.handler)
 				}
 				for _, h := range dynamicHandlers {
-					dispatcher.FilterCollectedEvents(h.handler)
+					mainWC.dispatcher.FilterCollectedEvents(h.handler)
 				}
-
-				// Dispatch collected input events to per-UID buffers.
-				dispatcher.Dispatch()
-
-				newTree := view(currentModel)
-				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm, currentLocale)
-
-				// Sort tab order derived from layout tree (RFC-002 §2.3).
-				fm.SortOrder()
-
-				// A11y: build access tree and notify bridge (RFC-001 §11).
-				if a11yBridge != nil {
-					w, h := plat.WindowSize()
-					accessTree := ui.BuildAccessTree(currentTree, reconciler, a11y.Rect{
-						Width: float64(w), Height: float64(h),
-					}, dispatcher)
-					a11yBridge.UpdateTree(accessTree)
-
-					// Focus tracking.
-					if accessTree.FocusedID != prevA11yFocusedID {
-						if accessTree.FocusedID != 0 {
-							a11yBridge.NotifyFocus(accessTree.FocusedID)
-						}
-						prevA11yFocusedID = accessTree.FocusedID
-					}
-				}
+				mainWC.dispatcher.Dispatch()
 			}
 
-			// 3. Update hover target from previous frame's hitMap.
-			hoveredIdx := hitMap.HitTestIndex(mouseX, mouseY)
-			hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick.Duration)
+			views := multiView(currentModel)
 
-			// 4. Tick hover animations (RFC §12.2: AnimationTick before paint).
-			hoverState.Tick(dt)
+			// Render main window.
+			if mainElem, ok := views[MainWindow]; ok && modelDirty {
+				mainWC.currentTree, _ = mainWC.reconciler.Reconcile(mainElem, activeTheme, Send, mainWC.dispatcher, fm, currentLocale)
+				fm.SortOrder()
+			}
 
-			// 5. Build scene with hover state.
+			// Main window: hover + scene + render.
+			hoveredIdx := mainWC.hitMap.HitTestIndex(mainWC.mouseX, mainWC.mouseY)
+			mainWC.hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick.Duration)
+			mainWC.hoverState.Tick(dt)
+
 			w, h := plat.FramebufferSize()
 			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
-			hitMap.Reset()
-			ix := ui.NewInteractor(&hitMap, &hoverState)
-			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
+			mainWC.hitMap.Reset()
+			ix := ui.NewInteractor(&mainWC.hitMap, &mainWC.hoverState)
+			scene := ui.BuildScene(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm)
 
-			// Sync dirty images from the image store to the renderer.
 			syncImages(cfg.imageStore, renderer)
 
 			renderer.BeginFrame()
 			renderer.Draw(scene)
 			renderer.EndFrame()
+
+			// Render secondary windows.
+			wr, hasWR := renderer.(gpu.WindowRenderer)
+			for winID, wc := range windows {
+				if winID == MainWindow {
+					continue
+				}
+				elem, ok := views[winID]
+				if !ok {
+					continue
+				}
+
+				// Reconcile secondary window.
+				if modelDirty {
+					wc.dispatcher.Dispatch()
+					wc.currentTree, _ = wc.reconciler.Reconcile(elem, activeTheme, Send, wc.dispatcher, nil, currentLocale)
+				}
+
+				// Hover + scene.
+				hovIdx := wc.hitMap.HitTestIndex(wc.mouseX, wc.mouseY)
+				wc.hoverState.SetHovered(hovIdx, activeTheme.Tokens().Motion.Quick.Duration)
+				wc.hoverState.Tick(dt)
+
+				winCanvas := render.NewSceneCanvas(wc.width, wc.height, render.WithShaper(shaper), render.WithAtlas(atlas))
+				wc.hitMap.Reset()
+				winIx := ui.NewInteractor(&wc.hitMap, &wc.hoverState)
+				winScene := ui.BuildScene(wc.currentTree, winCanvas, activeTheme, wc.width, wc.height, winIx)
+
+				if hasWR {
+					wr.BeginFrameWindow(uint32(winID))
+					wr.DrawWindow(uint32(winID), winScene)
+					wr.EndFrameWindow(uint32(winID))
+				}
+			}
 		},
 
 		OnResize: func(width, height int) {
 			renderer.Resize(width, height)
+			mainWC.width = width
+			mainWC.height = height
 			Send(input.ResizeMsg{Width: width, Height: height})
 		},
 
 		OnMouseButton: func(x, y float32, button int, pressed bool) {
-			// Send input message for all mouse button events.
 			btn := input.MouseButtonLeft
 			switch button {
 			case 1:
@@ -517,63 +488,55 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			}
 			Send(input.MouseMsg{X: x, Y: y, Button: btn, Action: action})
 
-			// Left-click hit-test and drag tracking.
 			if button == 0 {
 				if pressed {
-					// Blur focus first; if the click lands on a focusable element,
-					// its hit target will re-focus it.
 					oldUID := fm.FocusedUID()
 					fm.Blur()
 					if oldUID != 0 {
-						dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+						mainWC.dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
 					}
-
-					if target := hitMap.HitTest(x, y); target != nil {
+					if target := mainWC.hitMap.HitTest(x, y); target != nil {
 						if target.OnClickAt != nil {
 							target.OnClickAt(x, y)
 							if target.Draggable {
-								dragCallback = target.OnClickAt
-								dragRelease = target.OnRelease
+								mainWC.dragCB = target.OnClickAt
+								mainWC.dragRelease = target.OnRelease
 							}
 						} else if target.OnClick != nil {
 							target.OnClick()
 						}
 					}
 				} else {
-					// Release ends any active drag.
-					if dragRelease != nil {
-						dragRelease(x, y)
+					if mainWC.dragRelease != nil {
+						mainWC.dragRelease(x, y)
 					}
-					dragCallback = nil
-					dragRelease = nil
+					mainWC.dragCB = nil
+					mainWC.dragRelease = nil
 				}
 			}
 		},
 
 		OnMouseMove: func(x, y float32) {
-			mouseX = x
-			mouseY = y
+			mainWC.mouseX = x
+			mainWC.mouseY = y
 			Send(input.MouseMsg{X: x, Y: y, Action: input.MouseMove})
-			// Continue firing positional callback while dragging.
-			if dragCallback != nil {
-				dragCallback(x, y)
+			if mainWC.dragCB != nil {
+				mainWC.dragCB(x, y)
 			}
-			// Update cursor based on hovered hit target (RFC-002 §2.7).
 			newCursor := input.CursorDefault
-			if target := hitMap.HitTest(x, y); target != nil {
+			if target := mainWC.hitMap.HitTest(x, y); target != nil {
 				newCursor = target.Cursor
 			}
-			if newCursor != currentCursor {
-				currentCursor = newCursor
+			if newCursor != mainWC.cursor {
+				mainWC.cursor = newCursor
 				plat.SetCursor(newCursor)
 			}
 		},
 
 		OnScroll: func(deltaX, deltaY float32) {
-			Send(input.ScrollMsg{X: mouseX, Y: mouseY, DeltaX: deltaX, DeltaY: deltaY})
-			// Route scroll events directly to the ScrollView under the cursor.
-			if target := hitMap.HitTestScroll(mouseX, mouseY); target != nil {
-				target.OnScroll(deltaY * 30) // 30dp per scroll unit
+			Send(input.ScrollMsg{X: mainWC.mouseX, Y: mainWC.mouseY, DeltaX: deltaX, DeltaY: deltaY})
+			if target := mainWC.hitMap.HitTestScroll(mainWC.mouseX, mainWC.mouseY); target != nil {
+				target.OnScroll(deltaY * 30)
 			}
 		},
 
@@ -604,65 +567,105 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			Send(input.IMECommitMsg{Text: text})
 		},
 
-		// Multi-window: when the user closes a secondary window via the X button,
-		// send a WindowClosedMsg so the model can react.
+		// ── Multi-window input callbacks ──────────────────────────
+
+		OnWindowResize: func(windowID uint32, width, height int) {
+			wc := windows[WindowID(windowID)]
+			if wc == nil {
+				return
+			}
+			wc.width = width
+			wc.height = height
+			if wr, ok := renderer.(gpu.WindowRenderer); ok {
+				wr.ResizeWindow(windowID, width, height)
+			}
+		},
+
 		OnWindowClose: func(windowID uint32) {
 			Send(WindowClosedMsg{Window: WindowID(windowID)})
 		},
+
+		OnWindowMouseButton: func(windowID uint32, x, y float32, button int, pressed bool) {
+			wc := windows[WindowID(windowID)]
+			if wc == nil {
+				return
+			}
+			btn := input.MouseButtonLeft
+			switch button {
+			case 1:
+				btn = input.MouseButtonRight
+			case 2:
+				btn = input.MouseButtonMiddle
+			}
+			action := input.MouseRelease
+			if pressed {
+				action = input.MousePress
+			}
+			Send(input.MouseMsg{X: x, Y: y, Button: btn, Action: action})
+
+			if button == 0 {
+				if pressed {
+					if target := wc.hitMap.HitTest(x, y); target != nil {
+						if target.OnClickAt != nil {
+							target.OnClickAt(x, y)
+							if target.Draggable {
+								wc.dragCB = target.OnClickAt
+								wc.dragRelease = target.OnRelease
+							}
+						} else if target.OnClick != nil {
+							target.OnClick()
+						}
+					}
+				} else {
+					if wc.dragRelease != nil {
+						wc.dragRelease(x, y)
+					}
+					wc.dragCB = nil
+					wc.dragRelease = nil
+				}
+			}
+		},
+
+		OnWindowMouseMove: func(windowID uint32, x, y float32) {
+			wc := windows[WindowID(windowID)]
+			if wc == nil {
+				return
+			}
+			wc.mouseX = x
+			wc.mouseY = y
+			if wc.dragCB != nil {
+				wc.dragCB(x, y)
+			}
+		},
+
+		OnWindowKey: func(windowID uint32, key string, action int, mods int) {
+			a := input.KeyPress
+			switch action {
+			case 1:
+				a = input.KeyRelease
+			case 2:
+				a = input.KeyRepeat
+			}
+			Send(input.KeyMsg{
+				Key:       input.KeyNameToKey[key],
+				Modifiers: input.ModsFromBits(mods),
+				Action:    a,
+			})
+		},
+
+		OnWindowChar: func(windowID uint32, ch rune) {
+			Send(input.CharMsg{Char: ch})
+		},
+
+		OnWindowScroll: func(windowID uint32, deltaX, deltaY float32) {
+			wc := windows[WindowID(windowID)]
+			if wc == nil {
+				return
+			}
+			Send(input.ScrollMsg{X: wc.mouseX, Y: wc.mouseY, DeltaX: deltaX, DeltaY: deltaY})
+			if target := wc.hitMap.HitTestScroll(wc.mouseX, wc.mouseY); target != nil {
+				target.OnScroll(deltaY * 30)
+			}
+		},
 	})
 }
-
-// modelChanged reports whether two model values differ.
-// It uses == for comparable types and conservatively assumes changed
-// for non-comparable types (slices, maps, funcs) to avoid panics.
-func modelChanged(a, b any) (changed bool) {
-	changed = true // default: assume changed for non-comparable types
-	defer func() { recover() }()
-	return a != b
-}
-
-// darkVariant returns the dark theme associated with the current active theme.
-// If the theme (or its underlying base) implements ThemePair, its DarkVariant
-// is returned. Otherwise we fall back to the default dark theme (LuxDark).
-func darkVariant(active theme.Theme) theme.Theme {
-	base := unwrapBase(active)
-	if tp, ok := base.(theme.ThemePair); ok {
-		return tp.DarkVariant()
-	}
-	return theme.LuxDark
-}
-
-// lightVariant is the light-mode counterpart of darkVariant.
-func lightVariant(active theme.Theme) theme.Theme {
-	base := unwrapBase(active)
-	if tp, ok := base.(theme.ThemePair); ok {
-		return tp.LightVariant()
-	}
-	return theme.LuxLight
-}
-
-// unwrapBase extracts the underlying theme from a CachedTheme wrapper.
-func unwrapBase(t theme.Theme) theme.Theme {
-	if ct, ok := t.(*theme.CachedTheme); ok {
-		return ct.Base()
-	}
-	return t
-}
-
-// syncImages uploads dirty images from the store to the renderer.
-func syncImages(store *luximage.Store, renderer gpu.Renderer) {
-	if store == nil {
-		return
-	}
-	uploader, ok := renderer.(gpu.ImageUploader)
-	if !ok {
-		return
-	}
-	for _, entry := range store.DirtyEntries() {
-		uploader.UploadImage(entry.ID, entry.Width, entry.Height, entry.RGBA)
-		entry.ClearDirty()
-	}
-}
-
-// Ensure ViewFunc constraint is satisfied at compile time.
-var _ ViewFunc[struct{}] = func(_ struct{}) ui.Element { return ui.Empty() }

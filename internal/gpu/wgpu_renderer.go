@@ -59,10 +59,14 @@ type WGPURenderer struct {
 	msdfTexture    wgpu.Texture
 	msdfView       wgpu.TextureView
 
-	// Bind group layouts (kept for recreating bind groups on atlas resize)
+	// Bind group layouts (kept for recreating bind groups on atlas resize / per-window)
+	projLayout     wgpu.BindGroupLayout // projection bind group layout (group 0) — kept for per-window bind groups
 	textLayout     wgpu.BindGroupLayout
 	surfTexLayout  wgpu.BindGroupLayout // surface texture bind group layout (group 1)
 	gradLayout     wgpu.BindGroupLayout // gradient params bind group layout (group 1)
+
+	// Multi-window surfaces
+	windows map[uint32]*windowSurface
 
 	// Bind groups
 	projBindGroup  wgpu.BindGroup
@@ -142,6 +146,19 @@ type imageTextureEntry struct {
 	view    wgpu.TextureView
 	width   int
 	height  int
+}
+
+// windowSurface holds per-window GPU resources for multi-window rendering.
+type windowSurface struct {
+	surface       wgpu.Surface
+	width, height int
+	surfaceOK     bool
+	bgColor       draw.Color
+	projBuffer    wgpu.Buffer
+	projBindGroup wgpu.BindGroup
+	textBindGroup wgpu.BindGroup // text pipeline uses projBuffer at binding 0
+	msdfUniBuffer wgpu.Buffer
+	msdfBindGroup wgpu.BindGroup
 }
 
 // NewWGPU creates a new wgpu-based renderer.
@@ -286,13 +303,13 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	defer msdfShader.Destroy()
 
 	// Create bind group layouts.
-	projLayout := device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	r.projLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Label: "proj-layout",
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageVertex, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
 		},
 	})
-	defer projLayout.Destroy()
+	projLayout := r.projLayout
 
 	r.textLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Label: "text-layout",
@@ -697,6 +714,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	// Upload initial projection matrix.
 	r.updateProjection()
 
+	r.windows = make(map[uint32]*windowSurface)
 	r.inited = true
 	return nil
 }
@@ -1350,6 +1368,7 @@ func (r *WGPURenderer) Destroy() {
 	r.gradPipeline.Destroy()
 	r.shadowPipeline.Destroy()
 	r.shadowInstBuffer.Destroy()
+	r.projLayout.Destroy()
 	r.textLayout.Destroy()
 	r.surfTexLayout.Destroy()
 	r.gradLayout.Destroy()
@@ -1392,6 +1411,15 @@ func (r *WGPURenderer) Destroy() {
 	if r.blurDstTexture != nil {
 		r.blurDstTexture.Destroy()
 	}
+	// Destroy per-window surfaces.
+	for _, ws := range r.windows {
+		ws.projBindGroup.Destroy()
+		ws.projBuffer.Destroy()
+		ws.textBindGroup.Destroy()
+		ws.msdfBindGroup.Destroy()
+		ws.msdfUniBuffer.Destroy()
+		ws.surface.Destroy()
+	}
 	// Surface must be released before Device — DX12 needs the command queue for waitForGPU.
 	if r.surface != nil {
 		r.surface.Destroy()
@@ -1422,6 +1450,19 @@ func (r *WGPURenderer) resizeAtlasTexture() {
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
 	})
+	// Recreate per-window text bind groups.
+	for id, ws := range r.windows {
+		ws.textBindGroup.Destroy()
+		ws.textBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  fmt.Sprintf("text-bg-win-%d", id),
+			Layout: r.textLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Buffer: ws.projBuffer, Size: 80},
+				{Binding: 1, Texture: r.atlasView},
+				{Binding: 2, Sampler: r.atlasSampler},
+			},
+		})
+	}
 	r.atlas.Dirty = true
 }
 
@@ -1447,6 +1488,19 @@ func (r *WGPURenderer) resizeMSDFTexture() {
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
 	})
+	// Recreate per-window MSDF bind groups.
+	for id, ws := range r.windows {
+		ws.msdfBindGroup.Destroy()
+		ws.msdfBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  fmt.Sprintf("msdf-bg-win-%d", id),
+			Layout: r.textLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Buffer: ws.msdfUniBuffer, Size: 80},
+				{Binding: 1, Texture: r.msdfView},
+				{Binding: 2, Sampler: r.atlasSampler},
+			},
+		})
+	}
 	r.atlas.MSDFDirty = true
 	r.updateMSDFUniforms()
 }
@@ -1913,6 +1967,203 @@ func (r *WGPURenderer) updateMSDFUniforms() {
 	data[18] = pxRange
 	data[19] = pxRange
 	r.msdfUniBuffer.Write(r.queue, float32SliceToBytes(data[:]))
+}
+
+// ── WindowRenderer implementation (multi-window support) ─────────────────
+
+// InitWindow creates a per-window surface and bind groups.
+func (r *WGPURenderer) InitWindow(id uint32, cfg Config) error {
+	if !r.inited {
+		return fmt.Errorf("renderer not initialized")
+	}
+	ws := &windowSurface{
+		width:  cfg.Width,
+		height: cfg.Height,
+	}
+
+	// Create surface from native handle.
+	if cfg.NativeHandle != 0 {
+		ws.surface = r.instance.CreateSurface(&wgpu.SurfaceDescriptor{
+			NativeHandle: cfg.NativeHandle,
+		})
+		ws.surfaceOK = true
+	}
+	if ws.surfaceOK {
+		ws.surface.Configure(r.device, &wgpu.SurfaceConfiguration{
+			Format:      wgpu.TextureFormatBGRA8Unorm,
+			Usage:       wgpu.TextureUsageRenderAttachment,
+			Width:       uint32(ws.width),
+			Height:      uint32(ws.height),
+			PresentMode: wgpu.PresentModeFifo,
+		})
+	}
+
+	// Per-window projection uniform buffer (80 bytes: mat4x4 + params vec4).
+	ws.projBuffer = r.device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: fmt.Sprintf("proj-win-%d", id),
+		Size:  80,
+		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+	})
+	ws.projBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  fmt.Sprintf("proj-bg-win-%d", id),
+		Layout: r.projLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: ws.projBuffer, Size: 80},
+		},
+	})
+
+	// Per-window text bind group (uses per-window projBuffer + shared atlas).
+	ws.textBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  fmt.Sprintf("text-bg-win-%d", id),
+		Layout: r.textLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: ws.projBuffer, Size: 80},
+			{Binding: 1, Texture: r.atlasView},
+			{Binding: 2, Sampler: r.atlasSampler},
+		},
+	})
+
+	// Per-window MSDF uniform buffer + bind group.
+	ws.msdfUniBuffer = r.device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: fmt.Sprintf("msdf-uni-win-%d", id),
+		Size:  80,
+		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+	})
+	ws.msdfBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  fmt.Sprintf("msdf-bg-win-%d", id),
+		Layout: r.textLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: ws.msdfUniBuffer, Size: 80},
+			{Binding: 1, Texture: r.msdfView},
+			{Binding: 2, Sampler: r.atlasSampler},
+		},
+	})
+
+	// Inherit background color from main window.
+	ws.bgColor = r.bgColor
+
+	// Write initial projection matrix.
+	r.writeWindowProjection(ws)
+
+	r.windows[id] = ws
+	return nil
+}
+
+// DestroyWindow releases per-window GPU resources.
+func (r *WGPURenderer) DestroyWindow(id uint32) {
+	ws, ok := r.windows[id]
+	if !ok {
+		return
+	}
+	ws.projBindGroup.Destroy()
+	ws.projBuffer.Destroy()
+	ws.textBindGroup.Destroy()
+	ws.msdfBindGroup.Destroy()
+	ws.msdfUniBuffer.Destroy()
+	if ws.surface != nil {
+		ws.surface.Destroy()
+	}
+	delete(r.windows, id)
+}
+
+// ResizeWindow reconfigures a per-window surface after resize.
+func (r *WGPURenderer) ResizeWindow(id uint32, width, height int) {
+	ws, ok := r.windows[id]
+	if !ok {
+		return
+	}
+	ws.width = width
+	ws.height = height
+	if ws.surfaceOK {
+		ws.surface.Configure(r.device, &wgpu.SurfaceConfiguration{
+			Format:      wgpu.TextureFormatBGRA8Unorm,
+			Usage:       wgpu.TextureUsageRenderAttachment,
+			Width:       uint32(width),
+			Height:      uint32(height),
+			PresentMode: wgpu.PresentModeFifo,
+		})
+	}
+	r.writeWindowProjection(ws)
+}
+
+// BeginFrameWindow starts a new frame for a secondary window.
+func (r *WGPURenderer) BeginFrameWindow(id uint32) {
+	// No-op: surface texture is acquired in DrawWindow.
+}
+
+// DrawWindow renders a scene to a secondary window's surface.
+// It temporarily swaps renderer state to the per-window resources,
+// calls Draw, then restores main-window state.
+func (r *WGPURenderer) DrawWindow(id uint32, scene draw.Scene) {
+	ws, ok := r.windows[id]
+	if !ok || !ws.surfaceOK {
+		return
+	}
+
+	// Save main-window state.
+	origSurface := r.surface
+	origSurfaceOK := r.surfaceOK
+	origW, origH := r.width, r.height
+	origBG := r.bgColor
+	origProjBuf := r.projBuffer
+	origProjBG := r.projBindGroup
+	origTextBG := r.textBindGroup
+	origMSDF := r.msdfUniBuffer
+	origMSDBG := r.msdfBindGroup
+
+	// Swap to per-window state.
+	r.surface = ws.surface
+	r.surfaceOK = ws.surfaceOK
+	r.width = ws.width
+	r.height = ws.height
+	r.bgColor = ws.bgColor
+	r.projBuffer = ws.projBuffer
+	r.projBindGroup = ws.projBindGroup
+	r.textBindGroup = ws.textBindGroup
+	r.msdfUniBuffer = ws.msdfUniBuffer
+	r.msdfBindGroup = ws.msdfBindGroup
+
+	r.Draw(scene)
+
+	// Restore main-window state.
+	r.surface = origSurface
+	r.surfaceOK = origSurfaceOK
+	r.width = origW
+	r.height = origH
+	r.bgColor = origBG
+	r.projBuffer = origProjBuf
+	r.projBindGroup = origProjBG
+	r.textBindGroup = origTextBG
+	r.msdfUniBuffer = origMSDF
+	r.msdfBindGroup = origMSDBG
+}
+
+// EndFrameWindow presents a secondary window's surface.
+func (r *WGPURenderer) EndFrameWindow(id uint32) {
+	ws, ok := r.windows[id]
+	if !ok || !ws.surfaceOK {
+		return
+	}
+	ws.surface.Present()
+}
+
+// writeWindowProjection writes the projection matrix to a per-window buffer.
+func (r *WGPURenderer) writeWindowProjection(ws *windowSurface) {
+	proj := wgpuOrthoMatrix(0, float32(ws.width), float32(ws.height), 0, -1, 1)
+	var data [20]float32
+	copy(data[:16], proj[:])
+	data[16] = r.grain
+	ws.projBuffer.Write(r.queue, float32SliceToBytes(data[:]))
+
+	// MSDF uniforms.
+	pxRange := float32(text.MSDFPxRange)
+	var msdfData [20]float32
+	copy(msdfData[:16], proj[:])
+	msdfData[16] = float32(r.msdfW)
+	msdfData[17] = float32(r.msdfH)
+	msdfData[18] = pxRange
+	msdfData[19] = pxRange
+	ws.msdfUniBuffer.Write(r.queue, float32SliceToBytes(msdfData[:]))
 }
 
 func wgpuOrthoMatrix(left, right, bottom, top, near, far float32) [16]float32 {

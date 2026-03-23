@@ -60,9 +60,11 @@ type Platform interface {
 
 // Config holds platform initialization parameters.
 type Config struct {
-	Title  string
-	Width  int
-	Height int
+	Title     string
+	Width     int
+	Height    int
+	Type      int  // window type (maps from app.WindowType)
+	Resizable bool // whether the window is user-resizable
 }
 
 // Callbacks are invoked by the platform event loop.
