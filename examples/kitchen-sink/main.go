@@ -11,8 +11,11 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"runtime"
+	"strings"
 	"time"
 
+	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/dialog"
@@ -43,6 +46,7 @@ var sectionIDs = []string{
 	"group-platform",
 	"group-rendering",
 	"group-architecture",
+	"group-a11y",
 }
 
 // sectionGroupChildren maps each group to its leaf section IDs.
@@ -61,6 +65,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-platform":     {"platform-info", "window-controls", "clipboard", "gpu-backend", "multi-window"},
 	"group-rendering":    {"canvas-paints", "surfaces"},
 	"group-architecture": {"commands", "sub-models"},
+	"group-a11y":         {"a11y-tree", "a11y-focus-trap", "a11y-bridge"},
 }
 
 func sectionLabel(id string) string {
@@ -182,6 +187,15 @@ func sectionLabel(id string) string {
 		return "Images"
 	case "shader-effects":
 		return "Shader Effects"
+	// Accessibility sections
+	case "group-a11y":
+		return "Accessibility"
+	case "a11y-tree":
+		return "AccessTree"
+	case "a11y-focus-trap":
+		return "FocusTrap"
+	case "a11y-bridge":
+		return "Platform Bridge"
 	default:
 		return id
 	}
@@ -277,6 +291,13 @@ type Model struct {
 	ImgChecker2  draw.ImageID // orange/teal checkerboard (wide, for scale mode demos)
 	ImgChecker3  draw.ImageID // pink/green checkerboard (for opacity demo)
 	ImageOpacity float32
+	// Accessibility demos
+	A11yTreeText     string
+	A11yTrapOpen     bool
+	A11yTrapResult   string
+	A11yTrapCheckA   bool
+	A11yTrapCheckB   bool
+	A11yTrapText     string
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -346,6 +367,15 @@ type NativeConfirmMsg struct{}
 
 // Image messages
 type SetImageOpacityMsg struct{ Value float32 }
+
+// Accessibility messages
+type BuildA11yTreeMsg struct{}
+type ToggleA11yTrapMsg struct{}
+type DismissA11yTrapMsg struct{}
+type A11yTrapConfirmMsg struct{}
+type SetA11yTrapCheckAMsg struct{ Value bool }
+type SetA11yTrapCheckBMsg struct{ Value bool }
+type SetA11yTrapTextMsg struct{ Value string }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -450,6 +480,25 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 	// Images
 	case SetImageOpacityMsg:
 		m.ImageOpacity = msg.Value
+
+	// Accessibility demo messages
+	case BuildA11yTreeMsg:
+		m.A11yTreeText = buildA11yTreeDemo(m)
+	case ToggleA11yTrapMsg:
+		m.A11yTrapOpen = true
+		m.A11yTrapResult = ""
+	case DismissA11yTrapMsg:
+		m.A11yTrapOpen = false
+		m.A11yTrapResult = "Dialog dismissed (Escape/backdrop)"
+	case A11yTrapConfirmMsg:
+		m.A11yTrapOpen = false
+		m.A11yTrapResult = fmt.Sprintf("Confirmed — CheckA=%v CheckB=%v Text=%q", m.A11yTrapCheckA, m.A11yTrapCheckB, m.A11yTrapText)
+	case SetA11yTrapCheckAMsg:
+		m.A11yTrapCheckA = msg.Value
+	case SetA11yTrapCheckBMsg:
+		m.A11yTrapCheckB = msg.Value
+	case SetA11yTrapTextMsg:
+		m.A11yTrapText = msg.Value
 
 	// Phase 2: Spring Animation
 	case SetSpringPresetMsg:
@@ -785,6 +834,13 @@ func sectionContent(m Model) ui.Element {
 		return imagesSection(m)
 	case "shader-effects":
 		return shaderEffectsSection()
+	// Accessibility
+	case "a11y-tree":
+		return a11yTreeSection(m)
+	case "a11y-focus-trap":
+		return a11yFocusTrapSection(m)
+	case "a11y-bridge":
+		return a11yBridgeSection()
 	default:
 		// Group nodes show a hint to expand
 		if children := sectionGroupChildren[m.ActiveSection]; len(children) > 0 {
@@ -2896,6 +2952,284 @@ func shaderEffectsSection() ui.Element {
 		ui.Text("Custom WGSL fragments receive uniforms via Params[0..7] and"),
 		ui.Text("an optional image texture for PaintShaderImage."),
 		ui.Text("Built-in effects are pre-compiled and cached by the GPU renderer."),
+	)
+}
+
+// ── Accessibility Sections ────────────────────────────────────────
+
+// buildA11yTreeDemo builds an AccessTree from a sample widget tree
+// and returns an indented text representation.
+func buildA11yTreeDemo(m Model) string {
+	// Build a sample UI to demonstrate AccessTree construction.
+	sampleUI := ui.Column(
+		ui.ButtonText("Save", func() {}),
+		ui.Checkbox("Accept Terms", m.CheckA, nil),
+		ui.Slider(m.SliderVal, nil),
+		ui.TextField(m.TextValue, "Enter text..."),
+		ui.ProgressBar(m.Progress, false),
+		ui.Toggle(m.ToggleOn, nil),
+	)
+
+	tree := ui.RenderToAccessTree(sampleUI)
+	return formatAccessTree(&tree)
+}
+
+// formatAccessTree renders an AccessTree as indented text.
+func formatAccessTree(tree *a11y.AccessTree) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("AccessTree: %d nodes\n", len(tree.Nodes)))
+	sb.WriteString("─────────────────────────────\n")
+
+	for i := range tree.Nodes {
+		node := &tree.Nodes[i]
+		depth := 0
+		pidx := node.ParentIndex
+		for pidx >= 0 {
+			depth++
+			pidx = tree.Nodes[pidx].ParentIndex
+		}
+
+		indent := strings.Repeat("  ", depth)
+		role := roleName(node.Node.Role)
+		label := node.Node.Label
+		if label == "" {
+			label = "(no label)"
+		}
+
+		line := fmt.Sprintf("%s[%s] %s", indent, role, label)
+
+		// Add state annotations.
+		var states []string
+		if node.Node.States.Focused {
+			states = append(states, "focused")
+		}
+		if node.Node.States.Checked {
+			states = append(states, "checked")
+		}
+		if node.Node.States.Disabled {
+			states = append(states, "disabled")
+		}
+		if node.Node.States.Expanded {
+			states = append(states, "expanded")
+		}
+		if node.Node.NumericValue != nil {
+			states = append(states, fmt.Sprintf("value=%.2f", node.Node.NumericValue.Current))
+		}
+		if node.Node.TextState != nil {
+			states = append(states, fmt.Sprintf("len=%d", node.Node.TextState.Length))
+		}
+		if len(states) > 0 {
+			line += " {" + strings.Join(states, ", ") + "}"
+		}
+
+		sb.WriteString(line + "\n")
+	}
+	return sb.String()
+}
+
+// roleName returns a human-readable name for an AccessRole.
+func roleName(role a11y.AccessRole) string {
+	switch role {
+	case a11y.RoleButton:
+		return "Button"
+	case a11y.RoleCheckbox:
+		return "Checkbox"
+	case a11y.RoleCombobox:
+		return "Combobox"
+	case a11y.RoleDialog:
+		return "Dialog"
+	case a11y.RoleGrid:
+		return "Grid"
+	case a11y.RoleGroup:
+		return "Group"
+	case a11y.RoleHeading:
+		return "Heading"
+	case a11y.RoleImage:
+		return "Image"
+	case a11y.RoleLink:
+		return "Link"
+	case a11y.RoleListbox:
+		return "Listbox"
+	case a11y.RoleMenu:
+		return "Menu"
+	case a11y.RoleProgressBar:
+		return "ProgressBar"
+	case a11y.RoleScrollBar:
+		return "ScrollBar"
+	case a11y.RoleSlider:
+		return "Slider"
+	case a11y.RoleSpinButton:
+		return "SpinButton"
+	case a11y.RoleTab:
+		return "Tab"
+	case a11y.RoleTable:
+		return "Table"
+	case a11y.RoleTextInput:
+		return "TextInput"
+	case a11y.RoleToggle:
+		return "Toggle"
+	case a11y.RoleTree:
+		return "Tree"
+	default:
+		if role >= a11y.RoleCustomBase {
+			return fmt.Sprintf("Custom(%d)", role-a11y.RoleCustomBase)
+		}
+		return fmt.Sprintf("Role(%d)", role)
+	}
+}
+
+func a11yTreeSection(m Model) ui.Element {
+	children := []ui.Element{
+		sectionHeader("AccessTree Inspector"),
+		ui.Text("Build an AccessTree from a sample widget tree and inspect the result."),
+		ui.Text("Uses RenderToAccessTree() — the test helper from 6.2c."),
+		ui.Spacer(12),
+
+		ui.TextStyled("Sample Widgets", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("  Button(\"Save\")"),
+		ui.Text("  Checkbox(\"Accept Terms\")"),
+		ui.Text("  Slider(0.5)"),
+		ui.Text("  TextField(\"Enter text...\")"),
+		ui.Text("  ProgressBar(0.0)"),
+		ui.Text("  Toggle(on/off)"),
+		ui.Spacer(12),
+
+		ui.ButtonText("Build AccessTree", func() { app.Send(BuildA11yTreeMsg{}) }),
+	}
+
+	if m.A11yTreeText != "" {
+		children = append(children,
+			ui.Spacer(12),
+			ui.TextStyled("Result", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+			ui.Spacer(4),
+		)
+		for _, line := range strings.Split(m.A11yTreeText, "\n") {
+			if line != "" {
+				children = append(children, ui.Text(line))
+			}
+		}
+	}
+
+	return ui.Column(children...)
+}
+
+func a11yFocusTrapSection(m Model) ui.Element {
+	children := []ui.Element{
+		sectionHeader("FocusTrap Demo"),
+		ui.Text("Modal dialogs trap Tab/Shift+Tab navigation within the dialog."),
+		ui.Text("Focus is restored to the trigger when the dialog closes."),
+		ui.Spacer(12),
+
+		ui.TextStyled("RFC-001 §11.7 — Focus Trapping Rules", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("  1. Modal opens → Focus moves into dialog"),
+		ui.Text("  2. Tab at last widget → Wraps to first widget"),
+		ui.Text("  3. Shift+Tab at first → Wraps to last widget"),
+		ui.Text("  4. Escape → Dialog closes, focus restores"),
+		ui.Text("  5. Background content hidden from AccessTree"),
+		ui.Spacer(12),
+
+		ui.ButtonText("Open Modal Dialog", func() { app.Send(ToggleA11yTrapMsg{}) }),
+	}
+
+	if m.A11yTrapResult != "" {
+		children = append(children,
+			ui.Spacer(8),
+			ui.Text(fmt.Sprintf("Result: %s", m.A11yTrapResult)),
+		)
+	}
+
+	// Render the modal dialog with FocusTrap.
+	if m.A11yTrapOpen {
+		children = append(children, ui.Overlay{
+			ID:          "a11y-trap-demo",
+			Placement:   ui.PlacementCenter,
+			Dismissable: true,
+			OnDismiss:   func() { app.Send(DismissA11yTrapMsg{}) },
+			Backdrop:    true,
+			FocusTrap:   &ui.FocusTrap{RestoreFocus: true, TrapID: "a11y-trap-demo"},
+			Content: ui.SizedBox(360, 0,
+				ui.Column(
+					ui.TextStyled("FocusTrap Demo Dialog", draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+					ui.Spacer(12),
+					ui.Text("Tab/Shift+Tab should cycle within this dialog only."),
+					ui.Spacer(12),
+					ui.TextField(m.A11yTrapText, "Enter value...", ui.WithOnChange(func(v string) { app.Send(SetA11yTrapTextMsg{Value: v}) })),
+					ui.Spacer(8),
+					ui.Checkbox("Option A", m.A11yTrapCheckA, func(v bool) { app.Send(SetA11yTrapCheckAMsg{Value: v}) }),
+					ui.Spacer(4),
+					ui.Checkbox("Option B", m.A11yTrapCheckB, func(v bool) { app.Send(SetA11yTrapCheckBMsg{Value: v}) }),
+					ui.Spacer(16),
+					ui.Row(
+						ui.Spacer(0),
+						ui.ButtonOutlinedText("Cancel", func() { app.Send(DismissA11yTrapMsg{}) }),
+						ui.Spacer(8),
+						ui.ButtonText("Confirm", func() { app.Send(A11yTrapConfirmMsg{}) }),
+					),
+				),
+			),
+		})
+	}
+
+	return ui.Column(children...)
+}
+
+func a11yBridgeSection() ui.Element {
+	os := runtime.GOOS
+	var bridgeName, bridgeDesc string
+	switch os {
+	case "windows":
+		bridgeName = "UIA (UI Automation)"
+		bridgeDesc = "Windows platform bridge via CGo/COM. Exposes AccessTree " +
+			"as UIA element providers (IRawElementProviderSimple). " +
+			"Handles WM_GETOBJECT, structural change events, focus events."
+	case "darwin":
+		bridgeName = "NSAccessibility"
+		bridgeDesc = "macOS platform bridge via CGo/ObjC. Creates " +
+			"LuxAccessibilityElement objects mapped to AccessTreeNodes. " +
+			"Posts AXFocusedUIElementChanged and announcement notifications."
+	case "linux":
+		bridgeName = "AT-SPI2"
+		bridgeDesc = "Linux platform bridge via D-Bus (godbus). No CGo required. " +
+			"Exposes accessible objects on D-Bus implementing " +
+			"org.a11y.atspi.Accessible, Component, Action, Value, and Text interfaces. " +
+			"Works on X11, Wayland, and DRM/KMS (bare metal)."
+	default:
+		bridgeName = "None"
+		bridgeDesc = "No accessibility bridge available for this platform."
+	}
+
+	return ui.Column(
+		sectionHeader("Platform A11y Bridge"),
+		ui.Text("Lux provides platform-specific accessibility bridges that expose"),
+		ui.Text("the AccessTree to native screen readers and assistive technology."),
+		ui.Spacer(12),
+
+		ui.TextStyled("Current Platform", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text(fmt.Sprintf("  OS:     %s/%s", runtime.GOOS, runtime.GOARCH)),
+		ui.Text(fmt.Sprintf("  Bridge: %s", bridgeName)),
+		ui.Spacer(8),
+		ui.Text(bridgeDesc),
+		ui.Spacer(16),
+
+		ui.TextStyled("Bridge Interface (a11y.A11yBridge)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("  UpdateTree(tree AccessTree)"),
+		ui.Text("    → Replaces the access tree snapshot after each reconcile pass"),
+		ui.Text("  NotifyFocus(nodeID AccessNodeID)"),
+		ui.Text("    → Informs the bridge that keyboard focus moved"),
+		ui.Text("  NotifyLiveRegion(nodeID AccessNodeID, text string)"),
+		ui.Text("    → Announces dynamic content changes"),
+		ui.Spacer(16),
+
+		ui.TextStyled("Available Bridges", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("  Windows  — UIA (UI Automation) via CGo/COM"),
+		ui.Text("  macOS    — NSAccessibility via CGo/ObjC"),
+		ui.Text("  Linux    — AT-SPI2 via D-Bus (godbus, no CGo)"),
+		ui.Text("  DRM/KMS  — AT-SPI2 via System D-Bus (bare metal HMI)"),
 	)
 }
 

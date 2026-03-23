@@ -285,21 +285,21 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] `SurfaceSemantics` Struct (Roots, Version)
 - [x] `SurfaceAccessNode` Struct (ID, Parent, Role, Label, Description, Value, Bounds, Lang, States, Actions, Relations)
 
-#### 6.2c Widget A11y & AccessTree (ausstehend)
-- [ ] `AccessibleWidget`-Interface
-- [ ] `AccessTree`-Konstruktion aus VTree
-- [ ] `renderToAccessTree()` Test-Helper für A11y-Unit-Tests in CI
-- [ ] Surface-Subtree-Merge in globalen AccessTree (RFC-006 §6)
+#### 6.2c Widget A11y & AccessTree ✅
+- [x] `AccessibleWidget`-Interface
+- [x] `AccessTree`-Konstruktion aus VTree
+- [x] `RenderToAccessTree()` Test-Helper für A11y-Unit-Tests in CI
+- [x] Surface-Subtree-Merge in globalen AccessTree (RFC-006 §6)
 
-#### 6.2d FocusTrap (RFC-001 §11.7, ausstehend)
-- [ ] Fokus-Einschluss bei Modal-Öffnung (Tab/Shift+Tab zyklisch im Dialog)
-- [ ] Fokus-Rückkehr bei Modal-Schließung (`RestoreFocus`)
-- [ ] Inhalt außerhalb des Traps aus AccessTree ausblenden
+#### 6.2d FocusTrap (RFC-001 §11.7) ✅
+- [x] Fokus-Einschluss bei Modal-Öffnung (Tab/Shift+Tab zyklisch im Dialog)
+- [x] Fokus-Rückkehr bei Modal-Schließung (`RestoreFocus`)
+- [x] Inhalt außerhalb des Traps aus AccessTree ausblenden
 
-#### 6.2e Plattform-Bridges (ausstehend)
-- [ ] AT-SPI2 Bridge (Linux) — via D-Bus (`godbus`), kein CGo
-- [ ] UIA Bridge (Windows) — via CGo/COM
-- [ ] NSAccessibility Bridge (macOS) — via CGo/ObjC
+#### 6.2e Plattform-Bridges ✅
+- [x] AT-SPI2 Bridge (Linux) — via D-Bus (`godbus`), kein CGo
+- [x] UIA Bridge (Windows) — via CGo/COM
+- [x] NSAccessibility Bridge (macOS) — via CGo/ObjC
 - **Abhängig von:** 0.2, 0.3 (Focus-Management), 4b.2 (Locale für `Lang`-Feld)
 
 ### 6.3 State Persistence (RFC-001 §3.4) ✅

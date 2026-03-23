@@ -59,6 +59,9 @@ type FocusManager struct {
 	// Element-level focus support (TextField etc.).
 	nextElemID int         // counter for assigning element UIDs during layout
 	Input      *InputState // active TextField input state (if focused is a TextField)
+
+	// FocusTrap support (RFC-001 §11.7).
+	Trap *FocusTrapManager
 }
 
 type focusEntry struct {
@@ -166,6 +169,15 @@ func (fm *FocusManager) OrderLen() int {
 }
 
 func (fm *FocusManager) advance(dir int) UID {
+	// If a focus trap is active, constrain navigation within the trap.
+	if fm.Trap != nil && fm.Trap.Active() {
+		next := fm.Trap.ConstrainAdvance(fm.focusedUID, dir)
+		if next != 0 {
+			fm.focusedUID = next
+		}
+		return fm.focusedUID
+	}
+
 	n := len(fm.focusOrder)
 	if n == 0 {
 		return 0

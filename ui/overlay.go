@@ -69,6 +69,11 @@ type Overlay struct {
 	// Backdrop draws a semi-transparent scrim behind the overlay when true.
 	// Used by modal dialogs to dim the background content.
 	Backdrop bool
+
+	// FocusTrap, when non-nil, constrains Tab navigation within this overlay
+	// and hides outside content from the accessibility tree (RFC-001 §11.7).
+	// Automatically set for modal overlays (Backdrop: true) by dialog constructors.
+	FocusTrap *FocusTrap
 }
 
 // isElement marks Overlay as an Element.
