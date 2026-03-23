@@ -332,8 +332,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 							switch m.Key {
 							case input.KeyBackspace:
 								if len(is.Value) > 0 {
-									runes := []rune(is.Value)
-									v := string(runes[:len(runes)-1])
+									v, _ := text.DeleteBackward(is.Value, len(is.Value))
 									is.Value = v
 									is.OnChange(v)
 									modelDirty = true

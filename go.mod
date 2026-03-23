@@ -10,6 +10,7 @@ require (
 	github.com/go-text/typesetting v0.3.4
 	github.com/gogpu/wgpu v0.21.3
 	github.com/pierrec/msdf v0.0.0-20260126203608-76b1ee18a962
+	github.com/rivo/uniseg v0.4.7
 	github.com/zzl/go-com v1.5.0
 	github.com/zzl/go-webview2 v0.0.0-20230129130204-9df4a7d166d5
 	github.com/zzl/go-win32api/v2 v2.0.1
