@@ -207,6 +207,11 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		}
 		return el
 
+	case FormFieldElement:
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm, locale)
+		node.Child = child
+		return node
+
 	case ExpandedElement:
 		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm, locale)
 		return ExpandedElement{Child: child, Grow: node.Grow}
@@ -338,6 +343,9 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
+	case FormFieldElement:
+		nb, ok := b.(FormFieldElement)
+		return ok && na.Label == nb.Label && na.Hint == nb.Hint && na.Result == nb.Result && treeEqual(na.Child, nb.Child)
 	case PaddingElement:
 		nb, ok := b.(PaddingElement)
 		return ok && na.Insets == nb.Insets && treeEqual(na.Child, nb.Child)

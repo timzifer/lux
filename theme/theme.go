@@ -42,6 +42,7 @@ const (
 	WidgetKindContextMenu
 	WidgetKindSplitView
 	WidgetKindDialog
+	WidgetKindFormField
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).
@@ -105,6 +106,16 @@ type ScrollSpec struct {
 	MultiplierPrecise float32 // Multiplier for trackpad deltas
 }
 
+// HintMode controls how form field hints are rendered.
+type HintMode uint8
+
+const (
+	// HintModeLabel renders hints as a small text label below the field.
+	HintModeLabel HintMode = iota
+	// HintModeIcon renders hints as an info-icon button with a tooltip.
+	HintModeIcon
+)
+
 // TokenSet holds all design tokens for a theme (RFC-003 §1.2).
 type TokenSet struct {
 	Colors     ColorScheme
@@ -114,7 +125,8 @@ type TokenSet struct {
 	Motion     MotionSpec
 	Elevation  ElevationScale
 	Scroll     ScrollSpec
-	Grain      float32 // Noise/grain intensity (RFC-008 §10.5); 0 = off, 0.03 = subtle default
+	Grain      float32  // Noise/grain intensity (RFC-008 §10.5); 0 = off, 0.03 = subtle default
+	HintMode   HintMode // How form field hints are displayed (default: HintModeLabel)
 }
 
 // ── ColorScheme (RFC-003 §1.2) ──────────────────────────────────
@@ -419,7 +431,8 @@ var luxDarkTokens = TokenSet{
 		StepSize:          48,
 		MultiplierPrecise: 1.5,
 	},
-	Grain: 0.03, // RFC-008 §10.5: subtle anti-banding noise
+	Grain:    0.03,         // RFC-008 §10.5: subtle anti-banding noise
+	HintMode: HintModeIcon, // Lux themes use info-icon tooltips
 }
 
 func (l *luxTheme) Tokens() TokenSet             { return luxDarkTokens }
@@ -492,7 +505,8 @@ type OverrideSpec struct {
 	Motion     *MotionSpec
 	Elevation  *ElevationScale
 	Scroll     *ScrollSpec
-	Grain      *float32 // RFC-008 §10.5: override noise/grain intensity
+	Grain      *float32  // RFC-008 §10.5: override noise/grain intensity
+	HintMode   *HintMode // Override hint display mode for form fields
 }
 
 // Override creates a new Theme that applies partial overrides to a base theme.
@@ -530,6 +544,9 @@ func (o *overrideTheme) Tokens() TokenSet {
 	}
 	if o.spec.Grain != nil {
 		t.Grain = *o.spec.Grain
+	}
+	if o.spec.HintMode != nil {
+		t.HintMode = *o.spec.HintMode
 	}
 	return t
 }
