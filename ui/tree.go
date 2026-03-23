@@ -56,8 +56,12 @@ func (ts *TreeState) Toggle(id string) {
 	}
 }
 
-// expandProgress returns the current expand animation progress for a node.
+// ExpandProgress returns the current expand animation progress for a node.
 // Returns 1.0 if expanded (no animation), 0.0 if collapsed (no animation).
+func (ts *TreeState) ExpandProgress(id string) float32 {
+	return ts.expandProgress(id)
+}
+
 func (ts *TreeState) expandProgress(id string) float32 {
 	if ts == nil {
 		return 0
@@ -71,7 +75,11 @@ func (ts *TreeState) expandProgress(id string) float32 {
 	return 0.0
 }
 
-// isAnimating reports whether a node's expand/collapse is currently animating.
+// IsAnimating reports whether a node's expand/collapse is currently animating.
+func (ts *TreeState) IsAnimating(id string) bool {
+	return ts.isAnimating(id)
+}
+
 func (ts *TreeState) isAnimating(id string) bool {
 	if ts == nil {
 		return false
@@ -111,6 +119,16 @@ func (ts *TreeState) Tick(dt time.Duration) {
 			delete(ts.expandAnim, id)
 		}
 	}
+}
+
+// CacheMotion stores the motion spec from theme tokens so that Toggle()
+// can use them. Called during layout passes.
+func (ts *TreeState) CacheMotion(dur time.Duration, easing anim.EasingFunc) {
+	if ts == nil {
+		return
+	}
+	ts.motionDur = dur
+	ts.motionEase = easing
 }
 
 // SetSelected sets the currently selected node.

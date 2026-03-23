@@ -404,6 +404,12 @@ func (b *AccessTreeBuilder) WalkTreeNodes(tree TreeElement, ids []string, parent
 	}
 }
 
+// ExtractElementLabel tries to extract a text label from an arbitrary element.
+// Exported for use by sub-packages that need to build a11y tree nodes.
+func ExtractElementLabel(el Element) string {
+	return extractElementLabel(el)
+}
+
 // extractElementLabel tries to extract a text label from an arbitrary element.
 func extractElementLabel(el Element) string {
 	switch node := el.(type) {
