@@ -14,6 +14,9 @@ import (
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/button"
+	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/layout"
 )
 
 type Model struct {
@@ -45,15 +48,15 @@ func view(m Model) ui.Element {
 	if m.Dark {
 		themeLabel = "DARK"
 	}
-	return ui.Column(
-		ui.Text(fmt.Sprintf("Count: %d", m.Count)),
-		ui.Divider(),
-		ui.Row(
-			ui.ButtonText("-", func() { app.Send(DecrMsg{}) }),
-			ui.ButtonText("+", func() { app.Send(IncrMsg{}) }),
+	return layout.Column(
+		display.Text(fmt.Sprintf("Count: %d", m.Count)),
+		display.Divider(),
+		layout.Row(
+			button.Text("-", func() { app.Send(DecrMsg{}) }),
+			button.Text("+", func() { app.Send(IncrMsg{}) }),
 		),
-		ui.Divider(),
-		ui.ButtonText(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
+		display.Divider(),
+		button.Text(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
 	)
 }
 

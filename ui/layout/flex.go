@@ -1,11 +1,9 @@
-package ui
+package layout
 
 import (
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/theme"
+	"github.com/timzifer/lux/ui"
 )
-
-// ── Flex Types (RFC-002 §4.4) ─────────────────────────────────────
 
 // FlexDirection controls the main axis of the Flex layout.
 type FlexDirection int
@@ -38,11 +36,21 @@ const (
 )
 
 // FlexOption configures a Flex element.
-type FlexOption func(*FlexElement)
+type FlexOption func(*Flex)
 
-// Flex creates a flexible layout container (RFC-002 §4.4).
-func Flex(children []Element, opts ...FlexOption) Element {
-	el := FlexElement{
+// Flex is a flexible layout container.
+type Flex struct {
+	ui.BaseElement
+	Direction FlexDirection
+	Justify   Justify
+	Align     Align
+	Gap       float32
+	Children  []ui.Element
+}
+
+// NewFlex creates a Flex layout container.
+func NewFlex(children []ui.Element, opts ...FlexOption) ui.Element {
+	el := Flex{
 		Direction: FlexRow,
 		Justify:   JustifyStart,
 		Align:     AlignStart,
@@ -56,43 +64,51 @@ func Flex(children []Element, opts ...FlexOption) Element {
 
 // WithDirection sets the main axis direction.
 func WithDirection(d FlexDirection) FlexOption {
-	return func(e *FlexElement) { e.Direction = d }
+	return func(e *Flex) { e.Direction = d }
 }
 
 // WithJustify sets main-axis alignment.
 func WithJustify(j Justify) FlexOption {
-	return func(e *FlexElement) { e.Justify = j }
+	return func(e *Flex) { e.Justify = j }
 }
 
 // WithAlign sets cross-axis alignment.
 func WithAlign(a Align) FlexOption {
-	return func(e *FlexElement) { e.Align = a }
+	return func(e *Flex) { e.Align = a }
 }
 
 // WithGap sets the gap between children in dp.
 func WithGap(gap float32) FlexOption {
-	return func(e *FlexElement) { e.Gap = gap }
+	return func(e *Flex) { e.Gap = gap }
 }
 
-type FlexElement struct {
-	Direction FlexDirection
-	Justify   Justify
-	Align     Align
-	Gap       float32
-	Children  []Element
+// expandedChild extracts the Expanded info from a child, checking both
+// the layout.Expanded type and the legacy ui.ExpandedElement type.
+type expandedChild struct {
+	child ui.Element
+	grow  float32
 }
 
-func (FlexElement) isElement() {}
+func asExpanded(el ui.Element) (expandedChild, bool) {
+	switch e := el.(type) {
+	case Expanded:
+		return expandedChild{child: e.Child, grow: e.Grow}, true
+	case ui.ExpandedElement:
+		return expandedChild{child: e.Child, grow: e.Grow}, true
+	}
+	return expandedChild{}, false
+}
 
-// layoutFlex performs a two-pass layout: measure with NullCanvas, then paint.
-func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
-	n := len(node.Children)
-	if n == 0 {
-		return Bounds{X: area.X, Y: area.Y}
+// LayoutSelf implements ui.Layouter.
+func (n Flex) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	area := ctx.Area
+	nn := len(n.Children)
+	if nn == 0 {
+		return ui.Bounds{X: area.X, Y: area.Y}
 	}
 
-	isRow := node.Direction == FlexRow
-	gap := int(node.Gap)
+	isRow := n.Direction == FlexRow
+	gap := int(n.Gap)
 
 	// Main axis available space.
 	mainAvail := area.W
@@ -107,33 +123,30 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 		expanded  bool
 		grow      float32
 	}
-	infos := make([]childInfo, n)
-	nc := NullCanvas{Delegate: canvas}
+	infos := make([]childInfo, nn)
 	totalFixed := 0
 	totalGrow := float32(0)
-	fixedCount := 0
 
-	for i, child := range node.Children {
-		if exp, ok := child.(ExpandedElement); ok {
-			infos[i] = childInfo{expanded: true, grow: exp.Grow}
-			totalGrow += exp.Grow
+	for i, child := range n.Children {
+		if exp, ok := asExpanded(child); ok {
+			infos[i] = childInfo{expanded: true, grow: exp.grow}
+			totalGrow += exp.grow
 		} else {
 			// Measure with NullCanvas (no paint).
-			cb := layoutElement(child, area, nc, th, tokens, nil, nil)
+			cb := ctx.MeasureChild(child, area)
 			if isRow {
 				infos[i] = childInfo{mainSize: cb.W, crossSize: cb.H}
 			} else {
 				infos[i] = childInfo{mainSize: cb.H, crossSize: cb.W}
 			}
 			totalFixed += infos[i].mainSize
-			fixedCount++
 		}
 	}
 
 	// Gaps between children.
 	totalGaps := 0
-	if n > 1 {
-		totalGaps = gap * (n - 1)
+	if nn > 1 {
+		totalGaps = gap * (nn - 1)
 	}
 
 	// Remaining space for expanded children.
@@ -149,14 +162,14 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 				infos[i].mainSize = int(float32(remaining) * infos[i].grow / totalGrow)
 			}
 			// Measure expanded child to get cross size.
-			exp := node.Children[i].(ExpandedElement)
-			var measureArea Bounds
+			exp, _ := asExpanded(n.Children[i])
+			var measureArea ui.Bounds
 			if isRow {
-				measureArea = Bounds{X: 0, Y: 0, W: infos[i].mainSize, H: area.H}
+				measureArea = ui.Bounds{X: 0, Y: 0, W: infos[i].mainSize, H: area.H}
 			} else {
-				measureArea = Bounds{X: 0, Y: 0, W: area.W, H: infos[i].mainSize}
+				measureArea = ui.Bounds{X: 0, Y: 0, W: area.W, H: infos[i].mainSize}
 			}
-			cb := layoutElement(exp.Child, measureArea, nc, th, tokens, nil, nil)
+			cb := ctx.MeasureChild(exp.child, measureArea)
 			if isRow {
 				infos[i].crossSize = cb.H
 			} else {
@@ -175,11 +188,11 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 		}
 	}
 
-	// Resolve logical justify/align for RTL (RFC-002 §4.6).
-	// In a FlexRow with RTL, JustifyStart behaves like JustifyEnd and vice versa.
-	justify := node.Justify
-	align := node.Align
-	rtlRow := isRow && globalDirection == draw.DirRTL
+	// Resolve logical justify/align for RTL.
+	justify := n.Justify
+	align := n.Align
+	dir := ui.Direction()
+	rtlRow := isRow && dir == draw.DirRTL
 	if rtlRow {
 		switch justify {
 		case JustifyStart:
@@ -188,8 +201,7 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 			justify = JustifyStart
 		}
 	}
-	// For cross-axis in a FlexColumn under RTL, mirror AlignStart/AlignEnd.
-	rtlColumn := !isRow && globalDirection == draw.DirRTL
+	rtlColumn := !isRow && dir == draw.DirRTL
 	if rtlColumn {
 		switch align {
 		case AlignStart:
@@ -212,37 +224,36 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 	case JustifyCenter:
 		startOffset = freeSpace / 2
 	case JustifySpaceBetween:
-		if n > 1 {
-			extraGap = freeSpace / (n - 1)
+		if nn > 1 {
+			extraGap = freeSpace / (nn - 1)
 		}
 	case JustifySpaceAround:
-		if n > 0 {
-			extraGap = freeSpace / n
+		if nn > 0 {
+			extraGap = freeSpace / nn
 			startOffset = extraGap / 2
 		}
 	case JustifySpaceEvenly:
-		if n > 0 {
-			extraGap = freeSpace / (n + 1)
+		if nn > 0 {
+			extraGap = freeSpace / (nn + 1)
 			startOffset = extraGap
 		}
 	}
 
 	// For RTL rows, reverse the child order so they flow right-to-left.
-	children := node.Children
+	children := n.Children
 	childInfos := infos
 	if rtlRow {
-		children = make([]Element, n)
-		childInfos = make([]childInfo, n)
-		for i := range node.Children {
-			children[i] = node.Children[n-1-i]
-			childInfos[i] = infos[n-1-i]
+		children = make([]ui.Element, nn)
+		childInfos = make([]childInfo, nn)
+		for i := range n.Children {
+			children[i] = n.Children[nn-1-i]
+			childInfos[i] = infos[nn-1-i]
 		}
 	}
 
 	// Pass 2: paint children at computed positions.
 	mainCursor := startOffset
 	maxCrossActual := 0
-	maxMainActual := 0
 
 	for i, child := range children {
 		info := childInfos[i]
@@ -267,16 +278,16 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 			crossOffset = 0
 		}
 
-		var childArea Bounds
+		var childArea ui.Bounds
 		if isRow {
-			childArea = Bounds{
+			childArea = ui.Bounds{
 				X: area.X + mainCursor,
 				Y: area.Y + crossOffset,
 				W: info.mainSize,
 				H: info.crossSize,
 			}
 		} else {
-			childArea = Bounds{
+			childArea = ui.Bounds{
 				X: area.X + crossOffset,
 				Y: area.Y + mainCursor,
 				W: info.crossSize,
@@ -287,9 +298,11 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 		// For expanded children, layout the inner child.
 		actualChild := child
 		if info.expanded {
-			actualChild = child.(ExpandedElement).Child
+			if exp, ok := asExpanded(child); ok {
+				actualChild = exp.child
+			}
 		}
-		cb := layoutElement(actualChild, childArea, canvas, th, tokens, ix, overlays, focus)
+		cb := ctx.LayoutChild(actualChild, childArea)
 
 		if isRow {
 			if cb.H > maxCrossActual {
@@ -304,13 +317,36 @@ func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Them
 		mainCursor += info.mainSize + gap + extraGap
 	}
 
-	maxMainActual = mainCursor - gap - extraGap
+	maxMainActual := mainCursor - gap - extraGap
 	if maxMainActual < 0 {
 		maxMainActual = 0
 	}
 
 	if isRow {
-		return Bounds{X: area.X, Y: area.Y, W: maxMainActual, H: max(maxCrossActual, maxCross)}
+		return ui.Bounds{X: area.X, Y: area.Y, W: maxMainActual, H: max(maxCrossActual, maxCross)}
 	}
-	return Bounds{X: area.X, Y: area.Y, W: max(maxCrossActual, maxCross), H: maxMainActual}
+	return ui.Bounds{X: area.X, Y: area.Y, W: max(maxCrossActual, maxCross), H: maxMainActual}
+}
+
+// TreeEqual implements ui.TreeEqualizer.
+func (n Flex) TreeEqual(other ui.Element) bool {
+	return false
+}
+
+// ResolveChildren implements ui.ChildResolver.
+func (n Flex) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	resolved := make([]ui.Element, len(n.Children))
+	for i, child := range n.Children {
+		resolved[i] = resolve(child, i)
+	}
+	out := n
+	out.Children = resolved
+	return out
+}
+
+// WalkAccess implements ui.AccessWalker.
+func (n Flex) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
+	for _, child := range n.Children {
+		b.Walk(child, parentIdx)
+	}
 }

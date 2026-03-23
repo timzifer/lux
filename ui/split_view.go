@@ -16,7 +16,7 @@ const (
 
 // ── Element struct ──────────────────────────────────────────────
 
-type splitViewElement struct {
+type SplitViewElement struct {
 	First       Element
 	Second      Element
 	Axis        LayoutAxis // AxisRow = side-by-side (vertical divider), AxisColumn = stacked (horizontal divider)
@@ -25,30 +25,30 @@ type splitViewElement struct {
 	DividerSize float32 // drag-area width in dp; 0 = use splitDividerDefault
 }
 
-func (splitViewElement) isElement() {}
+func (SplitViewElement) isElement() {}
 
 // ── Constructor & Options ───────────────────────────────────────
 
 // SplitViewOption configures a SplitView element.
-type SplitViewOption func(*splitViewElement)
+type SplitViewOption func(*SplitViewElement)
 
 // WithSplitAxis sets the split orientation. AxisRow (default) places panels
 // side-by-side with a vertical divider; AxisColumn stacks them with a
 // horizontal divider.
 func WithSplitAxis(axis LayoutAxis) SplitViewOption {
-	return func(e *splitViewElement) { e.Axis = axis }
+	return func(e *SplitViewElement) { e.Axis = axis }
 }
 
 // WithDividerSize sets the drag-area width in dp (default 6).
 func WithDividerSize(size float32) SplitViewOption {
-	return func(e *splitViewElement) { e.DividerSize = size }
+	return func(e *SplitViewElement) { e.DividerSize = size }
 }
 
 // SplitView creates a resizable split panel. The ratio (0.0–1.0) controls
 // how much space the first panel receives. onResize is called with the new
 // ratio during drag; pass nil for a fixed (non-draggable) split.
 func SplitView(first, second Element, ratio float32, onResize func(float32), opts ...SplitViewOption) Element {
-	el := splitViewElement{
+	el := SplitViewElement{
 		First:    first,
 		Second:   second,
 		Axis:     AxisRow,
@@ -63,7 +63,7 @@ func SplitView(first, second Element, ratio float32, onResize func(float32), opt
 
 // ── Layout ──────────────────────────────────────────────────────
 
-func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutSplitView(node SplitViewElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	divSize := node.DividerSize
 	if divSize <= 0 {
 		divSize = splitDividerDefault
@@ -110,7 +110,7 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 	}
 	secondSize := available - firstSize
 
-	var firstArea, secondArea bounds
+	var firstArea, secondArea Bounds
 	var divRect draw.Rect
 
 	if horizontal {
@@ -119,9 +119,9 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 		divX := float32(area.X) + firstSize
 
 		// Measure children to determine actual height.
-		nc := nullCanvas{delegate: canvas}
-		m1 := layoutElement(node.First, bounds{X: area.X, Y: area.Y, W: firstW, H: area.H}, nc, th, tokens, nil, nil, nil)
-		m2 := layoutElement(node.Second, bounds{X: area.X + firstW + int(divPx), Y: area.Y, W: secondW, H: area.H}, nc, th, tokens, nil, nil, nil)
+		nc := NullCanvas{Delegate: canvas}
+		m1 := layoutElement(node.First, Bounds{X: area.X, Y: area.Y, W: firstW, H: area.H}, nc, th, tokens, nil, nil, nil)
+		m2 := layoutElement(node.Second, Bounds{X: area.X + firstW + int(divPx), Y: area.Y, W: secondW, H: area.H}, nc, th, tokens, nil, nil, nil)
 		paneH := max(m1.H, m2.H)
 		if paneH <= 0 {
 			paneH = area.H // children have no intrinsic height — use available space
@@ -129,16 +129,16 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 			paneH = area.H
 		}
 
-		firstArea = bounds{X: area.X, Y: area.Y, W: firstW, H: paneH}
-		secondArea = bounds{X: area.X + firstW + int(divPx), Y: area.Y, W: secondW, H: paneH}
+		firstArea = Bounds{X: area.X, Y: area.Y, W: firstW, H: paneH}
+		secondArea = Bounds{X: area.X + firstW + int(divPx), Y: area.Y, W: secondW, H: paneH}
 		divRect = draw.R(divX, float32(area.Y), divPx, float32(paneH))
 	} else {
 		firstH := int(firstSize)
 		secondH := int(secondSize)
 		divY := float32(area.Y) + firstSize
 
-		firstArea = bounds{X: area.X, Y: area.Y, W: area.W, H: firstH}
-		secondArea = bounds{X: area.X, Y: area.Y + firstH + int(divPx), W: area.W, H: secondH}
+		firstArea = Bounds{X: area.X, Y: area.Y, W: area.W, H: firstH}
+		secondArea = Bounds{X: area.X, Y: area.Y + firstH + int(divPx), W: area.W, H: secondH}
 		divRect = draw.R(float32(area.X), divY, float32(area.W), divPx)
 	}
 
@@ -206,5 +206,5 @@ func layoutSplitView(node splitViewElement, area bounds, canvas draw.Canvas, th 
 		resultW = max(firstBounds.W, secondBounds.W)
 		resultH = int(firstSize) + int(divPx) + int(secondSize)
 	}
-	return bounds{X: area.X, Y: area.Y, W: resultW, H: resultH}
+	return Bounds{X: area.X, Y: area.Y, W: resultW, H: resultH}
 }

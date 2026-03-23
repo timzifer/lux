@@ -56,8 +56,12 @@ func (ts *TreeState) Toggle(id string) {
 	}
 }
 
-// expandProgress returns the current expand animation progress for a node.
+// ExpandProgress returns the current expand animation progress for a node.
 // Returns 1.0 if expanded (no animation), 0.0 if collapsed (no animation).
+func (ts *TreeState) ExpandProgress(id string) float32 {
+	return ts.expandProgress(id)
+}
+
 func (ts *TreeState) expandProgress(id string) float32 {
 	if ts == nil {
 		return 0
@@ -71,7 +75,11 @@ func (ts *TreeState) expandProgress(id string) float32 {
 	return 0.0
 }
 
-// isAnimating reports whether a node's expand/collapse is currently animating.
+// IsAnimating reports whether a node's expand/collapse is currently animating.
+func (ts *TreeState) IsAnimating(id string) bool {
+	return ts.isAnimating(id)
+}
+
 func (ts *TreeState) isAnimating(id string) bool {
 	if ts == nil {
 		return false
@@ -113,6 +121,16 @@ func (ts *TreeState) Tick(dt time.Duration) {
 	}
 }
 
+// CacheMotion stores the motion spec from theme tokens so that Toggle()
+// can use them. Called during layout passes.
+func (ts *TreeState) CacheMotion(dur time.Duration, easing anim.EasingFunc) {
+	if ts == nil {
+		return
+	}
+	ts.motionDur = dur
+	ts.motionEase = easing
+}
+
 // SetSelected sets the currently selected node.
 func (ts *TreeState) SetSelected(id string) {
 	if ts != nil {
@@ -135,7 +153,7 @@ type TreeConfig struct {
 // Tree creates a hierarchical tree widget with expand/collapse
 // and selection support (RFC-002 §5.2, RFC-001 §13.4 M5).
 func Tree(config TreeConfig) Element {
-	return treeElement{
+	return TreeElement{
 		RootIDs:     config.RootIDs,
 		Children:    config.Children,
 		BuildNode:   config.BuildNode,
@@ -147,7 +165,7 @@ func Tree(config TreeConfig) Element {
 	}
 }
 
-type treeElement struct {
+type TreeElement struct {
 	RootIDs     []string
 	Children    func(string) []string
 	BuildNode   func(string, int, bool, bool) Element
@@ -158,7 +176,7 @@ type treeElement struct {
 	OnSelect    func(string)
 }
 
-func (treeElement) isElement() {}
+func (TreeElement) isElement() {}
 
 // flatNode is a node in the flattened visible tree.
 type flatNode struct {
@@ -169,9 +187,9 @@ type flatNode struct {
 	HeightFraction float32 // 0..1, animated expand progress for children-of-animating-parent
 }
 
-func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutTree(node TreeElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	if len(node.RootIDs) == 0 || node.BuildNode == nil {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	// Cache motion tokens so Toggle() picks them up (RFC-008 §9.5).
@@ -271,7 +289,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 	indicatorCellSize := int(math.Ceil(float64(indicatorSize)))
 	indicatorOffsetY := (nodeH - indicatorCellSize) / 2
 
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 
 	// Compute cumulative y-positions for each row, considering animation.
 	rowYPositions := make([]float32, len(flat))
@@ -349,9 +367,9 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 		nodeX := area.X + indent + indicatorW + 4
 		nodeW := contentW - indent - indicatorW - 4
 		nodeContent := node.BuildNode(fn.ID, fn.Depth, fn.Expanded, selected)
-		cb := layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY), W: nodeW, H: nodeH}, nc, th, tokens, nil, nil)
+		cb := layoutElement(nodeContent, Bounds{X: nodeX, Y: int(rowY), W: nodeW, H: nodeH}, nc, th, tokens, nil, nil)
 		nodeOffsetY := (nodeH - cb.H) / 2
-		layoutElement(nodeContent, bounds{X: nodeX, Y: int(rowY) + nodeOffsetY, W: nodeW, H: nodeH}, canvas, th, tokens, ix, overlays, focus)
+		layoutElement(nodeContent, Bounds{X: nodeX, Y: int(rowY) + nodeOffsetY, W: nodeW, H: nodeH}, canvas, th, tokens, ix, overlays, focus)
 
 		// Row hit target for selection.
 		if node.OnSelect != nil {
@@ -376,7 +394,7 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 
 	// Draw scrollbar INSIDE the clip so it's visible even within a parent ScrollView.
 	if needsScroll && node.State != nil {
-		drawScrollbar(canvas, tokens, ix, &node.State.Scroll, area.X+contentW, area.Y, actualH, contentH, offset)
+		DrawScrollbar(canvas, tokens, ix, &node.State.Scroll, area.X+contentW, area.Y, actualH, contentH, offset)
 	}
 
 	canvas.PopClip()
@@ -407,5 +425,5 @@ func layoutTree(node treeElement, area bounds, canvas draw.Canvas, th theme.Them
 		)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: area.W, H: actualH}
+	return Bounds{X: area.X, Y: area.Y, W: area.W, H: actualH}
 }

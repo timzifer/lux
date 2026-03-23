@@ -11,6 +11,9 @@ import (
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/button"
+	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/layout"
 )
 
 type Model struct{}
@@ -20,9 +23,9 @@ func update(m Model, msg app.Msg) Model {
 }
 
 func view(m Model) ui.Element {
-	return ui.Column(
-		ui.Text("HELLO WORLD"),
-		ui.ButtonText("CLICK ME", nil),
+	return layout.Column(
+		display.Text("HELLO WORLD"),
+		button.Text("CLICK ME", nil),
 	)
 }
 

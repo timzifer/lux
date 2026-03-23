@@ -46,15 +46,15 @@ type LayoutCtx struct {
 // CustomLayout creates an Element that uses a user-provided Layout
 // to arrange its children.
 func CustomLayout(layout Layout, children ...Element) Element {
-	return customLayoutElement{
+	return CustomLayoutElement{
 		Layout:   layout,
 		Children: children,
 	}
 }
 
-type customLayoutElement struct {
+type CustomLayoutElement struct {
 	Layout   Layout
 	Children []Element
 }
 
-func (customLayoutElement) isElement() {}
+func (CustomLayoutElement) isElement() {}
