@@ -6,6 +6,7 @@ import (
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/theme"
+	"github.com/timzifer/lux/validation"
 )
 
 // testAccessibleWidget is a test widget that implements AccessibleWidget.
@@ -269,5 +270,72 @@ func TestBuildAccessTree_SurfaceMixedWithWidgets(t *testing.T) {
 			t.Errorf("duplicate access node ID: %d", n.ID)
 		}
 		ids[n.ID] = true
+	}
+}
+
+func TestBuildAccessTree_FormFieldValid(t *testing.T) {
+	tree := FormField(
+		TextField("hello", "Type here..."),
+		WithFormLabel("Username"),
+		WithFormHint("Pick a unique name."),
+	)
+
+	reconciler := NewReconciler()
+	accessTree := BuildAccessTree(tree, reconciler, a11y.Rect{})
+
+	// Should have a Group node for the FormField wrapper.
+	groups := accessTree.FindByRole(a11y.RoleGroup)
+	var formGroup *a11y.AccessTreeNode
+	for _, g := range groups {
+		if g.Node.Label == "Username" {
+			formGroup = g
+			break
+		}
+	}
+	if formGroup == nil {
+		t.Fatal("expected a Group node with label 'Username'")
+	}
+	if formGroup.Node.Description != "Pick a unique name." {
+		t.Errorf("expected description 'Pick a unique name.', got %q", formGroup.Node.Description)
+	}
+	if formGroup.Node.States.Invalid {
+		t.Error("valid FormField should not have Invalid state")
+	}
+
+	// The TextField child should appear as a TextInput under the group.
+	inputs := accessTree.FindByRole(a11y.RoleTextInput)
+	if len(inputs) != 1 {
+		t.Fatalf("expected 1 TextInput, got %d", len(inputs))
+	}
+}
+
+func TestBuildAccessTree_FormFieldInvalid(t *testing.T) {
+	tree := FormField(
+		TextField("", "Email"),
+		WithFormLabel("Email"),
+		WithFormHint("We'll never share it."),
+		WithFormValidation(validation.FieldResult{Error: "This field is required"}),
+	)
+
+	reconciler := NewReconciler()
+	accessTree := BuildAccessTree(tree, reconciler, a11y.Rect{})
+
+	groups := accessTree.FindByRole(a11y.RoleGroup)
+	var formGroup *a11y.AccessTreeNode
+	for _, g := range groups {
+		if g.Node.Label == "Email" {
+			formGroup = g
+			break
+		}
+	}
+	if formGroup == nil {
+		t.Fatal("expected a Group node with label 'Email'")
+	}
+	if !formGroup.Node.States.Invalid {
+		t.Error("invalid FormField should have Invalid state")
+	}
+	// When invalid, Description should be the error message (overrides hint).
+	if formGroup.Node.Description != "This field is required" {
+		t.Errorf("expected error description, got %q", formGroup.Node.Description)
 	}
 }

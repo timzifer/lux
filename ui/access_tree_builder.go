@@ -342,6 +342,21 @@ func (b *AccessTreeBuilder) Walk(el Element, parentIdx int32) {
 			Value: node.Value,
 		}, parentIdx, a11y.Rect{})
 
+	case FormFieldElement:
+		groupNode := a11y.AccessNode{
+			Role:  a11y.RoleGroup,
+			Label: node.Label,
+		}
+		if node.Hint != "" {
+			groupNode.Description = node.Hint
+		}
+		if !node.Result.Valid() {
+			groupNode.States.Invalid = true
+			groupNode.Description = node.Result.Error
+		}
+		idx := b.AddNode(groupNode, parentIdx, a11y.Rect{})
+		b.Walk(node.Child, int32(idx))
+
 	// ── Data-driven elements with dynamic children ──
 	case TreeElement:
 		treeIdx := b.AddNode(a11y.AccessNode{Role: a11y.RoleTree, Label: "Tree"}, parentIdx, a11y.Rect{})
