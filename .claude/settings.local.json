@@ -43,7 +43,9 @@
       "Bash(find /g/golang/lux -type f \\\\\\(-name *image* -o -name *img* \\\\\\))",
       "Bash(find /g/golang/lux -type d -name widget* -o -type d -name component*)",
       "Bash(find \"G:/golang/lux\" -name \"*.go\" -type f -exec grep -l \"image.Store\" {})",
-      "Bash(find \"G:/golang/lux/ui\" -name \"*.go\" -type f -exec grep -l \"type Image\\\\|DrawImage\" {})"
+      "Bash(find \"G:/golang/lux/ui\" -name \"*.go\" -type f -exec grep -l \"type Image\\\\|DrawImage\" {})",
+      "Bash(find /g/golang/lux -type f \\\\\\(-name *.zig -o -name *.wgsl -o -name *.glsl -o -name *.ts -o -name *.js -o -name *.rs \\\\\\))",
+      "Bash(find /g/golang/lux -type f \\\\\\(-name *.go -o -name *.wgsl -o -name *.zig \\\\\\))"
     ]
   }
 }

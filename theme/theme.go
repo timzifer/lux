@@ -272,9 +272,9 @@ var slateTokens = TokenSet{
 	},
 	Elevation: ElevationScale{
 		None: draw.Shadow{},
-		Low:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.6}, BlurRadius: 4, OffsetY: 2, Radius: 8},
-		Med:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.7}, BlurRadius: 8, OffsetY: 4, Radius: 8},
-		High: draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.8}, BlurRadius: 16, OffsetY: 8, Radius: 8},
+		Low:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.10}, BlurRadius: 10, OffsetY: 2, Radius: 8},
+		Med:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.14}, BlurRadius: 20, OffsetY: 5, Radius: 8},
+		High: draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.18}, BlurRadius: 36, OffsetY: 10, Radius: 8},
 	},
 	Scroll: ScrollSpec{
 		Friction:          0.95,
@@ -406,9 +406,9 @@ var luxDarkTokens = TokenSet{
 	},
 	Elevation: ElevationScale{
 		None: draw.Shadow{},
-		Low:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.14}, BlurRadius: 10, OffsetY: 2, Radius: 8},
-		Med:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.18}, BlurRadius: 18, OffsetY: 6, Radius: 12},
-		High: draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.22}, BlurRadius: 28, OffsetY: 10, Radius: 14},
+		Low:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.22}, BlurRadius: 12, OffsetY: 3, Radius: 8},
+		Med:  draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.28}, BlurRadius: 24, OffsetY: 6, Radius: 12},
+		High: draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.35}, BlurRadius: 40, OffsetY: 10, Radius: 14},
 	},
 	Scroll: ScrollSpec{
 		Friction:          0.95,

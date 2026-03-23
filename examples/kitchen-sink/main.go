@@ -2435,9 +2435,9 @@ func effectsSection() ui.Element {
 	}
 	levels := []shadowLevel{
 		{"None", draw.Shadow{}, draw.Hex("#6366f1")},       // indigo
-		{"Low", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.6}, BlurRadius: 6, OffsetY: 3, Radius: 8}, draw.Hex("#3b82f6")},  // blue
-		{"Med", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.7}, BlurRadius: 12, OffsetY: 6, Radius: 8}, draw.Hex("#0ea5e9")}, // sky
-		{"High", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.85}, BlurRadius: 24, OffsetY: 10, Radius: 8}, draw.Hex("#14b8a6")}, // teal
+		{"Low", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.14}, BlurRadius: 12, OffsetY: 3, Radius: 8}, draw.Hex("#3b82f6")},  // blue
+		{"Med", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.20}, BlurRadius: 24, OffsetY: 6, Radius: 8}, draw.Hex("#0ea5e9")}, // sky
+		{"High", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.28}, BlurRadius: 40, OffsetY: 10, Radius: 8}, draw.Hex("#14b8a6")}, // teal
 	}
 	shadowCards := make([]ui.Element, len(levels))
 	for i, lv := range levels {

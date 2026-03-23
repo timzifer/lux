@@ -379,7 +379,13 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let world_pos = in.rect.xy - expand + in.pos * expanded_size;
     out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
 
+    // For outer shadows the CPU-side rect was already expanded by blur_radius
+    // (for clipping). Shrink the SDF box back so the fade starts at the
+    // original element edge, not blur_radius away from it.
     out.half_size = in.rect.zw * 0.5;
+    if (in.inset < 0.5) {
+        out.half_size -= vec2<f32>(in.blur_radius);
+    }
     out.local_pos = (in.pos - 0.5) * expanded_size;
     out.color = in.color;
     out.radius = in.radius;
@@ -409,8 +415,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let mask = 1.0 - smoothstep(0.0, 0.5, dist);
         alpha = fade * mask;
     } else {
-        // Outer shadow: visible outside the shape, fading outward.
-        alpha = 1.0 - smoothstep(0.0, in.blur_radius, dist);
+        // Outer shadow: Gaussian falloff for realistic soft shadows.
+        // sigma = blur_radius/2 maps blur_radius to ~2 standard deviations,
+        // giving a gentle tail that fades to ~13% at blur_radius distance.
+        let sigma = max(in.blur_radius * 0.5, 0.001);
+        let d = max(dist, 0.0);
+        alpha = exp(-0.5 * d * d / (sigma * sigma));
     }
     if (alpha < 0.001) {
         discard;
