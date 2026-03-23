@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.2.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-20
+**Zuletzt abgeglichen:** 2026-03-23
 **Folge-RFCs:** RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme)
 
 ---
@@ -33,7 +33,7 @@
 | §6.4 VirtualList | ✅ Integriert | `ui/virtual_list.go` |
 | §7 Platform-Abstraktion | ✅ Integriert | Interface + GLFW, Wayland, X11, Win32, Cocoa, DRM/KMS Backends |
 | §8 Externe Surfaces | ✅ Integriert | `SurfaceProvider`-Interface, `AcquireFrame`/`ReleaseFrame`, Input-Routing |
-| §11 Accessibility (A11y) | 🔶 Teilweise | Core-Typen (`AccessRole`, `AccessNode`, `AccessStates`, `SemanticProvider`) vorhanden; Bridges + AccessTree-Konstruktion ausstehend |
+| §11 Accessibility (A11y) | 🔶 Teilweise | Core-Typen (`AccessRole`, `AccessNode`, `AccessStates`, `SemanticProvider`), `AccessTree`-Konstruktion (`access_tree.go`, `access_tree_builder.go`), Windows-UIA-Bridge und macOS-NSAccessibility-Bridge integriert; fehlt: Linux AT-SPI2-Bridge, Focus-Trapping |
 | §12 Inspector & Debugging | ⏳ Wartend | |
 
 ---

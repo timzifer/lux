@@ -67,9 +67,9 @@ Die Datei wird auf Deutsch verfasst, im selben Stil wie die bestehenden RFCs.
 - ✅ Gradient-Support: Linear/Radial Gradients als eigene Pipeline (Phase E)
 - ✅ Blur-Pipeline: Gaussian Blur via Fragment-Shader, 2-Pass separabel (Phase F)
 - ✅ Multi-Window: Per-Window Surface/Renderer, sekundäre Fenster (Phase F)
-- TODO: Soft Shadows (Box Shadow) — `DrawShadow` Stub ersetzen (Phase G)
-- TODO: Opacity — `PushOpacity`/`PopOpacity` Stub ersetzen (Phase G)
-- TODO: Frosted Glass Overlays, Vibrancy, Glow (Phase G)
+- ✅ Soft Shadows (Box Shadow) — SDF-basierter Shadow-Shader mit Gauss'schem Falloff (Phase G)
+- ✅ Opacity — Stack-basierter Opacity-Multiplikator via `PushOpacity`/`PopOpacity` (Phase G)
+- ✅ Frosted Glass Overlays, Vibrancy, Glow — `FrostedGlass()`, `Vibrancy()`, `GlowBox()` (Phase G)
 
 ### §9 Present-Mode & Frame-Pacing
 - Fifo (VSync) als Default (bereits gesetzt)

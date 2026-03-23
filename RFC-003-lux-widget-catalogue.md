@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-20
+**Zuletzt abgeglichen:** 2026-03-23
 **Abhängig von:** RFC-001, RFC-002
 
 ---
@@ -35,7 +35,7 @@
 | §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |
 | §4.1 Tier 2 — Formulare | ✅ Integriert | TextField, Checkbox, Radio, Toggle, Slider, ProgressBar, Select |
 | §4.1 Tier 3 — Struktur | ✅ Integriert | Card, Tabs, Accordion, Tooltip, Badge, Chip, MenuBar, ContextMenu |
-| §4.1 Tier 4 — Erweitert | ⏳ Wartend | DatePicker, ColorPicker, DataTable, SplitView, etc. |
+| §4.1 Tier 4 — Erweitert | 🔶 Teilweise | SplitView integriert (`ui/nav/splitview.go`); fehlt: DatePicker, ColorPicker, DataTable |
 | §4.2 Widget-Spezifikations-Template | ⏳ Wartend | Detailspezifikationen pro Widget fehlen |
 | §5 Rich Text & Texteditierung | 🔶 Teilweise | |
 | §5.2–5.4 RichText (Ebene 2) | ✅ Integriert | `ui/rich_text.go` mit Spans |

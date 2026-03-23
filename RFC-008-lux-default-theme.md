@@ -1,7 +1,7 @@
 # RFC-008 — lux/default-theme: Ein konsistentes Standard-Theme für Lux
 
 **Repository:** `github.com/timzifer/lux`
-**Status:** Proposed
+**Status:** Integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-20
 **Abhängig von:** RFC-001 (Core Architecture), RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme), RFC-007 (WGPU Rendering)
@@ -937,7 +937,7 @@ Das ist eine Ableitung, nicht der Default.
 
 ## 17. Implementierungsstatus
 
-Stand: 2026-03-20
+Stand: 2026-03-23
 
 ### Erledigt
 
@@ -973,9 +973,6 @@ Stand: 2026-03-20
 - [x] **§12.2 Beziehung zu Slate** — `theme.Default = LuxDark`
 - [x] **§15 Token-Werte** — Alle konkreten Farb-, Typografie-, Spacing-, Radii-,
   Elevation- und Motion-Werte aus Anhang A umgesetzt
-
-### Offen
-
 - [x] **§9.3 Pressed** — Zweistufige Hover→Pressed-Differenzierung für
   Checkbox, Radio, Toggle und Slider implementiert (`hoverOpacity >= 0.9`
   triggert `Surface.Pressed`-Blend)
