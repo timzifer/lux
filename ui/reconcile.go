@@ -33,7 +33,7 @@ func NewReconciler() *Reconciler {
 	}
 }
 
-// Reconcile processes a new element tree: expands widgetElement nodes by
+// Reconcile processes a new element tree: expands WidgetElement nodes by
 // calling Widget.Render with persisted state, cleans up removed states,
 // and reports whether the resolved tree differs from the previous frame.
 //
@@ -119,8 +119,14 @@ func MakeUID(parent UID, key string, index int) UID {
 
 // resolveTree recursively walks the element tree, expanding widgets.
 func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[UID]bool, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager) Element {
+	// Interface-based dispatch for sub-package element types.
+	if cr, ok := el.(ChildResolver); ok {
+		return cr.ResolveChildren(func(child Element, childIndex int) Element {
+			return r.resolveTree(child, parentUID, childIndex, seen, th, send, dispatcher, fm)
+		})
+	}
 	switch node := el.(type) {
-	case widgetElement:
+	case WidgetElement:
 		key := node.Key
 		if key == "" {
 			key = "__widget__"
@@ -135,7 +141,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 				if eq.Equal(prev) {
 					if sub, hasSub := r.resolvedSub[uid]; hasSub {
 						r.widgets[uid] = node.W
-						return widgetBoundsElement{WidgetUID: uid, Child: sub}
+						return WidgetBoundsElement{WidgetUID: uid, Child: sub}
 					}
 				}
 			}
@@ -164,62 +170,62 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		resolved := r.resolveTree(child, uid, 0, seen, th, send, dispatcher, fm)
 		r.resolvedSub[uid] = resolved
 
-		// Wrap in widgetBoundsElement so layout can track screen bounds.
-		return widgetBoundsElement{WidgetUID: uid, Child: resolved}
+		// Wrap in WidgetBoundsElement so layout can track screen bounds.
+		return WidgetBoundsElement{WidgetUID: uid, Child: resolved}
 
-	case keyedElement:
+	case KeyedElement:
 		uid := MakeUID(parentUID, node.Key, index)
 		child := r.resolveTree(node.Child, uid, 0, seen, th, send, dispatcher, fm)
-		return keyedElement{Key: node.Key, Child: child}
+		return KeyedElement{Key: node.Key, Child: child}
 
-	case boxElement:
+	case BoxElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
 			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
-		return boxElement{Axis: node.Axis, Children: children}
+		return BoxElement{Axis: node.Axis, Children: children}
 
-	case stackElement:
+	case StackElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
 			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
-		return stackElement{Children: children}
+		return StackElement{Children: children}
 
-	case scrollViewElement:
+	case ScrollViewElement:
 		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
-		return scrollViewElement{Child: child, MaxHeight: node.MaxHeight, State: node.State}
+		return ScrollViewElement{Child: child, MaxHeight: node.MaxHeight, State: node.State}
 
-	case paddingElement:
+	case PaddingElement:
 		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
-		return paddingElement{Insets: node.Insets, Child: child}
+		return PaddingElement{Insets: node.Insets, Child: child}
 
-	case sizedBoxElement:
+	case SizedBoxElement:
 		if node.Child != nil {
 			child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
-			return sizedBoxElement{Width: node.Width, Height: node.Height, Child: child}
+			return SizedBoxElement{Width: node.Width, Height: node.Height, Child: child}
 		}
 		return el
 
-	case expandedElement:
+	case ExpandedElement:
 		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
-		return expandedElement{Child: child, Grow: node.Grow}
+		return ExpandedElement{Child: child, Grow: node.Grow}
 
-	case flexElement:
+	case FlexElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
 			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
-		return flexElement{Direction: node.Direction, Justify: node.Justify, Align: node.Align, Gap: node.Gap, Children: children}
+		return FlexElement{Direction: node.Direction, Justify: node.Justify, Align: node.Align, Gap: node.Gap, Children: children}
 
-	case gridElement:
+	case GridElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
 			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
 		}
-		return gridElement{Columns: node.Columns, RowGap: node.RowGap, ColGap: node.ColGap, Children: children}
+		return GridElement{Columns: node.Columns, RowGap: node.RowGap, ColGap: node.ColGap, Children: children}
 
-	case themedElement:
+	case ThemedElement:
 		// Replace the active theme for this subtree.
 		// Cache the CachedTheme wrapper so repeated frames reuse it.
 		sub, ok := r.themeCache[node.Theme]
@@ -232,7 +238,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		for i, c := range node.Children {
 			children[i] = r.resolveTree(c, parentUID, i, seen, sub, send, dispatcher, fm)
 		}
-		return themedElement{Theme: sub, Children: children}
+		return ThemedElement{Theme: sub, Children: children}
 
 	default:
 		// Leaf elements (text, button, divider, virtualList, tree, richText, etc.) pass through unchanged.
@@ -249,24 +255,28 @@ func treeEqual(a, b Element) bool {
 	if a == nil || b == nil {
 		return false
 	}
+	// Interface-based dispatch for sub-package element types.
+	if te, ok := a.(TreeEqualizer); ok {
+		return te.TreeEqual(b)
+	}
 	switch na := a.(type) {
-	case emptyElement:
-		_, ok := b.(emptyElement)
+	case EmptyElement:
+		_, ok := b.(EmptyElement)
 		return ok
-	case textElement:
-		nb, ok := b.(textElement)
+	case TextElement:
+		nb, ok := b.(TextElement)
 		return ok && na.Content == nb.Content && na.Style == nb.Style
-	case buttonElement:
-		nb, ok := b.(buttonElement)
+	case ButtonElement:
+		nb, ok := b.(ButtonElement)
 		return ok && treeEqual(na.Content, nb.Content)
-	case keyedElement:
-		nb, ok := b.(keyedElement)
+	case KeyedElement:
+		nb, ok := b.(KeyedElement)
 		return ok && na.Key == nb.Key && treeEqual(na.Child, nb.Child)
-	case widgetBoundsElement:
-		nb, ok := b.(widgetBoundsElement)
+	case WidgetBoundsElement:
+		nb, ok := b.(WidgetBoundsElement)
 		return ok && na.WidgetUID == nb.WidgetUID && treeEqual(na.Child, nb.Child)
-	case boxElement:
-		nb, ok := b.(boxElement)
+	case BoxElement:
+		nb, ok := b.(BoxElement)
 		if !ok || na.Axis != nb.Axis || len(na.Children) != len(nb.Children) {
 			return false
 		}
@@ -276,8 +286,8 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
-	case stackElement:
-		nb, ok := b.(stackElement)
+	case StackElement:
+		nb, ok := b.(StackElement)
 		if !ok || len(na.Children) != len(nb.Children) {
 			return false
 		}
@@ -287,38 +297,38 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
-	case scrollViewElement:
-		nb, ok := b.(scrollViewElement)
+	case ScrollViewElement:
+		nb, ok := b.(ScrollViewElement)
 		return ok && na.MaxHeight == nb.MaxHeight && treeEqual(na.Child, nb.Child)
-	case dividerElement:
-		_, ok := b.(dividerElement)
+	case DividerElement:
+		_, ok := b.(DividerElement)
 		return ok
-	case spacerElement:
-		nb, ok := b.(spacerElement)
+	case SpacerElement:
+		nb, ok := b.(SpacerElement)
 		return ok && na.Size == nb.Size
-	case iconElement:
-		nb, ok := b.(iconElement)
+	case IconElement:
+		nb, ok := b.(IconElement)
 		return ok && na.Name == nb.Name && na.Size == nb.Size
-	case checkboxElement:
-		nb, ok := b.(checkboxElement)
+	case CheckboxElement:
+		nb, ok := b.(CheckboxElement)
 		return ok && na.Label == nb.Label && na.Checked == nb.Checked
-	case radioElement:
-		nb, ok := b.(radioElement)
+	case RadioElement:
+		nb, ok := b.(RadioElement)
 		return ok && na.Label == nb.Label && na.Selected == nb.Selected
-	case toggleElement:
-		nb, ok := b.(toggleElement)
+	case ToggleElement:
+		nb, ok := b.(ToggleElement)
 		return ok && na.On == nb.On
-	case sliderElement:
-		nb, ok := b.(sliderElement)
+	case SliderElement:
+		nb, ok := b.(SliderElement)
 		return ok && na.Value == nb.Value
-	case progressBarElement:
-		nb, ok := b.(progressBarElement)
+	case ProgressBarElement:
+		nb, ok := b.(ProgressBarElement)
 		return ok && na.Value == nb.Value && na.Indeterminate == nb.Indeterminate
-	case textFieldElement:
-		nb, ok := b.(textFieldElement)
+	case TextFieldElement:
+		nb, ok := b.(TextFieldElement)
 		return ok && na.Value == nb.Value && na.Placeholder == nb.Placeholder
-	case selectElement:
-		nb, ok := b.(selectElement)
+	case SelectElement:
+		nb, ok := b.(SelectElement)
 		if !ok || na.Value != nb.Value || len(na.Options) != len(nb.Options) {
 			return false
 		}
@@ -328,17 +338,17 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
-	case paddingElement:
-		nb, ok := b.(paddingElement)
+	case PaddingElement:
+		nb, ok := b.(PaddingElement)
 		return ok && na.Insets == nb.Insets && treeEqual(na.Child, nb.Child)
-	case sizedBoxElement:
-		nb, ok := b.(sizedBoxElement)
+	case SizedBoxElement:
+		nb, ok := b.(SizedBoxElement)
 		return ok && na.Width == nb.Width && na.Height == nb.Height && treeEqual(na.Child, nb.Child)
-	case expandedElement:
-		nb, ok := b.(expandedElement)
+	case ExpandedElement:
+		nb, ok := b.(ExpandedElement)
 		return ok && na.Grow == nb.Grow && treeEqual(na.Child, nb.Child)
-	case flexElement:
-		nb, ok := b.(flexElement)
+	case FlexElement:
+		nb, ok := b.(FlexElement)
 		if !ok || na.Direction != nb.Direction || na.Justify != nb.Justify || na.Align != nb.Align || na.Gap != nb.Gap || len(na.Children) != len(nb.Children) {
 			return false
 		}
@@ -348,8 +358,8 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
-	case gridElement:
-		nb, ok := b.(gridElement)
+	case GridElement:
+		nb, ok := b.(GridElement)
 		if !ok || na.Columns != nb.Columns || na.RowGap != nb.RowGap || na.ColGap != nb.ColGap || len(na.Children) != len(nb.Children) {
 			return false
 		}
@@ -359,15 +369,15 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
-	case virtualListElement:
-		nb, ok := b.(virtualListElement)
+	case VirtualListElement:
+		nb, ok := b.(VirtualListElement)
 		return ok && na.ItemCount == nb.ItemCount && na.ItemHeight == nb.ItemHeight && na.MaxHeight == nb.MaxHeight
-	case treeElement:
+	case TreeElement:
 		// Tree content is dynamic — always re-render.
-		_, ok := b.(treeElement)
+		_, ok := b.(TreeElement)
 		return ok && false
-	case richTextElement:
-		nb, ok := b.(richTextElement)
+	case RichTextElement:
+		nb, ok := b.(RichTextElement)
 		if !ok || len(na.Paragraphs) != len(nb.Paragraphs) {
 			return false
 		}
@@ -383,8 +393,8 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
-	case themedElement:
-		nb, ok := b.(themedElement)
+	case ThemedElement:
+		nb, ok := b.(ThemedElement)
 		if !ok || na.Theme != nb.Theme || len(na.Children) != len(nb.Children) {
 			return false
 		}
@@ -394,7 +404,7 @@ func treeEqual(a, b Element) bool {
 			}
 		}
 		return true
-	case widgetElement:
+	case WidgetElement:
 		// Unresolved widget elements — should not appear in resolved trees.
 		return false
 	default:

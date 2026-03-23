@@ -38,11 +38,11 @@ const (
 )
 
 // FlexOption configures a Flex element.
-type FlexOption func(*flexElement)
+type FlexOption func(*FlexElement)
 
 // Flex creates a flexible layout container (RFC-002 §4.4).
 func Flex(children []Element, opts ...FlexOption) Element {
-	el := flexElement{
+	el := FlexElement{
 		Direction: FlexRow,
 		Justify:   JustifyStart,
 		Align:     AlignStart,
@@ -56,25 +56,25 @@ func Flex(children []Element, opts ...FlexOption) Element {
 
 // WithDirection sets the main axis direction.
 func WithDirection(d FlexDirection) FlexOption {
-	return func(e *flexElement) { e.Direction = d }
+	return func(e *FlexElement) { e.Direction = d }
 }
 
 // WithJustify sets main-axis alignment.
 func WithJustify(j Justify) FlexOption {
-	return func(e *flexElement) { e.Justify = j }
+	return func(e *FlexElement) { e.Justify = j }
 }
 
 // WithAlign sets cross-axis alignment.
 func WithAlign(a Align) FlexOption {
-	return func(e *flexElement) { e.Align = a }
+	return func(e *FlexElement) { e.Align = a }
 }
 
 // WithGap sets the gap between children in dp.
 func WithGap(gap float32) FlexOption {
-	return func(e *flexElement) { e.Gap = gap }
+	return func(e *FlexElement) { e.Gap = gap }
 }
 
-type flexElement struct {
+type FlexElement struct {
 	Direction FlexDirection
 	Justify   Justify
 	Align     Align
@@ -82,13 +82,13 @@ type flexElement struct {
 	Children  []Element
 }
 
-func (flexElement) isElement() {}
+func (FlexElement) isElement() {}
 
-// layoutFlex performs a two-pass layout: measure with nullCanvas, then paint.
-func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+// layoutFlex performs a two-pass layout: measure with NullCanvas, then paint.
+func layoutFlex(node FlexElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	n := len(node.Children)
 	if n == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	isRow := node.Direction == FlexRow
@@ -108,17 +108,17 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 		grow      float32
 	}
 	infos := make([]childInfo, n)
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 	totalFixed := 0
 	totalGrow := float32(0)
 	fixedCount := 0
 
 	for i, child := range node.Children {
-		if exp, ok := child.(expandedElement); ok {
+		if exp, ok := child.(ExpandedElement); ok {
 			infos[i] = childInfo{expanded: true, grow: exp.Grow}
 			totalGrow += exp.Grow
 		} else {
-			// Measure with nullCanvas (no paint).
+			// Measure with NullCanvas (no paint).
 			cb := layoutElement(child, area, nc, th, tokens, nil, nil)
 			if isRow {
 				infos[i] = childInfo{mainSize: cb.W, crossSize: cb.H}
@@ -149,12 +149,12 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 				infos[i].mainSize = int(float32(remaining) * infos[i].grow / totalGrow)
 			}
 			// Measure expanded child to get cross size.
-			exp := node.Children[i].(expandedElement)
-			var measureArea bounds
+			exp := node.Children[i].(ExpandedElement)
+			var measureArea Bounds
 			if isRow {
-				measureArea = bounds{X: 0, Y: 0, W: infos[i].mainSize, H: area.H}
+				measureArea = Bounds{X: 0, Y: 0, W: infos[i].mainSize, H: area.H}
 			} else {
-				measureArea = bounds{X: 0, Y: 0, W: area.W, H: infos[i].mainSize}
+				measureArea = Bounds{X: 0, Y: 0, W: area.W, H: infos[i].mainSize}
 			}
 			cb := layoutElement(exp.Child, measureArea, nc, th, tokens, nil, nil)
 			if isRow {
@@ -267,16 +267,16 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 			crossOffset = 0
 		}
 
-		var childArea bounds
+		var childArea Bounds
 		if isRow {
-			childArea = bounds{
+			childArea = Bounds{
 				X: area.X + mainCursor,
 				Y: area.Y + crossOffset,
 				W: info.mainSize,
 				H: info.crossSize,
 			}
 		} else {
-			childArea = bounds{
+			childArea = Bounds{
 				X: area.X + crossOffset,
 				Y: area.Y + mainCursor,
 				W: info.crossSize,
@@ -287,7 +287,7 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 		// For expanded children, layout the inner child.
 		actualChild := child
 		if info.expanded {
-			actualChild = child.(expandedElement).Child
+			actualChild = child.(ExpandedElement).Child
 		}
 		cb := layoutElement(actualChild, childArea, canvas, th, tokens, ix, overlays, focus)
 
@@ -310,7 +310,7 @@ func layoutFlex(node flexElement, area bounds, canvas draw.Canvas, th theme.Them
 	}
 
 	if isRow {
-		return bounds{X: area.X, Y: area.Y, W: maxMainActual, H: max(maxCrossActual, maxCross)}
+		return Bounds{X: area.X, Y: area.Y, W: maxMainActual, H: max(maxCrossActual, maxCross)}
 	}
-	return bounds{X: area.X, Y: area.Y, W: max(maxCrossActual, maxCross), H: maxMainActual}
+	return Bounds{X: area.X, Y: area.Y, W: max(maxCrossActual, maxCross), H: maxMainActual}
 }

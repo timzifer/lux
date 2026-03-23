@@ -17,7 +17,7 @@ type VirtualListConfig struct {
 // VirtualList creates a virtualized list that only renders visible items
 // (RFC-002 §5, RFC-001 §13.4 M5).
 func VirtualList(config VirtualListConfig) Element {
-	return virtualListElement{
+	return VirtualListElement{
 		ItemCount:  config.ItemCount,
 		ItemHeight: config.ItemHeight,
 		BuildItem:  config.BuildItem,
@@ -26,7 +26,7 @@ func VirtualList(config VirtualListConfig) Element {
 	}
 }
 
-type virtualListElement struct {
+type VirtualListElement struct {
 	ItemCount  int
 	ItemHeight float32
 	BuildItem  func(int) Element
@@ -34,13 +34,13 @@ type virtualListElement struct {
 	State      *ScrollState
 }
 
-func (virtualListElement) isElement() {}
+func (VirtualListElement) isElement() {}
 
 const virtualListOverscan = 3
 
-func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutVirtualList(node VirtualListElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	if node.ItemCount <= 0 || node.BuildItem == nil {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	itemH := int(node.ItemHeight)
@@ -106,7 +106,7 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 	for i := firstVisible; i <= lastVisible; i++ {
 		itemY := area.Y + i*itemH - int(offset)
 		child := node.BuildItem(i)
-		childArea := bounds{X: area.X, Y: itemY, W: contentW, H: itemH}
+		childArea := Bounds{X: area.X, Y: itemY, W: contentW, H: itemH}
 		layoutElement(child, childArea, canvas, th, tokens, ix, overlays, focus)
 	}
 
@@ -143,7 +143,7 @@ func layoutVirtualList(node virtualListElement, area bounds, canvas draw.Canvas,
 		)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: area.W, H: actualH}
+	return Bounds{X: area.X, Y: area.Y, W: area.W, H: actualH}
 }
 
 // drawScrollbar renders a scrollbar track and thumb, returning the track width consumed.
