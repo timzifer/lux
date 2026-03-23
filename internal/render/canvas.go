@@ -567,8 +567,112 @@ func (c *SceneCanvas) MeasureText(txt string, style draw.TextStyle) draw.TextMet
 // ── Text Layout ─────────────────────────────────────────────────
 
 func (c *SceneCanvas) DrawTextLayout(layout draw.TextLayout, origin draw.Point, color draw.Color) {
-	// Fallback: delegate to DrawText (no line breaking or alignment yet).
-	c.DrawText(layout.Text, origin, layout.Style, color)
+	if len(layout.Text) == 0 {
+		return
+	}
+
+	// If no max width is set, just draw as a single line.
+	if layout.MaxWidth <= 0 {
+		x := origin.X
+		if layout.Alignment != draw.TextAlignLeft {
+			m := c.shaper.Measure(layout.Text, layout.Style)
+			if layout.Alignment == draw.TextAlignCenter {
+				x += (layout.MaxWidth - m.Width) / 2
+			}
+		}
+		c.DrawText(layout.Text, draw.Point{X: x, Y: origin.Y}, layout.Style, color)
+		return
+	}
+
+	// Break text into lines using the UAX #14 line breaker.
+	lines := breakTextIntoLines(layout.Text, layout.Style, layout.MaxWidth, c.shaper)
+
+	metrics := c.shaper.Measure("Mg", layout.Style) // representative metrics
+	lineHeight := metrics.Ascent + metrics.Descent + metrics.Leading
+	if layout.Style.LineHeight > 0 {
+		lineHeight = layout.Style.Size * layout.Style.LineHeight
+	}
+
+	y := origin.Y
+	for _, line := range lines {
+		x := origin.X
+		switch layout.Alignment {
+		case draw.TextAlignCenter:
+			m := c.shaper.Measure(line, layout.Style)
+			x += (layout.MaxWidth - m.Width) / 2
+		case draw.TextAlignRight:
+			m := c.shaper.Measure(line, layout.Style)
+			x += layout.MaxWidth - m.Width
+		}
+		c.DrawText(line, draw.Point{X: x, Y: y}, layout.Style, color)
+		y += lineHeight
+	}
+}
+
+// breakTextIntoLines wraps text into lines that fit within maxWidth,
+// using UAX #14 line break opportunities.
+func breakTextIntoLines(txt string, style draw.TextStyle, maxWidth float32, shaper text.Shaper) []string {
+	breaks := text.DefaultLineBreaker.Breaks(txt)
+
+	if len(breaks) == 0 {
+		return []string{txt}
+	}
+
+	var lines []string
+	lineStart := 0
+
+	for i := 0; i < len(breaks); i++ {
+		b := breaks[i]
+		candidate := txt[lineStart:b.Offset]
+
+		if b.Kind == text.LineBreakMandatory {
+			// Mandatory break: emit the line up to this point.
+			lines = append(lines, trimTrailingNewline(candidate))
+			lineStart = b.Offset
+			continue
+		}
+
+		// Check if the text from lineStart to this break fits.
+		m := shaper.Measure(candidate, style)
+		if m.Width <= maxWidth {
+			// Fits so far; continue looking for a wider segment.
+			continue
+		}
+
+		// Doesn't fit. Break at the previous opportunity if there was one.
+		if i > 0 && breaks[i-1].Offset > lineStart {
+			prev := breaks[i-1]
+			lines = append(lines, trimTrailingWhitespace(txt[lineStart:prev.Offset]))
+			lineStart = prev.Offset
+			// Re-check current break from the new line start.
+			i--
+		} else {
+			// No previous break opportunity; force break here.
+			lines = append(lines, trimTrailingWhitespace(candidate))
+			lineStart = b.Offset
+		}
+	}
+
+	// Remaining text after last break.
+	if lineStart < len(txt) {
+		lines = append(lines, txt[lineStart:])
+	}
+
+	return lines
+}
+
+func trimTrailingNewline(s string) string {
+	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+func trimTrailingWhitespace(s string) string {
+	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t') {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 // ── Images ───────────────────────────────────────────────────────
