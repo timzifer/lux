@@ -1,4 +1,4 @@
-//go:build !nogui && windows && !gogpu
+//go:build !nogui && windows
 
 package app
 
@@ -13,5 +13,5 @@ func defaultPlatformFactory() platform.Platform {
 }
 
 func defaultRendererFactory() gpu.Renderer {
-	return gpu.NewOpenGL()
+	return gpu.NewWGPU()
 }

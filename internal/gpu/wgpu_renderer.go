@@ -1,4 +1,4 @@
-//go:build !nogui && (!windows || gogpu)
+//go:build !nogui
 
 package gpu
 
@@ -1787,7 +1787,7 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 		}
 
 		needed := uint64(len(r.imageBuf) * 4)
-		r.ensureGPUBuffer(&r.imageInstBuffer, &r.imageInstBufCap, needed, "img-instances")
+		r.ensureGPUBuffer(&r.imageInstBuffer, &r.imageInstBufCap, needed, "img-instances", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
 		r.imageInstBuffer.Write(r.queue, float32SliceToBytes(r.imageBuf))
 
 		// Create per-batch bind group for texture.
