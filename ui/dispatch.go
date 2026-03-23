@@ -50,6 +50,9 @@ type EventDispatcher struct {
 	// Overlay tracking for input priority (RFC-002 §5.3).
 	overlays       []dispatchOverlayEntry
 	dismissHandler func(id OverlayID) // callback to send DismissOverlayMsg
+
+	// Gesture recognizer transforms raw touches into gesture events (RFC-004 §3).
+	gesture *GestureRecognizer
 }
 
 // dispatchOverlayEntry tracks an active overlay's bounds and properties.
@@ -68,7 +71,18 @@ func NewEventDispatcher(fm *FocusManager) *EventDispatcher {
 		events:       make(map[UID][]InputEvent),
 		focusGained:  make(map[UID]FocusGainedMsg),
 		focusLost:    make(map[UID]FocusLostMsg),
+		gesture:      NewGestureRecognizer(DefaultGestureConfig),
 	}
+}
+
+// SetGestureConfig replaces the gesture recognizer configuration.
+func (d *EventDispatcher) SetGestureConfig(config GestureConfig) {
+	d.gesture = NewGestureRecognizer(config)
+}
+
+// GestureRecognizer returns the dispatcher's gesture recognizer.
+func (d *EventDispatcher) GestureRecognizer() *GestureRecognizer {
+	return d.gesture
 }
 
 // Collect adds a raw input event to the per-frame buffer.
@@ -153,11 +167,47 @@ func (d *EventDispatcher) Dispatch() {
 		}
 	}
 
-	// Route touch events → hit-tested widget.
-	for i := range d.touchEvents {
-		m := d.touchEvents[i]
-		if uid := d.hitTestWidget(m.X, m.Y); uid != 0 {
-			d.appendEvent(uid, TouchEvent(m))
+	// Route touch events through gesture recognizer (RFC-004 §3),
+	// then dispatch recognised gestures and pass-through touches.
+	if d.gesture != nil && len(d.touchEvents) > 0 {
+		gestures, passthrough := d.gesture.Process(d.touchEvents)
+		// Dispatch recognised gesture events via hit-test.
+		for _, g := range gestures {
+			if uid := d.hitTestWidget(g.pos.X, g.pos.Y); uid != 0 {
+				// Apply debounce for tap events (§3.6).
+				if g.event.Kind == EventTap {
+					if d.gesture.ShouldDebounce(uid, d.gesture.now()) {
+						continue
+					}
+					d.gesture.RecordTap(uid, d.gesture.now())
+				}
+				d.appendEvent(uid, g.event)
+			}
+		}
+		// Pass-through unconsumed touch events.
+		for i := range passthrough {
+			m := passthrough[i]
+			if uid := d.hitTestWidget(m.X, m.Y); uid != 0 {
+				d.appendEvent(uid, TouchEvent(m))
+			}
+		}
+	} else {
+		// No gesture recognizer — fall back to raw touch dispatch.
+		for i := range d.touchEvents {
+			m := d.touchEvents[i]
+			if uid := d.hitTestWidget(m.X, m.Y); uid != 0 {
+				d.appendEvent(uid, TouchEvent(m))
+			}
+		}
+	}
+
+	// Also process pending touches for long-press detection (between frames).
+	if d.gesture != nil {
+		gestures, _ := d.gesture.Process(nil)
+		for _, g := range gestures {
+			if uid := d.hitTestWidget(g.pos.X, g.pos.Y); uid != 0 {
+				d.appendEvent(uid, g.event)
+			}
 		}
 	}
 

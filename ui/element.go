@@ -82,6 +82,7 @@ type RenderCtx struct {
 	Theme  theme.Theme
 	Send   func(any)    // local Send bound to this UID
 	Events []InputEvent // input events dispatched to this widget (RFC-002 §2.6)
+	Locale string       // BCP 47 language tag, e.g. "de", "en-US" (RFC-003 §3.8)
 }
 
 // AdoptState is a generic helper that type-asserts the raw state or

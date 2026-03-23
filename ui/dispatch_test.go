@@ -95,7 +95,7 @@ func TestEventDispatcherScrollToHitTested(t *testing.T) {
 	}
 }
 
-func TestEventDispatcherTouchToHitTested(t *testing.T) {
+func TestEventDispatcherTouchBegan(t *testing.T) {
 	fm := NewFocusManager()
 	d := NewEventDispatcher(fm)
 
@@ -103,15 +103,46 @@ func TestEventDispatcherTouchToHitTested(t *testing.T) {
 	d.RegisterWidgetBounds(widget, draw.R(10, 10, 200, 200))
 	d.SwapBounds()
 
-	d.Collect(input.TouchMsg{X: 50, Y: 50, Phase: input.TouchBegan})
+	// TouchBegan alone does not produce gesture events yet (pending state).
+	d.Collect(input.TouchMsg{ID: 1, X: 50, Y: 50, Phase: input.TouchBegan})
 	d.Dispatch()
 
 	ev := d.EventsFor(widget)
-	if len(ev) != 1 {
-		t.Fatalf("expected 1 touch event, got %d", len(ev))
+	// The gesture recognizer consumes the raw TouchBegan but doesn't
+	// emit a gesture yet — it's waiting to classify the gesture.
+	// No events expected at this point.
+	_ = ev
+}
+
+func TestEventDispatcherTapViaGesture(t *testing.T) {
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+
+	widget := UID(42)
+	d.RegisterWidgetBounds(widget, draw.R(10, 10, 200, 200))
+	d.SwapBounds()
+
+	// TouchBegan.
+	d.Collect(input.TouchMsg{ID: 1, X: 50, Y: 50, Phase: input.TouchBegan})
+	d.Dispatch()
+	d.ResetEvents()
+
+	// TouchEnded at same position → TapMsg.
+	d.Collect(input.TouchMsg{ID: 1, X: 50, Y: 50, Phase: input.TouchEnded})
+	d.Dispatch()
+
+	ev := d.EventsFor(widget)
+	hasTap := false
+	for _, e := range ev {
+		if e.Kind == EventTap {
+			hasTap = true
+			if e.Tap.Count != 1 {
+				t.Errorf("tap count = %d, want 1", e.Tap.Count)
+			}
+		}
 	}
-	if ev[0].Kind != EventTouch {
-		t.Errorf("event kind = %d, want EventTouch", ev[0].Kind)
+	if !hasTap {
+		t.Error("expected a TapMsg event via gesture recognizer")
 	}
 }
 

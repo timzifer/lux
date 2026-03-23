@@ -47,7 +47,7 @@ func TestAnimatorInterface(t *testing.T) {
 	th := theme.Default
 
 	tree := ComponentWithKey("anim", animWidget{})
-	r.Reconcile(tree, th, func(_ any) {}, nil, nil)
+	r.Reconcile(tree, th, func(_ any) {}, nil, nil, "")
 
 	// After first reconcile, state should exist.
 	uid := MakeUID(0, "anim", 0)
@@ -78,7 +78,7 @@ func TestTickAnimatorsReturnsTrueWhileRunning(t *testing.T) {
 	th := theme.Default
 
 	tree := ComponentWithKey("anim", animWidget{})
-	r.Reconcile(tree, th, func(_ any) {}, nil, nil)
+	r.Reconcile(tree, th, func(_ any) {}, nil, nil, "")
 
 	// Tick with small dt — should still be running.
 	running := r.TickAnimators(100 * time.Millisecond)
@@ -119,7 +119,7 @@ func TestTickAnimatorsSkipsNonAnimators(t *testing.T) {
 	th := theme.Default
 
 	tree := ComponentWithKey("noanim", nonAnimWidget{})
-	r.Reconcile(tree, th, func(_ any) {}, nil, nil)
+	r.Reconcile(tree, th, func(_ any) {}, nil, nil, "")
 
 	// Should not panic and return false.
 	running := r.TickAnimators(16 * time.Millisecond)

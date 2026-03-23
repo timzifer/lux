@@ -40,9 +40,9 @@ func NewReconciler() *Reconciler {
 // If dispatcher is non-nil, each widget's RenderCtx.Events is populated
 // from the dispatcher's per-UID event buffers (RFC-002 §2.6). If fm is
 // non-nil, Focusable widgets are registered for tab-order tracking.
-func (r *Reconciler) Reconcile(newTree Element, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager) (Element, bool) {
+func (r *Reconciler) Reconcile(newTree Element, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager, locale string) (Element, bool) {
 	seen := make(map[UID]bool)
-	resolved := r.resolveTree(newTree, 0, 0, seen, th, send, dispatcher, fm)
+	resolved := r.resolveTree(newTree, 0, 0, seen, th, send, dispatcher, fm, locale)
 
 	changed := !treeEqual(r.prevTree, resolved)
 	r.prevTree = resolved
@@ -118,11 +118,11 @@ func MakeUID(parent UID, key string, index int) UID {
 }
 
 // resolveTree recursively walks the element tree, expanding widgets.
-func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[UID]bool, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager) Element {
+func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[UID]bool, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager, locale string) Element {
 	// Interface-based dispatch for sub-package element types.
 	if cr, ok := el.(ChildResolver); ok {
 		return cr.ResolveChildren(func(child Element, childIndex int) Element {
-			return r.resolveTree(child, parentUID, childIndex, seen, th, send, dispatcher, fm)
+			return r.resolveTree(child, parentUID, childIndex, seen, th, send, dispatcher, fm, locale)
 		})
 	}
 	switch node := el.(type) {
@@ -150,7 +150,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		state := r.states[uid]
 
 		// Build RenderCtx with dispatched events.
-		ctx := RenderCtx{UID: uid, Theme: th, Send: send}
+		ctx := RenderCtx{UID: uid, Theme: th, Send: send, Locale: locale}
 		if dispatcher != nil {
 			ctx.Events = dispatcher.EventsFor(uid)
 		}
@@ -167,7 +167,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		r.widgets[uid] = node.W
 
 		// Recursively resolve the widget's output (it may contain more widgets).
-		resolved := r.resolveTree(child, uid, 0, seen, th, send, dispatcher, fm)
+		resolved := r.resolveTree(child, uid, 0, seen, th, send, dispatcher, fm, locale)
 		r.resolvedSub[uid] = resolved
 
 		// Wrap in WidgetBoundsElement so layout can track screen bounds.
@@ -175,53 +175,53 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 
 	case KeyedElement:
 		uid := MakeUID(parentUID, node.Key, index)
-		child := r.resolveTree(node.Child, uid, 0, seen, th, send, dispatcher, fm)
+		child := r.resolveTree(node.Child, uid, 0, seen, th, send, dispatcher, fm, locale)
 		return KeyedElement{Key: node.Key, Child: child}
 
 	case BoxElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm, locale)
 		}
 		return BoxElement{Axis: node.Axis, Children: children}
 
 	case StackElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm, locale)
 		}
 		return StackElement{Children: children}
 
 	case ScrollViewElement:
-		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm, locale)
 		return ScrollViewElement{Child: child, MaxHeight: node.MaxHeight, State: node.State}
 
 	case PaddingElement:
-		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm, locale)
 		return PaddingElement{Insets: node.Insets, Child: child}
 
 	case SizedBoxElement:
 		if node.Child != nil {
-			child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
+			child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm, locale)
 			return SizedBoxElement{Width: node.Width, Height: node.Height, Child: child}
 		}
 		return el
 
 	case ExpandedElement:
-		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm)
+		child := r.resolveTree(node.Child, parentUID, 0, seen, th, send, dispatcher, fm, locale)
 		return ExpandedElement{Child: child, Grow: node.Grow}
 
 	case FlexElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm, locale)
 		}
 		return FlexElement{Direction: node.Direction, Justify: node.Justify, Align: node.Align, Gap: node.Gap, Children: children}
 
 	case GridElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm, locale)
 		}
 		return GridElement{Columns: node.Columns, RowGap: node.RowGap, ColGap: node.ColGap, Children: children}
 
@@ -236,7 +236,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		}
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, sub, send, dispatcher, fm)
+			children[i] = r.resolveTree(c, parentUID, i, seen, sub, send, dispatcher, fm, locale)
 		}
 		return ThemedElement{Theme: sub, Children: children}
 
