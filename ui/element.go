@@ -11,6 +11,7 @@ import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/theme"
+	"github.com/timzifer/lux/validation"
 )
 
 // ── Widget System (RFC §4) ───────────────────────────────────────
@@ -613,6 +614,53 @@ func Select(value string, options []string, opts ...SelectOption) Element {
 	el := SelectElement{Value: value, Options: options}
 	for _, o := range opts {
 		o(&el)
+	}
+	return el
+}
+
+// ── FormField (Validation & Hints) ────────────────────────────────
+
+// FormFieldElement wraps a form element with optional label, hint, and
+// validation result. The hint display mode follows the theme's HintMode
+// token and can be overridden per field.
+type FormFieldElement struct {
+	Child    Element                // the wrapped form element
+	Label    string                 // optional label above the field
+	Hint     string                 // optional help text
+	Result   validation.FieldResult // validation result
+	HintMode *theme.HintMode        // nil = use theme default
+}
+
+func (FormFieldElement) isElement() {}
+
+// FormFieldOption configures a FormField element.
+type FormFieldOption func(*FormFieldElement)
+
+// WithFormLabel sets the label displayed above the field.
+func WithFormLabel(label string) FormFieldOption {
+	return func(f *FormFieldElement) { f.Label = label }
+}
+
+// WithFormHint sets the hint text for the field.
+func WithFormHint(hint string) FormFieldOption {
+	return func(f *FormFieldElement) { f.Hint = hint }
+}
+
+// WithFormValidation attaches a validation result to the field.
+func WithFormValidation(r validation.FieldResult) FormFieldOption {
+	return func(f *FormFieldElement) { f.Result = r }
+}
+
+// WithFormHintMode overrides the theme's default hint display mode.
+func WithFormHintMode(mode theme.HintMode) FormFieldOption {
+	return func(f *FormFieldElement) { f.HintMode = &mode }
+}
+
+// FormField wraps a child element with label, hint, and validation support.
+func FormField(child Element, opts ...FormFieldOption) Element {
+	el := FormFieldElement{Child: child}
+	for _, opt := range opts {
+		opt(&el)
 	}
 	return el
 }
@@ -1775,6 +1823,8 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		return layoutTextField(node, area, canvas, th, tokens, ix, fs)
 	case SelectElement:
 		return layoutSelect(node, area, canvas, th, tokens, ix, overlays, fs)
+	case FormFieldElement:
+		return layoutFormField(node, area, canvas, th, tokens, ix, overlays, fs)
 
 	// Tier 3 widgets
 	case CardElement:
@@ -4020,4 +4070,149 @@ func layoutOverlay(node Overlay, area Bounds, canvas draw.Canvas, th theme.Theme
 
 	// Overlays take no space in normal layout flow.
 	return Bounds{X: area.X, Y: area.Y}
+}
+
+// layoutFormField renders a FormField element with label, hint, and validation.
+func layoutFormField(node FormFieldElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, fs *FocusManager) Bounds {
+	const (
+		labelGap    = 4  // gap between label and child
+		hintGap     = 4  // gap between child and hint/error text
+		infoIconSz  = 14 // info icon size in dp
+		infoIconPad = 4  // padding next to info icon
+	)
+
+	labelStyle := tokens.Typography.Label
+	hintStyle := tokens.Typography.LabelSmall
+	hasError := !node.Result.Valid()
+
+	hMode := tokens.HintMode
+	if node.HintMode != nil {
+		hMode = *node.HintMode
+	}
+
+	y := area.Y
+	totalW := area.W
+
+	// ── Label row ───────────────────────────────────────────────
+	if node.Label != "" {
+		labelColor := tokens.Colors.Text.Secondary
+		if hasError {
+			labelColor = tokens.Colors.Status.Error
+		}
+		metrics := canvas.MeasureText(node.Label, labelStyle)
+		labelW := int(math.Ceil(float64(metrics.Width)))
+		labelH := int(math.Ceil(float64(metrics.Ascent)))
+
+		canvas.DrawText(node.Label, draw.Pt(float32(area.X), float32(y)), labelStyle, labelColor)
+
+		// Info icon (HintModeIcon) next to label.
+		if node.Hint != "" && hMode == theme.HintModeIcon {
+			renderFormFieldInfoIcon(canvas, tokens, ix, overlays, th, node.Hint,
+				area.X+labelW+infoIconPad, y, labelH, infoIconSz)
+		}
+		y += labelH + labelGap
+	} else if node.Hint != "" && hMode == theme.HintModeIcon {
+		renderFormFieldInfoIcon(canvas, tokens, ix, overlays, th, node.Hint,
+			area.X, y, infoIconSz, infoIconSz)
+	}
+
+	// ── Child ───────────────────────────────────────────────────
+	childArea := Bounds{X: area.X, Y: y, W: totalW, H: area.H - (y - area.Y)}
+	childBounds := layoutElement(node.Child, childArea, canvas, th, tokens, ix, overlays, fs)
+	y += childBounds.H
+
+	// Error border overlay.
+	if hasError {
+		errBorderRect := draw.R(
+			float32(childBounds.X)-1,
+			float32(childBounds.Y)-1,
+			float32(childBounds.W)+2,
+			float32(childBounds.H)+2,
+		)
+		errColor := tokens.Colors.Status.Error
+		errColor.A = 0.6
+		canvas.StrokeRoundRect(errBorderRect, tokens.Radii.Input, draw.Stroke{
+			Paint: draw.SolidPaint(errColor),
+			Width: 1.5,
+		})
+	}
+
+	// ── Below text: error message or hint label ─────────────────
+	belowText := ""
+	belowColor := tokens.Colors.Text.Secondary
+	if hasError {
+		belowText = node.Result.Error
+		belowColor = tokens.Colors.Status.Error
+	} else if node.Hint != "" && hMode == theme.HintModeLabel {
+		belowText = node.Hint
+	}
+
+	if belowText != "" {
+		y += hintGap
+		canvas.DrawText(belowText, draw.Pt(float32(area.X), float32(y)), hintStyle, belowColor)
+		m := canvas.MeasureText(belowText, hintStyle)
+		y += int(math.Ceil(float64(m.Ascent)))
+	}
+
+	return Bounds{X: area.X, Y: area.Y, W: totalW, H: y - area.Y}
+}
+
+// renderFormFieldInfoIcon draws a small info icon that reveals hint text on hover.
+func renderFormFieldInfoIcon(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, th theme.Theme, hint string, x, y, alignH, iconSz int) {
+	iconStyle := draw.TextStyle{
+		FontFamily: "Phosphor",
+		Size:       float32(iconSz),
+		Weight:     draw.FontWeightRegular,
+		LineHeight: 1.0,
+		Raster:     true,
+	}
+
+	iconY := y + (alignH-iconSz)/2
+	if iconY < y {
+		iconY = y
+	}
+
+	iconRect := draw.R(float32(x), float32(iconY), float32(iconSz), float32(iconSz))
+
+	hoverOpacity := float32(0)
+	if ix != nil {
+		hoverOpacity = ix.RegisterHit(iconRect, nil)
+	}
+
+	iconColor := tokens.Colors.Text.Secondary
+	if hoverOpacity > 0.1 {
+		iconColor = tokens.Colors.Accent.Primary
+	}
+	canvas.DrawText("\uE2CC", draw.Pt(float32(x), float32(iconY)), iconStyle, iconColor)
+
+	if hoverOpacity > 0.1 && overlays != nil {
+		overlays.Push(OverlayEntry{
+			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
+				hs := tokens.Typography.LabelSmall
+				m := canvas.MeasureText(hint, hs)
+				tw := int(math.Ceil(float64(m.Width)))
+				th := int(math.Ceil(float64(m.Ascent)))
+				pad := 6
+				tipW := tw + pad*2
+				tipH := th + pad*2
+				tipX := int(iconRect.X)
+				tipY := int(iconRect.Y+iconRect.H) + 4
+
+				tipRect := draw.R(float32(tipX), float32(tipY), float32(tipW), float32(tipH))
+				canvas.FillRoundRect(tipRect,
+					tokens.Radii.Button, draw.SolidPaint(tokens.Colors.Stroke.Border))
+				innerRect := draw.R(float32(tipX+1), float32(tipY+1),
+					float32(max(tipW-2, 0)), float32(max(tipH-2, 0)))
+				canvas.FillRoundRect(innerRect,
+					maxf(tokens.Radii.Button-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
+				canvas.StrokeRoundRect(tipRect, tokens.Radii.Button, draw.Stroke{
+					Paint: draw.SolidPaint(tokens.Colors.Stroke.Border),
+					Width: 1,
+				})
+				canvas.DrawText(hint,
+					draw.Pt(float32(tipX+pad), float32(tipY+pad)),
+					hs, tokens.Colors.Text.Primary)
+			},
+		})
+	}
 }

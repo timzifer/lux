@@ -26,6 +26,7 @@ import (
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/icons"
+	"github.com/timzifer/lux/validation"
 )
 
 // ── Section Registry ──────────────────────────────────────────────
@@ -52,7 +53,7 @@ var sectionIDs = []string{
 // sectionGroupChildren maps each group to its leaf section IDs.
 var sectionGroupChildren = map[string][]string{
 	"group-basics":       {"typography", "buttons"},
-	"group-input":        {"form-controls", "range-progress", "selection"},
+	"group-input":        {"form-controls", "range-progress", "selection", "validation"},
 	"group-layout":       {"layout", "split-view", "custom-layout"},
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
@@ -110,6 +111,8 @@ func sectionLabel(id string) string {
 		return "Range & Progress"
 	case "selection":
 		return "Selection"
+	case "validation":
+		return "Validation & Hints"
 	case "layout":
 		return "Layout"
 	case "split-view":
@@ -298,6 +301,11 @@ type Model struct {
 	A11yTrapCheckA   bool
 	A11yTrapCheckB   bool
 	A11yTrapText     string
+	// Validation demo
+	ValEmail    string
+	ValPassword string
+	ValConfirm  string
+	ValResults  validation.FormResult
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -367,6 +375,12 @@ type NativeConfirmMsg struct{}
 
 // Image messages
 type SetImageOpacityMsg struct{ Value float32 }
+
+// Validation messages
+type SetValEmailMsg struct{ Value string }
+type SetValPasswordMsg struct{ Value string }
+type SetValConfirmMsg struct{ Value string }
+type ValidateFormMsg struct{}
 
 // Accessibility messages
 type BuildA11yTreeMsg struct{}
@@ -682,6 +696,25 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 				m.SeqB.SetImmediate(0)
 			}
 		}
+
+	// Validation messages
+	case SetValEmailMsg:
+		m.ValEmail = msg.Value
+	case SetValPasswordMsg:
+		m.ValPassword = msg.Value
+	case SetValConfirmMsg:
+		m.ValConfirm = msg.Value
+	case ValidateFormMsg:
+		schema := validation.Schema{
+			"email":    validation.Rules(validation.Required, validation.Email),
+			"password": validation.Rules(validation.Required, validation.MinLen(8)),
+			"confirm":  validation.RulesCross([]validation.Validator{validation.Required}, validation.EqualField("password")),
+		}
+		m.ValResults = schema.ValidateMap(map[string]string{
+			"email":    m.ValEmail,
+			"password": m.ValPassword,
+			"confirm":  m.ValConfirm,
+		})
 	}
 	return m, nil
 }
@@ -749,6 +782,8 @@ func sectionContent(m Model) ui.Element {
 		return rangeProgressSection(m)
 	case "selection":
 		return selectionSection(m)
+	case "validation":
+		return validationSection(m)
 	case "layout":
 		return layoutSection()
 	case "split-view":
@@ -1041,6 +1076,50 @@ func selectionSection(m Model) ui.Element {
 	return ui.Column(
 		sectionHeader("Selection"),
 		ui.Select(m.SelectVal, []string{"Option 1", "Option 2", "Option 3"}),
+	)
+}
+
+func validationSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Validation & Hints"),
+
+		// Email with hint (info icon by default in Lux theme).
+		ui.FormField(
+			ui.TextField(m.ValEmail, "you@example.com",
+				ui.WithOnChange(func(v string) { app.Send(SetValEmailMsg{v}) }),
+				ui.WithFocus(app.Focus()),
+			),
+			ui.WithFormLabel("Email"),
+			ui.WithFormHint("We'll never share your email."),
+			ui.WithFormValidation(m.ValResults.Get("email")),
+		),
+		ui.Spacer(12),
+
+		// Password with hint rendered as label (overridden per field).
+		ui.FormField(
+			ui.TextField(m.ValPassword, "Min. 8 characters",
+				ui.WithOnChange(func(v string) { app.Send(SetValPasswordMsg{v}) }),
+				ui.WithFocus(app.Focus()),
+			),
+			ui.WithFormLabel("Password"),
+			ui.WithFormHint("Use a strong password with letters, numbers, and symbols."),
+			ui.WithFormHintMode(theme.HintModeLabel),
+			ui.WithFormValidation(m.ValResults.Get("password")),
+		),
+		ui.Spacer(12),
+
+		// Confirm password (cross-field validation).
+		ui.FormField(
+			ui.TextField(m.ValConfirm, "Repeat password",
+				ui.WithOnChange(func(v string) { app.Send(SetValConfirmMsg{v}) }),
+				ui.WithFocus(app.Focus()),
+			),
+			ui.WithFormLabel("Confirm Password"),
+			ui.WithFormValidation(m.ValResults.Get("confirm")),
+		),
+		ui.Spacer(12),
+
+		ui.ButtonText("Validate", func() { app.Send(ValidateFormMsg{}) }),
 	)
 }
 
