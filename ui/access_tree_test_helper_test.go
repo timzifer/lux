@@ -92,7 +92,7 @@ func TestRenderToAccessTree_TextFieldWithValue(t *testing.T) {
 }
 
 func TestRenderToAccessTree_ProgressBar(t *testing.T) {
-	tree := RenderToAccessTree(ProgressBar(0.75, false))
+	tree := RenderToAccessTree(ProgressBar(0.75))
 
 	bars := tree.FindByRole(a11y.RoleProgressBar)
 	if len(bars) != 1 {

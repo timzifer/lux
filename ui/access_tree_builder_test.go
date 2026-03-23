@@ -177,7 +177,7 @@ func TestBuildAccessTree_SurfaceWithSemanticProvider(t *testing.T) {
 	}
 
 	tree := SurfaceElement{
-		ID:       "pdf-viewer",
+		ID:       1,
 		Provider: pdf,
 		Width:    300,
 		Height:   400,
@@ -214,7 +214,7 @@ func TestBuildAccessTree_SurfaceWithoutSemanticProvider(t *testing.T) {
 	plain := &fakeSurface{}
 
 	tree := SurfaceElement{
-		ID:       "video-player",
+		ID:       2,
 		Provider: plain,
 		Width:    640,
 		Height:   480,
@@ -245,7 +245,7 @@ func TestBuildAccessTree_SurfaceMixedWithWidgets(t *testing.T) {
 
 	tree := Column(
 		ButtonText("Back", func() {}),
-		SurfaceElement{ID: "pdf", Provider: pdf, Width: 300, Height: 400},
+		SurfaceElement{ID: 3, Provider: pdf, Width: 300, Height: 400},
 		ButtonText("Next", func() {}),
 	)
 

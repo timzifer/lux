@@ -236,14 +236,14 @@ func TestReconcileExpandsWidgetToElement(t *testing.T) {
 	tree := Component(greetWidget{Name: "lux"})
 
 	resolved, _ := r.Reconcile(tree, th, noopSend, nil, nil, "")
-	// Resolved widgets are wrapped in widgetBoundsElement.
-	wb, ok := resolved.(widgetBoundsElement)
+	// Resolved widgets are wrapped in WidgetBoundsElement.
+	wb, ok := resolved.(WidgetBoundsElement)
 	if !ok {
-		t.Fatalf("expected widgetBoundsElement, got %T", resolved)
+		t.Fatalf("expected WidgetBoundsElement, got %T", resolved)
 	}
-	te, ok := wb.Child.(textElement)
+	te, ok := wb.Child.(TextElement)
 	if !ok {
-		t.Fatalf("expected textElement child, got %T", wb.Child)
+		t.Fatalf("expected TextElement child, got %T", wb.Child)
 	}
 	if te.Content != "hello lux" {
 		t.Errorf("content = %q, want %q", te.Content, "hello lux")
@@ -251,13 +251,13 @@ func TestReconcileExpandsWidgetToElement(t *testing.T) {
 
 	// Second call — state was persisted, so greeting changes.
 	resolved, _ = r.Reconcile(tree, th, noopSend, nil, nil, "")
-	wb, ok = resolved.(widgetBoundsElement)
+	wb, ok = resolved.(WidgetBoundsElement)
 	if !ok {
-		t.Fatalf("expected widgetBoundsElement, got %T", resolved)
+		t.Fatalf("expected WidgetBoundsElement, got %T", resolved)
 	}
-	te, ok = wb.Child.(textElement)
+	te, ok = wb.Child.(TextElement)
 	if !ok {
-		t.Fatalf("expected textElement child, got %T", wb.Child)
+		t.Fatalf("expected TextElement child, got %T", wb.Child)
 	}
 	if te.Content != "welcome back lux" {
 		t.Errorf("content = %q, want %q", te.Content, "welcome back lux")
@@ -498,19 +498,19 @@ func TestCheckDirtyTrackersReturnsFalseWhenClean(t *testing.T) {
 }
 
 func TestTreeEqualWidgetBoundsElement(t *testing.T) {
-	a := widgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
-	b := widgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
+	a := WidgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
+	b := WidgetBoundsElement{WidgetUID: 42, Child: Text("hello")}
 	if !treeEqual(a, b) {
-		t.Error("identical widgetBoundsElements should be equal")
+		t.Error("identical WidgetBoundsElements should be equal")
 	}
 
-	c := widgetBoundsElement{WidgetUID: 42, Child: Text("world")}
+	c := WidgetBoundsElement{WidgetUID: 42, Child: Text("world")}
 	if treeEqual(a, c) {
-		t.Error("widgetBoundsElements with different children should not be equal")
+		t.Error("WidgetBoundsElements with different children should not be equal")
 	}
 
-	d := widgetBoundsElement{WidgetUID: 99, Child: Text("hello")}
+	d := WidgetBoundsElement{WidgetUID: 99, Child: Text("hello")}
 	if treeEqual(a, d) {
-		t.Error("widgetBoundsElements with different UIDs should not be equal")
+		t.Error("WidgetBoundsElements with different UIDs should not be equal")
 	}
 }

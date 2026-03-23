@@ -10,9 +10,9 @@ import (
 
 func TestSplitViewDefaults(t *testing.T) {
 	el := SplitView(Text("A"), Text("B"), 0.5, nil)
-	sv, ok := el.(splitViewElement)
+	sv, ok := el.(SplitViewElement)
 	if !ok {
-		t.Fatal("SplitView should return splitViewElement")
+		t.Fatal("SplitView should return SplitViewElement")
 	}
 	if sv.Axis != AxisRow {
 		t.Errorf("default axis = %v, want AxisRow", sv.Axis)
@@ -30,7 +30,7 @@ func TestSplitViewOptions(t *testing.T) {
 		WithSplitAxis(AxisColumn),
 		WithDividerSize(10),
 	)
-	sv := el.(splitViewElement)
+	sv := el.(SplitViewElement)
 	if sv.Axis != AxisColumn {
 		t.Errorf("axis = %v, want AxisColumn", sv.Axis)
 	}

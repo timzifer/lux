@@ -2966,7 +2966,7 @@ func buildA11yTreeDemo(m Model) string {
 		ui.Checkbox("Accept Terms", m.CheckA, nil),
 		ui.Slider(m.SliderVal, nil),
 		ui.TextField(m.TextValue, "Enter text..."),
-		ui.ProgressBar(m.Progress, false),
+		ui.ProgressBar(m.Progress),
 		ui.Toggle(m.ToggleOn, nil),
 	)
 

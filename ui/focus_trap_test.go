@@ -214,7 +214,7 @@ func TestFocusManager_AdvanceWithTrap(t *testing.T) {
 
 	// Push trap constraining to UIDs 2 and 3.
 	fm.SetFocusedUID(2)
-	fm.Trap.PushTrap(FocusTrap{TrapID: "modal"}, fm.FocusedUID(), []UID{2, 3})
+	fm.Trap.PushTrap(FocusTrap{TrapID: "modal", RestoreFocus: true}, fm.FocusedUID(), []UID{2, 3})
 
 	// Advance within trap: 2 → 3.
 	next = fm.FocusNext()
