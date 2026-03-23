@@ -112,7 +112,7 @@ func layoutVirtualList(node VirtualListElement, area Bounds, canvas draw.Canvas,
 
 	// Draw scrollbar INSIDE the clip so it's visible even within a parent ScrollView.
 	if needsScroll && node.State != nil {
-		drawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, actualH, contentH, offset)
+		DrawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, actualH, contentH, offset)
 	}
 
 	canvas.PopClip()
@@ -146,9 +146,9 @@ func layoutVirtualList(node VirtualListElement, area Bounds, canvas draw.Canvas,
 	return Bounds{X: area.X, Y: area.Y, W: area.W, H: actualH}
 }
 
-// drawScrollbar renders a scrollbar track and thumb, returning the track width consumed.
-// Shared by ScrollView, VirtualList, and Tree.
-func drawScrollbar(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor, state *ScrollState, trackX, trackY, viewportH int, contentH, offset float32) int {
+// DrawScrollbar renders a scrollbar track and thumb, returning the track width consumed.
+// Shared by ScrollView, VirtualList, Tree, and sub-packages.
+func DrawScrollbar(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor, state *ScrollState, trackX, trackY, viewportH int, contentH, offset float32) int {
 	trackW := int(tokens.Scroll.TrackWidth)
 	if trackW <= 0 {
 		trackW = 8

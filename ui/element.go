@@ -1237,10 +1237,10 @@ type ToggleState struct {
 // NewToggleState creates a ready-to-use ToggleState.
 func NewToggleState() *ToggleState { return &ToggleState{} }
 
-// update returns the current animation progress [0,1] and starts a
+// Update returns the current animation progress [0,1] and starts a
 // new transition if the on state has changed. Duration and easing come
 // from the theme's MotionSpec (RFC-008 §9.5).
-func (ts *ToggleState) update(on bool, de theme.DurationEasing) float32 {
+func (ts *ToggleState) Update(on bool, de theme.DurationEasing) float32 {
 	if !ts.inited {
 		if on {
 			ts.thumbPos.SetImmediate(1.0)
@@ -2622,7 +2622,7 @@ func layoutScrollView(node ScrollViewElement, area Bounds, canvas draw.Canvas, t
 	// Draw scrollbar inside allocated area.
 	w := area.W
 	if needsScroll {
-		drawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
+		DrawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
 	} else {
 		w = max(childBounds.W, area.W)
 	}

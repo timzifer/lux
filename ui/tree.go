@@ -376,7 +376,7 @@ func layoutTree(node TreeElement, area Bounds, canvas draw.Canvas, th theme.Them
 
 	// Draw scrollbar INSIDE the clip so it's visible even within a parent ScrollView.
 	if needsScroll && node.State != nil {
-		drawScrollbar(canvas, tokens, ix, &node.State.Scroll, area.X+contentW, area.Y, actualH, contentH, offset)
+		DrawScrollbar(canvas, tokens, ix, &node.State.Scroll, area.X+contentW, area.Y, actualH, contentH, offset)
 	}
 
 	canvas.PopClip()
