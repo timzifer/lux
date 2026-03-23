@@ -1,6 +1,6 @@
 module github.com/timzifer/lux
 
-go 1.25
+go 1.24
 
 replace github.com/gogpu/wgpu v0.21.3 => ./vendor_gogpu_wgpu
 
