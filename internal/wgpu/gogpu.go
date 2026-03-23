@@ -25,8 +25,11 @@ func CreateInstance() (Instance, error) {
 	desc := &gpuwgpu.InstanceDescriptor{
 		Backends: gputypes.BackendsAll,
 	}
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		desc.Backends = gputypes.BackendsDX12
+	case "darwin":
+		desc.Backends = gputypes.BackendsMetal
 	}
 	inst, err := gpuwgpu.CreateInstance(desc)
 	if err != nil {

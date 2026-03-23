@@ -4,13 +4,16 @@ package ui
 
 import (
 	"math"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/theme"
+	"github.com/timzifer/lux/ui/icons"
 	"github.com/timzifer/lux/validation"
 )
 
@@ -582,6 +585,41 @@ func WithFocus(fm *FocusManager) TextFieldOption {
 // WithTextFieldDisabled marks the TextField as disabled (RFC-008 §9.6).
 func WithTextFieldDisabled() TextFieldOption {
 	return func(e *TextFieldElement) { e.Disabled = true }
+}
+
+// PasswordFieldOption configures a PasswordField element.
+type PasswordFieldOption func(*PasswordFieldElement)
+
+// PasswordField creates a password input field that masks its content.
+func PasswordField(value string, placeholder string, opts ...PasswordFieldOption) Element {
+	el := PasswordFieldElement{Value: value, Placeholder: placeholder}
+	for _, opt := range opts {
+		opt(&el)
+	}
+	return el
+}
+
+// WithPasswordOnChange sets the callback invoked when the text value changes.
+func WithPasswordOnChange(fn func(string)) PasswordFieldOption {
+	return func(e *PasswordFieldElement) { e.OnChange = fn }
+}
+
+// WithPasswordFocus links the PasswordField to a FocusManager for keyboard input.
+func WithPasswordFocus(fm *FocusManager) PasswordFieldOption {
+	return func(e *PasswordFieldElement) { e.Focus = fm }
+}
+
+// WithPasswordDisabled marks the PasswordField as disabled.
+func WithPasswordDisabled() PasswordFieldOption {
+	return func(e *PasswordFieldElement) { e.Disabled = true }
+}
+
+// WithPasswordReveal enables the reveal toggle with the given state and callback.
+func WithPasswordReveal(revealed bool, onChange func(bool)) PasswordFieldOption {
+	return func(e *PasswordFieldElement) {
+		e.Revealed = revealed
+		e.OnRevealChange = onChange
+	}
 }
 
 // SelectState holds the open/closed state for a Select dropdown.
@@ -1186,6 +1224,18 @@ type TextFieldElement struct {
 }
 
 func (TextFieldElement) isElement() {}
+
+type PasswordFieldElement struct {
+	Value          string
+	Placeholder    string
+	OnChange       func(string)
+	Focus          *FocusManager
+	Disabled       bool
+	Revealed       bool
+	OnRevealChange func(bool)
+}
+
+func (PasswordFieldElement) isElement() {}
 
 type SelectElement struct {
 	Value    string
@@ -1821,6 +1871,8 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		return layoutProgressBar(node, area, canvas, th, tokens)
 	case TextFieldElement:
 		return layoutTextField(node, area, canvas, th, tokens, ix, fs)
+	case PasswordFieldElement:
+		return layoutPasswordField(node, area, canvas, th, tokens, ix, fs)
 	case SelectElement:
 		return layoutSelect(node, area, canvas, th, tokens, ix, overlays, fs)
 	case FormFieldElement:
@@ -3206,6 +3258,171 @@ func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th 
 	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
+// Layout constants for the password reveal button.
+const (
+	passwordMask       = "•"
+	passwordRevealIcon = 14 // icon glyph size in dp
+	passwordRevealPad  = 6  // horizontal padding around the icon
+)
+
+func layoutPasswordField(node PasswordFieldElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) Bounds {
+	style := tokens.Typography.Body
+	h := int(style.Size) + textFieldPadY*2
+
+	w := textFieldW
+	if area.W < w {
+		w = area.W
+	}
+
+	// Reserve space for reveal button when present.
+	btnW := 0
+	if node.OnRevealChange != nil {
+		btnW = passwordRevealIcon + passwordRevealPad*2
+	}
+	textAreaW := w - btnW
+
+	// Focus management.
+	var focusUID UID
+	if focus != nil && !node.Disabled {
+		focusUID = focus.NextElementUID()
+		focus.RegisterFocusable(focusUID, FocusOpts{
+			Focusable:    true,
+			TabIndex:     0,
+			FocusOnClick: true,
+		})
+	}
+	focused := !node.Disabled && focus != nil && focus.IsElementFocused(focusUID)
+
+	// Determine display text (masked or clear).
+	displayStr := strings.Repeat(passwordMask, utf8.RuneCountInString(node.Value))
+	if node.Revealed {
+		displayStr = node.Value
+	}
+
+	if df := th.DrawFunc(theme.WidgetKindTextField); df != nil {
+		df(theme.DrawCtx{
+			Canvas:   canvas,
+			Bounds:   draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			Focused:  focused,
+			Disabled: node.Disabled,
+		}, tokens, node)
+	} else {
+		tfRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+
+		// Border.
+		borderColor := tokens.Colors.Stroke.Border
+		if node.Disabled {
+			borderColor = DisabledColor(borderColor, tokens.Colors.Surface.Base)
+		}
+		canvas.FillRoundRect(tfRect, tokens.Radii.Input, draw.SolidPaint(borderColor))
+
+		// Fill.
+		fillColor := tokens.Colors.Surface.Elevated
+		if node.Disabled {
+			fillColor = DisabledColor(fillColor, tokens.Colors.Surface.Base)
+		}
+		canvas.FillRoundRect(
+			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
+			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(fillColor))
+
+		// Focus ring.
+		if focused {
+			DrawFocusRing(canvas, tfRect, tokens.Radii.Input, tokens)
+		}
+
+		// Text or placeholder.
+		textX := area.X + textFieldPadX
+		textY := area.Y + textFieldPadY
+		textColor := tokens.Colors.Text.Primary
+		if node.Disabled {
+			textColor = tokens.Colors.Text.Disabled
+		}
+		if node.Value != "" {
+			canvas.DrawText(displayStr, draw.Pt(float32(textX), float32(textY)), style, textColor)
+		} else if node.Placeholder != "" {
+			canvas.DrawText(node.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
+		}
+
+		// Cursor when focused.
+		if focused {
+			metrics := canvas.MeasureText(displayStr, style)
+			cursorX := float32(textX) + metrics.Width
+			maxCursorX := float32(area.X+textAreaW) - float32(textFieldPadX)
+			if cursorX > maxCursorX {
+				cursorX = maxCursorX
+			}
+			canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
+				draw.SolidPaint(tokens.Colors.Text.Primary))
+		}
+	}
+
+	// Store input state for framework key handling.
+	if focused && node.OnChange != nil && focus != nil {
+		focus.Input = &InputState{
+			Value:    node.Value,
+			OnChange: node.OnChange,
+			FocusUID: focusUID,
+		}
+	}
+
+	// Hit target for focus acquisition (full field).
+	if node.OnChange != nil && focus != nil && !node.Disabled {
+		uid := focusUID
+		fm := focus
+		ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			func() { fm.SetFocusedUID(uid) })
+	}
+
+	// Reveal button — registered after focus target so it wins in hit testing.
+	if node.OnRevealChange != nil && !node.Disabled {
+		btnX := area.X + w - btnW
+		btnRect := draw.R(float32(btnX), float32(area.Y), float32(btnW), float32(h))
+
+		revealed := node.Revealed
+		onChange := node.OnRevealChange
+		var onClick func()
+		if focus != nil && node.OnChange != nil {
+			uid := focusUID
+			fm := focus
+			onClick = func() {
+				fm.SetFocusedUID(uid)
+				onChange(!revealed)
+			}
+		} else {
+			onClick = func() { onChange(!revealed) }
+		}
+		hoverOpacity := ix.RegisterHit(btnRect, onClick)
+
+		// Draw the eye icon.
+		iconStyle := draw.TextStyle{
+			FontFamily: "Phosphor",
+			Size:       float32(passwordRevealIcon),
+			Weight:     draw.FontWeightRegular,
+			LineHeight: 1.0,
+			Raster:     true,
+		}
+
+		iconName := icons.EyeSlash
+		if node.Revealed {
+			iconName = icons.Eye
+		}
+
+		iconColor := tokens.Colors.Text.Secondary
+		if hoverOpacity > 0.1 {
+			iconColor = tokens.Colors.Text.Primary
+		}
+
+		metrics := canvas.MeasureText(iconName, iconStyle)
+		offsetX := (float32(btnW) - metrics.Width) / 2
+		offsetY := (float32(h) - metrics.Ascent) / 2
+		canvas.DrawText(iconName,
+			draw.Pt(float32(btnX)+offsetX, float32(area.Y)+offsetY),
+			iconStyle, iconColor)
+	}
+
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
+}
+
 func layoutSelect(node SelectElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
@@ -3294,15 +3511,24 @@ func layoutSelect(node SelectElement, area Bounds, canvas draw.Canvas, th theme.
 	}
 
 	// Dropdown overlay when open.
-	if isOpen && len(node.Options) > 0 {
+	if isOpen && len(node.Options) > 0 && overlays != nil {
 		dropX := area.X
 		dropY := area.Y + h
 		dropW := w
 		opts := node.Options
 		onSelect := node.OnSelect
 		state := node.State
+		winW := overlays.WindowW
+		winH := overlays.WindowH
 		overlays.Push(OverlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
+				// Full-screen backdrop: clicking outside the dropdown closes it.
+				ix.RegisterHit(draw.R(0, 0, float32(winW), float32(winH)), func() {
+					if state != nil {
+						state.Open = false
+					}
+				})
+
 				itemH := int(tokens.Typography.Body.Size) + textFieldPadY*2
 				totalH := itemH * len(opts)
 

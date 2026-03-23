@@ -73,12 +73,26 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 	if nh, ok := plat.(interface{ NativeHandle() uintptr }); ok {
 		nativeHandle = nh.NativeHandle()
 	}
+	var nativeDisplay uintptr
+	if nd, ok := plat.(interface{ NativeDisplay() uintptr }); ok {
+		nativeDisplay = nd.NativeDisplay()
+	}
+	gpuCfg := gpu.Config{
+		Width:         fbW,
+		Height:        fbH,
+		NativeHandle:  nativeHandle,
+		NativeDisplay: nativeDisplay,
+		DRMfd:         -1,
+	}
+	if dp, ok := plat.(interface {
+		DRMfd() int
+		DRMConnectorID() uint32
+	}); ok {
+		gpuCfg.DRMfd = dp.DRMfd()
+		gpuCfg.DRMConnectorID = dp.DRMConnectorID()
+	}
 
-	if err := renderer.Init(gpu.Config{
-		Width:        fbW,
-		Height:       fbH,
-		NativeHandle: nativeHandle,
-	}); err != nil {
+	if err := renderer.Init(gpuCfg); err != nil {
 		return fmt.Errorf("gpu init: %w", err)
 	}
 	defer renderer.Destroy()

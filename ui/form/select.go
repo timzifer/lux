@@ -148,8 +148,17 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		opts := n.Options
 		onSelect := n.OnSelect
 		state := n.State
+		winW := overlays.WindowW
+		winH := overlays.WindowH
 		overlays.Push(ui.OverlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
+				// Full-screen backdrop: clicking outside the dropdown closes it.
+				ix.RegisterHit(draw.R(0, 0, float32(winW), float32(winH)), func() {
+					if state != nil {
+						state.Open = false
+					}
+				})
+
 				itemH := int(tokens.Typography.Body.Size) + textFieldPadY*2
 				totalH := itemH * len(opts)
 

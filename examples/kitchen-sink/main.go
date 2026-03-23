@@ -220,6 +220,7 @@ type Model struct {
 	SliderVal      float32
 	Progress       float32
 	SelectVal      string
+	SelectState    *ui.SelectState
 	TextValue      string
 	Scroll         *ui.ScrollState
 	AnimTime       float64
@@ -302,10 +303,13 @@ type Model struct {
 	A11yTrapCheckB   bool
 	A11yTrapText     string
 	// Validation demo
-	ValEmail    string
-	ValPassword string
-	ValConfirm  string
-	ValResults  validation.FormResult
+	ValEmail       string
+	ValPassword    string
+	ValConfirm     string
+	ValRole        string
+	ValRoleState   *ui.SelectState
+	ValResults     validation.FormResult
+	ValPwRevealed  bool
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -319,6 +323,7 @@ type SetRadioMsg struct{ Choice string }
 type SetToggleMsg struct{ Value bool }
 type SetSliderMsg struct{ Value float32 }
 type SetTextMsg struct{ Value string }
+type SetSelectValMsg struct{ Value string }
 type SelectSectionMsg struct{ Section string }
 type SetTabMsg struct{ Index int }
 type ToggleChipAMsg struct{}
@@ -380,6 +385,8 @@ type SetImageOpacityMsg struct{ Value float32 }
 type SetValEmailMsg struct{ Value string }
 type SetValPasswordMsg struct{ Value string }
 type SetValConfirmMsg struct{ Value string }
+type SetValPwRevealedMsg struct{ Value bool }
+type SetValRoleMsg struct{ Value string }
 type ValidateFormMsg struct{}
 
 // Accessibility messages
@@ -704,16 +711,24 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.ValPassword = msg.Value
 	case SetValConfirmMsg:
 		m.ValConfirm = msg.Value
+	case SetValPwRevealedMsg:
+		m.ValPwRevealed = msg.Value
+	case SetValRoleMsg:
+		m.ValRole = msg.Value
+	case SetSelectValMsg:
+		m.SelectVal = msg.Value
 	case ValidateFormMsg:
 		schema := validation.Schema{
 			"email":    validation.Rules(validation.Required, validation.Email),
 			"password": validation.Rules(validation.Required, validation.MinLen(8)),
 			"confirm":  validation.RulesCross([]validation.Validator{validation.Required}, validation.EqualField("password")),
+			"role":     validation.Rules(validation.Required),
 		}
 		m.ValResults = schema.ValidateMap(map[string]string{
 			"email":    m.ValEmail,
 			"password": m.ValPassword,
 			"confirm":  m.ValConfirm,
+			"role":     m.ValRole,
 		})
 	}
 	return m, nil
@@ -1075,7 +1090,10 @@ func rangeProgressSection(m Model) ui.Element {
 func selectionSection(m Model) ui.Element {
 	return ui.Column(
 		sectionHeader("Selection"),
-		ui.Select(m.SelectVal, []string{"Option 1", "Option 2", "Option 3"}),
+		ui.Select(m.SelectVal, []string{"Option 1", "Option 2", "Option 3"},
+			ui.WithSelectState(m.SelectState),
+			ui.WithOnSelect(func(v string) { app.Send(SetSelectValMsg{v}) }),
+		),
 	)
 }
 
@@ -1097,9 +1115,10 @@ func validationSection(m Model) ui.Element {
 
 		// Password with hint rendered as label (overridden per field).
 		ui.FormField(
-			ui.TextField(m.ValPassword, "Min. 8 characters",
-				ui.WithOnChange(func(v string) { app.Send(SetValPasswordMsg{v}) }),
-				ui.WithFocus(app.Focus()),
+			ui.PasswordField(m.ValPassword, "Min. 8 characters",
+				ui.WithPasswordOnChange(func(v string) { app.Send(SetValPasswordMsg{v}) }),
+				ui.WithPasswordFocus(app.Focus()),
+				ui.WithPasswordReveal(m.ValPwRevealed, func(b bool) { app.Send(SetValPwRevealedMsg{b}) }),
 			),
 			ui.WithFormLabel("Password"),
 			ui.WithFormHint("Use a strong password with letters, numbers, and symbols."),
@@ -1110,12 +1129,24 @@ func validationSection(m Model) ui.Element {
 
 		// Confirm password (cross-field validation).
 		ui.FormField(
-			ui.TextField(m.ValConfirm, "Repeat password",
-				ui.WithOnChange(func(v string) { app.Send(SetValConfirmMsg{v}) }),
-				ui.WithFocus(app.Focus()),
+			ui.PasswordField(m.ValConfirm, "Repeat password",
+				ui.WithPasswordOnChange(func(v string) { app.Send(SetValConfirmMsg{v}) }),
+				ui.WithPasswordFocus(app.Focus()),
 			),
 			ui.WithFormLabel("Confirm Password"),
 			ui.WithFormValidation(m.ValResults.Get("confirm")),
+		),
+		ui.Spacer(12),
+
+		// Role select (required validation).
+		ui.FormField(
+			ui.Select(m.ValRole, []string{"Admin", "Editor", "Viewer"},
+				ui.WithSelectState(m.ValRoleState),
+				ui.WithOnSelect(func(v string) { app.Send(SetValRoleMsg{v}) }),
+			),
+			ui.WithFormLabel("Role"),
+			ui.WithFormHint("Select your role."),
+			ui.WithFormValidation(m.ValResults.Get("role")),
 		),
 		ui.Spacer(12),
 
@@ -3321,6 +3352,8 @@ func main() {
 		SliderVal:          0.5,
 		Progress:           0.0,
 		SelectVal:          "Option 1",
+		SelectState:        &ui.SelectState{},
+		ValRoleState:       &ui.SelectState{},
 		Scroll:             &ui.ScrollState{},
 		ToggleAnim:         ui.NewToggleState(),
 		NavTree:            ui.NewTreeState(),

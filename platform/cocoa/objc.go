@@ -418,6 +418,33 @@ func registerLuxViewClass(metalLayerPtr *uintptr) uintptr {
 			unsafe.Pointer(&acceptsFirstResponderIMP), unsafe.Pointer(&acceptsFirstResponderTypesPtr)})
 	runtime.KeepAlive(acceptsFirstResponderTypes)
 
+	// keyDown: no-op override to prevent macOS NSBeep on keystrokes.
+	// The app processes key events separately via processKeyEvent.
+	keyDownIMP := ffi.NewCallback(func(self, _cmd, event uintptr) {
+		// intentionally empty – suppress system beep
+	})
+	keyDownSel := sel("keyDown:")
+	keyDownTypes := append([]byte("v@:@"), 0) // returns void, takes (id, SEL, NSEvent*)
+	keyDownTypesPtr := unsafe.Pointer(&keyDownTypes[0])
+	var addResult4 uint8
+	_ = ffi.CallFunction(&cifAddMethod, fnAddMethod, unsafe.Pointer(&addResult4),
+		[]unsafe.Pointer{unsafe.Pointer(&newClass), unsafe.Pointer(&keyDownSel),
+			unsafe.Pointer(&keyDownIMP), unsafe.Pointer(&keyDownTypesPtr)})
+	runtime.KeepAlive(keyDownTypes)
+
+	// keyUp: no-op override for symmetry.
+	keyUpIMP := ffi.NewCallback(func(self, _cmd, event uintptr) {
+		// intentionally empty
+	})
+	keyUpSel := sel("keyUp:")
+	keyUpTypes := append([]byte("v@:@"), 0)
+	keyUpTypesPtr := unsafe.Pointer(&keyUpTypes[0])
+	var addResult5 uint8
+	_ = ffi.CallFunction(&cifAddMethod, fnAddMethod, unsafe.Pointer(&addResult5),
+		[]unsafe.Pointer{unsafe.Pointer(&newClass), unsafe.Pointer(&keyUpSel),
+			unsafe.Pointer(&keyUpIMP), unsafe.Pointer(&keyUpTypesPtr)})
+	runtime.KeepAlive(keyUpTypes)
+
 	// Invoke hooks to add additional methods (e.g. accessibility overrides).
 	for _, hook := range registerLuxViewClassHooks {
 		hook(newClass, fnAddMethod, &cifAddMethod)

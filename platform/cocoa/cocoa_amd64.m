@@ -33,6 +33,8 @@
     return self.metalLayer;
 }
 - (BOOL)acceptsFirstResponder { return YES; }
+- (void)keyDown:(NSEvent *)event {}
+- (void)keyUp:(NSEvent *)event {}
 @end
 
 // C API implementation for the Go cocoa package.

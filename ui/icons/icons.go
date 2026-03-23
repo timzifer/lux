@@ -54,6 +54,7 @@ const (
 	Star        = "\uE46A"
 	Heart       = "\uE2A8"
 	Eye         = "\uE220"
+	EyeSlash    = "\uE222"
 	User        = "\uE4C2"
 	Sun         = "\uE472"
 	Moon        = "\uE330"

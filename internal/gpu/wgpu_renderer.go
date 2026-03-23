@@ -178,6 +178,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	r.instance = instance
 
 	// Create surface from native handle.
+	log.Printf("wgpu: Init cfg: NativeHandle=%#x NativeDisplay=%#x DRMfd=%d", cfg.NativeHandle, cfg.NativeDisplay, cfg.DRMfd)
 	if cfg.DRMfd >= 0 {
 		// DRM/KMS: use VK_KHR_display surface via DRM file descriptor.
 		r.surface = instance.CreateSurface(&wgpu.SurfaceDescriptor{
@@ -189,9 +190,11 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		r.surface = instance.CreateSurface(&wgpu.SurfaceDescriptor{
 			NativeHandle:  cfg.NativeHandle,
 			NativeDisplay: cfg.NativeDisplay,
+			DRMfd:         -1,
 		})
 		r.surfaceOK = true
 	}
+	log.Printf("wgpu: surface created: surfaceOK=%v surface=%v", r.surfaceOK, r.surface)
 
 	// Request adapter and device.
 	adapter, err := instance.RequestAdapter(&wgpu.RequestAdapterOptions{
@@ -1993,6 +1996,7 @@ func (r *WGPURenderer) InitWindow(id uint32, cfg Config) error {
 	if cfg.NativeHandle != 0 {
 		ws.surface = r.instance.CreateSurface(&wgpu.SurfaceDescriptor{
 			NativeHandle: cfg.NativeHandle,
+			DRMfd:        -1,
 		})
 		ws.surfaceOK = true
 	}
