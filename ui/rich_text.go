@@ -27,23 +27,23 @@ type RichParagraph struct {
 
 // RichText creates a read-only rich-formatted text element (RFC-003 §5.4, M5).
 func RichText(paragraphs ...RichParagraph) Element {
-	return richTextElement{Paragraphs: paragraphs}
+	return RichTextElement{Paragraphs: paragraphs}
 }
 
 // RichTextSpans is a convenience for single-paragraph rich text.
 func RichTextSpans(spans ...Span) Element {
-	return richTextElement{Paragraphs: []RichParagraph{{Spans: spans}}}
+	return RichTextElement{Paragraphs: []RichParagraph{{Spans: spans}}}
 }
 
-type richTextElement struct {
+type RichTextElement struct {
 	Paragraphs []RichParagraph
 }
 
-func (richTextElement) isElement() {}
+func (RichTextElement) isElement() {}
 
-func layoutRichText(node richTextElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet) bounds {
+func layoutRichText(node RichTextElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet) Bounds {
 	if len(node.Paragraphs) == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	bodyStyle := tokens.Typography.Body
@@ -113,5 +113,5 @@ func layoutRichText(node richTextElement, area bounds, canvas draw.Canvas, th th
 	}
 
 	totalH := cursorY - area.Y
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: totalH}
+	return Bounds{X: area.X, Y: area.Y, W: maxW, H: totalH}
 }

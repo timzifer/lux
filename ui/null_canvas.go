@@ -2,11 +2,11 @@ package ui
 
 import "github.com/timzifer/lux/draw"
 
-// nullCanvas wraps a real Canvas but discards all draw calls.
+// NullCanvas wraps a real Canvas but discards all draw calls.
 // Only MeasureText delegates to the real canvas so that Flex/Grid
 // can perform a measurement pass without painting.
-type nullCanvas struct {
-	delegate draw.Canvas
+type NullCanvas struct {
+	Delegate draw.Canvas
 }
 
 func (n nullCanvas) FillRect(draw.Rect, draw.Paint)                              {}
@@ -44,9 +44,9 @@ func (n nullCanvas) PopLayer()                                                  
 func (n nullCanvas) Save()                                                       {}
 func (n nullCanvas) Restore()                                                    {}
 
-func (n nullCanvas) MeasureText(text string, style draw.TextStyle) draw.TextMetrics {
-	return n.delegate.MeasureText(text, style)
+func (n NullCanvas) MeasureText(text string, style draw.TextStyle) draw.TextMetrics {
+	return n.Delegate.MeasureText(text, style)
 }
 
-func (n nullCanvas) Bounds() draw.Rect { return n.delegate.Bounds() }
-func (n nullCanvas) DPR() float32      { return n.delegate.DPR() }
+func (n NullCanvas) Bounds() draw.Rect { return n.Delegate.Bounds() }
+func (n NullCanvas) DPR() float32      { return n.Delegate.DPR() }

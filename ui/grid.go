@@ -6,7 +6,7 @@ import (
 )
 
 // GridOption configures a Grid element.
-type GridOption func(*gridElement)
+type GridOption func(*GridElement)
 
 // Grid creates a uniform raster layout with the given number of columns
 // (RFC-002 §4.5).
@@ -14,7 +14,7 @@ func Grid(columns int, children []Element, opts ...GridOption) Element {
 	if columns < 1 {
 		columns = 1
 	}
-	el := gridElement{Columns: columns, Children: children}
+	el := GridElement{Columns: columns, Children: children}
 	for _, opt := range opts {
 		opt(&el)
 	}
@@ -23,27 +23,27 @@ func Grid(columns int, children []Element, opts ...GridOption) Element {
 
 // WithRowGap sets the vertical gap between grid rows.
 func WithRowGap(gap float32) GridOption {
-	return func(e *gridElement) { e.RowGap = gap }
+	return func(e *GridElement) { e.RowGap = gap }
 }
 
 // WithColGap sets the horizontal gap between grid columns.
 func WithColGap(gap float32) GridOption {
-	return func(e *gridElement) { e.ColGap = gap }
+	return func(e *GridElement) { e.ColGap = gap }
 }
 
-type gridElement struct {
+type GridElement struct {
 	Columns  int
 	RowGap   float32
 	ColGap   float32
 	Children []Element
 }
 
-func (gridElement) isElement() {}
+func (GridElement) isElement() {}
 
-func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutGrid(node GridElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	n := len(node.Children)
 	if n == 0 || node.Columns < 1 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	cols := node.Columns
@@ -61,14 +61,14 @@ func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Them
 	rows := (n + cols - 1) / cols
 
 	// Pass 1: measure to find max height per row.
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 	rowHeights := make([]int, rows)
 	for i, child := range node.Children {
 		row := i / cols
 		col := i % cols
 		cellX := area.X + col*(cellW+colGap)
 		cellY := 0 // doesn't matter for measurement
-		cb := layoutElement(child, bounds{X: cellX, Y: cellY, W: cellW, H: area.H}, nc, th, tokens, nil, nil)
+		cb := layoutElement(child, Bounds{X: cellX, Y: cellY, W: cellW, H: area.H}, nc, th, tokens, nil, nil)
 		if cb.H > rowHeights[row] {
 			rowHeights[row] = cb.H
 		}
@@ -84,7 +84,7 @@ func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Them
 				break
 			}
 			cellX := area.X + col*(cellW+colGap)
-			childArea := bounds{X: cellX, Y: cursorY, W: cellW, H: rowHeights[row]}
+			childArea := Bounds{X: cellX, Y: cursorY, W: cellW, H: rowHeights[row]}
 			layoutElement(node.Children[idx], childArea, canvas, th, tokens, ix, overlays, focus)
 		}
 		rowW := cols*cellW + totalColGaps
@@ -98,5 +98,5 @@ func layoutGrid(node gridElement, area bounds, canvas draw.Canvas, th theme.Them
 	}
 
 	totalH := cursorY - area.Y
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: totalH}
+	return Bounds{X: area.X, Y: area.Y, W: maxW, H: totalH}
 }

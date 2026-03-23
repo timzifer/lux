@@ -206,6 +206,45 @@ type Element interface {
 	isElement()
 }
 
+// BaseElement is an embeddable type that satisfies the Element interface.
+// Sub-packages embed this to create Element types without accessing
+// the unexported isElement() method directly.
+type BaseElement struct{}
+
+func (BaseElement) isElement() {}
+
+// Layouter is an optional interface on Element types. When implemented,
+// layoutElement dispatches to LayoutSelf instead of the central type switch.
+// Sub-packages implement this so their element types are self-laying-out.
+type Layouter interface {
+	Element
+	LayoutSelf(ctx *LayoutContext) Bounds
+}
+
+// TreeEqualizer is an optional interface on Element types for structural
+// comparison. When implemented, treeEqual dispatches to TreeEqual instead
+// of the central type switch.
+type TreeEqualizer interface {
+	Element
+	TreeEqual(other Element) bool
+}
+
+// ChildResolver is an optional interface on Element types for recursive
+// widget resolution. Container elements return a copy with resolved children;
+// leaf elements return themselves unchanged.
+type ChildResolver interface {
+	Element
+	ResolveChildren(resolve func(el Element, index int) Element) Element
+}
+
+// AccessWalker is an optional interface on Element types for building
+// the accessibility tree. When implemented, the access tree builder
+// dispatches to WalkAccess instead of the central type switch.
+type AccessWalker interface {
+	Element
+	WalkAccess(b *AccessTreeBuilder, parentIdx int32)
+}
+
 // LayoutAxis controls how a Box arranges its children.
 type LayoutAxis int
 
@@ -215,112 +254,112 @@ const (
 )
 
 // Empty returns an Element that renders nothing.
-func Empty() Element { return emptyElement{} }
+func Empty() Element { return EmptyElement{} }
 
 // Text creates a text element.
-func Text(content string) Element { return textElement{Content: content} }
+func Text(content string) Element { return TextElement{Content: content} }
 
 // TextStyled creates a text element with a specific text style.
 // Use this for headings or other non-Body text.
 func TextStyled(content string, style draw.TextStyle) Element {
-	return textElement{Content: content, Style: style}
+	return TextElement{Content: content, Style: style}
 }
 
 // Button creates a filled button element with arbitrary Element content.
 func Button(content Element, onClick func()) Element {
-	return buttonElement{Content: content, OnClick: onClick, Variant: ButtonFilled}
+	return ButtonElement{Content: content, OnClick: onClick, Variant: ButtonFilled}
 }
 
 // ButtonText is a convenience constructor for text-only filled buttons.
 func ButtonText(label string, onClick func()) Element {
-	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonFilled}
+	return ButtonElement{Content: TextElement{Content: label}, OnClick: onClick, Variant: ButtonFilled}
 }
 
 // ButtonTextDisabled creates a disabled text button (RFC-008 §9.6).
 func ButtonTextDisabled(label string) Element {
-	return buttonElement{Content: textElement{Content: label}, Variant: ButtonFilled, Disabled: true}
+	return ButtonElement{Content: TextElement{Content: label}, Variant: ButtonFilled, Disabled: true}
 }
 
 // ButtonVariantOf creates a button with the given variant and arbitrary content.
 func ButtonVariantOf(variant ButtonVariant, content Element, onClick func()) Element {
-	return buttonElement{Content: content, OnClick: onClick, Variant: variant}
+	return ButtonElement{Content: content, OnClick: onClick, Variant: variant}
 }
 
 // ButtonOutlinedText creates an outlined button with a text label.
 func ButtonOutlinedText(label string, onClick func()) Element {
-	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonOutlined}
+	return ButtonElement{Content: TextElement{Content: label}, OnClick: onClick, Variant: ButtonOutlined}
 }
 
 // ButtonGhostText creates a text-only (chromeless) button.
 func ButtonGhostText(label string, onClick func()) Element {
-	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonGhost}
+	return ButtonElement{Content: TextElement{Content: label}, OnClick: onClick, Variant: ButtonGhost}
 }
 
 // ButtonTonalText creates a tonal button with a text label.
 func ButtonTonalText(label string, onClick func()) Element {
-	return buttonElement{Content: textElement{Content: label}, OnClick: onClick, Variant: ButtonTonal}
+	return ButtonElement{Content: TextElement{Content: label}, OnClick: onClick, Variant: ButtonTonal}
 }
 
 // IconButton creates a compact icon-only button.
 func IconButton(icon string, onClick func()) Element {
-	return iconButtonElement{Icon: icon, OnClick: onClick, Variant: ButtonFilled}
+	return IconButtonElement{Icon: icon, OnClick: onClick, Variant: ButtonFilled}
 }
 
 // IconButtonVariant creates an icon-only button with a specific variant.
 func IconButtonVariant(variant ButtonVariant, icon string, onClick func()) Element {
-	return iconButtonElement{Icon: icon, OnClick: onClick, Variant: variant}
+	return IconButtonElement{Icon: icon, OnClick: onClick, Variant: variant}
 }
 
 // SplitButton creates a button with a main action and a dropdown menu trigger.
 func SplitButton(label string, onClick func(), onMenu func(), items []SplitButtonItem) Element {
-	return splitButtonElement{Label: label, OnClick: onClick, MenuItems: items, OnMenu: onMenu}
+	return SplitButtonElement{Label: label, OnClick: onClick, MenuItems: items, OnMenu: onMenu}
 }
 
 // SegmentedButtons creates a group of connected buttons with one selected.
 func SegmentedButtons(items []SegmentedItem, selected int) Element {
-	return segmentedButtonsElement{Items: items, Selected: selected}
+	return SegmentedButtonsElement{Items: items, Selected: selected}
 }
 
 // Column stacks children vertically.
 func Column(children ...Element) Element {
-	return boxElement{Axis: AxisColumn, Children: children}
+	return BoxElement{Axis: AxisColumn, Children: children}
 }
 
 // Row stacks children horizontally.
 func Row(children ...Element) Element {
-	return boxElement{Axis: AxisRow, Children: children}
+	return BoxElement{Axis: AxisRow, Children: children}
 }
 
 // WithKey wraps an element with an explicit key for stable UIDs
 // across re-parenting (RFC §4.4).
 func WithKey(key string, el Element) Element {
-	return keyedElement{Key: key, Child: el}
+	return KeyedElement{Key: key, Child: el}
 }
 
 // Divider creates a horizontal divider line (RFC-003 §4.1).
-func Divider() Element { return dividerElement{} }
+func Divider() Element { return DividerElement{} }
 
 // Spacer creates invisible spacing of the given size in dp (RFC-003 §4.1).
-func Spacer(size float32) Element { return spacerElement{Size: size} }
+func Spacer(size float32) Element { return SpacerElement{Size: size} }
 
 // GradientRect renders a gradient-filled rectangle of a fixed size (Phase E).
 func GradientRect(width, height, radius float32, paint draw.Paint) Element {
-	return gradientRectElement{Width: width, Height: height, Radius: radius, Paint: paint}
+	return GradientRectElement{Width: width, Height: height, Radius: radius, Paint: paint}
 }
 
 // Icon renders a text symbol at the theme's label size (RFC-003 §4.1).
 // The name is rendered as-is (typically a single character or emoji).
-func Icon(name string) Element { return iconElement{Name: name, Size: 0} }
+func Icon(name string) Element { return IconElement{Name: name, Size: 0} }
 
 // IconSize renders a text symbol at a specific size in dp.
-func IconSize(name string, size float32) Element { return iconElement{Name: name, Size: size} }
+func IconSize(name string, size float32) Element { return IconElement{Name: name, Size: size} }
 
 // ImageOption configures an Image element.
-type ImageOption func(*imageElement)
+type ImageOption func(*ImageElement)
 
 // WithImageSize sets explicit width and height in dp.
 func WithImageSize(w, h float32) ImageOption {
-	return func(e *imageElement) {
+	return func(e *ImageElement) {
 		e.Width = w
 		e.Height = h
 	}
@@ -328,23 +367,23 @@ func WithImageSize(w, h float32) ImageOption {
 
 // WithImageScaleMode sets the scale mode (Fit, Fill, Stretch).
 func WithImageScaleMode(mode draw.ImageScaleMode) ImageOption {
-	return func(e *imageElement) { e.ScaleMode = mode }
+	return func(e *ImageElement) { e.ScaleMode = mode }
 }
 
 // WithImageAlt sets the alt-text for accessibility.
 func WithImageAlt(alt string) ImageOption {
-	return func(e *imageElement) { e.Alt = alt }
+	return func(e *ImageElement) { e.Alt = alt }
 }
 
 // WithImageOpacity sets the opacity (0.0–1.0).
 func WithImageOpacity(opacity float32) ImageOption {
-	return func(e *imageElement) { e.Opacity = opacity }
+	return func(e *ImageElement) { e.Opacity = opacity }
 }
 
 // Image renders a loaded image. Use WithImageSize to set explicit dimensions.
 // If no size is given, the element uses 0×0 (the caller should specify size).
 func Image(id draw.ImageID, opts ...ImageOption) Element {
-	e := imageElement{ImageID: id, Opacity: 1}
+	e := ImageElement{ImageID: id, Opacity: 1}
 	for _, opt := range opts {
 		opt(&e)
 	}
@@ -354,75 +393,75 @@ func Image(id draw.ImageID, opts ...ImageOption) Element {
 // Stack overlays children on top of each other (z-axis, RFC-003 §4.1).
 // First child is the bottom layer, last child is the top layer.
 func Stack(children ...Element) Element {
-	return stackElement{Children: children}
+	return StackElement{Children: children}
 }
 
 // CheckerRect renders a colorful checkerboard pattern of the given size.
 // Useful as a complex background to demonstrate blur/frosted-glass effects.
 func CheckerRect(width, height, cellSize float32) Element {
-	return checkerRectElement{Width: width, Height: height, CellSize: cellSize}
+	return CheckerRectElement{Width: width, Height: height, CellSize: cellSize}
 }
 
 // BlurBox wraps a child and applies a Gaussian blur backdrop effect.
 // Content underneath the BlurBox bounds is blurred at the given radius.
 func BlurBox(radius float32, child Element) Element {
-	return blurBoxElement{Radius: radius, Child: child}
+	return BlurBoxElement{Radius: radius, Child: child}
 }
 
 // ShadowBox draws a soft shadow behind a child element.
 func ShadowBox(shadow draw.Shadow, radius float32, child Element) Element {
-	return shadowBoxElement{Shadow: shadow, Radius: radius, Child: child}
+	return ShadowBoxElement{Shadow: shadow, Radius: radius, Child: child}
 }
 
 // OpacityBox applies a uniform opacity to all child content.
 func OpacityBox(alpha float32, child Element) Element {
-	return opacityBoxElement{Alpha: alpha, Child: child}
+	return OpacityBoxElement{Alpha: alpha, Child: child}
 }
 
 // FrostedGlass renders a frosted-glass effect: backdrop blur + semi-transparent tint overlay.
 func FrostedGlass(blurRadius float32, tint draw.Color, child Element) Element {
-	return frostedGlassElement{BlurRadius: blurRadius, Tint: tint, Child: child}
+	return FrostedGlassElement{BlurRadius: blurRadius, Tint: tint, Child: child}
 }
 
 // InnerShadowBox draws an inner shadow on top of its child content.
 // The shadow renders inward from the edges of the child's bounds.
 func InnerShadowBox(shadow draw.Shadow, radius float32, child Element) Element {
 	shadow.Inset = true
-	return innerShadowBoxElement{Shadow: shadow, Radius: radius, Child: child}
+	return InnerShadowBoxElement{Shadow: shadow, Radius: radius, Child: child}
 }
 
 // ElevationBox renders a hover-responsive shadow behind its child.
 // The shadow interpolates from rest → hover on mouse enter, and hover → rest on leave.
 // If onClick is non-nil, it is invoked on click.
 func ElevationBox(rest, hover, press draw.Shadow, radius float32, onClick func(), child Element) Element {
-	return elevationBoxElement{Rest: rest, Hover: hover, Press: press, Radius: radius, OnClick: onClick, Child: child}
+	return ElevationBoxElement{Rest: rest, Hover: hover, Press: press, Radius: radius, OnClick: onClick, Child: child}
 }
 
 // ElevationCard is a convenience wrapper around ElevationBox using theme elevation presets.
 // Rest = Low, Hover = High, Press = None.
 func ElevationCard(onClick func(), child Element) Element {
-	return elevationCardElement{OnClick: onClick, Child: child}
+	return ElevationCardElement{OnClick: onClick, Child: child}
 }
 
 // TintedBlur is an alias for FrostedGlass with explicit naming for tinted blur effects.
 func TintedBlur(blurRadius float32, tint draw.Color, child Element) Element {
-	return frostedGlassElement{BlurRadius: blurRadius, Tint: tint, Child: child}
+	return FrostedGlassElement{BlurRadius: blurRadius, Tint: tint, Child: child}
 }
 
 // Vibrancy applies a system-accent-tinted blur to its child's backdrop.
 // tintAlpha controls the opacity of the accent tint overlay (0.0–1.0).
 func Vibrancy(tintAlpha float32, child Element) Element {
-	return vibrancyElement{TintAlpha: tintAlpha, Child: child}
+	return VibrancyElement{TintAlpha: tintAlpha, Child: child}
 }
 
 // GlowBox renders a soft outer glow around its child using the shadow pipeline.
 func GlowBox(color draw.Color, blurRadius, radius float32, child Element) Element {
-	return glowBoxElement{Color: color, BlurRadius: blurRadius, Radius: radius, Child: child}
+	return GlowBoxElement{Color: color, BlurRadius: blurRadius, Radius: radius, Child: child}
 }
 
 // Glow is a convenience GlowBox using the theme's accent color.
 func Glow(blurRadius, radius float32, child Element) Element {
-	return glowBoxElement{BlurRadius: blurRadius, Radius: radius, Child: child}
+	return GlowBoxElement{BlurRadius: blurRadius, Radius: radius, Child: child}
 }
 
 // ScrollView constrains a child to a maximum height, clipping overflow
@@ -433,7 +472,7 @@ func ScrollView(child Element, maxHeight float32, state ...*ScrollState) Element
 	if len(state) > 0 {
 		s = state[0]
 	}
-	return scrollViewElement{Child: child, MaxHeight: maxHeight, State: s}
+	return ScrollViewElement{Child: child, MaxHeight: maxHeight, State: s}
 }
 
 // ── External Surfaces (RFC §8) ───────────────────────────────────
@@ -442,30 +481,30 @@ func ScrollView(child Element, maxHeight float32, state ...*ScrollState) Element
 // SurfaceProvider (RFC §8). The width and height specify the desired size
 // in dp. If provider is nil, a placeholder rectangle is rendered.
 func Surface(id SurfaceID, provider SurfaceProvider, width, height float32) Element {
-	return surfaceElement{ID: id, Provider: provider, Width: width, Height: height}
+	return SurfaceElement{ID: id, Provider: provider, Width: width, Height: height}
 }
 
 // ── Tier 2 Constructors (RFC-003 §4.1) ──────────────────────────
 
 // Checkbox creates a boolean toggle with a label.
 func Checkbox(label string, checked bool, onToggle func(bool)) Element {
-	return checkboxElement{Label: label, Checked: checked, OnToggle: onToggle}
+	return CheckboxElement{Label: label, Checked: checked, OnToggle: onToggle}
 }
 
 // CheckboxDisabled creates a disabled checkbox (RFC-008 §9.6).
 func CheckboxDisabled(label string, checked bool) Element {
-	return checkboxElement{Label: label, Checked: checked, Disabled: true}
+	return CheckboxElement{Label: label, Checked: checked, Disabled: true}
 }
 
 // Radio creates a single-choice option. Group multiple Radio elements
 // in a Column; the user's model owns which option is selected.
 func Radio(label string, selected bool, onSelect func()) Element {
-	return radioElement{Label: label, Selected: selected, OnSelect: onSelect}
+	return RadioElement{Label: label, Selected: selected, OnSelect: onSelect}
 }
 
 // RadioDisabled creates a disabled radio button (RFC-008 §9.6).
 func RadioDisabled(label string, selected bool) Element {
-	return radioElement{Label: label, Selected: selected, Disabled: true}
+	return RadioElement{Label: label, Selected: selected, Disabled: true}
 }
 
 // Toggle creates a switch widget. An optional ToggleState pointer enables
@@ -475,27 +514,27 @@ func Toggle(on bool, onToggle func(bool), state ...*ToggleState) Element {
 	if len(state) > 0 {
 		s = state[0]
 	}
-	return toggleElement{On: on, OnToggle: onToggle, State: s}
+	return ToggleElement{On: on, OnToggle: onToggle, State: s}
 }
 
 // ToggleDisabled creates a disabled toggle (RFC-008 §9.6).
 func ToggleDisabled(on bool) Element {
-	return toggleElement{On: on, Disabled: true}
+	return ToggleElement{On: on, Disabled: true}
 }
 
 // Slider creates a continuous value selector (0.0–1.0).
 func Slider(value float32, onChange func(float32)) Element {
-	return sliderElement{Value: value, OnChange: onChange}
+	return SliderElement{Value: value, OnChange: onChange}
 }
 
 // SliderDisabled creates a disabled slider (RFC-008 §9.6).
 func SliderDisabled(value float32) Element {
-	return sliderElement{Value: value, Disabled: true}
+	return SliderElement{Value: value, Disabled: true}
 }
 
 // ProgressBar creates a determinate progress indicator (0.0–1.0).
 func ProgressBar(value float32) Element {
-	return progressBarElement{Value: value}
+	return ProgressBarElement{Value: value}
 }
 
 // ProgressBarIndeterminate creates an indeterminate progress indicator.
@@ -506,13 +545,13 @@ func ProgressBarIndeterminate(phase ...float32) Element {
 	if len(phase) > 0 {
 		p = phase[0]
 	}
-	return progressBarElement{Indeterminate: true, Phase: p}
+	return ProgressBarElement{Indeterminate: true, Phase: p}
 }
 
 // TextField creates a text input field. If onChange is non-nil and the
 // field is focused, keyboard input will call onChange with the updated value.
 func TextField(value string, placeholder string, opts ...TextFieldOption) Element {
-	el := textFieldElement{Value: value, Placeholder: placeholder}
+	el := TextFieldElement{Value: value, Placeholder: placeholder}
 	for _, opt := range opts {
 		opt(&el)
 	}
@@ -520,27 +559,27 @@ func TextField(value string, placeholder string, opts ...TextFieldOption) Elemen
 }
 
 // TextFieldOption configures a TextField.
-type TextFieldOption func(*textFieldElement)
+type TextFieldOption func(*TextFieldElement)
 
 // WithOnChange sets the callback invoked when the text value changes.
 func WithOnChange(fn func(string)) TextFieldOption {
-	return func(e *textFieldElement) { e.OnChange = fn }
+	return func(e *TextFieldElement) { e.OnChange = fn }
 }
 
 // WithFocusState links the TextField to a FocusManager for keyboard input.
 // Deprecated: use WithFocus instead.
 func WithFocusState(fs *FocusManager) TextFieldOption {
-	return func(e *textFieldElement) { e.Focus = fs }
+	return func(e *TextFieldElement) { e.Focus = fs }
 }
 
 // WithFocus links the TextField to a FocusManager for keyboard input.
 func WithFocus(fm *FocusManager) TextFieldOption {
-	return func(e *textFieldElement) { e.Focus = fm }
+	return func(e *TextFieldElement) { e.Focus = fm }
 }
 
 // WithTextFieldDisabled marks the TextField as disabled (RFC-008 §9.6).
 func WithTextFieldDisabled() TextFieldOption {
-	return func(e *textFieldElement) { e.Disabled = true }
+	return func(e *TextFieldElement) { e.Disabled = true }
 }
 
 // SelectState holds the open/closed state for a Select dropdown.
@@ -549,28 +588,28 @@ type SelectState struct {
 }
 
 // SelectOption configures a Select element.
-type SelectOption func(*selectElement)
+type SelectOption func(*SelectElement)
 
 // WithSelectState links the Select to a SelectState for dropdown behaviour.
 func WithSelectState(s *SelectState) SelectOption {
-	return func(e *selectElement) { e.State = s }
+	return func(e *SelectElement) { e.State = s }
 }
 
 // WithOnSelect sets the callback invoked when an option is chosen.
 func WithOnSelect(fn func(string)) SelectOption {
-	return func(e *selectElement) { e.OnSelect = fn }
+	return func(e *SelectElement) { e.OnSelect = fn }
 }
 
 // WithSelectDisabled marks the Select as disabled (RFC-008 §9.6).
 func WithSelectDisabled() SelectOption {
-	return func(e *selectElement) { e.Disabled = true }
+	return func(e *SelectElement) { e.Disabled = true }
 }
 
 // Select creates a dropdown selector. When configured with
 // WithSelectState and WithOnSelect, it supports interactive
 // open/close and item selection via an overlay dropdown.
 func Select(value string, options []string, opts ...SelectOption) Element {
-	el := selectElement{Value: value, Options: options}
+	el := SelectElement{Value: value, Options: options}
 	for _, o := range opts {
 		o(&el)
 	}
@@ -580,18 +619,18 @@ func Select(value string, options []string, opts ...SelectOption) Element {
 // Component creates an element that wraps a Widget. The Reconciler
 // expands it by calling Widget.Render with persisted state.
 func Component(w Widget) Element {
-	return widgetElement{W: w}
+	return WidgetElement{W: w}
 }
 
 // ComponentWithKey creates a keyed widget element. The key stabilises the
 // widget's UID across re-ordering within the same parent.
 func ComponentWithKey(key string, w Widget) Element {
-	return widgetElement{W: w, Key: key}
+	return WidgetElement{W: w, Key: key}
 }
 
 // Padding adds inner spacing around a single child (RFC-002 §4.5).
 func Padding(insets draw.Insets, child Element) Element {
-	return paddingElement{Insets: insets, Child: child}
+	return PaddingElement{Insets: insets, Child: child}
 }
 
 // SizedBox enforces a specific size on a child. If child is omitted,
@@ -601,7 +640,7 @@ func SizedBox(width, height float32, child ...Element) Element {
 	if len(child) > 0 {
 		c = child[0]
 	}
-	return sizedBoxElement{Width: width, Height: height, Child: c}
+	return SizedBoxElement{Width: width, Height: height, Child: c}
 }
 
 // Expanded takes all available space on the main axis within a Flex
@@ -611,21 +650,21 @@ func Expanded(child Element, flex ...float32) Element {
 	if len(flex) > 0 {
 		grow = flex[0]
 	}
-	return expandedElement{Child: child, Grow: grow}
+	return ExpandedElement{Child: child, Grow: grow}
 }
 
 // ── Concrete element structs ─────────────────────────────────────
 
-type emptyElement struct{}
+type EmptyElement struct{}
 
-func (emptyElement) isElement() {}
+func (EmptyElement) isElement() {}
 
-type textElement struct {
+type TextElement struct {
 	Content string
 	Style   draw.TextStyle // zero value = use tokens.Typography.Body
 }
 
-func (textElement) isElement() {}
+func (TextElement) isElement() {}
 
 // ButtonVariant controls the visual style of a button.
 type ButtonVariant int
@@ -641,14 +680,14 @@ const (
 	ButtonTonal
 )
 
-type buttonElement struct {
+type ButtonElement struct {
 	Content  Element
 	OnClick  func()
 	Variant  ButtonVariant
 	Disabled bool
 }
 
-func (buttonElement) isElement() {}
+func (ButtonElement) isElement() {}
 
 // SegmentedItem describes one segment in a SegmentedButtons group.
 type SegmentedItem struct {
@@ -657,12 +696,12 @@ type SegmentedItem struct {
 	OnClick func()
 }
 
-type segmentedButtonsElement struct {
+type SegmentedButtonsElement struct {
 	Items    []SegmentedItem
 	Selected int
 }
 
-func (segmentedButtonsElement) isElement() {}
+func (SegmentedButtonsElement) isElement() {}
 
 // SplitButtonItem describes a dropdown menu entry for SplitButton.
 type SplitButtonItem struct {
@@ -670,57 +709,57 @@ type SplitButtonItem struct {
 	OnClick func()
 }
 
-type splitButtonElement struct {
+type SplitButtonElement struct {
 	Label     string
 	OnClick   func()
 	MenuItems []SplitButtonItem
 	OnMenu    func() // fires when dropdown arrow is clicked
 }
 
-func (splitButtonElement) isElement() {}
+func (SplitButtonElement) isElement() {}
 
-type iconButtonElement struct {
+type IconButtonElement struct {
 	Icon    string
 	OnClick func()
 	Variant ButtonVariant
 	Size    float32 // 0 = default
 }
 
-func (iconButtonElement) isElement() {}
+func (IconButtonElement) isElement() {}
 
-type boxElement struct {
+type BoxElement struct {
 	Axis     LayoutAxis
 	Children []Element
 }
 
-func (boxElement) isElement() {}
+func (BoxElement) isElement() {}
 
-type keyedElement struct {
+type KeyedElement struct {
 	Key   string
 	Child Element
 }
 
-func (keyedElement) isElement() {}
+func (KeyedElement) isElement() {}
 
-type dividerElement struct{}
+type DividerElement struct{}
 
-func (dividerElement) isElement() {}
+func (DividerElement) isElement() {}
 
-// gradientRectElement renders a gradient-filled rectangle of a fixed size.
-type gradientRectElement struct {
+// GradientRectElement renders a gradient-filled rectangle of a fixed size.
+type GradientRectElement struct {
 	Width, Height float32
 	Radius        float32
 	Paint         draw.Paint
 }
 
-func (gradientRectElement) isElement() {}
+func (GradientRectElement) isElement() {}
 
-type spacerElement struct{ Size float32 }
+type SpacerElement struct{ Size float32 }
 
-func (spacerElement) isElement() {}
+func (SpacerElement) isElement() {}
 
-// imageElement renders a loaded image at a specified or natural size.
-type imageElement struct {
+// ImageElement renders a loaded image at a specified or natural size.
+type ImageElement struct {
 	ImageID   draw.ImageID
 	Width     float32        // dp; 0 = use natural width
 	Height    float32        // dp; 0 = use natural height
@@ -729,64 +768,64 @@ type imageElement struct {
 	Opacity   float32 // 0 = default (1.0)
 }
 
-func (imageElement) isElement() {}
+func (ImageElement) isElement() {}
 
-type iconElement struct {
+type IconElement struct {
 	Name string
 	Size float32 // 0 = use theme Label size
 }
 
-func (iconElement) isElement() {}
+func (IconElement) isElement() {}
 
-type stackElement struct{ Children []Element }
+type StackElement struct{ Children []Element }
 
-func (stackElement) isElement() {}
+func (StackElement) isElement() {}
 
-type blurBoxElement struct {
+type BlurBoxElement struct {
 	Radius float32
 	Child  Element
 }
 
-func (blurBoxElement) isElement() {}
+func (BlurBoxElement) isElement() {}
 
-type checkerRectElement struct {
+type CheckerRectElement struct {
 	Width, Height, CellSize float32
 }
 
-func (checkerRectElement) isElement() {}
+func (CheckerRectElement) isElement() {}
 
-type shadowBoxElement struct {
+type ShadowBoxElement struct {
 	Shadow draw.Shadow
 	Radius float32
 	Child  Element
 }
 
-func (shadowBoxElement) isElement() {}
+func (ShadowBoxElement) isElement() {}
 
-type opacityBoxElement struct {
+type OpacityBoxElement struct {
 	Alpha float32
 	Child Element
 }
 
-func (opacityBoxElement) isElement() {}
+func (OpacityBoxElement) isElement() {}
 
-type frostedGlassElement struct {
+type FrostedGlassElement struct {
 	BlurRadius float32
 	Tint       draw.Color
 	Child      Element
 }
 
-func (frostedGlassElement) isElement() {}
+func (FrostedGlassElement) isElement() {}
 
-type innerShadowBoxElement struct {
+type InnerShadowBoxElement struct {
 	Shadow draw.Shadow
 	Radius float32
 	Child  Element
 }
 
-func (innerShadowBoxElement) isElement() {}
+func (InnerShadowBoxElement) isElement() {}
 
-type elevationBoxElement struct {
+type ElevationBoxElement struct {
 	Rest    draw.Shadow
 	Hover   draw.Shadow
 	Press   draw.Shadow
@@ -795,85 +834,85 @@ type elevationBoxElement struct {
 	Child   Element
 }
 
-func (elevationBoxElement) isElement() {}
+func (ElevationBoxElement) isElement() {}
 
-type elevationCardElement struct {
+type ElevationCardElement struct {
 	OnClick func()
 	Child   Element
 }
 
-func (elevationCardElement) isElement() {}
+func (ElevationCardElement) isElement() {}
 
-type vibrancyElement struct {
+type VibrancyElement struct {
 	TintAlpha float32
 	Child     Element
 }
 
-func (vibrancyElement) isElement() {}
+func (VibrancyElement) isElement() {}
 
-type scrollViewElement struct {
+type ScrollViewElement struct {
 	Child     Element
 	MaxHeight float32
 	State     *ScrollState // optional; drives vertical offset
 }
 
-func (scrollViewElement) isElement() {}
+func (ScrollViewElement) isElement() {}
 
-type surfaceElement struct {
+type SurfaceElement struct {
 	ID       SurfaceID
 	Provider SurfaceProvider
 	Width    float32
 	Height   float32
 }
 
-func (surfaceElement) isElement() {}
+func (SurfaceElement) isElement() {}
 
-type paddingElement struct {
+type PaddingElement struct {
 	Insets draw.Insets
 	Child  Element
 }
 
-func (paddingElement) isElement() {}
+func (PaddingElement) isElement() {}
 
-type sizedBoxElement struct {
+type SizedBoxElement struct {
 	Width, Height float32
 	Child         Element // nil = empty spacer
 }
 
-func (sizedBoxElement) isElement() {}
+func (SizedBoxElement) isElement() {}
 
-type expandedElement struct {
+type ExpandedElement struct {
 	Child Element
 	Grow  float32
 }
 
-func (expandedElement) isElement() {}
+func (ExpandedElement) isElement() {}
 
 // ── Tier 2 element structs ──────────────────────────────────────
 
 // ── Tier 3 element structs ──────────────────────────────────────
 
-type glowBoxElement struct {
+type GlowBoxElement struct {
 	Color      draw.Color
 	BlurRadius float32
 	Radius     float32
 	Child      Element
 }
 
-func (glowBoxElement) isElement() {}
+func (GlowBoxElement) isElement() {}
 
-type cardElement struct {
+type CardElement struct {
 	Child Element
 }
 
-func (cardElement) isElement() {}
+func (CardElement) isElement() {}
 
 // Card creates a container with elevated surface, border, and card radius.
 func Card(children ...Element) Element {
 	if len(children) == 1 {
-		return cardElement{Child: children[0]}
+		return CardElement{Child: children[0]}
 	}
-	return cardElement{Child: Column(children...)}
+	return CardElement{Child: Column(children...)}
 }
 
 // TabItem defines a single tab with an arbitrary header Element and content.
@@ -882,17 +921,17 @@ type TabItem struct {
 	Content Element
 }
 
-type tabsElement struct {
+type TabsElement struct {
 	Items    []TabItem
 	Selected int
 	OnSelect func(int)
 }
 
-func (tabsElement) isElement() {}
+func (TabsElement) isElement() {}
 
 // Tabs creates a tabbed container with arbitrary Element headers.
 func Tabs(items []TabItem, selected int, onSelect func(int)) Element {
-	return tabsElement{Items: items, Selected: selected, OnSelect: onSelect}
+	return TabsElement{Items: items, Selected: selected, OnSelect: onSelect}
 }
 
 // AccordionSection defines a collapsible section with header and content.
@@ -911,65 +950,65 @@ func NewAccordionState() *AccordionState {
 	return &AccordionState{Expanded: make(map[int]bool)}
 }
 
-type accordionElement struct {
+type AccordionElement struct {
 	Sections []AccordionSection
 	State    *AccordionState
 }
 
-func (accordionElement) isElement() {}
+func (AccordionElement) isElement() {}
 
 // Accordion creates a collapsible section container.
 func Accordion(sections []AccordionSection, state *AccordionState) Element {
-	return accordionElement{Sections: sections, State: state}
+	return AccordionElement{Sections: sections, State: state}
 }
 
-type tooltipElement struct {
+type TooltipElement struct {
 	Trigger Element
 	Content Element // arbitrary widget content
 	Visible bool    // controlled by hover state or explicit flag
 	Blur    bool    // optional frosted-glass backdrop (RFC-008 §11.5)
 }
 
-func (tooltipElement) isElement() {}
+func (TooltipElement) isElement() {}
 
 // Tooltip creates an element with a hover popup. Content is arbitrary.
 func Tooltip(trigger, content Element) Element {
-	return tooltipElement{Trigger: trigger, Content: content}
+	return TooltipElement{Trigger: trigger, Content: content}
 }
 
 // TooltipVisible creates a tooltip with explicit visibility control.
 func TooltipVisible(trigger, content Element, visible bool) Element {
-	return tooltipElement{Trigger: trigger, Content: content, Visible: visible}
+	return TooltipElement{Trigger: trigger, Content: content, Visible: visible}
 }
 
 // TooltipBlur creates a tooltip with frosted-glass backdrop (RFC-008 §11.5).
 func TooltipBlur(trigger, content Element) Element {
-	return tooltipElement{Trigger: trigger, Content: content, Blur: true}
+	return TooltipElement{Trigger: trigger, Content: content, Blur: true}
 }
 
-type badgeElement struct {
+type BadgeElement struct {
 	Content Element
 	Color   draw.Color // optional custom color; zero = Accent.Primary
 }
 
-func (badgeElement) isElement() {}
+func (BadgeElement) isElement() {}
 
 // Badge creates a small pill-shaped indicator with arbitrary Element content.
 func Badge(content Element) Element {
-	return badgeElement{Content: content}
+	return BadgeElement{Content: content}
 }
 
 // BadgeText is a convenience for text-only badges.
 func BadgeText(label string) Element {
-	return badgeElement{Content: Text(label)}
+	return BadgeElement{Content: Text(label)}
 }
 
 // BadgeColor creates a badge with a custom background color.
 func BadgeColor(content Element, color draw.Color) Element {
-	return badgeElement{Content: content, Color: color}
+	return BadgeElement{Content: content, Color: color}
 }
 
-type chipElement struct {
+type ChipElement struct {
 	Label     Element
 	Selected  bool
 	OnClick   func()
@@ -977,21 +1016,21 @@ type chipElement struct {
 	Disabled  bool
 }
 
-func (chipElement) isElement() {}
+func (ChipElement) isElement() {}
 
 // Chip creates a compact selectable element with arbitrary label content.
 func Chip(label Element, selected bool, onClick func()) Element {
-	return chipElement{Label: label, Selected: selected, OnClick: onClick}
+	return ChipElement{Label: label, Selected: selected, OnClick: onClick}
 }
 
 // ChipDismissible creates a dismissible chip with a "×" button.
 func ChipDismissible(label Element, selected bool, onClick, onDismiss func()) Element {
-	return chipElement{Label: label, Selected: selected, OnClick: onClick, OnDismiss: onDismiss}
+	return ChipElement{Label: label, Selected: selected, OnClick: onClick, OnDismiss: onDismiss}
 }
 
 // ChipDisabled creates a disabled chip (RFC-008 §9.6).
 func ChipDisabled(label Element, selected bool) Element {
-	return chipElement{Label: label, Selected: selected, Disabled: true}
+	return ChipElement{Label: label, Selected: selected, Disabled: true}
 }
 
 // MenuItem defines an item in a MenuBar or ContextMenu.
@@ -1011,19 +1050,19 @@ func NewMenuBarState() *MenuBarState {
 	return &MenuBarState{OpenIndex: -1}
 }
 
-type menuBarElement struct {
+type MenuBarElement struct {
 	Items []MenuItem
 	State *MenuBarState
 }
 
-func (menuBarElement) isElement() {}
+func (MenuBarElement) isElement() {}
 
 // MenuBar creates a horizontal menu bar with dropdown submenus.
 func MenuBar(items []MenuItem, state *MenuBarState) Element {
-	return menuBarElement{Items: items, State: state}
+	return MenuBarElement{Items: items, State: state}
 }
 
-type contextMenuElement struct {
+type ContextMenuElement struct {
 	Items   []MenuItem
 	Visible bool
 	PosX    float32
@@ -1031,64 +1070,64 @@ type contextMenuElement struct {
 	Blur    bool // optional frosted-glass backdrop (RFC-008 §11.5)
 }
 
-func (contextMenuElement) isElement() {}
+func (ContextMenuElement) isElement() {}
 
 // ContextMenu creates a floating context menu at the given position.
 func ContextMenu(items []MenuItem, visible bool, x, y float32) Element {
-	return contextMenuElement{Items: items, Visible: visible, PosX: x, PosY: y}
+	return ContextMenuElement{Items: items, Visible: visible, PosX: x, PosY: y}
 }
 
 // ContextMenuBlur creates a context menu with frosted-glass backdrop (RFC-008 §11.5).
 func ContextMenuBlur(items []MenuItem, visible bool, x, y float32) Element {
-	return contextMenuElement{Items: items, Visible: visible, PosX: x, PosY: y, Blur: true}
+	return ContextMenuElement{Items: items, Visible: visible, PosX: x, PosY: y, Blur: true}
 }
 
 // ── Tier 2 element structs (continued) ──────────────────────────
 
-type checkboxElement struct {
+type CheckboxElement struct {
 	Label    string
 	Checked  bool
 	OnToggle func(bool)
 	Disabled bool
 }
 
-func (checkboxElement) isElement() {}
+func (CheckboxElement) isElement() {}
 
-type radioElement struct {
+type RadioElement struct {
 	Label    string
 	Selected bool
 	OnSelect func()
 	Disabled bool
 }
 
-func (radioElement) isElement() {}
+func (RadioElement) isElement() {}
 
-type toggleElement struct {
+type ToggleElement struct {
 	On       bool
 	OnToggle func(bool)
 	State    *ToggleState
 	Disabled bool
 }
 
-func (toggleElement) isElement() {}
+func (ToggleElement) isElement() {}
 
-type sliderElement struct {
+type SliderElement struct {
 	Value    float32
 	OnChange func(float32)
 	Disabled bool
 }
 
-func (sliderElement) isElement() {}
+func (SliderElement) isElement() {}
 
-type progressBarElement struct {
+type ProgressBarElement struct {
 	Value         float32
 	Indeterminate bool
 	Phase         float32 // 0.0–1.0, drives indeterminate animation position
 }
 
-func (progressBarElement) isElement() {}
+func (ProgressBarElement) isElement() {}
 
-type textFieldElement struct {
+type TextFieldElement struct {
 	Value       string
 	Placeholder string
 	OnChange    func(string)
@@ -1097,9 +1136,9 @@ type textFieldElement struct {
 	Disabled    bool
 }
 
-func (textFieldElement) isElement() {}
+func (TextFieldElement) isElement() {}
 
-type selectElement struct {
+type SelectElement struct {
 	Value    string
 	Options  []string
 	State    *SelectState
@@ -1107,43 +1146,43 @@ type selectElement struct {
 	Disabled bool
 }
 
-func (selectElement) isElement() {}
+func (SelectElement) isElement() {}
 
-// widgetElement wraps a Widget for embedding in element trees.
+// WidgetElement wraps a Widget for embedding in element trees.
 // It is expanded by the Reconciler before layout.
-// themedElement overrides the theme for its child subtree (scoped theme).
+// ThemedElement overrides the theme for its child subtree (scoped theme).
 // The Reconciler replaces the active theme before resolving children,
 // so all descendants inherit the overridden tokens and draw functions.
-type themedElement struct {
+type ThemedElement struct {
 	Theme    theme.Theme
 	Children []Element
 }
 
-func (themedElement) isElement() {}
+func (ThemedElement) isElement() {}
 
 // Themed creates a scoped theme override. All children inherit the given
 // theme instead of the ambient one. Combine with theme.Override() to
 // create partial overrides (e.g. danger-colored buttons).
 func Themed(th theme.Theme, children ...Element) Element {
-	return themedElement{Theme: th, Children: children}
+	return ThemedElement{Theme: th, Children: children}
 }
 
-type widgetElement struct {
+type WidgetElement struct {
 	W   Widget
 	Key string
 }
 
-func (widgetElement) isElement() {}
+func (WidgetElement) isElement() {}
 
-// widgetBoundsElement wraps a widget's resolved element subtree,
+// WidgetBoundsElement wraps a widget's resolved element subtree,
 // carrying the widget UID so that layout can register screen bounds
 // for event dispatching (RFC-002 §2.6).
-type widgetBoundsElement struct {
+type WidgetBoundsElement struct {
 	WidgetUID UID
 	Child     Element
 }
 
-func (widgetBoundsElement) isElement() {}
+func (WidgetBoundsElement) isElement() {}
 
 // ScrollState tracks scroll offset for ScrollView elements.
 type ScrollState struct {
@@ -1198,10 +1237,10 @@ type ToggleState struct {
 // NewToggleState creates a ready-to-use ToggleState.
 func NewToggleState() *ToggleState { return &ToggleState{} }
 
-// update returns the current animation progress [0,1] and starts a
+// Update returns the current animation progress [0,1] and starts a
 // new transition if the on state has changed. Duration and easing come
 // from the theme's MotionSpec (RFC-008 §9.5).
-func (ts *ToggleState) update(on bool, de theme.DurationEasing) float32 {
+func (ts *ToggleState) Update(on bool, de theme.DurationEasing) float32 {
 	if !ts.inited {
 		if on {
 			ts.thumbPos.SetImmediate(1.0)
@@ -1291,24 +1330,25 @@ func (h *HoverState) ensureSize(n int) {
 
 // ── Overlay System (Tier 3) ──────────────────────────────────────
 
-// overlayEntry is a deferred render operation drawn after the main tree.
+// OverlayEntry is a deferred render operation drawn after the main tree.
 // Used by Tooltip, ContextMenu, and MenuBar for correct Z-order.
-type overlayEntry struct {
+type OverlayEntry struct {
 	Render    func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor)
 	Animation OverlayAnimation     // enter/exit animation type
 	Duration  theme.DurationEasing // animation timing (RFC-008 §9.5)
 }
 
-// overlayStack collects overlay entries during layout.
-type overlayStack struct {
-	entries []overlayEntry
-	windowW int
-	windowH int
+// OverlayStack collects overlay entries during layout.
+type OverlayStack struct {
+	Entries []OverlayEntry
+	WindowW int
+	WindowH int
 }
 
-func (s *overlayStack) push(entry overlayEntry) {
+// Push adds an overlay entry to the stack.
+func (s *OverlayStack) Push(entry OverlayEntry) {
 	if s != nil {
-		s.entries = append(s.entries, entry)
+		s.Entries = append(s.Entries, entry)
 	}
 }
 
@@ -1316,19 +1356,34 @@ func (s *overlayStack) push(entry overlayEntry) {
 // BuildScene converts an Element tree into draw commands via the
 // Canvas interface (RFC §6).
 
-type bounds struct{ X, Y, W, H, Baseline int }
+// Bounds represents the computed position and size of an element after layout.
+type Bounds struct{ X, Y, W, H, Baseline int }
 
 const (
-	framePadding    = 24
-	columnGap       = 16
-	rowGap          = 12
-	buttonPadX      = 18
-	buttonPadY      = 12
-	buttonBorder    = 1
-	iconButtonPad   = 10
-	splitArrowWidth = 36
-	segmentPadX     = 16
-	segmentPadY     = 10
+	FramePadding    = 24
+	ColumnGap       = 16
+	RowGap          = 12
+	ButtonPadX      = 18
+	ButtonPadY      = 12
+	ButtonBorder    = 1
+	IconButtonPad   = 10
+	SplitArrowWidth = 36
+	SegmentPadX     = 16
+	SegmentPadY     = 10
+)
+
+// Keep unexported aliases for backward compatibility within this package.
+const (
+	framePadding    = FramePadding
+	columnGap       = ColumnGap
+	rowGap          = RowGap
+	buttonPadX      = ButtonPadX
+	buttonPadY      = ButtonPadY
+	buttonBorder    = ButtonBorder
+	iconButtonPad   = IconButtonPad
+	splitArrowWidth = SplitArrowWidth
+	segmentPadX     = SegmentPadX
+	segmentPadY     = SegmentPadY
 )
 
 // BuildScene lays out the element tree and paints it to the canvas.
@@ -1356,10 +1411,10 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	}
 
 	tokens := th.Tokens()
-	area := bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
-	var overlays overlayStack
-	overlays.windowW = width
-	overlays.windowH = height
+	area := Bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
+	var overlays OverlayStack
+	overlays.WindowW = width
+	overlays.WindowH = height
 	layoutElement(root, area, canvas, th, tokens, ix, &overlays, focus)
 
 	// Switch canvas to overlay mode so overlay draw commands go to
@@ -1369,7 +1424,7 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 		oms.SetOverlayMode(true)
 	}
 	// Render overlay entries (Tooltip, ContextMenu, etc.) on top of main tree.
-	for _, entry := range overlays.entries {
+	for _, entry := range overlays.Entries {
 		entry.Render(canvas, tokens, ix)
 	}
 	if oms, ok := canvas.(overlayModeSetter); ok {
@@ -1386,25 +1441,31 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	return draw.Scene{}
 }
 
-func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
+func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
 	}
+	// Interface-based dispatch: sub-package element types implement Layouter
+	// and bypass the type switch entirely.
+	if l, ok := el.(Layouter); ok {
+		ctx := &LayoutContext{Area: area, Canvas: canvas, Theme: th, Tokens: tokens, IX: ix, Overlays: overlays, Focus: fs}
+		return l.LayoutSelf(ctx)
+	}
 	switch node := el.(type) {
-	case nil, emptyElement, widgetElement:
-		// widgetElement should be resolved by the Reconciler before layout.
-		return bounds{X: area.X, Y: area.Y}
+	case nil, EmptyElement, WidgetElement:
+		// WidgetElement should be resolved by the Reconciler before layout.
+		return Bounds{X: area.X, Y: area.Y}
 
-	case widgetBoundsElement:
+	case WidgetBoundsElement:
 		// Layout the child subtree. The bounds are tracked so the
 		// EventDispatcher can route mouse events to this widget UID.
 		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 
-	case keyedElement:
+	case KeyedElement:
 		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 
-	case textElement:
+	case TextElement:
 		style := tokens.Typography.Body
 		if node.Style.Size > 0 {
 			style = node.Style
@@ -1413,31 +1474,31 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		w := int(math.Ceil(float64(metrics.Width)))
 		h := int(math.Ceil(float64(metrics.Ascent)))
 		canvas.DrawText(node.Content, draw.Pt(float32(area.X), float32(area.Y)), style, tokens.Colors.Text.Primary)
-		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+		return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
-	case buttonElement:
+	case ButtonElement:
 		return layoutButton(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case iconButtonElement:
+	case IconButtonElement:
 		return layoutIconButton(node, area, canvas, tokens, ix)
 
-	case splitButtonElement:
+	case SplitButtonElement:
 		return layoutSplitButton(node, area, canvas, tokens, ix)
 
-	case segmentedButtonsElement:
+	case SegmentedButtonsElement:
 		return layoutSegmentedButtons(node, area, canvas, tokens, ix)
 
-	case dividerElement:
+	case DividerElement:
 		h := 1
 		canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(h)),
 			draw.SolidPaint(tokens.Colors.Stroke.Divider))
-		return bounds{X: area.X, Y: area.Y, W: area.W, H: h, Baseline: h}
+		return Bounds{X: area.X, Y: area.Y, W: area.W, H: h, Baseline: h}
 
-	case spacerElement:
+	case SpacerElement:
 		s := int(node.Size)
-		return bounds{X: area.X, Y: area.Y, W: s, H: s, Baseline: s}
+		return Bounds{X: area.X, Y: area.Y, W: s, H: s, Baseline: s}
 
-	case gradientRectElement:
+	case GradientRectElement:
 		w := int(node.Width)
 		h := int(node.Height)
 		if w > area.W {
@@ -1452,9 +1513,9 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		} else {
 			canvas.FillRect(r, node.Paint)
 		}
-		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+		return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
-	case imageElement:
+	case ImageElement:
 		w := int(node.Width)
 		h := int(node.Height)
 		if w == 0 {
@@ -1473,7 +1534,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		canvas.DrawImageScaled(node.ImageID, r, node.ScaleMode, draw.ImageOptions{Opacity: node.Opacity})
 		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
-	case iconElement:
+	case IconElement:
 		size := node.Size
 		if size == 0 {
 			size = tokens.Typography.Label.Size * 2
@@ -1493,12 +1554,12 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		offsetX := (float32(cellSize) - metrics.Width) / 2
 		offsetY := (float32(cellSize) - metrics.Ascent) / 2
 		canvas.DrawText(node.Name, draw.Pt(float32(area.X)+offsetX, float32(area.Y)+offsetY), style, tokens.Colors.Text.Primary)
-		return bounds{X: area.X, Y: area.Y, W: cellSize, H: cellSize, Baseline: cellSize}
+		return Bounds{X: area.X, Y: area.Y, W: cellSize, H: cellSize, Baseline: cellSize}
 
-	case stackElement:
+	case StackElement:
 		return layoutStack(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case checkerRectElement:
+	case CheckerRectElement:
 		w := int(node.Width)
 		h := int(node.Height)
 		if w > area.W {
@@ -1536,9 +1597,9 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 				)
 			}
 		}
-		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+		return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
-	case blurBoxElement:
+	case BlurBoxElement:
 		// Layout child first to determine its actual bounds.
 		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 		// Push a tight clip for the child's bounds, then PushBlur captures
@@ -1549,7 +1610,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		canvas.PopClip()
 		return b
 
-	case shadowBoxElement:
+	case ShadowBoxElement:
 		// Draw shadow first (behind content), then layout child on top.
 		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
@@ -1560,16 +1621,16 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		canvas.DrawShadow(r, shadow)
 		return b
 
-	case opacityBoxElement:
+	case OpacityBoxElement:
 		canvas.PushOpacity(node.Alpha)
 		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 		canvas.PopOpacity()
 		return b
 
-	case frostedGlassElement:
+	case FrostedGlassElement:
 		// Frosted glass: blurred backdrop + sharp overlay content.
-		// 1. Measure child with nullCanvas (no drawing) to get bounds.
-		nc := nullCanvas{delegate: canvas}
+		// 1. Measure child with NullCanvas (no drawing) to get bounds.
+		nc := NullCanvas{Delegate: canvas}
 		b := layoutElement(node.Child, area, nc, th, tokens, nil, nil)
 		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
 
@@ -1593,7 +1654,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		}
 		return b
 
-	case innerShadowBoxElement:
+	case InnerShadowBoxElement:
 		// Layout child first, then draw inner shadow ON TOP of child content.
 		// The GPU renders shadows before rects, so we must emit the inner
 		// shadow into the overlay pass — otherwise the child's rect covers it.
@@ -1614,7 +1675,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		}
 		return b
 
-	case elevationBoxElement:
+	case ElevationBoxElement:
 		// Layout child, register hover, interpolate shadow.
 		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
@@ -1626,7 +1687,7 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		canvas.DrawShadow(r, shadow)
 		return b
 
-	case elevationCardElement:
+	case ElevationCardElement:
 		// Convenience: uses theme elevation presets (Low → High → None).
 		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
@@ -1635,14 +1696,14 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		canvas.DrawShadow(r, shadow)
 		return b
 
-	case vibrancyElement:
-		// Vibrancy: accent-tinted blur using frostedGlassElement under the hood.
+	case VibrancyElement:
+		// Vibrancy: accent-tinted blur using FrostedGlassElement under the hood.
 		tint := tokens.Colors.Accent.Primary
 		tint.A = node.TintAlpha
-		fg := frostedGlassElement{BlurRadius: 20, Tint: tint, Child: node.Child}
+		fg := FrostedGlassElement{BlurRadius: 20, Tint: tint, Child: node.Child}
 		return layoutElement(fg, area, canvas, th, tokens, ix, overlays, fs)
 
-	case glowBoxElement:
+	case GlowBoxElement:
 		b := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 		r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
 		glowColor := node.Color
@@ -1657,101 +1718,101 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		})
 		return b
 
-	case scrollViewElement:
+	case ScrollViewElement:
 		return layoutScrollView(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case surfaceElement:
+	case SurfaceElement:
 		return layoutSurface(node, area, canvas, tokens, ix)
 
-	case themedElement:
+	case ThemedElement:
 		// Switch theme and tokens for this subtree.
 		subTh := node.Theme
 		subTokens := subTh.Tokens()
-		box := boxElement{Axis: AxisColumn, Children: node.Children}
+		box := BoxElement{Axis: AxisColumn, Children: node.Children}
 		return layoutBox(box, area, canvas, subTh, subTokens, ix, overlays, fs)
 
-	case boxElement:
+	case BoxElement:
 		return layoutBox(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case paddingElement:
+	case PaddingElement:
 		return layoutPadding(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case sizedBoxElement:
+	case SizedBoxElement:
 		return layoutSizedBox(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case expandedElement:
+	case ExpandedElement:
 		// Outside a Flex context, Expanded passes through to its child.
 		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
 
-	case flexElement:
+	case FlexElement:
 		return layoutFlex(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case gridElement:
+	case GridElement:
 		return layoutGrid(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case virtualListElement:
+	case VirtualListElement:
 		return layoutVirtualList(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case treeElement:
+	case TreeElement:
 		return layoutTree(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case richTextElement:
+	case RichTextElement:
 		return layoutRichText(node, area, canvas, th, tokens)
 
 	// Tier 2 widgets
-	case checkboxElement:
+	case CheckboxElement:
 		return layoutCheckbox(node, area, canvas, th, tokens, ix, fs)
-	case radioElement:
+	case RadioElement:
 		return layoutRadio(node, area, canvas, th, tokens, ix, fs)
-	case toggleElement:
+	case ToggleElement:
 		return layoutToggle(node, area, canvas, th, tokens, ix, fs)
-	case sliderElement:
+	case SliderElement:
 		return layoutSlider(node, area, canvas, th, tokens, ix, fs)
-	case progressBarElement:
+	case ProgressBarElement:
 		return layoutProgressBar(node, area, canvas, th, tokens)
-	case textFieldElement:
+	case TextFieldElement:
 		return layoutTextField(node, area, canvas, th, tokens, ix, fs)
-	case selectElement:
+	case SelectElement:
 		return layoutSelect(node, area, canvas, th, tokens, ix, overlays, fs)
 
 	// Tier 3 widgets
-	case cardElement:
+	case CardElement:
 		return layoutCard(node, area, canvas, th, tokens, ix, overlays, fs)
-	case tabsElement:
+	case TabsElement:
 		return layoutTabs(node, area, canvas, th, tokens, ix, overlays, fs)
-	case accordionElement:
+	case AccordionElement:
 		return layoutAccordion(node, area, canvas, th, tokens, ix, overlays, fs)
-	case tooltipElement:
+	case TooltipElement:
 		return layoutTooltip(node, area, canvas, th, tokens, ix, overlays, fs)
-	case badgeElement:
+	case BadgeElement:
 		return layoutBadge(node, area, canvas, th, tokens, ix, overlays, fs)
-	case chipElement:
+	case ChipElement:
 		return layoutChip(node, area, canvas, th, tokens, ix, overlays, fs)
-	case menuBarElement:
+	case MenuBarElement:
 		return layoutMenuBar(node, area, canvas, th, tokens, ix, overlays, fs)
-	case contextMenuElement:
+	case ContextMenuElement:
 		return layoutContextMenu(node, area, canvas, th, tokens, ix, overlays, fs)
-	case splitViewElement:
+	case SplitViewElement:
 		return layoutSplitView(node, area, canvas, th, tokens, ix, overlays, fs)
 	case Overlay:
 		return layoutOverlay(node, area, canvas, th, tokens, ix, overlays, fs)
 
-	case customLayoutElement:
+	case CustomLayoutElement:
 		return layoutCustom(node, area, canvas, th, tokens, ix, overlays, fs)
 
 	default:
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 }
 
 // layoutCustom implements the custom layout protocol (RFC-002 §4.3).
 // It delegates measurement and placement to the user-provided Layout.
-func layoutCustom(node customLayoutElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, fs *FocusManager) bounds {
+func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, fs *FocusManager) Bounds {
 	if node.Layout == nil || len(node.Children) == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 
 	// Track placements: child index → offset.
 	type placement struct {
@@ -1760,16 +1821,16 @@ func layoutCustom(node customLayoutElement, area bounds, canvas draw.Canvas, th 
 	}
 	placements := make([]placement, len(node.Children))
 
-	// Measure callback: layout children with nullCanvas to get their size.
+	// Measure callback: layout children with NullCanvas to get their size.
 	measureFn := func(child Element, c Constraints) Size {
-		measureArea := bounds{X: 0, Y: 0, W: int(c.MaxWidth), H: int(c.MaxHeight)}
+		measureArea := Bounds{X: 0, Y: 0, W: int(c.MaxWidth), H: int(c.MaxHeight)}
 		cb := layoutElement(child, measureArea, nc, th, tokens, nil, nil)
 		return Size{Width: float32(cb.W), Height: float32(cb.H)}
 	}
 
 	// Place callback: record offset for later painting.
 	// We use treeEqual instead of == to avoid panics on uncomparable
-	// element types (e.g. buttonElement contains func fields).
+	// element types (e.g. ButtonElement contains func fields).
 	placeFn := func(child Element, offset draw.Point) {
 		for i, ch := range node.Children {
 			if treeEqual(ch, child) {
@@ -1798,7 +1859,7 @@ func layoutCustom(node customLayoutElement, area bounds, canvas draw.Canvas, th 
 		if !p.placed {
 			continue
 		}
-		childArea := bounds{
+		childArea := Bounds{
 			X: area.X + int(p.offset.X),
 			Y: area.Y + int(p.offset.Y),
 			W: area.W,
@@ -1824,11 +1885,11 @@ func layoutCustom(node customLayoutElement, area bounds, canvas draw.Canvas, th 
 		h = maxH
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-// hoverHighlight returns a lightened version of c for hover feedback.
-func hoverHighlight(c draw.Color) draw.Color {
+// HoverHighlight returns a lightened version of c for hover feedback.
+func HoverHighlight(c draw.Color) draw.Color {
 	return draw.Color{
 		R: c.R + (1-c.R)*0.2,
 		G: c.G + (1-c.G)*0.2,
@@ -1837,8 +1898,8 @@ func hoverHighlight(c draw.Color) draw.Color {
 	}
 }
 
-// lerpColor linearly interpolates between two colors.
-func lerpColor(a, b draw.Color, t float32) draw.Color {
+// LerpColor linearly interpolates between two colors.
+func LerpColor(a, b draw.Color, t float32) draw.Color {
 	return draw.Color{
 		R: a.R + (b.R-a.R)*t,
 		G: a.G + (b.G-a.G)*t,
@@ -1847,13 +1908,13 @@ func lerpColor(a, b draw.Color, t float32) draw.Color {
 	}
 }
 
-// disabledColor mutes a color by blending it 50% toward the base surface (RFC-008 §9.6).
-func disabledColor(c, base draw.Color) draw.Color {
-	return lerpColor(c, base, 0.5)
+// DisabledColor mutes a color by blending it 50% toward the base surface (RFC-008 §9.6).
+func DisabledColor(c, base draw.Color) draw.Color {
+	return LerpColor(c, base, 0.5)
 }
 
-// drawFocusRing renders a subtle glow aura + focus stroke around a widget (RFC-008 §9.4).
-func drawFocusRing(canvas draw.Canvas, rect draw.Rect, radius float32, tokens theme.TokenSet) {
+// DrawFocusRing renders a subtle glow aura + focus stroke around a widget (RFC-008 §9.4).
+func DrawFocusRing(canvas draw.Canvas, rect draw.Rect, radius float32, tokens theme.TokenSet) {
 	glowColor := tokens.Colors.Stroke.Focus
 	glowColor.A = 0.45
 	canvas.DrawShadow(rect, draw.Shadow{
@@ -1869,20 +1930,20 @@ func drawFocusRing(canvas draw.Canvas, rect draw.Rect, radius float32, tokens th
 
 // ── Button layout functions ────────────────────────────────────
 
-// buttonVariantColors returns fill, border, and text colors for a button variant.
-func buttonVariantColors(variant ButtonVariant, tokens theme.TokenSet, hoverOpacity float32) (fill, border, textCol draw.Color) {
+// ButtonVariantColors returns fill, border, and text colors for a button variant.
+func ButtonVariantColors(variant ButtonVariant, tokens theme.TokenSet, hoverOpacity float32) (fill, border, textCol draw.Color) {
 	switch variant {
 	case ButtonOutlined:
 		fill = draw.Color{A: 0} // transparent
 		if hoverOpacity > 0 {
-			fill = lerpColor(fill, tokens.Colors.Surface.Hovered, hoverOpacity)
+			fill = LerpColor(fill, tokens.Colors.Surface.Hovered, hoverOpacity)
 		}
 		border = tokens.Colors.Accent.Primary
 		textCol = tokens.Colors.Accent.Primary
 	case ButtonGhost:
 		fill = draw.Color{A: 0} // transparent
 		if hoverOpacity > 0 {
-			fill = lerpColor(fill, tokens.Colors.Surface.Hovered, hoverOpacity)
+			fill = LerpColor(fill, tokens.Colors.Surface.Hovered, hoverOpacity)
 		}
 		border = draw.Color{A: 0} // no border
 		textCol = tokens.Colors.Accent.Primary
@@ -1903,14 +1964,14 @@ func buttonVariantColors(variant ButtonVariant, tokens theme.TokenSet, hoverOpac
 				B: base.B + (accent.B-base.B)*0.25,
 				A: 1,
 			}
-			fill = lerpColor(fill, hoverFill, hoverOpacity)
+			fill = LerpColor(fill, hoverFill, hoverOpacity)
 		}
 		border = draw.Color{A: 0}
 		textCol = tokens.Colors.Accent.Primary
 	default: // ButtonFilled
 		fill = tokens.Colors.Accent.Primary
 		if hoverOpacity > 0 {
-			fill = lerpColor(fill, hoverHighlight(fill), hoverOpacity)
+			fill = LerpColor(fill, HoverHighlight(fill), hoverOpacity)
 		}
 		border = draw.Color{
 			R: fill.R * 0.7,
@@ -1923,10 +1984,10 @@ func buttonVariantColors(variant ButtonVariant, tokens theme.TokenSet, hoverOpac
 	return
 }
 
-func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, fs *FocusManager) bounds {
-	// Pass 1: measure content via nullCanvas.
-	nc := nullCanvas{delegate: canvas}
-	cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
+func layoutButton(node ButtonElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, fs *FocusManager) Bounds {
+	// Pass 1: measure content via NullCanvas.
+	nc := NullCanvas{Delegate: canvas}
+	cb := layoutElement(node.Content, Bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
 
 	contentW := cb.W
 	contentH := cb.H
@@ -1961,12 +2022,12 @@ func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.
 			Disabled: node.Disabled,
 		}, tokens, node)
 	} else {
-		fillColor, borderColor, textColor := buttonVariantColors(node.Variant, tokens, hoverOpacity)
+		fillColor, borderColor, textColor := ButtonVariantColors(node.Variant, tokens, hoverOpacity)
 		// Disabled muting (RFC-008 §9.6).
 		if node.Disabled {
 			base := tokens.Colors.Surface.Base
-			fillColor = disabledColor(fillColor, base)
-			borderColor = disabledColor(borderColor, base)
+			fillColor = DisabledColor(fillColor, base)
+			borderColor = DisabledColor(borderColor, base)
 			textColor = tokens.Colors.Text.Disabled
 		}
 
@@ -1992,11 +2053,11 @@ func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.
 
 		// Focus glow (RFC-008 §9.4).
 		if focused {
-			drawFocusRing(canvas, buttonRect, tokens.Radii.Button, tokens)
+			DrawFocusRing(canvas, buttonRect, tokens.Radii.Button, tokens)
 		}
 
 		// Pass 2: render content centered.
-		if txt, ok := node.Content.(textElement); ok {
+		if txt, ok := node.Content.(TextElement); ok {
 			style := tokens.Typography.Label
 			metrics := canvas.MeasureText(txt.Content, style)
 			labelW := int(math.Ceil(float64(metrics.Width)))
@@ -2015,14 +2076,14 @@ func layoutButton(node buttonElement, area bounds, canvas draw.Canvas, th theme.
 				contentTokens.Colors.Text.Primary = textColor
 				contentTokens.Colors.Text.OnAccent = textColor
 			}
-			layoutElement(node.Content, bounds{X: contentX, Y: contentY, W: contentW, H: contentH}, canvas, contentTh, contentTokens, ix, overlays, fs)
+			layoutElement(node.Content, Bounds{X: contentX, Y: contentY, W: contentW, H: contentH}, canvas, contentTh, contentTokens, ix, overlays, fs)
 		}
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: buttonPadY + cb.Baseline}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: buttonPadY + cb.Baseline}
 }
 
-func layoutIconButton(node iconButtonElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutIconButton(node IconButtonElement, area Bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) Bounds {
 	size := node.Size
 	if size == 0 {
 		size = tokens.Typography.Label.Size * 2
@@ -2034,7 +2095,7 @@ func layoutIconButton(node iconButtonElement, area bounds, canvas draw.Canvas, t
 	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 	hoverOpacity := ix.RegisterHit(buttonRect, node.OnClick)
 
-	fillColor, borderColor, iconColor := buttonVariantColors(node.Variant, tokens, hoverOpacity)
+	fillColor, borderColor, iconColor := ButtonVariantColors(node.Variant, tokens, hoverOpacity)
 
 	if node.Variant == ButtonFilled {
 		canvas.FillRoundRect(buttonRect,
@@ -2067,10 +2128,10 @@ func layoutIconButton(node iconButtonElement, area bounds, canvas draw.Canvas, t
 	offsetY := (float32(h) - metrics.Ascent) / 2
 	canvas.DrawText(node.Icon, draw.Pt(float32(area.X)+offsetX, float32(area.Y)+offsetY), style, iconColor)
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 }
 
-func layoutSplitButton(node splitButtonElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutSplitButton(node SplitButtonElement, area Bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) Bounds {
 	// Measure label.
 	style := tokens.Typography.Label
 	metrics := canvas.MeasureText(node.Label, style)
@@ -2095,7 +2156,7 @@ func layoutSplitButton(node splitButtonElement, area bounds, canvas draw.Canvas,
 	// Draw main button (left rounded corners).
 	mainFill := tokens.Colors.Accent.Primary
 	if mainHover > 0 {
-		mainFill = lerpColor(mainFill, hoverHighlight(mainFill), mainHover)
+		mainFill = LerpColor(mainFill, HoverHighlight(mainFill), mainHover)
 	}
 	// Full rounded rect, then overlay the right half to square off right corners.
 	canvas.FillRoundRect(draw.R(float32(area.X), float32(area.Y), float32(mainW+1), float32(h)),
@@ -2107,7 +2168,7 @@ func layoutSplitButton(node splitButtonElement, area bounds, canvas draw.Canvas,
 	// Draw arrow button (right rounded corners).
 	arrowFill := tokens.Colors.Accent.Primary
 	if arrowHover > 0 {
-		arrowFill = lerpColor(arrowFill, hoverHighlight(arrowFill), arrowHover)
+		arrowFill = LerpColor(arrowFill, HoverHighlight(arrowFill), arrowHover)
 	}
 	canvas.FillRoundRect(draw.R(float32(area.X+mainW), float32(area.Y), float32(arrowW), float32(h)),
 		radius, draw.SolidPaint(arrowFill))
@@ -2139,13 +2200,13 @@ func layoutSplitButton(node splitButtonElement, area bounds, canvas draw.Canvas,
 	caretY := float32(area.Y) + (float32(h)-caretMetrics.Ascent)/2
 	canvas.DrawText(caretDown, draw.Pt(caretX, caretY), iconStyle, tokens.Colors.Text.OnAccent)
 
-	return bounds{X: area.X, Y: area.Y, W: totalW, H: h, Baseline: buttonPadY + labelH}
+	return Bounds{X: area.X, Y: area.Y, W: totalW, H: h, Baseline: buttonPadY + labelH}
 }
 
-func layoutSegmentedButtons(node segmentedButtonsElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutSegmentedButtons(node SegmentedButtonsElement, area Bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) Bounds {
 	n := len(node.Items)
 	if n == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	style := tokens.Typography.Label
@@ -2211,13 +2272,13 @@ func layoutSegmentedButtons(node segmentedButtonsElement, area bounds, canvas dr
 		if selected {
 			fillColor = tokens.Colors.Accent.Primary
 			if hoverOpacity > 0 {
-				fillColor = lerpColor(fillColor, hoverHighlight(fillColor), hoverOpacity)
+				fillColor = LerpColor(fillColor, HoverHighlight(fillColor), hoverOpacity)
 			}
 			textColor = tokens.Colors.Text.OnAccent
 		} else {
 			fillColor = tokens.Colors.Surface.Elevated
 			if hoverOpacity > 0 {
-				fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+				fillColor = LerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
 			}
 			textColor = tokens.Colors.Text.Primary
 		}
@@ -2271,10 +2332,10 @@ func layoutSegmentedButtons(node segmentedButtonsElement, area bounds, canvas dr
 	}
 
 	totalW := cursorX - area.X
-	return bounds{X: area.X, Y: area.Y, W: totalW, H: maxH, Baseline: segmentPadY + maxH/2}
+	return Bounds{X: area.X, Y: area.Y, W: totalW, H: maxH, Baseline: segmentPadY + maxH/2}
 }
 
-func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
+func layoutBox(node BoxElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -2292,7 +2353,7 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme,
 	firstBaseline := 0
 
 	for _, child := range node.Children {
-		childBounds := layoutElement(child, bounds{X: area.X, Y: cursorY, W: area.W, H: area.H}, canvas, th, tokens, ix, overlays, fs)
+		childBounds := layoutElement(child, Bounds{X: area.X, Y: cursorY, W: area.W, H: area.H}, canvas, th, tokens, ix, overlays, fs)
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
@@ -2306,29 +2367,29 @@ func layoutBox(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme,
 	}
 
 	if count == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 	if firstBaseline == 0 {
 		firstBaseline = maxH
 	}
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
+	return Bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
 }
 
 // layoutBoxRow performs a two-pass row layout with center alignment.
-// Pass 1 measures all children via nullCanvas to determine maxH;
+// Pass 1 measures all children via NullCanvas to determine maxH;
 // Pass 2 renders each child vertically centered within maxH.
-func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutBoxRow(node BoxElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	n := len(node.Children)
 	if n == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
-	// Pass 1: measure with nullCanvas.
+	// Pass 1: measure with NullCanvas.
 	type childInfo struct {
 		w, h, baseline int
 	}
 	infos := make([]childInfo, n)
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 	cursorX := area.X
 	maxH := 0
 	hasContent := false
@@ -2338,7 +2399,7 @@ func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.The
 		if childW < 0 {
 			childW = 0
 		}
-		cb := layoutElement(child, bounds{X: cursorX, Y: area.Y, W: childW, H: area.H}, nc, th, tokens, nil, nil, nil)
+		cb := layoutElement(child, Bounds{X: cursorX, Y: area.Y, W: childW, H: area.H}, nc, th, tokens, nil, nil, nil)
 		if cb.W == 0 && cb.H == 0 {
 			continue
 		}
@@ -2349,7 +2410,7 @@ func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.The
 	}
 
 	if !hasContent {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	// Pass 2: render with vertical centering.
@@ -2366,7 +2427,7 @@ func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.The
 		if childW < 0 {
 			childW = 0
 		}
-		layoutElement(child, bounds{X: cursorX, Y: area.Y + yOffset, W: childW, H: area.H}, canvas, th, tokens, ix, overlays, focus)
+		layoutElement(child, Bounds{X: cursorX, Y: area.Y + yOffset, W: childW, H: area.H}, canvas, th, tokens, ix, overlays, focus)
 		cursorX += info.w + rowGap
 		maxW = max(maxW, cursorX-area.X-rowGap)
 	}
@@ -2382,10 +2443,10 @@ func layoutBoxRow(node boxElement, area bounds, canvas draw.Canvas, th theme.The
 			}
 		}
 	}
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: baseline}
+	return Bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: baseline}
 }
 
-func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
+func layoutStack(node StackElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -2402,18 +2463,18 @@ func layoutStack(node stackElement, area bounds, canvas draw.Canvas, th theme.Th
 		}
 	}
 	if maxW == 0 && maxH == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 	if firstBaseline == 0 {
 		firstBaseline = maxH
 	}
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
+	return Bounds{X: area.X, Y: area.Y, W: maxW, H: maxH, Baseline: firstBaseline}
 }
 
 // layoutSurface renders an external surface slot (RFC §8).
 // If the provider is non-nil, AcquireFrame/ReleaseFrame are called to
 // obtain and release the GPU texture. Otherwise a placeholder is drawn.
-func layoutSurface(node surfaceElement, area bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) bounds {
+func layoutSurface(node SurfaceElement, area Bounds, canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) Bounds {
 	w := int(node.Width)
 	h := int(node.Height)
 	if w > area.W {
@@ -2477,10 +2538,10 @@ func layoutSurface(node surfaceElement, area bounds, canvas draw.Canvas, tokens 
 		)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 }
 
-func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
+func layoutScrollView(node ScrollViewElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -2505,8 +2566,8 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 	contentW := area.W // width available for child content
 
 	// Pre-measure to detect whether scrollbar is needed.
-	nc := nullCanvas{delegate: canvas}
-	measureArea := bounds{X: area.X, Y: area.Y, W: contentW, H: area.H}
+	nc := NullCanvas{Delegate: canvas}
+	measureArea := Bounds{X: area.X, Y: area.Y, W: contentW, H: area.H}
 	mb := layoutElement(node.Child, measureArea, nc, th, tokens, nil, nil, nil)
 	needsScroll := mb.H > viewportH
 
@@ -2518,7 +2579,7 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 	canvas.PushClip(draw.R(float32(area.X), float32(area.Y), float32(contentW), float32(viewportH)))
 
 	// Render child offset by -offset in Y so content scrolls upward.
-	childArea := bounds{X: area.X, Y: area.Y - int(offset), W: contentW, H: area.H + int(offset)}
+	childArea := Bounds{X: area.X, Y: area.Y - int(offset), W: contentW, H: area.H + int(offset)}
 	childBounds := layoutElement(node.Child, childArea, canvas, th, tokens, ix, overlays, fs)
 
 	canvas.PopClip()
@@ -2557,12 +2618,12 @@ func layoutScrollView(node scrollViewElement, area bounds, canvas draw.Canvas, t
 	// Draw scrollbar inside allocated area.
 	w := area.W
 	if needsScroll {
-		drawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
+		DrawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
 	} else {
 		w = max(childBounds.W, area.W)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: viewportH}
 }
 
 // ── Tier 2 Layout Constants ──────────────────────────────────────
@@ -2592,7 +2653,7 @@ const (
 
 // ── Tier 2 Layout Functions ─────────────────────────────────────
 
-func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
+func layoutCheckbox(node CheckboxElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) Bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
@@ -2629,7 +2690,7 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 	// Border
 	borderColor := tokens.Colors.Stroke.Border
 	if node.Disabled {
-		borderColor = disabledColor(borderColor, tokens.Colors.Surface.Base)
+		borderColor = DisabledColor(borderColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(boxRect,
 		tokens.Radii.Input, draw.SolidPaint(borderColor))
@@ -2637,17 +2698,17 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 	// Fill — two-stage hover→pressed visual (RFC-008 §9.3).
 	fillColor := tokens.Colors.Surface.Elevated
 	if hoverOpacity > 0 {
-		fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+		fillColor = LerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
 		if hoverOpacity >= 0.9 {
 			pressedT := (hoverOpacity - 0.9) / 0.1
-			fillColor = lerpColor(fillColor, tokens.Colors.Surface.Pressed, pressedT)
+			fillColor = LerpColor(fillColor, tokens.Colors.Surface.Pressed, pressedT)
 		}
 	}
 	if node.Checked {
 		fillColor = tokens.Colors.Accent.Primary
 	}
 	if node.Disabled {
-		fillColor = disabledColor(fillColor, tokens.Colors.Surface.Base)
+		fillColor = DisabledColor(fillColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(
 		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
@@ -2656,7 +2717,7 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 
 	// Focus glow on the checkbox box (RFC-008 §9.4).
 	if focused {
-		drawFocusRing(canvas, boxRect, tokens.Radii.Input, tokens)
+		DrawFocusRing(canvas, boxRect, tokens.Radii.Input, tokens)
 	}
 
 	// Checkmark
@@ -2679,10 +2740,10 @@ func layoutCheckbox(node checkboxElement, area bounds, canvas draw.Canvas, th th
 	}
 	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, labelColor)
 
-	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
+	return Bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
+func layoutRadio(node RadioElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) Bounds {
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(node.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
@@ -2713,17 +2774,17 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 	// Outer circle
 	outerColor := tokens.Colors.Stroke.Border
 	if node.Disabled {
-		outerColor = disabledColor(outerColor, tokens.Colors.Surface.Base)
+		outerColor = DisabledColor(outerColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillEllipse(circleRect, draw.SolidPaint(outerColor))
 
 	// Inner fill — two-stage hover→pressed visual (RFC-008 §9.3).
 	fillColor := tokens.Colors.Surface.Elevated
 	if hoverOpacity > 0 {
-		fillColor = lerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+		fillColor = LerpColor(fillColor, tokens.Colors.Surface.Hovered, hoverOpacity)
 		if hoverOpacity >= 0.9 {
 			pressedT := (hoverOpacity - 0.9) / 0.1
-			fillColor = lerpColor(fillColor, tokens.Colors.Surface.Pressed, pressedT)
+			fillColor = LerpColor(fillColor, tokens.Colors.Surface.Pressed, pressedT)
 		}
 	}
 	canvas.FillEllipse(
@@ -2733,7 +2794,7 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 
 	// Focus glow on the radio circle (RFC-008 §9.4).
 	if focused {
-		drawFocusRing(canvas, circleRect, float32(checkboxSize)/2, tokens)
+		DrawFocusRing(canvas, circleRect, float32(checkboxSize)/2, tokens)
 	}
 
 	// Selected dot
@@ -2742,7 +2803,7 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 		dotOffset := (checkboxSize - dotSize) / 2
 		dotColor := tokens.Colors.Accent.Primary
 		if node.Disabled {
-			dotColor = disabledColor(dotColor, tokens.Colors.Surface.Base)
+			dotColor = DisabledColor(dotColor, tokens.Colors.Surface.Base)
 		}
 		canvas.FillEllipse(
 			draw.R(float32(area.X+dotOffset), float32(boxY+dotOffset), float32(dotSize), float32(dotSize)),
@@ -2758,10 +2819,10 @@ func layoutRadio(node radioElement, area bounds, canvas draw.Canvas, th theme.Th
 	}
 	canvas.DrawText(node.Label, draw.Pt(float32(labelX), float32(labelY)), style, labelColor)
 
-	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
+	return Bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
+func layoutToggle(node ToggleElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) Bounds {
 	// Register hit target and get hover opacity atomically.
 	toggleRect := draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH))
 	var hoverOpacity float32
@@ -2788,7 +2849,7 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 	// Animation progress: 0 = off, 1 = on.
 	var t float32
 	if node.State != nil {
-		t = node.State.update(node.On, tokens.Motion.Quick)
+		t = node.State.Update(node.On, tokens.Motion.Quick)
 	} else {
 		if node.On {
 			t = 1
@@ -2806,19 +2867,19 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 	case t >= 1:
 		trackColor = onTrackColor
 	default:
-		trackColor = lerpColor(offTrackColor, onTrackColor, t)
+		trackColor = LerpColor(offTrackColor, onTrackColor, t)
 	}
 	if hoverOpacity > 0 {
-		trackColor = lerpColor(trackColor, hoverHighlight(trackColor), hoverOpacity)
+		trackColor = LerpColor(trackColor, HoverHighlight(trackColor), hoverOpacity)
 		// Pressed visual differentiation (RFC-008 §9.3).
 		if hoverOpacity >= 0.9 {
 			pressedT := (hoverOpacity - 0.9) / 0.1
-			trackColor = lerpColor(trackColor, tokens.Colors.Surface.Pressed, pressedT*0.3)
+			trackColor = LerpColor(trackColor, tokens.Colors.Surface.Pressed, pressedT*0.3)
 		}
 	}
 	// Disabled muting (RFC-008 §9.6).
 	if node.Disabled {
-		trackColor = disabledColor(trackColor, tokens.Colors.Surface.Base)
+		trackColor = DisabledColor(trackColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(
 		draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH)),
@@ -2838,11 +2899,11 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 	case t >= 1:
 		thumbColor = onThumbColor
 	default:
-		thumbColor = lerpColor(offThumbColor, onThumbColor, t)
+		thumbColor = LerpColor(offThumbColor, onThumbColor, t)
 	}
 	// Disabled muting (RFC-008 §9.6).
 	if node.Disabled {
-		thumbColor = disabledColor(thumbColor, tokens.Colors.Surface.Base)
+		thumbColor = DisabledColor(thumbColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillEllipse(
 		draw.R(thumbX, thumbY, float32(toggleThumbD), float32(toggleThumbD)),
@@ -2850,13 +2911,13 @@ func layoutToggle(node toggleElement, area bounds, canvas draw.Canvas, th theme.
 
 	// Focus glow on the toggle track (RFC-008 §9.4).
 	if focused {
-		drawFocusRing(canvas, toggleRect, float32(toggleTrackH)/2, tokens)
+		DrawFocusRing(canvas, toggleRect, float32(toggleTrackH)/2, tokens)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: toggleTrackW, H: toggleTrackH}
+	return Bounds{X: area.X, Y: area.Y, W: toggleTrackW, H: toggleTrackH}
 }
 
-func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
+func layoutSlider(node SliderElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) Bounds {
 	trackW := sliderMaxWidth
 	if area.W < trackW {
 		trackW = area.W
@@ -2900,7 +2961,7 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.
 	// Track background
 	trackColor := tokens.Colors.Surface.Pressed
 	if hoverOpacity > 0 {
-		trackColor = lerpColor(trackColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+		trackColor = LerpColor(trackColor, tokens.Colors.Surface.Hovered, hoverOpacity)
 	}
 	canvas.FillRoundRect(
 		draw.R(float32(area.X), float32(trackY), float32(trackW), float32(sliderTrackH)),
@@ -2917,7 +2978,7 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.
 	filledW := int(float32(trackW) * val)
 	filledColor := tokens.Colors.Accent.Primary
 	if node.Disabled {
-		filledColor = disabledColor(filledColor, tokens.Colors.Surface.Base)
+		filledColor = DisabledColor(filledColor, tokens.Colors.Surface.Base)
 	}
 	if filledW > 0 {
 		canvas.FillRoundRect(
@@ -2935,22 +2996,22 @@ func layoutSlider(node sliderElement, area bounds, canvas draw.Canvas, th theme.
 	thumbColor := tokens.Colors.Accent.Primary
 	if hoverOpacity >= 0.9 {
 		pressedT := (hoverOpacity - 0.9) / 0.1
-		thumbColor = lerpColor(thumbColor, tokens.Colors.Accent.Secondary, pressedT)
+		thumbColor = LerpColor(thumbColor, tokens.Colors.Accent.Secondary, pressedT)
 	}
 	if node.Disabled {
-		thumbColor = disabledColor(thumbColor, tokens.Colors.Surface.Base)
+		thumbColor = DisabledColor(thumbColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillEllipse(thumbRect, draw.SolidPaint(thumbColor))
 
 	// Focus glow on the slider thumb (RFC-008 §9.4).
 	if focused {
-		drawFocusRing(canvas, thumbRect, float32(sliderThumbD)/2, tokens)
+		DrawFocusRing(canvas, thumbRect, float32(sliderThumbD)/2, tokens)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: trackW, H: sliderHeight}
+	return Bounds{X: area.X, Y: area.Y, W: trackW, H: sliderHeight}
 }
 
-func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet) bounds {
+func layoutProgressBar(node ProgressBarElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet) Bounds {
 	trackW := progressBarMaxW
 	if area.W < trackW {
 		trackW = area.W
@@ -2994,10 +3055,10 @@ func layoutProgressBar(node progressBarElement, area bounds, canvas draw.Canvas,
 		}
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: trackW, H: progressBarH}
+	return Bounds{X: area.X, Y: area.Y, W: trackW, H: progressBarH}
 }
 
-func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) bounds {
+func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, focus *FocusManager) Bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -3032,7 +3093,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 		// Border
 		borderColor := tokens.Colors.Stroke.Border
 		if node.Disabled {
-			borderColor = disabledColor(borderColor, tokens.Colors.Surface.Base)
+			borderColor = DisabledColor(borderColor, tokens.Colors.Surface.Base)
 		}
 		canvas.FillRoundRect(tfRect,
 			tokens.Radii.Input, draw.SolidPaint(borderColor))
@@ -3040,7 +3101,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 		// Fill
 		fillColor := tokens.Colors.Surface.Elevated
 		if node.Disabled {
-			fillColor = disabledColor(fillColor, tokens.Colors.Surface.Base)
+			fillColor = DisabledColor(fillColor, tokens.Colors.Surface.Base)
 		}
 		canvas.FillRoundRect(
 			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
@@ -3048,7 +3109,7 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 
 		// Focus glow + ring (RFC-008 §9.4)
 		if focused {
-			drawFocusRing(canvas, tfRect, tokens.Radii.Input, tokens)
+			DrawFocusRing(canvas, tfRect, tokens.Radii.Input, tokens)
 		}
 
 		// Text or placeholder
@@ -3091,10 +3152,10 @@ func layoutTextField(node textFieldElement, area bounds, canvas draw.Canvas, th 
 			func() { fm.SetFocusedUID(uid) })
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutSelect(node SelectElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
@@ -3140,7 +3201,7 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 		// Border
 		borderColor := tokens.Colors.Stroke.Border
 		if node.Disabled {
-			borderColor = disabledColor(borderColor, tokens.Colors.Surface.Base)
+			borderColor = DisabledColor(borderColor, tokens.Colors.Surface.Base)
 		}
 		canvas.FillRoundRect(
 			draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
@@ -3149,7 +3210,7 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 		// Fill
 		fillColor := tokens.Colors.Surface.Elevated
 		if node.Disabled {
-			fillColor = disabledColor(fillColor, tokens.Colors.Surface.Base)
+			fillColor = DisabledColor(fillColor, tokens.Colors.Surface.Base)
 		}
 		canvas.FillRoundRect(
 			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
@@ -3177,7 +3238,7 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 
 		// Focus glow (RFC-008 §9.4).
 		if focused || isOpen {
-			drawFocusRing(canvas, selectRect, tokens.Radii.Input, tokens)
+			DrawFocusRing(canvas, selectRect, tokens.Radii.Input, tokens)
 		}
 	}
 
@@ -3189,7 +3250,7 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 		opts := node.Options
 		onSelect := node.OnSelect
 		state := node.State
-		overlays.push(overlayEntry{
+		overlays.Push(OverlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
 				itemH := int(tokens.Typography.Body.Size) + textFieldPadY*2
 				totalH := itemH * len(opts)
@@ -3231,10 +3292,10 @@ func layoutSelect(node selectElement, area bounds, canvas draw.Canvas, th theme.
 		})
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
+func layoutPadding(node PaddingElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -3245,17 +3306,17 @@ func layoutPadding(node paddingElement, area bounds, canvas draw.Canvas, th them
 	inT := int(node.Insets.Top)
 	inR := int(right)
 	inB := int(node.Insets.Bottom)
-	childArea := bounds{
+	childArea := Bounds{
 		X: area.X + inL,
 		Y: area.Y + inT,
 		W: max(area.W-inL-inR, 0),
 		H: max(area.H-inT-inB, 0),
 	}
 	cb := layoutElement(node.Child, childArea, canvas, th, tokens, ix, overlays, fs)
-	return bounds{X: area.X, Y: area.Y, W: cb.W + inL + inR, H: cb.H + inT + inB, Baseline: inT + cb.Baseline}
+	return Bounds{X: area.X, Y: area.Y, W: cb.W + inL + inR, H: cb.H + inT + inB, Baseline: inT + cb.Baseline}
 }
 
-func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus ...*FocusManager) bounds {
+func layoutSizedBox(node SizedBoxElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
 		fs = focus[0]
@@ -3272,14 +3333,14 @@ func layoutSizedBox(node sizedBoxElement, area bounds, canvas draw.Canvas, th th
 	}
 	var baseline int
 	if node.Child != nil {
-		childArea := bounds{X: area.X, Y: area.Y, W: w, H: h}
+		childArea := Bounds{X: area.X, Y: area.Y, W: w, H: h}
 		cb := layoutElement(node.Child, childArea, canvas, th, tokens, ix, overlays, fs)
 		baseline = cb.Baseline
 	}
 	if baseline == 0 {
 		baseline = h
 	}
-	return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: baseline}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: baseline}
 }
 
 func maxf(a, b float32) float32 {
@@ -3327,10 +3388,10 @@ const (
 
 // ── Tier 3 Layout Functions ──────────────────────────────────────
 
-func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutCard(node CardElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	// Measure child to determine card size.
-	nc := nullCanvas{delegate: canvas}
-	childArea := bounds{X: area.X + cardPadding, Y: area.Y + cardPadding, W: max(area.W-cardPadding*2, 0), H: max(area.H-cardPadding*2, 0)}
+	nc := NullCanvas{Delegate: canvas}
+	childArea := Bounds{X: area.X + cardPadding, Y: area.Y + cardPadding, W: max(area.W-cardPadding*2, 0), H: max(area.H-cardPadding*2, 0)}
 	cb := layoutElement(node.Child, childArea, nc, th, tokens, nil, nil, nil)
 
 	w := cb.W + cardPadding*2
@@ -3357,23 +3418,23 @@ func layoutCard(node cardElement, area bounds, canvas draw.Canvas, th theme.Them
 	// Child content
 	layoutElement(node.Child, childArea, canvas, th, tokens, ix, overlays, focus)
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutTabs(node TabsElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	if len(node.Items) == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	style := tokens.Typography.Label
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 
 	// Pass 1: measure all headers to determine tab widths.
 	type tabMeasure struct{ w, h int }
 	measures := make([]tabMeasure, len(node.Items))
 	headerH := 0
 	for i, item := range node.Items {
-		cb := layoutElement(item.Header, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
+		cb := layoutElement(item.Header, Bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
 		w := cb.W + tabHeaderPadX*2
 		h := cb.H + tabHeaderPadY*2
 		measures[i] = tabMeasure{w: w, h: h}
@@ -3404,7 +3465,7 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Them
 
 		// Tab background — selected tab gets tonal accent tint (RFC-008 §11.6); hover blends on top.
 		if i == selected {
-			tonalBg := lerpColor(tokens.Colors.Surface.Base, tokens.Colors.Accent.Primary, 0.08)
+			tonalBg := LerpColor(tokens.Colors.Surface.Base, tokens.Colors.Accent.Primary, 0.08)
 			canvas.FillRect(
 				draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH)),
 				draw.SolidPaint(tonalBg))
@@ -3417,7 +3478,7 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Them
 		}
 
 		// Tab header content
-		headerArea := bounds{X: cursorX + tabHeaderPadX, Y: area.Y + tabHeaderPadY, W: max(tw-tabHeaderPadX*2, 0), H: max(headerH-tabHeaderPadY*2, 0)}
+		headerArea := Bounds{X: cursorX + tabHeaderPadX, Y: area.Y + tabHeaderPadY, W: max(tw-tabHeaderPadX*2, 0), H: max(headerH-tabHeaderPadY*2, 0)}
 		layoutElement(item.Header, headerArea, canvas, th, tokens, ix, overlays, focus)
 
 		// Selection indicator (underline)
@@ -3439,17 +3500,17 @@ func layoutTabs(node tabsElement, area bounds, canvas draw.Canvas, th theme.Them
 
 	// Selected tab content
 	contentY := area.Y + headerH + 1 + columnGap
-	contentArea := bounds{X: area.X, Y: contentY, W: area.W, H: max(area.H-headerH-1-columnGap, 0)}
+	contentArea := Bounds{X: area.X, Y: contentY, W: area.W, H: max(area.H-headerH-1-columnGap, 0)}
 	cb := layoutElement(node.Items[selected].Content, contentArea, canvas, th, tokens, ix, overlays, focus)
 
 	totalH := headerH + 1 + columnGap + cb.H
 	totalW := max(totalHeaderW, cb.W)
-	return bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
+	return Bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
 }
 
-func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutAccordion(node AccordionElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	if len(node.Sections) == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	cursorY := area.Y
@@ -3483,7 +3544,7 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th 
 		// Header background (with hover blend)
 		hdrColor := tokens.Colors.Surface.Elevated
 		if hoverOpacity > 0 {
-			hdrColor = lerpColor(hdrColor, tokens.Colors.Surface.Hovered, hoverOpacity)
+			hdrColor = LerpColor(hdrColor, tokens.Colors.Surface.Hovered, hoverOpacity)
 		}
 		canvas.FillRect(
 			draw.R(float32(area.X), float32(cursorY), float32(area.W), float32(accordionHeaderH)),
@@ -3500,7 +3561,7 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th 
 
 		// Header content
 		headerX := area.X + 8 + int(chevronStyle.Size) + 8
-		headerArea := bounds{X: headerX, Y: cursorY + (accordionHeaderH-16)/2, W: max(area.W-headerX+area.X, 0), H: 16}
+		headerArea := Bounds{X: headerX, Y: cursorY + (accordionHeaderH-16)/2, W: max(area.W-headerX+area.X, 0), H: 16}
 		layoutElement(section.Header, headerArea, canvas, th, tokens, ix, overlays, focus)
 
 		if area.W > maxW {
@@ -3510,16 +3571,16 @@ func layoutAccordion(node accordionElement, area bounds, canvas draw.Canvas, th 
 
 		// Content (if expanded)
 		if expanded {
-			contentArea := bounds{X: area.X + cardPadding, Y: cursorY + 8, W: max(area.W-cardPadding*2, 0), H: max(area.H-(cursorY-area.Y)-8, 0)}
+			contentArea := Bounds{X: area.X + cardPadding, Y: cursorY + 8, W: max(area.W-cardPadding*2, 0), H: max(area.H-(cursorY-area.Y)-8, 0)}
 			cb := layoutElement(section.Content, contentArea, canvas, th, tokens, ix, overlays, focus)
 			cursorY += cb.H + 16 // 8 top + 8 bottom padding
 		}
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: maxW, H: cursorY - area.Y}
+	return Bounds{X: area.X, Y: area.Y, W: maxW, H: cursorY - area.Y}
 }
 
-func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutTooltip(node TooltipElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	// Layout trigger normally.
 	triggerBounds := layoutElement(node.Trigger, area, canvas, th, tokens, ix, overlays, focus)
 
@@ -3536,11 +3597,11 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th them
 		tB := triggerBounds
 		content := node.Content
 		blur := node.Blur
-		overlays.push(overlayEntry{
+		overlays.Push(OverlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
 				// Measure content
-				nc := nullCanvas{delegate: canvas}
-				cb := layoutElement(content, bounds{X: 0, Y: 0, W: 300, H: 200}, nc, th, tokens, nil, nil, nil)
+				nc := NullCanvas{Delegate: canvas}
+				cb := layoutElement(content, Bounds{X: 0, Y: 0, W: 300, H: 200}, nc, th, tokens, nil, nil, nil)
 
 				w := cb.W + tooltipPadding*2
 				h := cb.H + tooltipPadding*2
@@ -3577,7 +3638,7 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th them
 				})
 
 				// Content
-				layoutElement(content, bounds{X: x + tooltipPadding, Y: y + tooltipPadding, W: max(w-tooltipPadding*2, 0), H: max(h-tooltipPadding*2, 0)}, canvas, th, tokens, ix, nil, nil)
+				layoutElement(content, Bounds{X: x + tooltipPadding, Y: y + tooltipPadding, W: max(w-tooltipPadding*2, 0), H: max(h-tooltipPadding*2, 0)}, canvas, th, tokens, ix, nil, nil)
 			},
 		})
 	}
@@ -3585,10 +3646,10 @@ func layoutTooltip(node tooltipElement, area bounds, canvas draw.Canvas, th them
 	return triggerBounds
 }
 
-func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutBadge(node BadgeElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	// Measure content
-	nc := nullCanvas{delegate: canvas}
-	cb := layoutElement(node.Content, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
+	nc := NullCanvas{Delegate: canvas}
+	cb := layoutElement(node.Content, Bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
 
 	w := cb.W + badgePadX*2
 	h := cb.H + badgePadY*2
@@ -3601,7 +3662,7 @@ func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Th
 	}
 
 	// Pill background — RFC-008 §11.6: tonal but still readable.
-	bgColor := lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.75)
+	bgColor := LerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.75)
 	if node.Color.A > 0 {
 		bgColor = node.Color
 	}
@@ -3613,15 +3674,15 @@ func layoutBadge(node badgeElement, area bounds, canvas draw.Canvas, th theme.Th
 	// Content (centered)
 	contentX := area.X + (w-cb.W)/2
 	contentY := area.Y + (h-cb.H)/2
-	layoutElement(node.Content, bounds{X: contentX, Y: contentY, W: cb.W, H: cb.H}, canvas, th, tokens, ix, overlays, focus)
+	layoutElement(node.Content, Bounds{X: contentX, Y: contentY, W: cb.W, H: cb.H}, canvas, th, tokens, ix, overlays, focus)
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutChip(node ChipElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	// Measure label
-	nc := nullCanvas{delegate: canvas}
-	cb := layoutElement(node.Label, bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
+	nc := NullCanvas{Delegate: canvas}
+	cb := layoutElement(node.Label, Bounds{X: 0, Y: 0, W: area.W, H: area.H}, nc, th, tokens, nil, nil, nil)
 
 	labelW := cb.W
 	dismissW := 0
@@ -3651,14 +3712,14 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 	var bgColor, borderColor draw.Color
 	if node.Selected {
 		// RFC-008 §11.6: tonal fill — accent blended over surface, not full accent.
-		bgColor = lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.15)
-		borderColor = lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.30)
+		bgColor = LerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.15)
+		borderColor = LerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Accent.Primary, 0.30)
 	} else {
 		bgColor = tokens.Colors.Surface.Hovered
 		borderColor = tokens.Colors.Surface.Pressed
 	}
 	if hoverOpacity > 0 {
-		bgColor = lerpColor(bgColor, hoverHighlight(bgColor), hoverOpacity)
+		bgColor = LerpColor(bgColor, HoverHighlight(bgColor), hoverOpacity)
 	}
 
 	radius := minf(tokens.Radii.Pill, float32(min(w, h))/2)
@@ -3670,7 +3731,7 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 		maxf(radius-1, 0), draw.SolidPaint(bgColor))
 
 	// Label content
-	labelArea := bounds{X: area.X + chipPadX, Y: area.Y + chipPadY, W: labelW, H: cb.H}
+	labelArea := Bounds{X: area.X + chipPadX, Y: area.Y + chipPadY, W: labelW, H: cb.H}
 	layoutElement(node.Label, labelArea, canvas, th, tokens, ix, overlays, focus)
 
 	// Dismiss "×"
@@ -3689,15 +3750,15 @@ func layoutChip(node chipElement, area bounds, canvas draw.Canvas, th theme.Them
 			node.OnDismiss)
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: w, H: h}
+	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutMenuBar(node MenuBarElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	if len(node.Items) == 0 {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 
 	// Backdrop: when a dropdown is open, a full-screen hit target closes it
 	// on any click outside menu bar items or dropdown items.
@@ -3722,7 +3783,7 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th them
 
 	for i, item := range node.Items {
 		// Measure label
-		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: area.W, H: menuBarHeight}, nc, th, tokens, nil, nil, nil)
+		cb := layoutElement(item.Label, Bounds{X: 0, Y: 0, W: area.W, H: menuBarHeight}, nc, th, tokens, nil, nil, nil)
 		itemW := cb.W + menuBarItemPadX*2
 
 		hasAction := item.OnClick != nil || len(item.Items) > 0
@@ -3758,11 +3819,11 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th them
 			}
 			canvas.FillRect(
 				draw.R(float32(cursorX), float32(area.Y), float32(itemW), float32(menuBarHeight)),
-				draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, op)))
+				draw.SolidPaint(LerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, op)))
 		}
 
 		// Draw label
-		labelArea := bounds{X: cursorX + menuBarItemPadX, Y: area.Y + (menuBarHeight-cb.H)/2, W: cb.W, H: cb.H}
+		labelArea := Bounds{X: cursorX + menuBarItemPadX, Y: area.Y + (menuBarHeight-cb.H)/2, W: cb.W, H: cb.H}
 		layoutElement(item.Label, labelArea, canvas, th, tokens, ix, overlays, focus)
 
 		// Dropdown overlay for open submenu
@@ -3770,7 +3831,7 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th them
 			dropdownX := cursorX
 			dropdownY := area.Y + menuBarHeight
 			subItems := item.Items
-			overlays.push(overlayEntry{
+			overlays.Push(OverlayEntry{
 				Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
 					layoutMenuDropdown(subItems, dropdownX, dropdownY, nc, canvas, th, tokens, ix)
 				},
@@ -3780,16 +3841,16 @@ func layoutMenuBar(node menuBarElement, area bounds, canvas draw.Canvas, th them
 		cursorX += itemW
 	}
 
-	return bounds{X: area.X, Y: area.Y, W: area.W, H: menuBarHeight}
+	return Bounds{X: area.X, Y: area.Y, W: area.W, H: menuBarHeight}
 }
 
 // layoutMenuDropdown renders a dropdown menu at the given position.
 // Shared by MenuBar dropdowns and potentially nested menus.
-func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor) {
+func layoutMenuDropdown(items []MenuItem, posX, posY int, nc NullCanvas, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor) {
 	// Measure all items.
 	maxItemW := 0
 	for _, item := range items {
-		cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, th, tokens, nil, nil, nil)
+		cb := layoutElement(item.Label, Bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, th, tokens, nil, nil, nil)
 		w := cb.W + menuItemPadX*2
 		if w > maxItemW {
 			maxItemW = w
@@ -3823,7 +3884,7 @@ func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas 
 		hoverOpacity := ix.RegisterHit(draw.R(float32(posX), float32(cursorY), float32(menuW), float32(menuItemHeight)),
 			item.OnClick)
 		if hoverOpacity > 0 {
-			hoverColor := draw.SolidPaint(lerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity))
+			hoverColor := draw.SolidPaint(LerpColor(tokens.Colors.Surface.Elevated, tokens.Colors.Surface.Hovered, hoverOpacity))
 			hoverRect := draw.R(float32(posX+1), float32(cursorY), float32(max(menuW-2, 0)), float32(menuItemHeight))
 			if itemIdx == 0 || itemIdx == len(items)-1 {
 				canvas.FillRoundRect(hoverRect, cornerR, hoverColor)
@@ -3832,32 +3893,32 @@ func layoutMenuDropdown(items []MenuItem, posX, posY int, nc nullCanvas, canvas 
 			}
 		}
 
-		labelArea := bounds{X: posX + menuItemPadX, Y: cursorY + (menuItemHeight-16)/2, W: max(menuW-menuItemPadX*2, 0), H: 16}
+		labelArea := Bounds{X: posX + menuItemPadX, Y: cursorY + (menuItemHeight-16)/2, W: max(menuW-menuItemPadX*2, 0), H: 16}
 		layoutElement(item.Label, labelArea, canvas, th, tokens, ix, nil, nil)
 
 		cursorY += menuItemHeight
 	}
 }
 
-func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutContextMenu(node ContextMenuElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	if !node.Visible || len(node.Items) == 0 || overlays == nil {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
-	nc := nullCanvas{delegate: canvas}
+	nc := NullCanvas{Delegate: canvas}
 	items := node.Items
 	// Anchor relative to the element's layout area.
 	posX := area.X + int(node.PosX)
 	posY := area.Y + int(node.PosY)
-	winW, winH := overlays.windowW, overlays.windowH
+	winW, winH := overlays.WindowW, overlays.WindowH
 
 	// Push overlay for context menu rendering.
-	overlays.push(overlayEntry{
+	overlays.Push(OverlayEntry{
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
 			// Measure dropdown size for clamping.
 			maxItemW := 0
 			for _, item := range items {
-				cb := layoutElement(item.Label, bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, th, tokens, nil, nil, nil)
+				cb := layoutElement(item.Label, Bounds{X: 0, Y: 0, W: 300, H: menuItemHeight}, nc, th, tokens, nil, nil, nil)
 				w := cb.W + menuItemPadX*2
 				if w > maxItemW {
 					maxItemW = w
@@ -3889,12 +3950,12 @@ func layoutContextMenu(node contextMenuElement, area bounds, canvas draw.Canvas,
 		},
 	})
 
-	return bounds{X: area.X, Y: area.Y}
+	return Bounds{X: area.X, Y: area.Y}
 }
 
-func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *overlayStack, focus *FocusManager) bounds {
+func layoutOverlay(node Overlay, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
 	if node.Content == nil || overlays == nil {
-		return bounds{X: area.X, Y: area.Y}
+		return Bounds{X: area.X, Y: area.Y}
 	}
 
 	content := node.Content
@@ -3904,7 +3965,7 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 	onDismiss := node.OnDismiss
 	backdrop := node.Backdrop
 	animation := node.Animation
-	winW, winH := overlays.windowW, overlays.windowH
+	winW, winH := overlays.WindowW, overlays.WindowH
 
 	// Resolve animation duration from theme tokens (RFC-008 §9.5).
 	// OverlayAnimFadeScale uses Motion.Emphasized for dialog-level transitions;
@@ -3914,7 +3975,7 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 		overlayDuration = tokens.Motion.Emphasized
 	}
 
-	overlays.push(overlayEntry{
+	overlays.Push(OverlayEntry{
 		Animation: animation,
 		Duration:  overlayDuration,
 		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *Interactor) {
@@ -3931,8 +3992,8 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 			}
 
 			// Measure content with null canvas.
-			nc := nullCanvas{delegate: canvas}
-			cb := layoutElement(content, bounds{X: 0, Y: 0, W: 400, H: 300}, nc, th, tokens, nil, nil, nil)
+			nc := NullCanvas{Delegate: canvas}
+			cb := layoutElement(content, Bounds{X: 0, Y: 0, W: 400, H: 300}, nc, th, tokens, nil, nil, nil)
 
 			pad := 8
 			contentSize := draw.Size{W: float32(cb.W + pad*2), H: float32(cb.H + pad*2)}
@@ -3949,7 +4010,7 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 			canvas.FillRoundRect(inner, maxf(tokens.Radii.Card-1, 0), draw.SolidPaint(tokens.Colors.Surface.Elevated))
 
 			// Layout content inside the overlay.
-			layoutElement(content, bounds{
+			layoutElement(content, Bounds{
 				X: int(pos.X) + pad, Y: int(pos.Y) + pad,
 				W: max(int(contentSize.W)-pad*2, 0), H: max(int(contentSize.H)-pad*2, 0),
 			}, canvas, th, tokens, ix, nil, focus)
@@ -3957,5 +4018,5 @@ func layoutOverlay(node Overlay, area bounds, canvas draw.Canvas, th theme.Theme
 	})
 
 	// Overlays take no space in normal layout flow.
-	return bounds{X: area.X, Y: area.Y}
+	return Bounds{X: area.X, Y: area.Y}
 }
