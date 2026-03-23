@@ -1,39 +1,56 @@
 package app
 
-// runMultiWindow is a placeholder for the multi-window run loop.
-// Full implementation requires per-window context management:
-//   - Per-window reconciler, hitMap, hoverState, canvas, currentTree
-//   - OpenWindowMsg → creates window via platform + renderer, sends WindowOpenedMsg
-//   - CloseWindowMsg → destroys window, sends WindowClosedMsg
-//   - Frame loop: call multiView(model), reconcile+build+draw per window
-//   - Route input events by windowID
-//
-// This stub ensures the types compile and can be wired into the main loop.
-
 import (
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
+	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/ui"
 )
 
-// multiWindowState tracks state for secondary windows.
-type multiWindowState struct {
-	id       WindowID
-	platform platform.Platform
-	renderer gpu.Renderer
-	width    int
-	height   int
+// windowContext holds per-window rendering and input state for multi-window mode.
+type windowContext struct {
+	id          WindowID
+	config      WindowConfig
+	reconciler  *ui.Reconciler
+	hitMap      hit.Map
+	hoverState  ui.HoverState
+	dispatcher  *ui.EventDispatcher
+	mouseX      float32
+	mouseY      float32
+	dragCB      func(x, y float32)
+	dragRelease func(x, y float32)
+	cursor      input.CursorKind
+	currentTree ui.Element
+	width       int
+	height      int
 }
 
-// handleOpenWindow processes an OpenWindowMsg in the app loop.
-func handleOpenWindow(msg OpenWindowMsg, plat platform.Platform, rend gpu.Renderer) *multiWindowState {
+// newWindowContext creates a windowContext for a secondary window.
+func newWindowContext(id WindowID, cfg WindowConfig, fm *ui.FocusManager) *windowContext {
+	return &windowContext{
+		id:         id,
+		config:     cfg,
+		reconciler: ui.NewReconciler(),
+		dispatcher: ui.NewEventDispatcher(fm),
+		width:      cfg.Width,
+		height:     cfg.Height,
+	}
+}
+
+// handleOpenWindow processes an OpenWindowMsg: creates the platform window,
+// initializes the per-window renderer, and returns a windowContext.
+func handleOpenWindow(msg OpenWindowMsg, plat platform.Platform, rend gpu.Renderer, fm *ui.FocusManager) *windowContext {
 	mwp, ok := plat.(platform.MultiWindowPlatform)
 	if !ok {
 		return nil
 	}
 	cfg := platform.Config{
-		Title:  msg.Config.Title,
-		Width:  msg.Config.Width,
-		Height: msg.Config.Height,
+		Title:     msg.Config.Title,
+		Width:     msg.Config.Width,
+		Height:    msg.Config.Height,
+		Type:      int(msg.Config.Type),
+		Resizable: msg.Config.Resizable,
 	}
 	handle, err := mwp.CreateWindow(uint32(msg.ID), cfg)
 	if err != nil {
@@ -54,16 +71,11 @@ func handleOpenWindow(msg OpenWindowMsg, plat platform.Platform, rend gpu.Render
 	}
 
 	Send(WindowOpenedMsg{Window: msg.ID})
-	return &multiWindowState{
-		id:       msg.ID,
-		platform: plat,
-		renderer: rend,
-		width:    msg.Config.Width,
-		height:   msg.Config.Height,
-	}
+	return newWindowContext(msg.ID, msg.Config, fm)
 }
 
-// handleCloseWindow processes a CloseWindowMsg in the app loop.
+// handleCloseWindow processes a CloseWindowMsg: destroys the platform window
+// and per-window renderer resources.
 func handleCloseWindow(msg CloseWindowMsg, plat platform.Platform, rend gpu.Renderer) {
 	mwp, ok := plat.(platform.MultiWindowPlatform)
 	if !ok {

@@ -2723,8 +2723,14 @@ func multiWindowSection(m Model) ui.Element {
 	} else {
 		btn = ui.ButtonText("Open Second Window", func() {
 			app.Send(app.OpenWindowMsg{
-				ID:     1,
-				Config: app.WindowConfig{Title: "Lux — Second Window", Width: 400, Height: 300},
+				ID: 1,
+				Config: app.WindowConfig{
+					Title:     "Lux — Second Window",
+					Type:      app.WindowTypeNormal,
+					Width:     400,
+					Height:    300,
+					Resizable: true,
+				},
 			})
 		})
 	}
@@ -3001,7 +3007,35 @@ func main() {
 	if rf := pyramidRendererFactory(initial.Pyramid); rf != nil {
 		runOpts = append(runOpts, app.WithRenderer(rf))
 	}
-	if err := app.RunWithCmd(initial, update, view, runOpts...); err != nil {
+	if err := app.RunMultiViewWithCmd(initial, update, multiView, runOpts...); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// multiView returns element trees for all active windows.
+// The main window always gets the full kitchen-sink view.
+// Secondary windows get their own lightweight content.
+func multiView(m Model) map[app.WindowID]ui.Element {
+	views := map[app.WindowID]ui.Element{
+		app.MainWindow: view(m),
+	}
+	if m.SecondWindowOpen {
+		views[1] = secondWindowView(m)
+	}
+	return views
+}
+
+// secondWindowView renders the content for the second window.
+func secondWindowView(m Model) ui.Element {
+	return ui.Padding(ui.UniformInsets(16),
+		ui.Column(
+			ui.Text("Lux — Second Window"),
+			ui.Spacer(8),
+			ui.Text(fmt.Sprintf("Counter: %d", m.Count)),
+			ui.Spacer(8),
+			ui.ButtonText("Close This Window", func() {
+				app.Send(app.CloseWindowMsg{ID: 1})
+			}),
+		),
+	)
 }
