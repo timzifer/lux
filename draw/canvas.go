@@ -191,6 +191,24 @@ type DrawShadowRect struct {
 	Inset       bool    // when true, shadow is drawn inside the rect
 }
 
+// DrawImageRect is a textured image rectangle in framebuffer coordinates.
+type DrawImageRect struct {
+	X, Y, W, H     int
+	ImageID         ImageID
+	Opacity         float32
+	U0, V0, U1, V1 float32 // UV subregion (0,0 → 1,1 = full image)
+}
+
+// DrawShaderRect is a shader-filled rectangle in framebuffer coordinates.
+type DrawShaderRect struct {
+	X, Y, W, H int
+	Radius      float32
+	ShaderKey   string     // cache key (source hash or effect name)
+	Params      [8]float32 // user-defined uniforms
+	Time        float32    // frame time for animation (seconds since app start)
+	ImageID     ImageID    // optional texture input (0 = none)
+}
+
 // ClipBatch groups draw commands that share the same scissor rectangle.
 type ClipBatch struct {
 	Clip         Rect
@@ -199,6 +217,8 @@ type ClipBatch struct {
 	MSDFIdx      int  // start index in MSDFGlyphs[]
 	GradientIdx  int  // start index in GradientRects[]
 	ShadowIdx    int  // start index in ShadowRects[]
+	ImageIdx     int  // start index in ImageRects[]
+	ShaderIdx    int  // start index in ShaderRects[]
 	FullViewport bool // true = no scissor, full viewport
 }
 
@@ -210,6 +230,8 @@ type BlurRegion struct {
 
 // Scene is the fully laid-out draw list for one frame.
 type Scene struct {
+	Grain float32 // Noise/grain intensity from theme (RFC-008 §10.5); 0 = off
+
 	Rects          []DrawRect
 	Glyphs         []DrawGlyph      // legacy bitmap glyphs
 	TexturedGlyphs []TexturedGlyph  // atlas-based glyphs
@@ -224,6 +246,12 @@ type Scene struct {
 	// Soft-shadow rectangles (rendered before rects so shadows go behind content).
 	ShadowRects []DrawShadowRect
 
+	// Image-filled rectangles.
+	ImageRects []DrawImageRect
+
+	// Shader-filled rectangles.
+	ShaderRects []DrawShaderRect
+
 	// Overlay draw lists — rendered after main content so overlays
 	// (tooltips, dropdowns, context menus) fully cover underlying text.
 	OverlayRects          []DrawRect
@@ -232,6 +260,8 @@ type Scene struct {
 	OverlayMSDFGlyphs     []TexturedGlyph
 	OverlayGradientRects  []DrawGradientRect
 	OverlayShadowRects    []DrawShadowRect
+	OverlayImageRects     []DrawImageRect
+	OverlayShaderRects    []DrawShaderRect
 
 	// Scissor clip batches — each batch specifies a scissor rect and
 	// index ranges into the main/overlay draw lists.

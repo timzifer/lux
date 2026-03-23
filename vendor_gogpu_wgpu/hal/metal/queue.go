@@ -1,0 +1,455 @@
+// Copyright 2025 The GoGPU Authors
+// SPDX-License-Identifier: MIT
+
+//go:build darwin
+
+package metal
+
+import (
+	"fmt"
+	"unsafe"
+
+	"github.com/gogpu/wgpu/hal"
+)
+
+// maxFramesInFlight is the maximum number of frames the CPU can get ahead of
+// the GPU. A value of 2 matches the Vulkan and DX12 backends and provides good
+// latency/throughput balance. When the CPU tries to submit a frame beyond this
+// limit, it blocks until the GPU finishes an earlier frame, preventing unbounded
+// resource growth and drawable pool exhaustion.
+const maxFramesInFlight = 2
+
+// Queue implements hal.Queue for Metal.
+type Queue struct {
+	device       *Device
+	commandQueue ID // id<MTLCommandQueue>
+
+	// frameSemaphore limits CPU-ahead-of-GPU frames. Each Submit consumes a
+	// slot from the buffered channel; the GPU's addCompletedHandler callback
+	// returns the slot when the command buffer finishes execution.
+	// nil if block support is unavailable (graceful degradation).
+	frameSemaphore chan struct{}
+}
+
+// Submit submits command buffers to the GPU.
+//
+// Frame throttling: when frameSemaphore is initialized, Submit blocks until a
+// frame slot is available (at most maxFramesInFlight frames in-flight). A
+// completion handler on the last command buffer signals the semaphore when the
+// GPU finishes, releasing the slot for the next frame. This prevents unbounded
+// memory growth from queued command buffers and avoids drawable pool exhaustion.
+func (q *Queue) Submit(commandBuffers []hal.CommandBuffer, fence hal.Fence, fenceValue uint64) error {
+	// Acquire a frame slot — blocks if maxFramesInFlight frames are in-flight.
+	// This is the CPU-side throttle point.
+	if q.frameSemaphore != nil {
+		<-q.frameSemaphore
+	}
+
+	hal.Logger().Debug("metal: Submit",
+		"buffers", len(commandBuffers),
+		"hasFence", fence != nil,
+	)
+
+	pool := NewAutoreleasePool()
+	defer pool.Drain()
+
+	lastIdx := len(commandBuffers) - 1
+	for i, buf := range commandBuffers {
+		cb, ok := buf.(*CommandBuffer)
+		if !ok || cb == nil {
+			continue
+		}
+
+		// If fence provided, encode a signal on the shared event.
+		// MTLSharedEvent.signaledValue is updated by the GPU when the command
+		// buffer completes — we do NOT set the Go-side value here.
+		if fence != nil {
+			if mtlFence, ok := fence.(*Fence); ok && mtlFence != nil {
+				_ = MsgSend(cb.raw, Sel("encodeSignalEvent:value:"),
+					uintptr(mtlFence.event), uintptr(fenceValue))
+			}
+		}
+
+		// Schedule presentation BEFORE commit (Metal requirement)
+		if cb.drawable != 0 {
+			_ = MsgSend(cb.raw, Sel("presentDrawable:"), uintptr(cb.drawable))
+			hal.Logger().Debug("metal: presentDrawable scheduled")
+		}
+
+		// On the last command buffer, register a completion handler to release
+		// the frame semaphore slot when the GPU finishes this batch.
+		if i == lastIdx && q.frameSemaphore != nil {
+			q.registerFrameCompletionHandler(cb.raw)
+			hal.Logger().Debug("metal: frame completion handler registered")
+		}
+
+		// Commit the command buffer
+		_ = MsgSend(cb.raw, Sel("commit"))
+	}
+
+	// If there were no valid command buffers but we acquired a semaphore slot,
+	// release it immediately to avoid deadlock.
+	if lastIdx < 0 && q.frameSemaphore != nil {
+		q.frameSemaphore <- struct{}{}
+	}
+
+	return nil
+}
+
+// registerFrameCompletionHandler attaches an addCompletedHandler: block to the
+// command buffer that signals frameSemaphore when the GPU finishes execution.
+func (q *Queue) registerFrameCompletionHandler(cmdBuffer ID) {
+	blockPtr := newFrameCompletionBlock(q.frameSemaphore)
+	if blockPtr == 0 {
+		// Block creation failed — release the semaphore slot immediately
+		// so the pipeline does not deadlock. This degrades gracefully to
+		// no throttling for this frame.
+		hal.Logger().Warn("metal: frame completion block creation failed")
+		q.frameSemaphore <- struct{}{}
+		return
+	}
+
+	// With _NSConcreteGlobalBlock, Block_copy() is a no-op — Metal holds
+	// the same pointer. The block is pinned via blockPinRegistry until
+	// the completion callback fires and unpins it.
+	_ = MsgSend(cmdBuffer, Sel("addCompletedHandler:"), blockPtr)
+}
+
+// ReadBuffer reads data from a buffer.
+//
+// Fast path: if the buffer is CPU-mappable, reads directly. Slow path: if the
+// buffer is GPU-only, blits to a staging buffer and reads from that.
+func (q *Queue) ReadBuffer(buffer hal.Buffer, offset uint64, data []byte) error {
+	buf, ok := buffer.(*Buffer)
+	if !ok || buf == nil {
+		return fmt.Errorf("metal: ReadBuffer: invalid buffer")
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Fast path: buffer is mappable.
+	ptr := buf.Contents()
+	if ptr != nil {
+		src := unsafe.Slice((*byte)(unsafe.Add(ptr, int(offset))), len(data))
+		copy(data, src)
+		return nil
+	}
+
+	// Slow path: buffer is Private — blit to staging buffer, then read.
+	return q.readBufferStaged(buf, offset, data)
+}
+
+// readBufferStaged reads from a Private-mode buffer via a temporary staging buffer.
+func (q *Queue) readBufferStaged(buf *Buffer, offset uint64, data []byte) error {
+	hal.Logger().Debug("metal: ReadBuffer using staging path",
+		"size", len(data), "offset", offset)
+
+	pool := NewAutoreleasePool()
+	defer pool.Drain()
+
+	// Create temporary Shared staging buffer.
+	staging := MsgSend(q.device.raw, Sel("newBufferWithLength:options:"),
+		uintptr(len(data)), uintptr(MTLResourceStorageModeShared))
+	if staging == 0 {
+		return fmt.Errorf("metal: ReadBuffer: staging buffer creation failed (size=%d)", len(data))
+	}
+	defer Release(staging)
+
+	// Blit from source to staging.
+	cmdBuffer := MsgSend(q.commandQueue, Sel("commandBuffer"))
+	if cmdBuffer == 0 {
+		return fmt.Errorf("metal: ReadBuffer: command buffer creation failed")
+	}
+	Retain(cmdBuffer)
+	defer Release(cmdBuffer)
+
+	blitEncoder := MsgSend(cmdBuffer, Sel("blitCommandEncoder"))
+	if blitEncoder == 0 {
+		return fmt.Errorf("metal: ReadBuffer: blit encoder creation failed")
+	}
+
+	msgSendVoid(blitEncoder, Sel("copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:"),
+		argPointer(uintptr(buf.raw)),
+		argUint64(offset),
+		argPointer(uintptr(staging)),
+		argUint64(0),
+		argUint64(uint64(len(data))),
+	)
+	_ = MsgSend(blitEncoder, Sel("endEncoding"))
+
+	// Must wait synchronously — caller needs the data immediately.
+	_ = MsgSend(cmdBuffer, Sel("commit"))
+	_ = MsgSend(cmdBuffer, Sel("waitUntilCompleted"))
+
+	// Read from staging buffer.
+	stagingPtr := MsgSend(staging, Sel("contents"))
+	if stagingPtr == 0 {
+		return fmt.Errorf("metal: ReadBuffer: staging buffer not mappable")
+	}
+	src := unsafe.Slice((*byte)(unsafe.Pointer(stagingPtr)), len(data))
+	copy(data, src)
+	return nil
+}
+
+// WriteBuffer writes data to a buffer immediately.
+//
+// Fast path: if the buffer is CPU-mappable (Shared/Managed storage), copies
+// data directly via memcpy. Slow path: if the buffer is GPU-only (Private
+// storage), creates a temporary staging buffer and blits the data. The staging
+// path matches the pattern used by WriteTexture and Rust wgpu.
+func (q *Queue) WriteBuffer(buffer hal.Buffer, offset uint64, data []byte) error {
+	buf, ok := buffer.(*Buffer)
+	if !ok || buf == nil {
+		return fmt.Errorf("metal: WriteBuffer: invalid buffer")
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Fast path: buffer is mappable (Shared/Managed storage mode).
+	ptr := buf.Contents()
+	if ptr != nil {
+		dst := unsafe.Slice((*byte)(unsafe.Add(ptr, int(offset))), len(data))
+		copy(dst, data)
+		return nil
+	}
+
+	// Slow path: buffer is Private storage — use staging buffer + blit.
+	// This is a defense-in-depth fallback; with the CopyDst→Shared fix in
+	// CreateBuffer, this path should rarely be reached.
+	return q.writeBufferStaged(buf, offset, data)
+}
+
+// writeBufferStaged copies data to a Private-mode buffer via a temporary
+// Shared staging buffer and a blit command. This mirrors the staging pattern
+// used by WriteTexture and matches Rust wgpu's Queue::write_buffer behavior.
+func (q *Queue) writeBufferStaged(buf *Buffer, offset uint64, data []byte) error {
+	hal.Logger().Debug("metal: WriteBuffer using staging path",
+		"size", len(data), "offset", offset)
+
+	pool := NewAutoreleasePool()
+	defer pool.Drain()
+
+	// Create temporary Shared staging buffer with the data.
+	staging := MsgSend(q.device.raw, Sel("newBufferWithBytes:length:options:"),
+		uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)),
+		uintptr(MTLResourceStorageModeShared))
+	if staging == 0 {
+		return fmt.Errorf("metal: WriteBuffer: staging buffer creation failed (size=%d)", len(data))
+	}
+
+	// Create a one-shot command buffer for the blit.
+	cmdBuffer := MsgSend(q.commandQueue, Sel("commandBuffer"))
+	if cmdBuffer == 0 {
+		Release(staging)
+		return fmt.Errorf("metal: WriteBuffer: command buffer creation failed")
+	}
+	Retain(cmdBuffer)
+
+	blitEncoder := MsgSend(cmdBuffer, Sel("blitCommandEncoder"))
+	if blitEncoder == 0 {
+		Release(staging)
+		Release(cmdBuffer)
+		return fmt.Errorf("metal: WriteBuffer: blit encoder creation failed")
+	}
+
+	// copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:
+	msgSendVoid(blitEncoder, Sel("copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:"),
+		argPointer(uintptr(staging)),
+		argUint64(0),
+		argPointer(uintptr(buf.raw)),
+		argUint64(offset),
+		argUint64(uint64(len(data))),
+	)
+	_ = MsgSend(blitEncoder, Sel("endEncoding"))
+
+	// Try async release via completion handler (same pattern as WriteTexture).
+	blockPtr, blockID := newCompletedHandlerBlock(staging)
+	if blockPtr != 0 {
+		_ = MsgSend(cmdBuffer, Sel("addCompletedHandler:"), blockPtr)
+		_ = MsgSend(cmdBuffer, Sel("commit"))
+		Release(cmdBuffer)
+		// Block is pinned via blockPinRegistry until the completion callback
+		// fires and unpins it. No runtime.KeepAlive needed.
+		_ = blockID
+		return nil
+	}
+
+	// Fallback: synchronous path.
+	_ = MsgSend(cmdBuffer, Sel("commit"))
+	_ = MsgSend(cmdBuffer, Sel("waitUntilCompleted"))
+	Release(staging)
+	Release(cmdBuffer)
+	return nil
+}
+
+// WriteTexture writes data to a texture using a staging buffer and blit encoder.
+//
+// Metal textures with StorageModePrivate cannot be written from the CPU directly.
+// This method creates a temporary Shared buffer, copies the pixel data into it,
+// then uses a blit command encoder to copy from the buffer into the texture.
+//
+// The staging buffer is released asynchronously via addCompletedHandler when
+// the GPU finishes the blit, avoiding a full pipeline stall. If block creation
+// fails, falls back to synchronous waitUntilCompleted + immediate Release.
+//
+// The caller's data slice is consumed synchronously — newBufferWithBytes copies
+// the bytes into the staging buffer before this method returns, so the caller
+// may reuse or free the data slice immediately.
+func (q *Queue) WriteTexture(dst *hal.ImageCopyTexture, data []byte, layout *hal.ImageDataLayout, size *hal.Extent3D) error {
+	tex, ok := dst.Texture.(*Texture)
+	if !ok || tex == nil || len(data) == 0 || size == nil {
+		return fmt.Errorf("metal: WriteTexture: invalid arguments")
+	}
+
+	pool := NewAutoreleasePool()
+	defer pool.Drain()
+
+	// Create a temporary staging buffer with Shared storage mode.
+	// newBufferWithBytes copies data[] into GPU-visible memory synchronously,
+	// so the caller's slice is consumed before this method returns.
+	stagingBuffer := MsgSend(q.device.raw, Sel("newBufferWithBytes:length:options:"),
+		uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)), uintptr(MTLStorageModeShared))
+	if stagingBuffer == 0 {
+		return fmt.Errorf("metal: WriteTexture: staging buffer creation failed (dataSize=%d)", len(data))
+	}
+	// Do NOT defer Release(stagingBuffer) — it will be released either by
+	// the completion handler (async path) or explicitly (sync fallback).
+
+	// Create a one-shot command buffer for the blit operation.
+	cmdBuffer := MsgSend(q.commandQueue, Sel("commandBuffer"))
+	if cmdBuffer == 0 {
+		Release(stagingBuffer)
+		return fmt.Errorf("metal: WriteTexture: command buffer creation failed")
+	}
+	Retain(cmdBuffer)
+
+	blitEncoder := MsgSend(cmdBuffer, Sel("blitCommandEncoder"))
+	if blitEncoder == 0 {
+		Release(stagingBuffer)
+		Release(cmdBuffer)
+		return fmt.Errorf("metal: WriteTexture: blit encoder creation failed")
+	}
+
+	// Calculate layout parameters.
+	bytesPerRow := layout.BytesPerRow
+	if bytesPerRow == 0 {
+		// Estimate bytes per row from width and format (assume 4 bytes/pixel for RGBA8).
+		bytesPerRow = size.Width * 4
+	}
+	layers := size.DepthOrArrayLayers
+	if layers == 0 {
+		layers = 1
+	}
+	bytesPerImage := layout.RowsPerImage * bytesPerRow
+	if bytesPerImage == 0 {
+		bytesPerImage = size.Height * bytesPerRow
+	}
+
+	sourceOrigin := MTLOrigin{
+		X: NSUInteger(dst.Origin.X),
+		Y: NSUInteger(dst.Origin.Y),
+		Z: NSUInteger(dst.Origin.Z),
+	}
+	sourceSize := MTLSize{
+		Width:  NSUInteger(size.Width),
+		Height: NSUInteger(size.Height),
+		Depth:  NSUInteger(layers),
+	}
+
+	msgSendVoid(blitEncoder, Sel("copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
+		argPointer(uintptr(stagingBuffer)),
+		argUint64(uint64(layout.Offset)),
+		argUint64(uint64(bytesPerRow)),
+		argUint64(uint64(bytesPerImage)),
+		argStruct(sourceSize, mtlSizeType),
+		argPointer(uintptr(tex.raw)),
+		argUint64(uint64(dst.Origin.Z)),
+		argUint64(uint64(dst.MipLevel)),
+		argStruct(sourceOrigin, mtlOriginType),
+	)
+
+	_ = MsgSend(blitEncoder, Sel("endEncoding"))
+
+	// Try async path: register a completion handler to release the staging
+	// buffer when the GPU finishes the blit. This avoids a full pipeline stall
+	// that waitUntilCompleted causes (multi-ms per 4K texture).
+	blockPtr, blockID := newCompletedHandlerBlock(stagingBuffer)
+	if blockPtr != 0 {
+		// Register completion handler BEFORE commit.
+		// addCompletedHandler: retains the command buffer internally.
+		_ = MsgSend(cmdBuffer, Sel("addCompletedHandler:"), blockPtr)
+
+		// Commit — GPU will execute the blit asynchronously.
+		_ = MsgSend(cmdBuffer, Sel("commit"))
+
+		// Release our reference to the command buffer. The Metal runtime
+		// retains it until the completion handler fires.
+		Release(cmdBuffer)
+
+		// Block is pinned via blockPinRegistry until the completion callback
+		// fires and unpins it. No runtime.KeepAlive needed.
+		_ = blockID
+
+		hal.Logger().Debug("metal: WriteTexture committed (async)",
+			"width", size.Width,
+			"height", size.Height,
+			"dataSize", len(data),
+			"format", tex.format,
+		)
+		return nil
+	}
+
+	// Fallback: block creation failed — use synchronous path.
+	_ = MsgSend(cmdBuffer, Sel("commit"))
+	_ = MsgSend(cmdBuffer, Sel("waitUntilCompleted"))
+	Release(stagingBuffer)
+	Release(cmdBuffer)
+
+	hal.Logger().Debug("metal: WriteTexture completed (sync fallback)",
+		"width", size.Width,
+		"height", size.Height,
+		"dataSize", len(data),
+		"format", tex.format,
+	)
+	return nil
+}
+
+// Present presents a surface texture to the screen.
+//
+// Creates a dedicated command buffer, calls presentDrawable:, and commits.
+// This matches the Rust wgpu Metal backend pattern where presentation is
+// handled in a separate command buffer from rendering work.
+func (q *Queue) Present(surface hal.Surface, texture hal.SurfaceTexture) error {
+	hal.Logger().Debug("metal: Present")
+	st, ok := texture.(*SurfaceTexture)
+	if !ok || st == nil {
+		return nil
+	}
+
+	if st.drawable != 0 {
+		pool := NewAutoreleasePool()
+
+		// Create a dedicated command buffer for presentation
+		cmdBuffer := MsgSend(q.commandQueue, Sel("commandBuffer"))
+		if cmdBuffer != 0 {
+			_ = MsgSend(cmdBuffer, Sel("presentDrawable:"), uintptr(st.drawable))
+			_ = MsgSend(cmdBuffer, Sel("commit"))
+			hal.Logger().Debug("metal: presentDrawable committed")
+		}
+
+		Release(st.drawable)
+		st.drawable = 0
+
+		pool.Drain()
+	}
+
+	return nil
+}
+
+// GetTimestampPeriod returns the timestamp period in nanoseconds.
+func (q *Queue) GetTimestampPeriod() float32 {
+	// Metal timestamps are in nanoseconds
+	return 1.0
+}

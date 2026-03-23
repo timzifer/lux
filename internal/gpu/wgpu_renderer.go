@@ -14,6 +14,12 @@ import (
 	"github.com/timzifer/lux/internal/wgpu"
 )
 
+// metalBufferSlotOffset reserves Metal buffer slots 0..1 for bind-group
+// uniform/storage buffers. On Metal, vertex buffer slots and [[buffer(N)]]
+// shader arguments share the same index space, so we offset vertex buffers
+// to avoid conflicts with naga-generated [[buffer(0)]] etc.
+const metalBufferSlotOffset = 2
+
 // WGPURenderer implements Renderer using the wgpu abstraction layer (RFC §6.1).
 // It provides the same rendering capabilities as OpenGLRenderer but using WebGPU:
 //   - Sharp rectangles via clear operations
@@ -41,7 +47,8 @@ type WGPURenderer struct {
 	gradPipeline     wgpu.RenderPipeline // gradient rectangle pipeline
 
 	// Shared resources
-	projBuffer     wgpu.Buffer   // 64 bytes: mat4x4 projection
+	projBuffer     wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 params (grain, reserved)
+	grain          float32       // current grain intensity from scene (RFC-008 §10.5)
 	msdfUniBuffer  wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 atlas_size
 	rectVertBuffer wgpu.Buffer   // unit quad shared by rect + text + MSDF
 	rectInstBuffer wgpu.Buffer
@@ -71,6 +78,15 @@ type WGPURenderer struct {
 	gradUniBuffer    wgpu.Buffer // gradient params uniform buffer (resizable)
 	gradUniBufCap    uint64      // current capacity in bytes
 	gradBindGroups   []wgpu.BindGroup // per-gradient bind groups (rebuilt each frame)
+
+	// Image texture resources
+	imagePipeline    wgpu.RenderPipeline
+	imageTexLayout   wgpu.BindGroupLayout // group 1: texture + sampler
+	imageSampler     wgpu.Sampler
+	imageInstBuffer  wgpu.Buffer
+	imageInstBufCap  uint64
+	imageBuf         []float32
+	imageTextures    map[draw.ImageID]imageTextureEntry
 
 	// Shadow resources
 	shadowPipeline    wgpu.RenderPipeline
@@ -118,6 +134,14 @@ type WGPURenderer struct {
 	perfRects      int
 	perfTextGlyphs int
 	perfMSDFGlyphs int
+}
+
+// imageTextureEntry holds GPU resources for a loaded image.
+type imageTextureEntry struct {
+	texture wgpu.Texture
+	view    wgpu.TextureView
+	width   int
+	height  int
 }
 
 // NewWGPU creates a new wgpu-based renderer.
@@ -175,10 +199,10 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		})
 	}
 
-	// Create projection uniform buffer (4x4 float32 matrix = 64 bytes).
+	// Create projection uniform buffer (4x4 float32 matrix + vec4 params = 80 bytes).
 	r.projBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: "projection",
-		Size:  64,
+		Size:  80,
 		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
 	})
 
@@ -316,6 +340,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     rectShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 36, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
@@ -338,7 +363,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Vertex: wgpu.VertexState{
 			Module:     textShader,
 			EntryPoint: "vs_main",
-			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout, glyphInstanceLayout},
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, unitQuadLayout, glyphInstanceLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     textShader,
@@ -354,7 +379,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Vertex: wgpu.VertexState{
 			Module:     msdfShader,
 			EntryPoint: "vs_main",
-			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout, glyphInstanceLayout},
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, unitQuadLayout, glyphInstanceLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     msdfShader,
@@ -370,7 +395,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Label:  "proj-bind-group",
 		Layout: projLayout,
 		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
 		},
 	})
 
@@ -378,7 +403,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Label:  "text-bind-group",
 		Layout: r.textLayout,
 		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
 			{Binding: 1, Texture: r.atlasView},
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
@@ -425,6 +450,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     surfShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 16, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1}, // rect
@@ -439,6 +465,58 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.surfTexLayout},
 	})
+
+	// --- Image pipeline ---
+
+	imgShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "image-shader",
+		Source: wgslImageShader,
+	})
+	defer imgShader.Destroy()
+
+	r.imageTexLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "img-tex-layout",
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &wgpu.TextureBindingLayout{SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D}},
+			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: &wgpu.SamplerBindingLayout{}},
+		},
+	})
+
+	r.imageSampler = device.CreateSampler(&wgpu.SamplerDescriptor{Label: "image-sampler"})
+
+	// Image instance buffer: rect(4F) + uv_rect(4F) + opacity(1F) = 36 bytes per instance.
+	r.imageInstBufCap = 64 * 36
+	r.imageInstBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "img-instances",
+		Size:  r.imageInstBufCap,
+		Usage: wgpu.BufferUsageVertex | wgpu.BufferUsageCopyDst,
+	})
+
+	r.imagePipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "image-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     imgShader,
+			EntryPoint: "vs_main",
+			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
+				unitQuadLayout,
+				{ArrayStride: 36, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
+					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
+					{Format: wgpu.VertexFormatFloat32x4, Offset: 16, ShaderLocation: 2}, // uv_rect (u0,v0,u1,v1)
+					{Format: wgpu.VertexFormatFloat32, Offset: 32, ShaderLocation: 3},   // opacity
+				}},
+			},
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     imgShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.imageTexLayout},
+	})
+
+	r.imageTextures = make(map[draw.ImageID]imageTextureEntry)
 
 	// --- Gradient pipeline ---
 
@@ -469,7 +547,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Vertex: wgpu.VertexState{
 			Module:     gradShader,
 			EntryPoint: "vs_main",
-			Buffers:    []wgpu.VertexBufferLayout{unitQuadLayout},
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, unitQuadLayout},
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     gradShader,
@@ -504,6 +582,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     shadowShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 48, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1},  // rect (x,y,w,h)
@@ -593,6 +672,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 			Module:     blurBlitShader,
 			EntryPoint: "vs_main",
 			Buffers: []wgpu.VertexBufferLayout{
+				{}, {},
 				unitQuadLayout,
 				{ArrayStride: 16, StepMode: wgpu.VertexStepModeInstance, Attributes: []wgpu.VertexAttribute{
 					{Format: wgpu.VertexFormatFloat32x4, Offset: 0, ShaderLocation: 1}, // rect
@@ -651,6 +731,48 @@ func (r *WGPURenderer) UnregisterSurfaceTexture(id draw.TextureID) {
 	delete(r.surfaceTextures, id)
 }
 
+// UploadImage creates (or replaces) a GPU texture for the given image ID.
+func (r *WGPURenderer) UploadImage(id draw.ImageID, width, height int, rgba []byte) {
+	// Remove old texture if replacing.
+	if old, ok := r.imageTextures[id]; ok {
+		old.view.Destroy()
+		old.texture.Destroy()
+	}
+
+	tex := r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "image",
+		Size:   wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatRGBA8Unorm,
+		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+	})
+	tex.Write(r.queue, rgba, uint32(width*4))
+	view := tex.CreateView()
+
+	r.imageTextures[id] = imageTextureEntry{
+		texture: tex,
+		view:    view,
+		width:   width,
+		height:  height,
+	}
+}
+
+// RemoveImage removes and destroys the GPU texture for the given image ID.
+func (r *WGPURenderer) RemoveImage(id draw.ImageID) {
+	if entry, ok := r.imageTextures[id]; ok {
+		entry.view.Destroy()
+		entry.texture.Destroy()
+		delete(r.imageTextures, id)
+	}
+}
+
+// ImageSize returns the dimensions of a loaded image texture, or (0,0) if not found.
+func (r *WGPURenderer) ImageSize(id draw.ImageID) (w, h int) {
+	if entry, ok := r.imageTextures[id]; ok {
+		return entry.width, entry.height
+	}
+	return 0, 0
+}
+
 // Resize updates the viewport.
 func (r *WGPURenderer) Resize(width, height int) {
 	r.width = width
@@ -682,6 +804,11 @@ func (r *WGPURenderer) BeginFrame() {
 func (r *WGPURenderer) Draw(scene draw.Scene) {
 	if !r.inited || !r.surfaceOK {
 		return
+	}
+	// Update grain intensity from scene (RFC-008 §10.5).
+	if scene.Grain != r.grain {
+		r.grain = scene.Grain
+		r.updateProjection()
 	}
 	drawStart := time.Now()
 
@@ -895,6 +1022,9 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 	// Draw surfaces (between main and overlay).
 	r.drawSurfaces(renderPass, scene.Surfaces, vpW, vpH)
 
+	// Draw images (between main and overlay).
+	r.drawImages(renderPass, scene.ImageRects, vpW, vpH)
+
 	if !hasBlur {
 		// No blur: overlay in same pass (fast path).
 		r.drawClipBatches(renderPass, scene.OverlayClipBatches,
@@ -903,6 +1033,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 			totalRectBufSize, glyphBufSize, totalShadowBufSize,
 			scene.OverlayGradientRects, mainGradCount,
 			vpW, vpH)
+		r.drawImages(renderPass, scene.OverlayImageRects, vpW, vpH)
 	}
 
 	renderPass.End()
@@ -941,8 +1072,8 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		copyPass.SetPipeline(r.blurBlitPipeline)
 		copyPass.SetBindGroup(0, r.projBindGroup)
 		copyPass.SetBindGroup(1, unblurredBG)
-		copyPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-		copyPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+		copyPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+		copyPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
 		copyPass.Draw(6, 1, 0, 0)
 		copyPass.End()
 
@@ -1078,8 +1209,8 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 			blitPass.SetPipeline(r.blurBlitPipeline)
 			blitPass.SetBindGroup(0, r.projBindGroup)
 			blitPass.SetBindGroup(1, dstBlitBG)
-			blitPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			blitPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+			blitPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			blitPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
 			blitPass.SetScissorRect(sx, sy, sw, sh)
 			blitPass.Draw(6, 1, 0, 0)
 			blitPass.End()
@@ -1114,6 +1245,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 				totalRectBufSize, glyphBufSize, totalShadowBufSize,
 				scene.OverlayGradientRects, mainGradCount,
 				vpW, vpH)
+			r.drawImages(overlayPass, scene.OverlayImageRects, vpW, vpH)
 			overlayPass.End()
 		}
 	}
@@ -1207,6 +1339,14 @@ func (r *WGPURenderer) Destroy() {
 	r.textInstPipeline.Destroy()
 	r.msdfInstPipeline.Destroy()
 	r.surfPipeline.Destroy()
+	r.imagePipeline.Destroy()
+	r.imageInstBuffer.Destroy()
+	r.imageSampler.Destroy()
+	r.imageTexLayout.Destroy()
+	for _, entry := range r.imageTextures {
+		entry.view.Destroy()
+		entry.texture.Destroy()
+	}
 	r.gradPipeline.Destroy()
 	r.shadowPipeline.Destroy()
 	r.shadowInstBuffer.Destroy()
@@ -1277,7 +1417,7 @@ func (r *WGPURenderer) resizeAtlasTexture() {
 		Label:  "text-bind-group",
 		Layout: r.textLayout,
 		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, Buffer: r.projBuffer, Size: 64},
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
 			{Binding: 1, Texture: r.atlasView},
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
@@ -1384,8 +1524,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 4 {
 			renderPass.SetPipeline(r.shadowPipeline)
 			renderPass.SetBindGroup(0, r.projBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.shadowInstBuffer, 0, shadowBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.shadowInstBuffer, 0, shadowBufSize)
 			lastPipeline = 4
 		}
 	}
@@ -1394,8 +1534,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 1 {
 			renderPass.SetPipeline(r.rectPipeline)
 			renderPass.SetBindGroup(0, r.projBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.rectInstBuffer, 0, rectBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.rectInstBuffer, 0, rectBufSize)
 			lastPipeline = 1
 		}
 	}
@@ -1404,8 +1544,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 2 {
 			renderPass.SetPipeline(r.textInstPipeline)
 			renderPass.SetBindGroup(0, r.textBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.glyphInstBuffer, 0, glyphBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.glyphInstBuffer, 0, glyphBufSize)
 			lastPipeline = 2
 		}
 	}
@@ -1414,8 +1554,8 @@ func (r *WGPURenderer) drawClipBatches(
 		if lastPipeline != 3 {
 			renderPass.SetPipeline(r.msdfInstPipeline)
 			renderPass.SetBindGroup(0, r.msdfBindGroup)
-			renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-			renderPass.SetVertexBuffer(1, r.glyphInstBuffer, 0, glyphBufSize)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.glyphInstBuffer, 0, glyphBufSize)
 			lastPipeline = 3
 		}
 	}
@@ -1567,7 +1707,7 @@ func (r *WGPURenderer) drawGradientRect(renderPass wgpu.RenderPass, bindGroupIdx
 	renderPass.SetPipeline(r.gradPipeline)
 	renderPass.SetBindGroup(0, r.projBindGroup)
 	renderPass.SetBindGroup(1, r.gradBindGroups[bindGroupIdx])
-	renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
+	renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
 	renderPass.Draw(6, 1, 0, 0)
 }
 
@@ -1597,11 +1737,78 @@ func (r *WGPURenderer) drawSurfaces(renderPass wgpu.RenderPass, surfaces []draw.
 		renderPass.SetPipeline(r.surfPipeline)
 		renderPass.SetBindGroup(0, r.projBindGroup)
 		renderPass.SetBindGroup(1, surfBindGroup)
-		renderPass.SetVertexBuffer(0, r.rectVertBuffer, 0, 48)
-		renderPass.SetVertexBuffer(1, r.surfInstBuffer, 0, 16)
+		renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+		renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
 		renderPass.Draw(6, 1, 0, 0)
 
 		surfBindGroup.Destroy()
+	}
+}
+
+// drawImages renders image-textured rectangles grouped by ImageID.
+// Images sharing the same texture are batched into a single draw call.
+func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.DrawImageRect, vpW, vpH uint32) {
+	if len(images) == 0 {
+		return
+	}
+
+	// Group images by ImageID for batched draw calls.
+	// Since images are typically few per frame, a simple linear scan suffices.
+	type batch struct {
+		id    draw.ImageID
+		rects []draw.DrawImageRect
+	}
+	var batches []batch
+	batchMap := make(map[draw.ImageID]int) // imageID → index in batches
+
+	for _, img := range images {
+		if idx, ok := batchMap[img.ImageID]; ok {
+			batches[idx].rects = append(batches[idx].rects, img)
+		} else {
+			batchMap[img.ImageID] = len(batches)
+			batches = append(batches, batch{id: img.ImageID, rects: []draw.DrawImageRect{img}})
+		}
+	}
+
+	for _, b := range batches {
+		entry, ok := r.imageTextures[b.id]
+		if !ok || b.id == 0 {
+			continue
+		}
+
+		// Build instance buffer: 9 floats per instance (rect 4F + uv 4F + opacity 1F).
+		r.imageBuf = r.imageBuf[:0]
+		for _, img := range b.rects {
+			r.imageBuf = append(r.imageBuf,
+				float32(img.X), float32(img.Y), float32(img.W), float32(img.H),
+				img.U0, img.V0, img.U1, img.V1,
+				img.Opacity,
+			)
+		}
+
+		needed := uint64(len(r.imageBuf) * 4)
+		r.ensureGPUBuffer(&r.imageInstBuffer, &r.imageInstBufCap, needed, "img-instances")
+		r.imageInstBuffer.Write(r.queue, float32SliceToBytes(r.imageBuf))
+
+		// Create per-batch bind group for texture.
+		imgBindGroup := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  "img-per-batch",
+			Layout: r.imageTexLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Texture: entry.view},
+				{Binding: 1, Sampler: r.imageSampler},
+			},
+		})
+
+		renderPass.SetScissorRect(0, 0, vpW, vpH)
+		renderPass.SetPipeline(r.imagePipeline)
+		renderPass.SetBindGroup(0, r.projBindGroup)
+		renderPass.SetBindGroup(1, imgBindGroup)
+		renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+		renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.imageInstBuffer, 0, needed)
+		renderPass.Draw(6, uint32(len(b.rects)), 0, 0)
+
+		imgBindGroup.Destroy()
 	}
 }
 
@@ -1620,7 +1827,11 @@ func appendGlyphInstance(buf []float32, g draw.TexturedGlyph, atlasW, atlasH flo
 
 func (r *WGPURenderer) updateProjection() {
 	proj := wgpuOrthoMatrix(0, float32(r.width), float32(r.height), 0, -1, 1)
-	r.projBuffer.Write(r.queue, float32SliceToBytes(proj[:]))
+	// 20 floats: mat4x4 (16) + params vec4 (4: grain, reserved, reserved, reserved)
+	var data [20]float32
+	copy(data[:16], proj[:])
+	data[16] = r.grain // RFC-008 §10.5: noise/grain intensity
+	r.projBuffer.Write(r.queue, float32SliceToBytes(data[:]))
 	r.updateMSDFUniforms()
 }
 

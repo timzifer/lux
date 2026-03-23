@@ -1,4 +1,4 @@
-//go:build gogpu && !nogui
+//go:build (gogpu || (darwin && arm64)) && !nogui
 
 // This file provides a pure-Go WebGPU implementation using the gogpu build tag.
 // It implements the wgpu interfaces using github.com/gogpu/wgpu, which provides

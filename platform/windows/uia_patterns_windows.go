@@ -395,33 +395,76 @@ func rangeSetValue(this uintptr, valBits uintptr) uintptr {
 	return uintptr(win32.S_OK)
 }
 
+func rangeGetNumericValue(ep *elementProvider) *a11y.AccessNumericValue {
+	ep.bridge.mu.RLock()
+	node := ep.bridge.tree.FindByID(ep.nodeID)
+	ep.bridge.mu.RUnlock()
+	if node != nil && node.Node.NumericValue != nil {
+		return node.Node.NumericValue
+	}
+	return nil
+}
+
 func rangeGetValue(this uintptr, pRetVal *float64) uintptr {
-	*pRetVal = 0
+	rp := (*rangeValueProvider)(unsafe.Pointer(this - unsafe.Offsetof(rangeValueProvider{}.vtbl)))
+	if nv := rangeGetNumericValue(rp.ep); nv != nil {
+		*pRetVal = nv.Current
+	} else {
+		*pRetVal = 0
+	}
 	return uintptr(win32.S_OK)
 }
 
 func rangeGetIsReadOnly(this uintptr, pRetVal *win32.BOOL) uintptr {
-	*pRetVal = win32.FALSE
+	rp := (*rangeValueProvider)(unsafe.Pointer(this - unsafe.Offsetof(rangeValueProvider{}.vtbl)))
+	rp.ep.bridge.mu.RLock()
+	node := rp.ep.bridge.tree.FindByID(rp.ep.nodeID)
+	rp.ep.bridge.mu.RUnlock()
+	if node != nil && node.Node.States.ReadOnly {
+		*pRetVal = win32.TRUE
+	} else {
+		*pRetVal = win32.FALSE
+	}
 	return uintptr(win32.S_OK)
 }
 
 func rangeGetMaximum(this uintptr, pRetVal *float64) uintptr {
-	*pRetVal = 100
+	rp := (*rangeValueProvider)(unsafe.Pointer(this - unsafe.Offsetof(rangeValueProvider{}.vtbl)))
+	if nv := rangeGetNumericValue(rp.ep); nv != nil {
+		*pRetVal = nv.Max
+	} else {
+		*pRetVal = 100
+	}
 	return uintptr(win32.S_OK)
 }
 
 func rangeGetMinimum(this uintptr, pRetVal *float64) uintptr {
-	*pRetVal = 0
+	rp := (*rangeValueProvider)(unsafe.Pointer(this - unsafe.Offsetof(rangeValueProvider{}.vtbl)))
+	if nv := rangeGetNumericValue(rp.ep); nv != nil {
+		*pRetVal = nv.Min
+	} else {
+		*pRetVal = 0
+	}
 	return uintptr(win32.S_OK)
 }
 
 func rangeGetLargeChange(this uintptr, pRetVal *float64) uintptr {
-	*pRetVal = 10
+	rp := (*rangeValueProvider)(unsafe.Pointer(this - unsafe.Offsetof(rangeValueProvider{}.vtbl)))
+	if nv := rangeGetNumericValue(rp.ep); nv != nil && nv.Step > 0 {
+		*pRetVal = nv.Step * 10
+	} else {
+		*pRetVal = 10
+	}
 	return uintptr(win32.S_OK)
 }
 
 func rangeGetSmallChange(this uintptr, pRetVal *float64) uintptr {
-	*pRetVal = 1
+	rp := (*rangeValueProvider)(unsafe.Pointer(this - unsafe.Offsetof(rangeValueProvider{}.vtbl)))
+	if nv := rangeGetNumericValue(rp.ep); nv != nil && nv.Step > 0 {
+		*pRetVal = nv.Step
+	} else {
+		*pRetVal = 1
+	}
 	return uintptr(win32.S_OK)
 }
 

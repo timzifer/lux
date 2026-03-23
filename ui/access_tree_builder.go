@@ -9,13 +9,17 @@ import (
 // It performs a depth-first walk, extracting accessibility information from
 // AccessibleWidget implementations and SemanticProvider surfaces.
 // The windowBounds specify the window's screen-space position for coordinate mapping.
+// The dispatcher provides per-widget screen bounds from the layout pass.
 //
 // The tree always starts with a synthetic root node at index 0 (RoleGroup)
 // that wraps all top-level elements. The UIA root provider maps to this node.
-func BuildAccessTree(root Element, reconciler *Reconciler, windowBounds a11y.Rect) a11y.AccessTree {
+func BuildAccessTree(root Element, reconciler *Reconciler, windowBounds a11y.Rect, dispatcher ...*EventDispatcher) a11y.AccessTree {
 	b := accessTreeBuilder{
 		reconciler:   reconciler,
 		windowBounds: windowBounds,
+	}
+	if len(dispatcher) > 0 {
+		b.dispatcher = dispatcher[0]
 	}
 	// Create synthetic root node at index 0. All elements become its children.
 	rootIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: "Application"}, -1, windowBounds)
@@ -27,9 +31,26 @@ func BuildAccessTree(root Element, reconciler *Reconciler, windowBounds a11y.Rec
 
 type accessTreeBuilder struct {
 	reconciler   *Reconciler
+	dispatcher   *EventDispatcher
 	windowBounds a11y.Rect
 	nodes        []a11y.AccessTreeNode
 	nextID       a11y.AccessNodeID
+}
+
+// boundsForWidget returns the screen-space bounds for a widget.
+// Falls back to windowBounds if per-widget bounds aren't available.
+func (b *accessTreeBuilder) boundsForWidget(uid UID) a11y.Rect {
+	if b.dispatcher != nil {
+		if db, ok := b.dispatcher.BoundsForWidget(uid); ok {
+			return a11y.Rect{
+				X:      float64(db.X),
+				Y:      float64(db.Y),
+				Width:  float64(db.W),
+				Height: float64(db.H),
+			}
+		}
+	}
+	return b.windowBounds
 }
 
 func (b *accessTreeBuilder) allocID() a11y.AccessNodeID {
@@ -38,7 +59,12 @@ func (b *accessTreeBuilder) allocID() a11y.AccessNodeID {
 }
 
 // addNode appends a node, links siblings, and returns the node's index.
+// If bounds are zero-sized, falls back to windowBounds so elements are
+// visible to the accessibility system.
 func (b *accessTreeBuilder) addNode(node a11y.AccessNode, parentIdx int32, bounds a11y.Rect) int {
+	if bounds.Width == 0 && bounds.Height == 0 {
+		bounds = b.windowBounds
+	}
 	idx := int32(len(b.nodes))
 	id := b.allocID()
 
@@ -91,10 +117,10 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 			accessNode = a11y.AccessNode{Role: a11y.RoleGroup}
 		}
 
-		idx := b.addNode(accessNode, parentIdx, a11y.Rect{
-			X: b.windowBounds.X, Y: b.windowBounds.Y,
-			Width: b.windowBounds.Width, Height: b.windowBounds.Height,
-		})
+		// Use per-widget bounds from the layout pass if available.
+		bounds := b.boundsForWidget(node.WidgetUID)
+
+		idx := b.addNode(accessNode, parentIdx, bounds)
 		b.walk(node.Child, int32(idx))
 
 	case surfaceElement:
@@ -222,19 +248,44 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 		}
 		b.addNode(an, parentIdx, a11y.Rect{})
 	case sliderElement:
-		b.addNode(a11y.AccessNode{
-			Role: a11y.RoleSlider,
-		}, parentIdx, a11y.Rect{})
+		an := a11y.AccessNode{
+			Role:   a11y.RoleSlider,
+			States: a11y.AccessStates{Disabled: node.Disabled},
+			NumericValue: &a11y.AccessNumericValue{
+				Current: float64(node.Value),
+				Min:     0,
+				Max:     1,
+				Step:    0, // continuous
+			},
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
 	case progressBarElement:
-		b.addNode(a11y.AccessNode{
-			Role: a11y.RoleProgressBar,
-		}, parentIdx, a11y.Rect{})
+		an := a11y.AccessNode{
+			Role:   a11y.RoleProgressBar,
+			States: a11y.AccessStates{ReadOnly: true},
+		}
+		if !node.Indeterminate {
+			an.NumericValue = &a11y.AccessNumericValue{
+				Current: float64(node.Value),
+				Min:     0,
+				Max:     1,
+			}
+		} else {
+			an.States.Busy = true
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
 	case textFieldElement:
-		b.addNode(a11y.AccessNode{
-			Role:  a11y.RoleTextInput,
-			Label: node.Placeholder,
-			Value: node.Value,
-		}, parentIdx, a11y.Rect{})
+		an := a11y.AccessNode{
+			Role:   a11y.RoleTextInput,
+			Label:  node.Placeholder,
+			Value:  node.Value,
+			States: a11y.AccessStates{Disabled: node.Disabled},
+			TextState: &a11y.AccessTextState{
+				Length:      len([]rune(node.Value)),
+				CaretOffset: -1,
+			},
+		}
+		b.addNode(an, parentIdx, a11y.Rect{})
 	case radioElement:
 		b.addNode(a11y.AccessNode{
 			Role:   a11y.RoleCheckbox,
@@ -293,11 +344,13 @@ func (b *accessTreeBuilder) mergeSurfaceSemantics(sem SurfaceSemantics, parentId
 
 func surfaceAccessNodeToAccessNode(sn SurfaceAccessNode) a11y.AccessNode {
 	return a11y.AccessNode{
-		Role:        sn.Role,
-		Label:       sn.Label,
-		Description: sn.Description,
-		Value:       sn.Value,
-		States:      sn.States,
+		Role:         sn.Role,
+		Label:        sn.Label,
+		Description:  sn.Description,
+		Value:        sn.Value,
+		States:       sn.States,
+		NumericValue: sn.NumericValue,
+		TextState:    sn.TextState,
 	}
 }
 

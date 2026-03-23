@@ -191,17 +191,19 @@ type SurfaceSemantics struct {
 }
 
 type SurfaceAccessNode struct {
-    ID          SurfaceNodeID
-    Parent      SurfaceNodeID // 0 = Root innerhalb der Surface
-    Role        a11y.AccessRole
-    Label       string
-    Description string
-    Value       string
-    Bounds      draw.Rect     // relativ zur Surface in dp
-    Lang        language.Tag
-    States      a11y.AccessStates
-    Actions     []a11y.AccessActionDesc
-    Relations   []a11y.AccessRelationDesc
+    ID           SurfaceNodeID
+    Parent       SurfaceNodeID // 0 = Root innerhalb der Surface
+    Role         a11y.AccessRole
+    Label        string
+    Description  string
+    Value        string
+    Bounds       draw.Rect     // relativ zur Surface in dp
+    Lang         language.Tag
+    States       a11y.AccessStates
+    Actions      []a11y.AccessActionDesc
+    Relations    []a11y.AccessRelationDesc
+    NumericValue *a11y.AccessNumericValue // nicht-nil für Slider, ProgressBar etc.
+    TextState    *a11y.AccessTextState    // nicht-nil für editierbare/selektierbare Texte
 }
 ```
 
@@ -493,17 +495,57 @@ Reichen `RoleCustomBase + n` für Spezialrollen wie Caption, DocumentPage, Annot
 
 Soll ein PDF-Renderer Absätze, Zeilen oder einzelne Text-Runs exportieren? Mehr Granularität verbessert Navigation, erhöht aber Node-Zahl und Update-Kosten.
 
-### 11.3 Selection & Caret
+### 11.3 Selection & Caret — *Gelöst*
 
-Für editierbare oder textselektionstaugliche Surfaces fehlt noch ein präziser Vertrag für:
+Gelöst durch `a11y.AccessTextState` und `a11y.TextSelection` im globalen `a11y`-Paket:
 
-- Caret-Position
-- Text-Range-Selektion
-- `setSelection` / `replaceText`
+```go
+type TextSelection struct {
+    Start int
+    End   int
+}
 
-Das ist insbesondere für Browser- oder Editor-Surfaces relevant und kann ein Folge-RFC werden.
+type AccessTextState struct {
+    Length      int             // Gesamtzahl Zeichen (Rune-Count).
+    CaretOffset int            // Primäre Caret-Position als Rune-Offset; -1 falls nicht anwendbar.
+    Selections  []TextSelection // Aktive Selektionsbereiche; nil/leer = keine Selektion.
+}
+```
 
-### 11.4 Delegation vs. Mirror
+`Selections` ist bewusst ein Slice, um Multi-Cursor- und Column-Selection-Szenarien zu unterstützen (z.B. JetBrains Column Mode, VS Code Multi-Cursor). Alle drei Plattform-APIs unterstützen dies nativ:
+
+- **UIA:** `ITextProvider2.GetSelection()` → `ITextRangeArray` (mehrere Ranges)
+- **AT-SPI2:** `Text.GetNSelections()`, `Text.GetSelection(index)` — explizit multi-fähig
+- **NSAccessibility:** `accessibilitySelectedTextRanges` → `[NSValue<NSRange>]`
+
+Einfache Selektion ist `[]TextSelection{{3, 8}}`; keine Selektion ist `nil`.
+
+`AccessNode.TextState` ist `*AccessTextState` — nil bedeutet, der Knoten hat keinen Textzustand.
+Dasselbe Feld existiert als `SurfaceAccessNode.TextState` für externe Surfaces.
+
+**Noch nicht spezifiziert:** `setSelection` / `replaceText` als Schreiboperationen. Diese können als semantische Aktionen (`PerformSemanticAction`) oder als Folge-RFC ergänzt werden.
+
+### 11.4 Numerische Werte — *Gelöst*
+
+Gelöst durch `a11y.AccessNumericValue` im globalen `a11y`-Paket:
+
+```go
+type AccessNumericValue struct {
+    Current float64
+    Min     float64
+    Max     float64
+    Step    float64 // 0 = kontinuierlich
+}
+```
+
+`AccessNode.NumericValue` ist `*AccessNumericValue` — nil bedeutet, der Knoten hat keinen numerischen Wert.
+
+Plattform-Mapping:
+- **UIA:** `IRangeValueProvider` → `Value`, `Minimum`, `Maximum`, `SmallChange`
+- **AT-SPI2:** `Value`-Interface → `GetCurrentValue()`, `GetMinimumValue()`, `GetMaximumValue()`, `GetMinimumIncrement()`
+- **NSAccessibility:** `accessibilityValue`, `accessibilityMinValue`, `accessibilityMaxValue`
+
+### 11.5 Delegation vs. Mirror
 
 Soll Lux die Semantik immer in den globalen AccessTree spiegeln, oder dürfen Engines in Einzelfällen ihre Plattform-A11y direkt exponieren? Dieses RFC bevorzugt klar den Mirror-Ansatz, weil er konsistent, testbar und plattformneutral ist.
 

@@ -459,7 +459,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					w, h := plat.WindowSize()
 					accessTree := ui.BuildAccessTree(currentTree, reconciler, a11y.Rect{
 						Width: float64(w), Height: float64(h),
-					})
+					}, dispatcher)
 					a11yBridge.UpdateTree(accessTree)
 
 					// Focus tracking.
