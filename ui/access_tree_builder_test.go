@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/a11y"
+	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -160,5 +161,113 @@ func TestBuildAccessTree_EmptyTree(t *testing.T) {
 	}
 	if accessTree.Root().Node.Role != a11y.RoleGroup {
 		t.Errorf("expected root role RoleGroup, got %d", accessTree.Root().Node.Role)
+	}
+}
+
+// ── Surface-Subtree Merge Tests (RFC-006 §6) ────────────────────
+
+func TestBuildAccessTree_SurfaceWithSemanticProvider(t *testing.T) {
+	// Create a surface with semantic content (e.g. a PDF viewer).
+	pdf := &fakeSemantic{
+		nodes: []SurfaceAccessNode{
+			{ID: 1, Role: a11y.RoleHeading, Label: "Chapter 1", Bounds: draw.Rect{X: 0, Y: 0, W: 200, H: 30}},
+			{ID: 2, Role: a11y.RoleLink, Label: "More info", Bounds: draw.Rect{X: 0, Y: 30, W: 100, H: 20}},
+		},
+		version: 1,
+	}
+
+	tree := SurfaceElement{
+		ID:       "pdf-viewer",
+		Provider: pdf,
+		Width:    300,
+		Height:   400,
+	}
+
+	reconciler := NewReconciler()
+	accessTree := BuildAccessTree(tree, reconciler, a11y.Rect{Width: 800, Height: 600})
+
+	// Should have: synthetic root + heading + link = at least 3 nodes.
+	if len(accessTree.Nodes) < 3 {
+		t.Fatalf("expected at least 3 nodes, got %d", len(accessTree.Nodes))
+	}
+
+	// Verify surface nodes were merged into the tree.
+	headings := accessTree.FindByRole(a11y.RoleHeading)
+	if len(headings) != 1 {
+		t.Fatalf("expected 1 heading from surface, got %d", len(headings))
+	}
+	if headings[0].Node.Label != "Chapter 1" {
+		t.Errorf("expected heading label 'Chapter 1', got %q", headings[0].Node.Label)
+	}
+
+	links := accessTree.FindByRole(a11y.RoleLink)
+	if len(links) != 1 {
+		t.Fatalf("expected 1 link from surface, got %d", len(links))
+	}
+	if links[0].Node.Label != "More info" {
+		t.Errorf("expected link label 'More info', got %q", links[0].Node.Label)
+	}
+}
+
+func TestBuildAccessTree_SurfaceWithoutSemanticProvider(t *testing.T) {
+	// Surface without SemanticProvider gets a fallback group node.
+	plain := &fakeSurface{}
+
+	tree := SurfaceElement{
+		ID:       "video-player",
+		Provider: plain,
+		Width:    640,
+		Height:   480,
+	}
+
+	reconciler := NewReconciler()
+	accessTree := BuildAccessTree(tree, reconciler, a11y.Rect{Width: 800, Height: 600})
+
+	// Synthetic root + fallback "Surface" group = 2 nodes.
+	if len(accessTree.Nodes) < 2 {
+		t.Fatalf("expected at least 2 nodes, got %d", len(accessTree.Nodes))
+	}
+
+	surfaces := accessTree.FindByLabel("Surface")
+	if len(surfaces) != 1 {
+		t.Fatalf("expected 1 fallback Surface node, got %d", len(surfaces))
+	}
+}
+
+func TestBuildAccessTree_SurfaceMixedWithWidgets(t *testing.T) {
+	// Mix regular widgets with a semantic surface.
+	pdf := &fakeSemantic{
+		nodes: []SurfaceAccessNode{
+			{ID: 1, Role: a11y.RoleHeading, Label: "Document Title", Bounds: draw.Rect{W: 300, H: 30}},
+		},
+		version: 1,
+	}
+
+	tree := Column(
+		ButtonText("Back", func() {}),
+		SurfaceElement{ID: "pdf", Provider: pdf, Width: 300, Height: 400},
+		ButtonText("Next", func() {}),
+	)
+
+	reconciler := NewReconciler()
+	accessTree := BuildAccessTree(tree, reconciler, a11y.Rect{Width: 800, Height: 600})
+
+	buttons := accessTree.FindByRole(a11y.RoleButton)
+	if len(buttons) != 2 {
+		t.Fatalf("expected 2 buttons, got %d", len(buttons))
+	}
+
+	headings := accessTree.FindByRole(a11y.RoleHeading)
+	if len(headings) != 1 {
+		t.Fatalf("expected 1 heading from surface, got %d", len(headings))
+	}
+
+	// All nodes should have unique IDs.
+	ids := make(map[a11y.AccessNodeID]bool)
+	for _, n := range accessTree.Nodes {
+		if ids[n.ID] {
+			t.Errorf("duplicate access node ID: %d", n.ID)
+		}
+		ids[n.ID] = true
 	}
 }

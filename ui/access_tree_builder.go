@@ -35,6 +35,12 @@ type AccessTreeBuilder struct {
 	windowBounds a11y.Rect
 	nodes        []a11y.AccessTreeNode
 	nextID       a11y.AccessNodeID
+
+	// ActiveTrapID, when non-empty, causes nodes outside the matching
+	// Overlay subtree to be excluded from the access tree (RFC-001 §11.7).
+	// Content outside a modal dialog is effectively aria-hidden.
+	ActiveTrapID string
+	insideTrap   bool // true while walking inside the trap's overlay
 }
 
 // BoundsForWidget returns the screen-space bounds for a widget.
@@ -101,8 +107,41 @@ func (b *AccessTreeBuilder) AddNode(node a11y.AccessNode, parentIdx int32, bound
 }
 
 func (b *AccessTreeBuilder) Walk(el Element, parentIdx int32) {
+	// When a FocusTrap is active, skip non-overlay content outside the trap.
+	// This effectively marks background content as aria-hidden (RFC-001 §11.7).
+	if b.ActiveTrapID != "" && !b.insideTrap {
+		// Only allow Overlay elements through — they might be the trap.
+		if _, isOverlay := el.(Overlay); !isOverlay {
+			// Allow container elements to pass through so we can find
+			// nested overlays, but skip leaf/interactive elements.
+			switch node := el.(type) {
+			case BoxElement:
+				for _, child := range node.Children {
+					b.Walk(child, parentIdx)
+				}
+				return
+			case StackElement:
+				for _, child := range node.Children {
+					b.Walk(child, parentIdx)
+				}
+				return
+			case FlexElement:
+				for _, child := range node.Children {
+					b.Walk(child, parentIdx)
+				}
+				return
+			default:
+				return // Skip non-container content outside the trap.
+			}
+		}
+	}
+
 	// Interface-based dispatch for sub-package element types.
 	if aw, ok := el.(AccessWalker); ok {
+		// When trap is active and we're outside it, skip sub-package elements.
+		if b.ActiveTrapID != "" && !b.insideTrap {
+			return
+		}
 		aw.WalkAccess(b, parentIdx)
 		return
 	}
@@ -314,6 +353,28 @@ func (b *AccessTreeBuilder) Walk(el Element, parentIdx int32) {
 				item := node.BuildItem(i)
 				b.Walk(item, int32(listIdx))
 			}
+		}
+
+	// ── Overlay elements with focus trap support (RFC-001 §11.7) ──
+	case Overlay:
+		// Modal overlays with backdrop get a RoleDialog node.
+		// When a FocusTrap is active, the overlay content is the only
+		// accessible content; everything else is excluded.
+		role := a11y.RoleGroup
+		if node.Backdrop {
+			role = a11y.RoleDialog
+		}
+		overlayNode := a11y.AccessNode{Role: role, Label: string(node.ID)}
+		idx := b.AddNode(overlayNode, parentIdx, b.windowBounds)
+
+		// Track whether we're inside the active trap.
+		if b.ActiveTrapID != "" && string(node.ID) == b.ActiveTrapID {
+			prev := b.insideTrap
+			b.insideTrap = true
+			b.Walk(node.Content, int32(idx))
+			b.insideTrap = prev
+		} else {
+			b.Walk(node.Content, int32(idx))
 		}
 
 	default:

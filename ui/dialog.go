@@ -19,6 +19,7 @@ func MessageDialog(id OverlayID, title, message string, kind platform.DialogKind
 		Dismissable: true,
 		OnDismiss:   onClose,
 		Backdrop:    true,
+		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
 		Content: SizedBox(320, 0,
 			Column(
 				Row(
@@ -46,6 +47,7 @@ func ConfirmDialog(id OverlayID, title, message string, onConfirm, onCancel func
 		Dismissable: true,
 		OnDismiss:   onCancel,
 		Backdrop:    true,
+		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
 		Content: SizedBox(320, 0,
 			Column(
 				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
@@ -71,6 +73,7 @@ func InputDialog(id OverlayID, title, message, value, placeholder string, onValu
 		Dismissable: true,
 		OnDismiss:   onCancel,
 		Backdrop:    true,
+		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
 		Content: SizedBox(360, 0,
 			Column(
 				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),

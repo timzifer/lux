@@ -8,6 +8,7 @@ require (
 	github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20250301202403-da16c1255728
 	github.com/go-text/typesetting v0.3.4
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/gogpu/wgpu v0.21.3
 	github.com/pierrec/msdf v0.0.0-20260126203608-76b1ee18a962
 	github.com/rivo/uniseg v0.4.7
