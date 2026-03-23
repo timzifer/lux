@@ -23,7 +23,7 @@ func BuildAccessTree(root Element, reconciler *Reconciler, windowBounds a11y.Rec
 	}
 	// Create synthetic root node at index 0. All elements become its children.
 	rootIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: "Application"}, -1, windowBounds)
-	b.walk(root, int32(rootIdx))
+	b.walk(root, int32(rootIdx), windowBounds)
 	tree := a11y.AccessTree{Nodes: b.nodes}
 	tree.EnsureIndex()
 	return tree
@@ -38,8 +38,8 @@ type accessTreeBuilder struct {
 }
 
 // boundsForWidget returns the screen-space bounds for a widget.
-// Falls back to windowBounds if per-widget bounds aren't available.
-func (b *accessTreeBuilder) boundsForWidget(uid UID) a11y.Rect {
+// Falls back to the provided fallback if per-widget bounds aren't available.
+func (b *accessTreeBuilder) boundsForWidget(uid UID, fallback a11y.Rect) a11y.Rect {
 	if b.dispatcher != nil {
 		if db, ok := b.dispatcher.BoundsForWidget(uid); ok {
 			return a11y.Rect{
@@ -50,7 +50,7 @@ func (b *accessTreeBuilder) boundsForWidget(uid UID) a11y.Rect {
 			}
 		}
 	}
-	return b.windowBounds
+	return fallback
 }
 
 func (b *accessTreeBuilder) allocID() a11y.AccessNodeID {
@@ -59,8 +59,6 @@ func (b *accessTreeBuilder) allocID() a11y.AccessNodeID {
 }
 
 // addNode appends a node, links siblings, and returns the node's index.
-// If bounds are zero-sized, falls back to windowBounds so elements are
-// visible to the accessibility system.
 func (b *accessTreeBuilder) addNode(node a11y.AccessNode, parentIdx int32, bounds a11y.Rect) int {
 	if bounds.Width == 0 && bounds.Height == 0 {
 		bounds = b.windowBounds
@@ -100,13 +98,34 @@ func (b *accessTreeBuilder) addNode(node a11y.AccessNode, parentIdx int32, bound
 	return int(idx)
 }
 
-func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
+// divideVertical splits avail into n horizontal strips.
+func divideVertical(avail a11y.Rect, i, n int) a11y.Rect {
+	if n <= 0 {
+		return avail
+	}
+	h := avail.Height / float64(n)
+	return a11y.Rect{X: avail.X, Y: avail.Y + float64(i)*h, Width: avail.Width, Height: h}
+}
+
+// divideHorizontal splits avail into n vertical strips.
+func divideHorizontal(avail a11y.Rect, i, n int) a11y.Rect {
+	if n <= 0 {
+		return avail
+	}
+	w := avail.Width / float64(n)
+	return a11y.Rect{X: avail.X + float64(i)*w, Y: avail.Y, Width: w, Height: avail.Height}
+}
+
+// walk traverses the element tree and creates access tree nodes.
+// avail is the approximate screen-space bounds available to this element.
+// Container elements divide avail among their children so that each
+// element gets a unique region for hit-testing.
+func (b *accessTreeBuilder) walk(el Element, parentIdx int32, avail a11y.Rect) {
 	switch node := el.(type) {
 	case nil, emptyElement:
 		return
 
 	case widgetBoundsElement:
-		// Check if the widget implements AccessibleWidget.
 		widget := b.reconciler.widgets[node.WidgetUID]
 		state := b.reconciler.states[node.WidgetUID]
 
@@ -117,27 +136,23 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 			accessNode = a11y.AccessNode{Role: a11y.RoleGroup}
 		}
 
-		// Use per-widget bounds from the layout pass if available.
-		bounds := b.boundsForWidget(node.WidgetUID)
-
+		bounds := b.boundsForWidget(node.WidgetUID, avail)
 		idx := b.addNode(accessNode, parentIdx, bounds)
-		b.walk(node.Child, int32(idx))
+		b.walk(node.Child, int32(idx), bounds)
 
 	case surfaceElement:
-		// Check if the surface's provider implements SemanticProvider.
 		if sp, ok := node.Provider.(SemanticProvider); ok {
 			bounds := draw.R(0, 0, float32(node.Width), float32(node.Height))
 			semantics := sp.SnapshotSemantics(bounds)
 			b.mergeSurfaceSemantics(semantics, parentIdx, node.Width, node.Height)
 		} else {
-			// Fallback: generic group node for surfaces without semantics.
 			b.addNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: "Surface"}, parentIdx, a11y.Rect{
 				Width: float64(node.Width), Height: float64(node.Height),
 			})
 		}
 
 	case textElement:
-		b.addNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: node.Content}, parentIdx, a11y.Rect{})
+		b.addNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: node.Content}, parentIdx, avail)
 
 	case buttonElement:
 		label := extractButtonLabel(node.Content)
@@ -150,78 +165,101 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 				{Name: "activate", Trigger: node.OnClick},
 			}
 		}
-		idx := b.addNode(accessNode, parentIdx, a11y.Rect{})
-		b.walk(node.Content, int32(idx))
+		idx := b.addNode(accessNode, parentIdx, avail)
+		b.walk(node.Content, int32(idx), avail)
 
-	// ── Container elements: walk children under the same parent ──
+	// ── Container elements: divide bounds among children ──
 	case boxElement:
-		for _, child := range node.Children {
-			b.walk(child, parentIdx)
+		n := len(node.Children)
+		for i, child := range node.Children {
+			var childBounds a11y.Rect
+			if node.Axis == AxisColumn {
+				childBounds = divideVertical(avail, i, n)
+			} else {
+				childBounds = divideHorizontal(avail, i, n)
+			}
+			b.walk(child, parentIdx, childBounds)
 		}
 	case stackElement:
+		// Stack overlaps children; each gets full bounds.
 		for _, child := range node.Children {
-			b.walk(child, parentIdx)
+			b.walk(child, parentIdx, avail)
 		}
 	case flexElement:
-		for _, child := range node.Children {
-			b.walk(child, parentIdx)
+		n := len(node.Children)
+		for i, child := range node.Children {
+			var childBounds a11y.Rect
+			if node.Direction == FlexRow {
+				childBounds = divideHorizontal(avail, i, n)
+			} else {
+				childBounds = divideVertical(avail, i, n)
+			}
+			b.walk(child, parentIdx, childBounds)
 		}
 	case gridElement:
-		for _, child := range node.Children {
-			b.walk(child, parentIdx)
+		n := len(node.Children)
+		for i, child := range node.Children {
+			childBounds := divideVertical(avail, i, n)
+			b.walk(child, parentIdx, childBounds)
 		}
 	case themedElement:
-		for _, child := range node.Children {
-			b.walk(child, parentIdx)
+		n := len(node.Children)
+		for i, child := range node.Children {
+			childBounds := divideVertical(avail, i, n)
+			b.walk(child, parentIdx, childBounds)
 		}
 	case customLayoutElement:
-		for _, child := range node.Children {
-			b.walk(child, parentIdx)
+		n := len(node.Children)
+		for i, child := range node.Children {
+			childBounds := divideVertical(avail, i, n)
+			b.walk(child, parentIdx, childBounds)
 		}
 
-	// ── Wrapper elements: pass through to single child ──
+	// ── Wrapper elements: pass through bounds ──
 	case paddingElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case sizedBoxElement:
 		if node.Child != nil {
-			b.walk(node.Child, parentIdx)
+			b.walk(node.Child, parentIdx, avail)
 		}
 	case expandedElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case scrollViewElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case keyedElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case blurBoxElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case shadowBoxElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case opacityBoxElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case frostedGlassElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case innerShadowBoxElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case elevationBoxElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case elevationCardElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case vibrancyElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case glowBoxElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case cardElement:
-		b.walk(node.Child, parentIdx)
+		b.walk(node.Child, parentIdx, avail)
 	case badgeElement:
-		b.walk(node.Content, parentIdx)
+		b.walk(node.Content, parentIdx, avail)
 	case chipElement:
-		b.walk(node.Label, parentIdx)
+		b.walk(node.Label, parentIdx, avail)
 	case tooltipElement:
-		// Only the trigger is relevant for a11y; tooltip content is overlay.
-		b.walk(node.Trigger, parentIdx)
+		b.walk(node.Trigger, parentIdx, avail)
 	case splitViewElement:
-		b.walk(node.First, parentIdx)
-		b.walk(node.Second, parentIdx)
+		// Split: first gets left/top half, second gets right/bottom half.
+		half1 := a11y.Rect{X: avail.X, Y: avail.Y, Width: avail.Width / 2, Height: avail.Height}
+		half2 := a11y.Rect{X: avail.X + avail.Width/2, Y: avail.Y, Width: avail.Width / 2, Height: avail.Height}
+		b.walk(node.First, parentIdx, half1)
+		b.walk(node.Second, parentIdx, half2)
 
 	// ── Interactive leaf elements with a11y semantics ──
 	case checkboxElement:
@@ -235,7 +273,7 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 			checked := node.Checked
 			an.Actions = []a11y.AccessAction{{Name: "activate", Trigger: func() { toggle(!checked) }}}
 		}
-		b.addNode(an, parentIdx, a11y.Rect{})
+		b.addNode(an, parentIdx, avail)
 	case toggleElement:
 		an := a11y.AccessNode{
 			Role:   a11y.RoleToggle,
@@ -246,43 +284,44 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 			on := node.On
 			an.Actions = []a11y.AccessAction{{Name: "activate", Trigger: func() { toggle(!on) }}}
 		}
-		b.addNode(an, parentIdx, a11y.Rect{})
+		b.addNode(an, parentIdx, avail)
 	case sliderElement:
 		b.addNode(a11y.AccessNode{
 			Role: a11y.RoleSlider,
-		}, parentIdx, a11y.Rect{})
+		}, parentIdx, avail)
 	case progressBarElement:
 		b.addNode(a11y.AccessNode{
 			Role: a11y.RoleProgressBar,
-		}, parentIdx, a11y.Rect{})
+		}, parentIdx, avail)
 	case textFieldElement:
 		b.addNode(a11y.AccessNode{
 			Role:  a11y.RoleTextInput,
 			Label: node.Placeholder,
 			Value: node.Value,
-		}, parentIdx, a11y.Rect{})
+		}, parentIdx, avail)
 	case radioElement:
 		b.addNode(a11y.AccessNode{
 			Role:   a11y.RoleCheckbox,
 			Label:  node.Label,
 			States: a11y.AccessStates{Checked: node.Selected},
-		}, parentIdx, a11y.Rect{})
+		}, parentIdx, avail)
 	case selectElement:
 		b.addNode(a11y.AccessNode{
 			Role:  a11y.RoleCombobox,
 			Value: node.Value,
-		}, parentIdx, a11y.Rect{})
+		}, parentIdx, avail)
 
 	// ── Data-driven elements with dynamic children ──
 	case treeElement:
-		treeIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleTree, Label: "Tree"}, parentIdx, a11y.Rect{})
-		b.walkTreeNodes(node, node.RootIDs, int32(treeIdx), 0)
+		treeIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleTree, Label: "Tree"}, parentIdx, avail)
+		b.walkTreeNodes(node, node.RootIDs, int32(treeIdx), 0, avail)
 	case virtualListElement:
-		listIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleListbox, Label: "List"}, parentIdx, a11y.Rect{})
+		listIdx := b.addNode(a11y.AccessNode{Role: a11y.RoleListbox, Label: "List"}, parentIdx, avail)
 		if node.BuildItem != nil {
 			for i := 0; i < node.ItemCount; i++ {
 				item := node.BuildItem(i)
-				b.walk(item, int32(listIdx))
+				childBounds := divideVertical(avail, i, node.ItemCount)
+				b.walk(item, int32(listIdx), childBounds)
 			}
 		}
 
@@ -294,10 +333,8 @@ func (b *accessTreeBuilder) walk(el Element, parentIdx int32) {
 
 // mergeSurfaceSemantics converts SurfaceSemantics into AccessTreeNodes.
 func (b *accessTreeBuilder) mergeSurfaceSemantics(sem SurfaceSemantics, parentIdx int32, w, h float32) {
-	// Build an index of surface node IDs to tree indices for parent resolution.
 	surfaceIDToTreeIdx := make(map[SurfaceNodeID]int32)
 
-	// Process roots first, then children.
 	for _, sn := range sem.Roots {
 		node := surfaceAccessNodeToAccessNode(sn)
 		treeBounds := a11y.Rect{
@@ -328,8 +365,9 @@ func surfaceAccessNodeToAccessNode(sn SurfaceAccessNode) a11y.AccessNode {
 }
 
 // walkTreeNodes recursively walks a treeElement's nodes and adds them to the access tree.
-func (b *accessTreeBuilder) walkTreeNodes(tree treeElement, ids []string, parentIdx int32, depth int) {
-	for _, id := range ids {
+func (b *accessTreeBuilder) walkTreeNodes(tree treeElement, ids []string, parentIdx int32, depth int, avail a11y.Rect) {
+	n := len(ids)
+	for i, id := range ids {
 		expanded := tree.State != nil && tree.State.IsExpanded(id)
 		selected := tree.State != nil && tree.State.Selected == id
 
@@ -339,7 +377,6 @@ func (b *accessTreeBuilder) walkTreeNodes(tree treeElement, ids []string, parent
 		}
 		hasKids := len(kids) > 0
 
-		// Build the display element to extract a label.
 		var label string
 		if tree.BuildNode != nil {
 			nodeEl := tree.BuildNode(id, depth, expanded, selected)
@@ -363,11 +400,11 @@ func (b *accessTreeBuilder) walkTreeNodes(tree treeElement, ids []string, parent
 			an.Actions = []a11y.AccessAction{{Name: "activate", Trigger: func() { onSelect(selectID) }}}
 		}
 
-		idx := b.addNode(an, parentIdx, a11y.Rect{})
+		childBounds := divideVertical(avail, i, n)
+		idx := b.addNode(an, parentIdx, childBounds)
 
-		// Recurse into expanded children.
 		if hasKids && expanded {
-			b.walkTreeNodes(tree, kids, int32(idx), depth+1)
+			b.walkTreeNodes(tree, kids, int32(idx), depth+1, childBounds)
 		}
 	}
 }

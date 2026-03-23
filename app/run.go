@@ -484,6 +484,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 			hitMap.Reset()
 			ix := ui.NewInteractor(&hitMap, &hoverState)
+			ix.SetDispatcher(dispatcher)
 			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
 
 			renderer.BeginFrame()

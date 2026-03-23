@@ -1312,6 +1312,12 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	overlays.windowH = height
 	layoutElement(root, area, canvas, th, tokens, ix, &overlays, focus)
 
+	// Promote registered widget bounds so the next frame's access tree
+	// builder can read them via BoundsForWidget.
+	if ix != nil && ix.dispatcher != nil {
+		ix.dispatcher.SwapBounds()
+	}
+
 	// Switch canvas to overlay mode so overlay draw commands go to
 	// separate scene lists, rendered after all main content.
 	type overlayModeSetter interface{ SetOverlayMode(bool) }
@@ -1347,9 +1353,17 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		return bounds{X: area.X, Y: area.Y}
 
 	case widgetBoundsElement:
-		// Layout the child subtree. The bounds are tracked so the
-		// EventDispatcher can route mouse events to this widget UID.
-		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		// Layout the child subtree and register the consumed bounds
+		// so the EventDispatcher can route mouse events and the
+		// accessibility tree builder can set per-element frames.
+		result := layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		if ix != nil && ix.dispatcher != nil {
+			ix.dispatcher.RegisterWidgetBounds(node.WidgetUID, draw.Rect{
+				X: float32(area.X), Y: float32(area.Y),
+				W: float32(result.W), H: float32(result.H),
+			})
+		}
+		return result
 
 	case keyedElement:
 		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)

@@ -183,6 +183,7 @@ func (p *Platform) Init(cfg platform.Config) error {
 	nsTitle := newNSString(title)
 	msgSendVoid(p.window, sel("setTitle:"), argPtr(nsTitle))
 	msgSendVoid(p.window, sel("setAcceptsMouseMovedEvents:"), argBool(true))
+
 	msgSendVoid(p.window, sel("makeKeyAndOrderFront:"), argPtr(0))
 
 	return nil

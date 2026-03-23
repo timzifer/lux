@@ -14,8 +14,9 @@ import (
 //
 // A nil *Interactor is safe to call — all methods return zero values.
 type Interactor struct {
-	hitMap *hit.Map
-	hover  *HoverState
+	hitMap     *hit.Map
+	hover      *HoverState
+	dispatcher *EventDispatcher
 }
 
 // NewInteractor creates an Interactor for use during a single BuildScene pass.
@@ -138,6 +139,14 @@ func (ix *Interactor) RegisterScroll(bounds draw.Rect, contentH, viewportH float
 		return
 	}
 	ix.hitMap.AddScroll(bounds, contentH, viewportH, onScroll)
+}
+
+// SetDispatcher attaches an EventDispatcher so that layoutElement can
+// register per-widget bounds during the layout pass.
+func (ix *Interactor) SetDispatcher(d *EventDispatcher) {
+	if ix != nil {
+		ix.dispatcher = d
+	}
 }
 
 // resetCounter resets the hover animation counter for a new BuildScene pass.

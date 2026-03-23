@@ -25,24 +25,18 @@ var elementInfoMap sync.Map
 // methods so the macOS accessibility server can query element properties cross-process
 // (required for Accessibility Inspector, VoiceOver, etc.).
 func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
-	log.Printf("[AX-ELEM] newAXElement: nodeID=%d, rt=%v", nodeID, rt != nil)
 	if rt == nil {
-		log.Printf("[AX-ELEM] newAXElement: EARLY RETURN (rt==nil)")
 		return &axElement{nodeID: nodeID}
 	}
 
 	cls := registerLuxAccessibilityElementClass()
-	log.Printf("[AX-ELEM] newAXElement: LuxAccessibilityElement class=%#x", cls)
 	if cls == 0 {
-		log.Printf("[AX-ELEM] newAXElement: EARLY RETURN (class==0)")
 		return &axElement{nodeID: nodeID}
 	}
 
 	obj := msgSendPtr(cls, sel("alloc"))
 	obj = msgSendPtr(obj, sel("init"))
-	log.Printf("[AX-ELEM] newAXElement: allocated obj=%#x", obj)
 	if obj == 0 {
-		log.Printf("[AX-ELEM] newAXElement: EARLY RETURN (obj==0)")
 		return &axElement{nodeID: nodeID}
 	}
 
@@ -50,12 +44,8 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 
 	node := bridge.tree.FindByID(nodeID)
 	if node != nil {
-		log.Printf("[AX-ELEM] newAXElement: nodeID=%d role=%v label=%q bounds={%.0f,%.0f,%.0f,%.0f}",
-			nodeID, node.Node.Role, node.Node.Label,
-			node.Bounds.X, node.Bounds.Y, node.Bounds.Width, node.Bounds.Height)
-		// Most properties (role, label, value, parent, children, window, etc.)
-		// are resolved dynamically by the LuxAccessibilityElement subclass overrides.
-		// Frame is set via property since returning CGRect from ffi callback is unreliable.
+
+		// Set frame via property (returning CGRect from ffi callback is unreliable).
 		msgSendVoid(obj, sel("setAccessibilityFrameInParentSpace:"), argRect(nsRect{
 			Origin: nsPoint{X: node.Bounds.X, Y: node.Bounds.Y},
 			Size:   nsSize{Width: node.Bounds.Width, Height: node.Bounds.Height},
@@ -64,11 +54,47 @@ func newAXElement(bridge *AXBridge, nodeID a11y.AccessNodeID) *axElement {
 			screenFrame := axFrameFromBounds(node.Bounds, bridge.view)
 			msgSendVoid(obj, sel("setAccessibilityFrame:"), argRect(screenFrame))
 		}
-	} else {
-		log.Printf("[AX-ELEM] WARNING: newAXElement nodeID=%d — node NOT FOUND in tree!", nodeID)
-	}
 
-	log.Printf("[AX-ELEM] newAXElement: DONE nodeID=%d obj=%#x", nodeID, obj)
+		// Mark as accessibility element. NSAccessibilityElement may return
+		// YES from the isAccessibilityElement method, but the backing ivar
+		// defaults to NO. The AX server reads the ivar for hierarchy
+		// traversal, so we must set it explicitly.
+		msgSendVoid(obj, sel("setAccessibilityElement:"), argBool(true))
+
+		// Set instance properties so the AX server can discover elements
+		// via ivar access. The LuxAccessibilityElement subclass overrides
+		// handle dynamic queries; these property setters prime the ivars
+		// for initial hierarchy discovery.
+		role := roleToAXRole(node.Node.Role)
+		msgSendVoid(obj, sel("setAccessibilityRole:"), argPtr(newNSString(role)))
+		if node.Node.Label != "" {
+			msgSendVoid(obj, sel("setAccessibilityLabel:"), argPtr(newNSString(node.Node.Label)))
+		}
+		if node.Node.Value != "" {
+			msgSendVoid(obj, sel("setAccessibilityValue:"), argPtr(newNSString(node.Node.Value)))
+		}
+
+		// Set parent.
+		if node.ParentIndex >= 0 {
+			parent := bridge.tree.NodeByIndex(int(node.ParentIndex))
+			if parent != nil && parent.ID == bridge.rootNodeID {
+				msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(bridge.view))
+			} else if parent != nil {
+				if parentEl := bridge.elementFor(parent.ID); parentEl != nil && parentEl.obj != 0 {
+					msgSendVoid(obj, sel("setAccessibilityParent:"), argPtr(parentEl.obj))
+				}
+			}
+		}
+
+		// Set window and top-level element.
+		if bridge.view != 0 {
+			win := msgSendPtr(bridge.view, sel("window"))
+			if win != 0 {
+				msgSendVoid(obj, sel("setAccessibilityWindow:"), argPtr(win))
+				msgSendVoid(obj, sel("setAccessibilityTopLevelUIElement:"), argPtr(win))
+			}
+		}
+	}
 	return &axElement{obj: obj, nodeID: nodeID}
 }
 
@@ -86,10 +112,21 @@ func updateAXElementFrame(el *axElement, bounds a11y.Rect, view uintptr) {
 	}
 }
 
-// updateAXElementProperties is now a no-op: all properties are resolved
-// dynamically by the LuxAccessibilityElement subclass method overrides.
+// updateAXElementProperties updates the property backing ivars on an existing
+// element so the AX server sees current values via both ivar access and
+// method overrides.
 func updateAXElementProperties(el *axElement, bridge *AXBridge, node *a11y.AccessTreeNode) {
-	// No-op: properties are resolved dynamically via subclass callbacks.
+	if el.obj == 0 {
+		return
+	}
+	role := roleToAXRole(node.Node.Role)
+	msgSendVoid(el.obj, sel("setAccessibilityRole:"), argPtr(newNSString(role)))
+	if node.Node.Label != "" {
+		msgSendVoid(el.obj, sel("setAccessibilityLabel:"), argPtr(newNSString(node.Node.Label)))
+	}
+	if node.Node.Value != "" {
+		msgSendVoid(el.obj, sel("setAccessibilityValue:"), argPtr(newNSString(node.Node.Value)))
+	}
 }
 
 func releaseAXElement(el *axElement) {
@@ -117,10 +154,6 @@ func axFrameFromBounds(bounds a11y.Rect, view uintptr) nsRect {
 		Origin: nsPoint{X: screenX, Y: screenY},
 		Size:   nsSize{Width: bounds.Width, Height: bounds.Height},
 	}
-	log.Printf("[AX-COORD] axFrameFromBounds: bounds={%.0f,%.0f,%.0f,%.0f} screenH=%.0f winOrigin=(%.0f,%.0f) → screen={%.0f,%.0f,%.0f,%.0f}",
-		bounds.X, bounds.Y, bounds.Width, bounds.Height,
-		screenHeight, windowOrigin.X, windowOrigin.Y,
-		result.Origin.X, result.Origin.Y, result.Size.Width, result.Size.Height)
 	return result
 }
 

@@ -45,8 +45,6 @@ func NewAXBridge(view uintptr, send func(any)) *AXBridge {
 
 // UpdateTree replaces the current access tree and manages element lifecycle.
 func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
-	log.Printf("[AX-BRIDGE] UpdateTree: incoming nodes=%d, current elements=%d, view=%#x, configured=%v",
-		len(tree.Nodes), len(b.elements), b.view, b.configured)
 	b.mu.Lock()
 
 	tree.EnsureIndex()
@@ -55,22 +53,12 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 
 	if len(tree.Nodes) > 0 {
 		b.rootNodeID = tree.Nodes[0].ID
-		log.Printf("[AX-BRIDGE] UpdateTree: rootNodeID=%d", b.rootNodeID)
-	}
-
-	// Log all incoming nodes.
-	for i, n := range tree.Nodes {
-		log.Printf("[AX-BRIDGE] UpdateTree: node[%d] id=%d role=%v label=%q value=%q bounds={%.0f,%.0f,%.0f,%.0f} parent=%d children=%d",
-			i, n.ID, n.Node.Role, n.Node.Label, n.Node.Value,
-			n.Bounds.X, n.Bounds.Y, n.Bounds.Width, n.Bounds.Height,
-			n.ParentIndex, n.ChildCount)
 	}
 
 	// Prune elements for removed nodes.
 	pruned := 0
 	for id, el := range b.elements {
 		if tree.FindByID(id) == nil {
-			log.Printf("[AX-BRIDGE] UpdateTree: pruning element id=%d obj=%#x", id, el.obj)
 			releaseAXElement(el)
 			delete(b.elements, id)
 			pruned++
@@ -92,8 +80,6 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 			created++
 		}
 	}
-	log.Printf("[AX-BRIDGE] UpdateTree: created=%d updated=%d total_elements=%d", created, updated, len(b.elements))
-
 	// Snapshot elements for use after unlock.
 	elementsCopy := make([]*axElement, 0, len(b.elements))
 	for _, el := range b.elements {
@@ -101,7 +87,6 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 	}
 
 	changed := len(oldTree.Nodes) != len(tree.Nodes) || structureChanged(oldTree, tree)
-	log.Printf("[AX-BRIDGE] UpdateTree: structureChanged=%v (old=%d new=%d)", changed, len(oldTree.Nodes), len(tree.Nodes))
 	b.mu.Unlock()
 
 	// Rebuild the accessibility children arrays via property setters.
@@ -112,13 +97,19 @@ func (b *AXBridge) UpdateTree(tree a11y.AccessTree) {
 
 	// Configure accessibility on the view AFTER children are populated.
 	if !b.configured && len(elementsCopy) > 0 && b.view != 0 {
-		log.Printf("[AX-BRIDGE] UpdateTree: FIRST CONFIGURE — calling configureViewAccessibility view=%#x", b.view)
 		configureViewAccessibility(b.view)
 		b.configured = true
 	}
 
 	// Post layout changed notification if structure changed.
 	if changed {
+		// Post on both the view and the window so the AX server
+		// re-discovers the hierarchy from the top.
+		win := msgSendPtr(b.view, sel("window"))
+		if win != 0 {
+			log.Printf("[AX-BRIDGE] UpdateTree: posting AXLayoutChanged on window=%#x", win)
+			axPostNotification(win, axNotificationLayoutChanged)
+		}
 		log.Printf("[AX-BRIDGE] UpdateTree: posting AXLayoutChanged on view=%#x", b.view)
 		axPostNotification(b.view, axNotificationLayoutChanged)
 	}
@@ -189,13 +180,7 @@ func (b *AXBridge) Destroy() {
 // elementFor returns the element for the given node ID.
 // Must be called with at least a read lock held.
 func (b *AXBridge) elementFor(nodeID a11y.AccessNodeID) *axElement {
-	el := b.elements[nodeID]
-	if el != nil {
-		log.Printf("[AX-BRIDGE] elementFor: nodeID=%d → obj=%#x", nodeID, el.obj)
-	} else {
-		log.Printf("[AX-BRIDGE] elementFor: nodeID=%d → nil", nodeID)
-	}
-	return el
+	return b.elements[nodeID]
 }
 
 // ensureElement returns or creates an element under write lock.

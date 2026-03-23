@@ -37,6 +37,7 @@ func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.Cal
 	// a real accessibility container. Without isAccessibilityElement returning YES,
 	// macOS skips the view entirely (NSView defaults to NO). Without accessibilityRole
 	// returning AXGroup, macOS doesn't know the view is a container.
+	// Modern NSAccessibility protocol overrides.
 	addMethod("isAccessibilityElement", ffi.NewCallback(axViewIsElement), "B@:")
 	addMethod("accessibilityRole", ffi.NewCallback(axViewRole), "@@:")
 	addMethod("accessibilityParent", ffi.NewCallback(axViewParent), "@@:")
@@ -45,28 +46,73 @@ func axViewHook(cls uintptr, fnAddMethod unsafe.Pointer, cifAddMethod *types.Cal
 	addMethod("accessibilityChildren", ffi.NewCallback(axViewChildren), "@@:")
 	addMethod("accessibilityHitTest:", ffi.NewCallback(axViewHitTest), "@@:{CGPoint=dd}")
 	addMethod("accessibilityFocusedUIElement", ffi.NewCallback(axViewFocusedElement), "@@:")
+
 }
 
-// configureViewAccessibility is a no-op. All accessibility properties are
-// handled by method overrides on the LuxMetalView class (axViewHook).
-// Property setters can conflict with method overrides, so we avoid them.
+// configureViewAccessibility sets instance-level accessibility properties on
+// the view. These property setters prime the backing ivars so the AX server
+// can discover the view. The method overrides (registered by axViewHook)
+// handle dynamic queries.
 func configureViewAccessibility(view uintptr) {
-	log.Printf("[AX-VIEW] configureViewAccessibility: view=%#x (no-op, methods handle everything)", view)
+	msgSendVoid(view, sel("setAccessibilityElement:"), argBool(true))
+	msgSendVoid(view, sel("setAccessibilityRole:"), argPtr(newNSString("AXGroup")))
+
+	win := msgSendPtr(view, sel("window"))
+	if win != 0 {
+		msgSendVoid(view, sel("setAccessibilityParent:"), argPtr(win))
+		msgSendVoid(view, sel("setAccessibilityWindow:"), argPtr(win))
+		msgSendVoid(view, sel("setAccessibilityTopLevelUIElement:"), argPtr(win))
+	}
+
+	log.Printf("[AX-VIEW] configureViewAccessibility: set properties on view=%#x window=%#x", view, win)
 }
 
-// updateViewAccessibilityChildren is now a no-op: the view's accessibilityChildren
-// method override (axViewChildren) dynamically returns children from the bridge tree.
-// Calling setAccessibilityChildren: would conflict with the method override by storing
-// a property value that macOS might return instead of calling our override.
+// updateViewAccessibilityChildren sets the children property on the view.
 func updateViewAccessibilityChildren(bridge *AXBridge) {
-	// No-op: children are resolved dynamically via axViewChildren callback.
+	if bridge.view == 0 {
+		return
+	}
+	bridge.mu.RLock()
+	var objs []uintptr
+	if len(bridge.tree.Nodes) > 0 {
+		root := &bridge.tree.Nodes[0]
+		children := bridge.tree.Children(root)
+		objs = make([]uintptr, 0, len(children))
+		for _, child := range children {
+			if el := bridge.elementFor(child.ID); el != nil && el.obj != 0 {
+				objs = append(objs, el.obj)
+			}
+		}
+	}
+	bridge.mu.RUnlock()
+
+	arr := newNSArray(objs)
+	msgSendVoid(bridge.view, sel("setAccessibilityChildren:"), argPtr(arr))
 }
 
-// updateElementAccessibilityChildren is now a no-op: the LuxAccessibilityElement
-// subclass overrides accessibilityChildren to dynamically return children from
-// the bridge tree via luxAXChildren.
+// updateElementAccessibilityChildren sets the children property on an element
+// so the AX server can discover child elements via ivar access. The method
+// override (luxAXChildren) handles dynamic queries.
 func updateElementAccessibilityChildren(el *axElement, bridge *AXBridge) {
-	// No-op: children are resolved dynamically via luxAXChildren callback.
+	if el.obj == 0 {
+		return
+	}
+	bridge.mu.RLock()
+	node := bridge.tree.FindByID(el.nodeID)
+	var objs []uintptr
+	if node != nil && node.FirstChild >= 0 {
+		children := bridge.tree.Children(node)
+		objs = make([]uintptr, 0, len(children))
+		for _, child := range children {
+			if childEl := bridge.elementFor(child.ID); childEl != nil && childEl.obj != 0 {
+				objs = append(objs, childEl.obj)
+			}
+		}
+	}
+	bridge.mu.RUnlock()
+
+	arr := newNSArray(objs)
+	msgSendVoid(el.obj, sel("setAccessibilityChildren:"), argPtr(arr))
 }
 
 func bridgeForView(view uintptr) *AXBridge {
@@ -189,3 +235,4 @@ func axViewFocusedElement(self, _cmd uintptr) uintptr {
 	log.Printf("[AX-CB] accessibilityFocusedUIElement: focusedID=%d but no element → self", bridge.tree.FocusedID)
 	return self
 }
+
