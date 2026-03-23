@@ -178,9 +178,17 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	r.instance = instance
 
 	// Create surface from native handle.
-	if cfg.NativeHandle != 0 {
+	if cfg.DRMfd >= 0 {
+		// DRM/KMS: use VK_KHR_display surface via DRM file descriptor.
 		r.surface = instance.CreateSurface(&wgpu.SurfaceDescriptor{
-			NativeHandle: cfg.NativeHandle,
+			DRMfd:          cfg.DRMfd,
+			DRMConnectorID: cfg.DRMConnectorID,
+		})
+		r.surfaceOK = true
+	} else if cfg.NativeHandle != 0 {
+		r.surface = instance.CreateSurface(&wgpu.SurfaceDescriptor{
+			NativeHandle:  cfg.NativeHandle,
+			NativeDisplay: cfg.NativeDisplay,
 		})
 		r.surfaceOK = true
 	}

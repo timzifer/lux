@@ -46,6 +46,41 @@ func (i *Instance) CreateSurface(displayHandle, windowHandle uintptr) (*Surface,
 	}, nil
 }
 
+// DisplaySurfaceCreator is an optional HAL interface for backends supporting
+// VK_KHR_display surface creation (DRM/KMS direct rendering).
+type displaySurfaceCreator interface {
+	CreateDisplaySurface(drmFD int, connectorID uint32) (hal.Surface, error)
+}
+
+// CreateDisplaySurface creates a surface via VK_KHR_display for DRM/KMS rendering.
+// This enables direct GPU rendering without a window system.
+func (i *Instance) CreateDisplaySurface(drmFD int, connectorID uint32) (*Surface, error) {
+	if i.released {
+		return nil, ErrReleased
+	}
+
+	halInstance := i.core.HALInstance()
+	if halInstance == nil {
+		return nil, fmt.Errorf("wgpu: no HAL instance available for display surface creation")
+	}
+
+	creator, ok := halInstance.(displaySurfaceCreator)
+	if !ok {
+		return nil, fmt.Errorf("wgpu: HAL backend does not support VK_KHR_display surface creation")
+	}
+
+	halSurface, err := creator.CreateDisplaySurface(drmFD, connectorID)
+	if err != nil {
+		return nil, fmt.Errorf("wgpu: failed to create display surface: %w", err)
+	}
+
+	coreSurface := core.NewSurface(halSurface, "")
+	return &Surface{
+		core:     coreSurface,
+		instance: i,
+	}, nil
+}
+
 // Configure configures the surface for presentation.
 // Must be called before GetCurrentTexture().
 func (s *Surface) Configure(device *Device, config *SurfaceConfiguration) error {

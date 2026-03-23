@@ -102,3 +102,58 @@ func TestPlatformCreateWGPUSurface(t *testing.T) {
 		t.Errorf("CreateWGPUSurface(0) = %d, want 0", surface)
 	}
 }
+
+// testDRMPlatform implements both Platform and the DRM-specific methods.
+type testDRMPlatform struct {
+	testPlatform
+	drmFd      int
+	drmConnID  uint32
+}
+
+func (p *testDRMPlatform) NativeHandle() uintptr    { return 0 }
+func (p *testDRMPlatform) NativeDisplay() uintptr   { return 0 }
+func (p *testDRMPlatform) DRMfd() int               { return p.drmFd }
+func (p *testDRMPlatform) DRMConnectorID() uint32   { return p.drmConnID }
+
+func TestDRMPlatformInterfaces(t *testing.T) {
+	p := &testDRMPlatform{drmFd: 3, drmConnID: 42}
+
+	// Verify DRMfd interface.
+	if drm, ok := interface{}(p).(interface{ DRMfd() int }); ok {
+		if fd := drm.DRMfd(); fd != 3 {
+			t.Errorf("DRMfd() = %d, want 3", fd)
+		}
+	} else {
+		t.Error("testDRMPlatform should implement DRMfd()")
+	}
+
+	// Verify DRMConnectorID interface.
+	if drm, ok := interface{}(p).(interface{ DRMConnectorID() uint32 }); ok {
+		if id := drm.DRMConnectorID(); id != 42 {
+			t.Errorf("DRMConnectorID() = %d, want 42", id)
+		}
+	} else {
+		t.Error("testDRMPlatform should implement DRMConnectorID()")
+	}
+
+	// Verify NativeDisplay interface.
+	if nd, ok := interface{}(p).(interface{ NativeDisplay() uintptr }); ok {
+		if d := nd.NativeDisplay(); d != 0 {
+			t.Errorf("NativeDisplay() = %d, want 0", d)
+		}
+	} else {
+		t.Error("testDRMPlatform should implement NativeDisplay()")
+	}
+}
+
+func TestGPUConfigDRMFields(t *testing.T) {
+	// Verify that gpu.Config DRM fields can be set and the default -1 sentinel works.
+	p := &testDRMPlatform{drmFd: -1}
+	if p.DRMfd() != -1 {
+		t.Errorf("default DRMfd should be -1, got %d", p.DRMfd())
+	}
+	p.drmFd = 5
+	if p.DRMfd() != 5 {
+		t.Errorf("DRMfd should be 5, got %d", p.DRMfd())
+	}
+}

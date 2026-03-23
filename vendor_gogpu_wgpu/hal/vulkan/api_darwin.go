@@ -18,6 +18,9 @@ func platformSurfaceExtension() string {
 	return "VK_EXT_metal_surface\x00"
 }
 
+// platformExtraExtensions returns no extra extensions on macOS.
+func platformExtraExtensions() []string { return nil }
+
 // CreateSurface creates a Metal surface from a CAMetalLayer.
 // Parameters:
 //   - _: unused first parameter for API consistency with other platforms

@@ -96,11 +96,17 @@ type SurfaceDescriptor struct {
 	// NativeHandle is a platform-specific window handle:
 	//   - Windows: HWND
 	//   - macOS: CAMetalLayer*
-	//   - Linux/X11: (Display*, Window) encoded
-	//   - Linux/Wayland: (wl_display*, wl_surface*) encoded
+	//   - Linux/X11: X11 Window
+	//   - Linux/Wayland: wl_surface*
 	NativeHandle uintptr
 	// NativeDisplay is the display handle (X11 Display* or Wayland wl_display*).
 	NativeDisplay uintptr
+
+	// DRM/KMS fields for VK_KHR_display surface creation (Linux embedded).
+	// When DRMfd >= 0, the surface is created via VK_KHR_display instead of
+	// windowing-system surfaces. NativeHandle/NativeDisplay are ignored.
+	DRMfd          int    // DRM device file descriptor (-1 if unused).
+	DRMConnectorID uint32 // DRM connector ID for display selection.
 }
 
 // RequestAdapterOptions configures adapter selection.
