@@ -761,8 +761,8 @@ func (SpacerElement) isElement() {}
 // ImageElement renders a loaded image at a specified or natural size.
 type ImageElement struct {
 	ImageID   draw.ImageID
-	Width     float32        // dp; 0 = use natural width
-	Height    float32        // dp; 0 = use natural height
+	Width     float32 // dp; 0 = use natural width
+	Height    float32 // dp; 0 = use natural height
 	ScaleMode draw.ImageScaleMode
 	Alt       string  // alt-text for accessibility
 	Opacity   float32 // 0 = default (1.0)
@@ -1532,7 +1532,7 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		}
 		r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 		canvas.DrawImageScaled(node.ImageID, r, node.ScaleMode, draw.ImageOptions{Opacity: node.Opacity})
-		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
+		return Bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
 	case IconElement:
 		size := node.Size
