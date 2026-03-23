@@ -1469,12 +1469,8 @@ func layoutElement(el Element, area bounds, canvas draw.Canvas, th theme.Theme, 
 		if h > area.H {
 			h = area.H
 		}
-		opacity := node.Opacity
-		if opacity == 0 {
-			opacity = 1
-		}
 		r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
-		canvas.DrawImage(node.ImageID, r, draw.ImageOptions{Opacity: opacity})
+		canvas.DrawImageScaled(node.ImageID, r, node.ScaleMode, draw.ImageOptions{Opacity: node.Opacity})
 		return bounds{X: area.X, Y: area.Y, W: w, H: h, Baseline: h}
 
 	case iconElement:

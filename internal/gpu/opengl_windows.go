@@ -34,19 +34,28 @@ type bitmapInfoHeader struct {
 	ClrImportant  uint32
 }
 
+// softImage holds CPU-side image data for the software renderer.
+type softImage struct {
+	width, height int
+	rgba          []byte // RGBA8 pre-multiplied, row-major
+}
+
 // OpenGLRenderer implements the Windows M2 GDI software renderer.
 type OpenGLRenderer struct {
-	hwnd    uintptr
-	width   int
-	height  int
-	pixels  []byte
-	bgColor draw.Color
-	atlas   *text.GlyphAtlas
+	hwnd          uintptr
+	width         int
+	height        int
+	pixels        []byte
+	bgColor       draw.Color
+	atlas         *text.GlyphAtlas
+	imageTextures map[draw.ImageID]*softImage
 }
 
 // NewOpenGL creates the Windows software renderer.
 func NewOpenGL() *OpenGLRenderer {
-	return &OpenGLRenderer{}
+	return &OpenGLRenderer{
+		imageTextures: make(map[draw.ImageID]*softImage),
+	}
 }
 
 func (r *OpenGLRenderer) Init(cfg Config) error {
@@ -105,6 +114,9 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	for _, tg := range scene.TexturedGlyphs {
 		r.drawTexturedGlyph(tg)
 	}
+	for _, img := range scene.ImageRects {
+		r.drawImageRect(img)
+	}
 	// Overlay pass
 	for _, rect := range scene.OverlayRects {
 		if rect.Radius > 0 {
@@ -118,6 +130,9 @@ func (r *OpenGLRenderer) Draw(scene draw.Scene) {
 	}
 	for _, tg := range scene.OverlayTexturedGlyphs {
 		r.drawTexturedGlyph(tg)
+	}
+	for _, img := range scene.OverlayImageRects {
+		r.drawImageRect(img)
 	}
 }
 
@@ -293,6 +308,144 @@ func (r *OpenGLRenderer) drawTexturedGlyph(g draw.TexturedGlyph) {
 			invA := 255 - a
 
 			// Alpha-blend into framebuffer (BGRA order).
+			r.pixels[off] = byte((uint16(srcB)*a + uint16(r.pixels[off])*invA) / 255)
+			r.pixels[off+1] = byte((uint16(srcG)*a + uint16(r.pixels[off+1])*invA) / 255)
+			r.pixels[off+2] = byte((uint16(srcR)*a + uint16(r.pixels[off+2])*invA) / 255)
+			r.pixels[off+3] = 255
+		}
+	}
+}
+
+// UploadImage stores image data for software rendering (implements gpu.ImageUploader).
+func (r *OpenGLRenderer) UploadImage(id draw.ImageID, width, height int, rgba []byte) {
+	buf := make([]byte, len(rgba))
+	copy(buf, rgba)
+	r.imageTextures[id] = &softImage{width: width, height: height, rgba: buf}
+}
+
+// drawImageRect blits an image into the framebuffer with scale mode, UV clipping, and opacity.
+func (r *OpenGLRenderer) drawImageRect(img draw.DrawImageRect) {
+	si := r.imageTextures[img.ImageID]
+	if si == nil || img.ImageID == 0 {
+		return
+	}
+	dstW, dstH := img.W, img.H
+	if dstW <= 0 || dstH <= 0 || si.width <= 0 || si.height <= 0 {
+		return
+	}
+	opacity := img.Opacity
+	if opacity <= 0 {
+		return
+	}
+	if opacity > 1 {
+		opacity = 1
+	}
+
+	// Clip rect from scene (0 means full viewport).
+	clipX0, clipY0 := 0, 0
+	clipX1, clipY1 := r.width, r.height
+	if img.ClipW > 0 && img.ClipH > 0 {
+		clipX0 = img.ClipX
+		clipY0 = img.ClipY
+		clipX1 = img.ClipX + img.ClipW
+		clipY1 = img.ClipY + img.ClipH
+	}
+
+	// UV range from scene (may be sub-region due to clip intersection).
+	u0, v0, u1, v1 := img.U0, img.V0, img.U1, img.V1
+
+	// Compute draw rect and source sampling based on ScaleMode.
+	drawX, drawY, drawW, drawH := img.X, img.Y, dstW, dstH
+	// Source sampling region in source-image pixels.
+	srcX0 := int(float64(si.width) * float64(u0))
+	srcY0 := int(float64(si.height) * float64(v0))
+	srcW := int(float64(si.width) * float64(u1-u0))
+	srcH := int(float64(si.height) * float64(v1-v0))
+
+	srcAspect := float64(si.width) / float64(si.height)
+	dstAspect := float64(dstW) / float64(dstH)
+
+	switch img.ScaleMode {
+	case draw.ImageScaleFit:
+		// Letterbox: scale to fit inside dst, preserving aspect ratio.
+		var fitW, fitH int
+		if srcAspect > dstAspect {
+			fitW = dstW
+			fitH = int(float64(dstW) / srcAspect)
+		} else {
+			fitH = dstH
+			fitW = int(float64(dstH) * srcAspect)
+		}
+		drawX = img.X + (dstW-fitW)/2
+		drawY = img.Y + (dstH-fitH)/2
+		drawW = fitW
+		drawH = fitH
+		// Use full source for Fit.
+		srcX0 = 0
+		srcY0 = 0
+		srcW = si.width
+		srcH = si.height
+
+	case draw.ImageScaleFill:
+		// Crop: scale to cover dst, preserving aspect ratio.
+		if srcAspect > dstAspect {
+			cropW := int(float64(si.height) * dstAspect)
+			srcX0 = (si.width - cropW) / 2
+			srcW = cropW
+		} else {
+			cropH := int(float64(si.width) / dstAspect)
+			srcY0 = (si.height - cropH) / 2
+			srcH = cropH
+		}
+		srcY0 = 0
+		srcH = si.height
+
+	case draw.ImageScaleStretch:
+		// Stretch uses the UV-defined sub-region as-is.
+	}
+
+	if drawW <= 0 || drawH <= 0 || srcW <= 0 || srcH <= 0 {
+		return
+	}
+
+	for row := 0; row < drawH; row++ {
+		py := drawY + row
+		if py < clipY0 || py >= clipY1 || py < 0 || py >= r.height {
+			continue
+		}
+		flippedY := r.height - 1 - py
+		sy := srcY0 + row*srcH/drawH
+		if sy < 0 {
+			sy = 0
+		}
+		if sy >= si.height {
+			sy = si.height - 1
+		}
+		for col := 0; col < drawW; col++ {
+			px := drawX + col
+			if px < clipX0 || px >= clipX1 || px < 0 || px >= r.width {
+				continue
+			}
+			sx := srcX0 + col*srcW/drawW
+			if sx < 0 {
+				sx = 0
+			}
+			if sx >= si.width {
+				sx = si.width - 1
+			}
+			srcOff := (sy*si.width + sx) * 4
+			srcR := si.rgba[srcOff]
+			srcG := si.rgba[srcOff+1]
+			srcB := si.rgba[srcOff+2]
+			srcA := si.rgba[srcOff+3]
+
+			a := uint16(float32(srcA) * opacity)
+			if a == 0 {
+				continue
+			}
+			invA := 255 - a
+
+			off := (flippedY*r.width + px) * 4
 			r.pixels[off] = byte((uint16(srcB)*a + uint16(r.pixels[off])*invA) / 255)
 			r.pixels[off+1] = byte((uint16(srcG)*a + uint16(r.pixels[off+1])*invA) / 255)
 			r.pixels[off+2] = byte((uint16(srcR)*a + uint16(r.pixels[off+2])*invA) / 255)

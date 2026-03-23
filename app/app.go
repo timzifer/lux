@@ -12,6 +12,7 @@ package app
 import (
 	"time"
 
+	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
@@ -110,6 +111,7 @@ type options struct {
 	persistence     *persistenceHooks
 	storagePath     string
 	fullscreen      bool
+	imageStore      *luximage.Store
 }
 
 // Batch combines multiple Cmds into a single Cmd.
@@ -185,6 +187,12 @@ func WithPlatform(f func() platform.Platform) Option {
 // WithRenderer overrides the GPU renderer.
 func WithRenderer(f func() gpu.Renderer) Option {
 	return func(o *options) { o.rendererFactory = f }
+}
+
+// WithImageStore registers an image store for automatic GPU texture sync.
+// Before each frame, dirty images are uploaded to the renderer.
+func WithImageStore(s *luximage.Store) Option {
+	return func(o *options) { o.imageStore = s }
 }
 
 // WithShortcut registers a global keyboard shortcut (RFC-002 §2.5).

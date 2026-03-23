@@ -31,6 +31,12 @@ type Config struct {
 	NativeHandle uintptr // Platform-specific window handle (HWND on Windows, 0 otherwise).
 }
 
+// ImageUploader is an optional interface for renderers that support image textures.
+// The app loop uses this to sync image.Store entries to the GPU before drawing.
+type ImageUploader interface {
+	UploadImage(id draw.ImageID, width, height int, rgba []byte)
+}
+
 // WindowRenderer extends Renderer with multi-window support.
 // Implementations that can render to multiple windows should implement this interface.
 type WindowRenderer interface {

@@ -574,23 +574,36 @@ func (c *SceneCanvas) DrawTextLayout(layout draw.TextLayout, origin draw.Point, 
 // ── Images ───────────────────────────────────────────────────────
 
 func (c *SceneCanvas) DrawImage(img draw.ImageID, dst draw.Rect, opts draw.ImageOptions) {
+	c.DrawImageScaled(img, dst, draw.ImageScaleStretch, opts)
+}
+
+func (c *SceneCanvas) DrawImageScaled(img draw.ImageID, dst draw.Rect, mode draw.ImageScaleMode, opts draw.ImageOptions) {
 	if img == 0 || c.isClipped(dst.X, dst.Y, dst.W, dst.H) {
 		return
 	}
 	c.emitClipIfChanged()
-	opacity := opts.Opacity
-	if opacity == 0 {
-		opacity = 1
-	}
-	opacity *= c.effectiveOpacity()
+	opacity := opts.Opacity * c.effectiveOpacity()
 	if opacity < 0.001 {
 		return
 	}
+
 	ir := draw.DrawImageRect{
 		X: int(dst.X), Y: int(dst.Y), W: int(dst.W), H: int(dst.H),
-		ImageID: img, Opacity: opacity,
+		ImageID:   img,
+		Opacity:   opacity,
 		U0: 0, V0: 0, U1: 1, V1: 1,
+		ScaleMode: mode,
 	}
+
+	// Store current clip rect so the renderer can scissor-clip the image.
+	if len(c.clips) > 0 {
+		clip := c.clips[len(c.clips)-1]
+		ir.ClipX = int(clip.X)
+		ir.ClipY = int(clip.Y)
+		ir.ClipW = int(clip.W)
+		ir.ClipH = int(clip.H)
+	}
+
 	if c.overlayMode {
 		c.scene.OverlayImageRects = append(c.scene.OverlayImageRects, ir)
 	} else {

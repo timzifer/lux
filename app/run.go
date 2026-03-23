@@ -8,6 +8,7 @@ import (
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
+	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/hit"
@@ -486,6 +487,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			ix := ui.NewInteractor(&hitMap, &hoverState)
 			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
 
+			// Sync dirty images from the image store to the renderer.
+			syncImages(cfg.imageStore, renderer)
+
 			renderer.BeginFrame()
 			renderer.Draw(scene)
 			renderer.EndFrame()
@@ -641,6 +645,21 @@ func unwrapBase(t theme.Theme) theme.Theme {
 		return ct.Base()
 	}
 	return t
+}
+
+// syncImages uploads dirty images from the store to the renderer.
+func syncImages(store *luximage.Store, renderer gpu.Renderer) {
+	if store == nil {
+		return
+	}
+	uploader, ok := renderer.(gpu.ImageUploader)
+	if !ok {
+		return
+	}
+	for _, entry := range store.DirtyEntries() {
+		uploader.UploadImage(entry.ID, entry.Width, entry.Height, entry.RGBA)
+		entry.ClearDirty()
+	}
 }
 
 // Ensure ViewFunc constraint is satisfied at compile time.

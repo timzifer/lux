@@ -116,6 +116,19 @@ func (s *Store) Remove(id draw.ImageID) {
 	delete(s.entries, id)
 }
 
+// DirtyEntries returns all entries that need GPU upload.
+func (s *Store) DirtyEntries() []*Entry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Entry
+	for _, e := range s.entries {
+		if e.dirty {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // Dirty reports whether the image needs GPU upload.
 func (e *Entry) Dirty() bool { return e.dirty }
 

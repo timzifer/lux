@@ -22,8 +22,9 @@ func (n nullCanvas) FillPath(draw.Path, draw.Paint)                             
 func (n nullCanvas) StrokePath(draw.Path, draw.Stroke)                           {}
 func (n nullCanvas) DrawText(string, draw.Point, draw.TextStyle, draw.Color)      {}
 func (n nullCanvas) DrawTextLayout(draw.TextLayout, draw.Point, draw.Color)       {}
-func (n nullCanvas) DrawImage(draw.ImageID, draw.Rect, draw.ImageOptions)         {}
-func (n nullCanvas) DrawImageSlice(draw.ImageSlice, draw.Rect, draw.ImageOptions) {}
+func (n nullCanvas) DrawImage(draw.ImageID, draw.Rect, draw.ImageOptions)                          {}
+func (n nullCanvas) DrawImageScaled(draw.ImageID, draw.Rect, draw.ImageScaleMode, draw.ImageOptions) {}
+func (n nullCanvas) DrawImageSlice(draw.ImageSlice, draw.Rect, draw.ImageOptions)                  {}
 func (n nullCanvas) DrawTexture(draw.TextureID, draw.Rect)                        {}
 func (n nullCanvas) DrawShadow(draw.Rect, draw.Shadow)                            {}
 func (n nullCanvas) PushClip(draw.Rect)                                           {}
