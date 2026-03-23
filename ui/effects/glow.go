@@ -32,9 +32,13 @@ func (n GlowBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n GlowBoxElement) TreeEqual(other ui.Element) bool { return false }
+func (n GlowBoxElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(GlowBoxElement)
+	return ok && n.Color == o.Color && n.BlurRadius == o.BlurRadius && n.Radius == o.Radius
+}
 
 func (n GlowBoxElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 

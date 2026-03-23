@@ -78,9 +78,9 @@ func (n ImageElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 }
 
 // TreeEqual implements ui.TreeEqualizer.
-// Returns false because ImageElement has function-like options.
 func (n ImageElement) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(ImageElement)
+	return ok && n.ImageID == o.ImageID && n.Width == o.Width && n.Height == o.Height && n.ScaleMode == o.ScaleMode && n.Alt == o.Alt && n.Opacity == o.Opacity
 }
 
 // ResolveChildren implements ui.ChildResolver. ImageElement is a leaf.

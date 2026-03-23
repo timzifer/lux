@@ -68,14 +68,14 @@ func (n BadgeElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 }
 
 // TreeEqual implements ui.TreeEqualizer.
-// Returns false because BadgeElement has a child element.
 func (n BadgeElement) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(BadgeElement)
+	return ok && n.Color == o.Color
 }
 
 // ResolveChildren implements ui.ChildResolver.
-// Badge is a leaf in reconciliation.
 func (n BadgeElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Content = resolve(n.Content, 0)
 	return n
 }
 

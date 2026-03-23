@@ -46,7 +46,9 @@
       "Bash(find \"G:/golang/lux/ui\" -name \"*.go\" -type f -exec grep -l \"type Image\\\\|DrawImage\" {})",
       "Bash(find /g/golang/lux -type f \\\\\\(-name *.zig -o -name *.wgsl -o -name *.glsl -o -name *.ts -o -name *.js -o -name *.rs \\\\\\))",
       "Bash(find /g/golang/lux -type f \\\\\\(-name *.go -o -name *.wgsl -o -name *.zig \\\\\\))",
-      "Bash(find /g/golang/lux/ui -type f -name *.go)"
+      "Bash(find /g/golang/lux/ui -type f -name *.go)",
+      "Bash(for file:*)",
+      "Bash(do echo:*)"
     ]
   }
 }

@@ -45,7 +45,8 @@ func (n Stack) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Stack) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(Stack)
+	return ok && len(n.Children) == len(o.Children)
 }
 
 // ResolveChildren implements ui.ChildResolver.

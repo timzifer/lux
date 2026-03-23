@@ -65,13 +65,14 @@ func (n CardElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 }
 
 // TreeEqual implements ui.TreeEqualizer.
-// Returns false because CardElement has a child element.
 func (n CardElement) TreeEqual(other ui.Element) bool {
-	return false
+	_, ok := other.(CardElement)
+	return ok
 }
 
 // ResolveChildren implements ui.ChildResolver.
 func (n CardElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 

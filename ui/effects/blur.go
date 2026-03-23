@@ -28,9 +28,13 @@ func (n BlurBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n BlurBoxElement) TreeEqual(other ui.Element) bool { return false }
+func (n BlurBoxElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(BlurBoxElement)
+	return ok && n.Radius == o.Radius
+}
 
 func (n BlurBoxElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 
@@ -79,9 +83,13 @@ func (n FrostedGlassElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n FrostedGlassElement) TreeEqual(other ui.Element) bool { return false }
+func (n FrostedGlassElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(FrostedGlassElement)
+	return ok && n.BlurRadius == o.BlurRadius && n.Tint == o.Tint
+}
 
 func (n FrostedGlassElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 
@@ -116,9 +124,13 @@ func (n VibrancyElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return ctx.LayoutChild(fg, ctx.Area)
 }
 
-func (n VibrancyElement) TreeEqual(other ui.Element) bool { return false }
+func (n VibrancyElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(VibrancyElement)
+	return ok && n.TintAlpha == o.TintAlpha
+}
 
 func (n VibrancyElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 

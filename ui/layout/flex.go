@@ -330,7 +330,8 @@ func (n Flex) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Flex) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(Flex)
+	return ok && n.Direction == o.Direction && n.Justify == o.Justify && n.Align == o.Align && n.Gap == o.Gap && len(n.Children) == len(o.Children)
 }
 
 // ResolveChildren implements ui.ChildResolver.

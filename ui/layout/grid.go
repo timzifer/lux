@@ -101,7 +101,8 @@ func (n Grid) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Grid) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(Grid)
+	return ok && n.Columns == o.Columns && n.RowGap == o.RowGap && n.ColGap == o.ColGap && len(n.Children) == len(o.Children)
 }
 
 // ResolveChildren implements ui.ChildResolver.

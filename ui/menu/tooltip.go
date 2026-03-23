@@ -117,7 +117,8 @@ func (n Tooltip) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Tooltip) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(Tooltip)
+	return ok && n.Visible == o.Visible && n.Blur == o.Blur
 }
 
 // ResolveChildren implements ui.ChildResolver.

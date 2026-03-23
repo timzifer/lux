@@ -20,9 +20,13 @@ func (n OpacityBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n OpacityBoxElement) TreeEqual(other ui.Element) bool { return false }
+func (n OpacityBoxElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(OpacityBoxElement)
+	return ok && n.Alpha == o.Alpha
+}
 
 func (n OpacityBoxElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 

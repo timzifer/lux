@@ -140,7 +140,8 @@ func (n Box) layoutRow(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Box) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(Box)
+	return ok && n.Axis == o.Axis && len(n.Children) == len(o.Children)
 }
 
 // ResolveChildren implements ui.ChildResolver.

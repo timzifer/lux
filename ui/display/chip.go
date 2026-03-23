@@ -112,13 +112,14 @@ func (n ChipElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 }
 
 // TreeEqual implements ui.TreeEqualizer.
-// Returns false because ChipElement has callbacks and child elements.
 func (n ChipElement) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(ChipElement)
+	return ok && n.Selected == o.Selected && n.Disabled == o.Disabled && (n.OnDismiss != nil) == (o.OnDismiss != nil)
 }
 
 // ResolveChildren implements ui.ChildResolver.
 func (n ChipElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Label = resolve(n.Label, 0)
 	return n
 }
 

@@ -31,7 +31,8 @@ func (n Expanded) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Expanded) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(Expanded)
+	return ok && n.Grow == o.Grow
 }
 
 // ResolveChildren implements ui.ChildResolver.

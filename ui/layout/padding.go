@@ -38,7 +38,8 @@ func (n Padding) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Padding) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(Padding)
+	return ok && n.Insets == o.Insets
 }
 
 // ResolveChildren implements ui.ChildResolver.
@@ -98,7 +99,8 @@ func (n SizedBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n SizedBox) TreeEqual(other ui.Element) bool {
-	return false
+	o, ok := other.(SizedBox)
+	return ok && n.Width == o.Width && n.Height == o.Height
 }
 
 // ResolveChildren implements ui.ChildResolver.

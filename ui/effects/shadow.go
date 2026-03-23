@@ -27,9 +27,13 @@ func (n ShadowBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n ShadowBoxElement) TreeEqual(other ui.Element) bool { return false }
+func (n ShadowBoxElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(ShadowBoxElement)
+	return ok && n.Shadow == o.Shadow && n.Radius == o.Radius
+}
 
 func (n ShadowBoxElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 
@@ -72,9 +76,13 @@ func (n InnerShadowBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n InnerShadowBoxElement) TreeEqual(other ui.Element) bool { return false }
+func (n InnerShadowBoxElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(InnerShadowBoxElement)
+	return ok && n.Shadow == o.Shadow && n.Radius == o.Radius
+}
 
 func (n InnerShadowBoxElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 
@@ -114,9 +122,13 @@ func (n ElevationBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n ElevationBoxElement) TreeEqual(other ui.Element) bool { return false }
+func (n ElevationBoxElement) TreeEqual(other ui.Element) bool {
+	o, ok := other.(ElevationBoxElement)
+	return ok && n.Rest == o.Rest && n.Hover == o.Hover && n.Press == o.Press && n.Radius == o.Radius
+}
 
 func (n ElevationBoxElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 
@@ -148,9 +160,13 @@ func (n ElevationCardElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	return b
 }
 
-func (n ElevationCardElement) TreeEqual(other ui.Element) bool { return false }
+func (n ElevationCardElement) TreeEqual(other ui.Element) bool {
+	_, ok := other.(ElevationCardElement)
+	return ok
+}
 
 func (n ElevationCardElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	n.Child = resolve(n.Child, 0)
 	return n
 }
 
