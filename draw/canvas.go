@@ -32,6 +32,7 @@ type Canvas interface {
 	// ── Images & Textures ────────────────────────────────────────
 
 	DrawImage(img ImageID, dst Rect, opts ImageOptions)
+	DrawImageScaled(img ImageID, dst Rect, mode ImageScaleMode, opts ImageOptions)
 	DrawImageSlice(slice ImageSlice, dst Rect, opts ImageOptions)
 	DrawTexture(tex TextureID, dst Rect)
 
@@ -196,7 +197,10 @@ type DrawImageRect struct {
 	X, Y, W, H     int
 	ImageID         ImageID
 	Opacity         float32
-	U0, V0, U1, V1 float32 // UV subregion (0,0 → 1,1 = full image)
+	U0, V0, U1, V1 float32        // UV subregion (0,0 → 1,1 = full image)
+	ScaleMode       ImageScaleMode // Fit/Fill/Stretch
+	ClipX, ClipY    int            // scissor clip origin (from scene clip stack)
+	ClipW, ClipH    int            // scissor clip size; 0 = full viewport
 }
 
 // DrawShaderRect is a shader-filled rectangle in framebuffer coordinates.

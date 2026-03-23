@@ -740,7 +740,7 @@ func (r *WGPURenderer) UploadImage(id draw.ImageID, width, height int, rgba []by
 	}
 
 	tex := r.device.CreateTexture(&wgpu.TextureDescriptor{
-		Label:  "image",
+		Label:  fmt.Sprintf("image-%d", id),
 		Size:   wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
 		Format: wgpu.TextureFormatRGBA8Unorm,
 		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
@@ -1752,32 +1752,88 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 		return
 	}
 
-	// Group images by ImageID for batched draw calls.
-	// Since images are typically few per frame, a simple linear scan suffices.
+	// Phase 1: resolve ScaleMode for each image.
+	type resolvedImg struct {
+		draw.DrawImageRect
+	}
+	var resolved []resolvedImg
+	for _, img := range images {
+		entry, ok := r.imageTextures[img.ImageID]
+		if !ok || img.ImageID == 0 || img.W <= 0 || img.H <= 0 {
+			continue
+		}
+
+		// Resolve ScaleMode using source image dimensions.
+		switch img.ScaleMode {
+		case draw.ImageScaleFit:
+			srcAspect := float64(entry.width) / float64(entry.height)
+			dstAspect := float64(img.W) / float64(img.H)
+			var fitW, fitH int
+			if srcAspect > dstAspect {
+				fitW = img.W
+				fitH = int(float64(img.W) / srcAspect)
+			} else {
+				fitH = img.H
+				fitW = int(float64(img.H) * srcAspect)
+			}
+			img.X += (img.W - fitW) / 2
+			img.Y += (img.H - fitH) / 2
+			img.W = fitW
+			img.H = fitH
+
+		case draw.ImageScaleFill:
+			srcAspect := float64(entry.width) / float64(entry.height)
+			dstAspect := float64(img.W) / float64(img.H)
+			if srcAspect > dstAspect {
+				visibleFrac := float32(dstAspect / srcAspect)
+				margin := (1 - visibleFrac) / 2
+				img.U0, img.U1 = margin, 1-margin
+			} else {
+				visibleFrac := float32(srcAspect / dstAspect)
+				margin := (1 - visibleFrac) / 2
+				img.V0, img.V1 = margin, 1-margin
+			}
+		}
+
+		if img.W > 0 && img.H > 0 {
+			resolved = append(resolved, resolvedImg{img})
+		}
+	}
+	if len(resolved) == 0 {
+		return
+	}
+
+	// Phase 2: batch by ImageID and draw.
 	type batch struct {
 		id    draw.ImageID
-		rects []draw.DrawImageRect
+		rects []resolvedImg
 	}
 	var batches []batch
-	batchMap := make(map[draw.ImageID]int) // imageID → index in batches
-
-	for _, img := range images {
+	batchMap := make(map[draw.ImageID]int)
+	for _, img := range resolved {
 		if idx, ok := batchMap[img.ImageID]; ok {
 			batches[idx].rects = append(batches[idx].rects, img)
 		} else {
 			batchMap[img.ImageID] = len(batches)
-			batches = append(batches, batch{id: img.ImageID, rects: []draw.DrawImageRect{img}})
+			batches = append(batches, batch{id: img.ImageID, rects: []resolvedImg{img}})
 		}
 	}
 
-	for _, b := range batches {
-		entry, ok := r.imageTextures[b.id]
-		if !ok || b.id == 0 {
-			continue
-		}
+	// Build ALL instance data into a single buffer so that per-batch
+	// writes don't overwrite each other before the GPU executes draws.
+	const floatsPerInstance = 9 // rect(4) + uv(4) + opacity(1)
+	bytesPerInstance := uint64(floatsPerInstance * 4)
 
-		// Build instance buffer: 9 floats per instance (rect 4F + uv 4F + opacity 1F).
-		r.imageBuf = r.imageBuf[:0]
+	// Record batch offsets into the combined buffer.
+	type batchDraw struct {
+		id        draw.ImageID
+		offset    uint64 // byte offset into combined buffer
+		count     int
+	}
+	var draws []batchDraw
+	r.imageBuf = r.imageBuf[:0]
+	for _, b := range batches {
+		byteOffset := uint64(len(r.imageBuf)) * 4
 		for _, img := range b.rects {
 			r.imageBuf = append(r.imageBuf,
 				float32(img.X), float32(img.Y), float32(img.W), float32(img.H),
@@ -1785,30 +1841,40 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 				img.Opacity,
 			)
 		}
+		draws = append(draws, batchDraw{id: b.id, offset: byteOffset, count: len(b.rects)})
+	}
 
-		needed := uint64(len(r.imageBuf) * 4)
-		r.ensureGPUBuffer(&r.imageInstBuffer, &r.imageInstBufCap, needed, "img-instances", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
-		r.imageInstBuffer.Write(r.queue, float32SliceToBytes(r.imageBuf))
+	// Upload the combined buffer once.
+	totalBytes := uint64(len(r.imageBuf)) * 4
+	r.ensureGPUBuffer(&r.imageInstBuffer, &r.imageInstBufCap, totalBytes, "img-instances", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
+	r.imageInstBuffer.Write(r.queue, float32SliceToBytes(r.imageBuf))
 
-		// Create per-batch bind group for texture.
+	// Draw each batch using its offset into the combined buffer.
+	var bindGroups []wgpu.BindGroup
+	for _, d := range draws {
+		entry := r.imageTextures[d.id]
 		imgBindGroup := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
-			Label:  "img-per-batch",
+			Label:  fmt.Sprintf("img-tex-%d", d.id),
 			Layout: r.imageTexLayout,
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, Texture: entry.view},
 				{Binding: 1, Sampler: r.imageSampler},
 			},
 		})
+		bindGroups = append(bindGroups, imgBindGroup)
 
+		batchSize := uint64(d.count) * bytesPerInstance
 		renderPass.SetScissorRect(0, 0, vpW, vpH)
 		renderPass.SetPipeline(r.imagePipeline)
 		renderPass.SetBindGroup(0, r.projBindGroup)
 		renderPass.SetBindGroup(1, imgBindGroup)
 		renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
-		renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.imageInstBuffer, 0, needed)
-		renderPass.Draw(6, uint32(len(b.rects)), 0, 0)
+		renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.imageInstBuffer, d.offset, batchSize)
+		renderPass.Draw(6, uint32(d.count), 0, 0)
+	}
 
-		imgBindGroup.Destroy()
+	for _, bg := range bindGroups {
+		bg.Destroy()
 	}
 }
 

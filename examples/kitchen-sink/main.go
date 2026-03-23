@@ -17,6 +17,7 @@ import (
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/dialog"
 	"github.com/timzifer/lux/draw"
+	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
@@ -26,33 +27,74 @@ import (
 
 // ── Section Registry ──────────────────────────────────────────────
 
+// sectionIDs lists the top-level group nodes for the navigation tree.
 var sectionIDs = []string{
-	"typography", "buttons", "form-controls", "range-progress",
-	"selection", "layout", "split-view", "rich-text", "virtual-list", "tree",
-	"cards", "tabs", "accordion", "badges-chips", "menus",
-	"shortcuts", "overlays", "canvas-paints", "scoped-themes", "text-shaping",
-	"commands", "sub-models",
-	// Phase 2
-	"spring-anim", "cubic-bezier", "motion-spec",
-	"animation-id", "anim-group-seq", "custom-layout",
-	// Phase 4b
-	"rtl-layout", "locale", "ime-compose",
-	// Phase 5
-	"platform-info", "window-controls", "clipboard", "gpu-backend",
-	// Phase 6
-	"surfaces",
-	// Phase 7 — Dialogs
-	"dialogs",
-	// Phase E — Gradients
-	"gradients",
-	// Phase F — Blur & Multi-Window
-	"blur", "multi-window",
-	// Phase G — Effects
-	"effects",
+	"group-basics",
+	"group-input",
+	"group-layout",
+	"group-data",
+	"group-navigation",
+	"group-overlays",
+	"group-text",
+	"group-images",
+	"group-animation",
+	"group-theming",
+	"group-i18n",
+	"group-platform",
+	"group-rendering",
+	"group-architecture",
+}
+
+// sectionGroupChildren maps each group to its leaf section IDs.
+var sectionGroupChildren = map[string][]string{
+	"group-basics":       {"typography", "buttons"},
+	"group-input":        {"form-controls", "range-progress", "selection"},
+	"group-layout":       {"layout", "split-view", "custom-layout"},
+	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
+	"group-navigation":   {"menus", "shortcuts"},
+	"group-overlays":     {"overlays", "dialogs"},
+	"group-text":         {"rich-text", "text-shaping"},
+	"group-images":       {"images", "shader-effects"},
+	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
+	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
+	"group-i18n":         {"rtl-layout", "locale", "ime-compose"},
+	"group-platform":     {"platform-info", "window-controls", "clipboard", "gpu-backend", "multi-window"},
+	"group-rendering":    {"canvas-paints", "surfaces"},
+	"group-architecture": {"commands", "sub-models"},
 }
 
 func sectionLabel(id string) string {
 	switch id {
+	// Group labels
+	case "group-basics":
+		return "Basics"
+	case "group-input":
+		return "Input & Forms"
+	case "group-layout":
+		return "Layout"
+	case "group-data":
+		return "Data Display"
+	case "group-navigation":
+		return "Navigation"
+	case "group-overlays":
+		return "Overlays & Dialogs"
+	case "group-text":
+		return "Text & Content"
+	case "group-images":
+		return "Images & Media"
+	case "group-animation":
+		return "Animation"
+	case "group-theming":
+		return "Theming & Style"
+	case "group-i18n":
+		return "Internationalization"
+	case "group-platform":
+		return "Platform & System"
+	case "group-rendering":
+		return "Rendering"
+	case "group-architecture":
+		return "Architecture"
+	// Leaf labels
 	case "typography":
 		return "Typography"
 	case "buttons":
@@ -97,7 +139,6 @@ func sectionLabel(id string) string {
 		return "Commands"
 	case "sub-models":
 		return "Sub-Models"
-	// Phase 2
 	case "spring-anim":
 		return "Spring Animation"
 	case "cubic-bezier":
@@ -110,14 +151,12 @@ func sectionLabel(id string) string {
 		return "AnimGroup & Seq"
 	case "custom-layout":
 		return "Custom Layout"
-	// Phase 4b
 	case "rtl-layout":
 		return "RTL Layout"
 	case "locale":
 		return "Locale / i18n"
 	case "ime-compose":
 		return "IME Compose"
-	// Phase 5
 	case "platform-info":
 		return "Platform Info"
 	case "window-controls":
@@ -126,29 +165,31 @@ func sectionLabel(id string) string {
 		return "Clipboard"
 	case "gpu-backend":
 		return "GPU Backend"
-	// Phase 6
 	case "surfaces":
 		return "Surfaces"
-	// Phase 7
 	case "dialogs":
 		return "Dialogs"
-	// Phase E
 	case "gradients":
 		return "Gradients"
-	// Phase F
 	case "blur":
 		return "Blur"
 	case "multi-window":
 		return "Multi-Window"
-	// Phase G
 	case "effects":
 		return "Effects"
+	// New image sections
+	case "images":
+		return "Images"
+	case "shader-effects":
+		return "Shader Effects"
 	default:
 		return id
 	}
 }
 
-func sectionChildren(_ string) []string { return nil }
+func sectionChildren(id string) []string {
+	return sectionGroupChildren[id]
+}
 
 // ── Model ────────────────────────────────────────────────────────
 
@@ -230,6 +271,12 @@ type Model struct {
 	DialogMsgKind     platform.DialogKind
 	// Phase F — Multi-Window
 	SecondWindowOpen bool
+	// Images
+	ImageStore   *luximage.Store
+	ImgChecker1  draw.ImageID // blue/white checkerboard
+	ImgChecker2  draw.ImageID // orange/teal checkerboard (wide, for scale mode demos)
+	ImgChecker3  draw.ImageID // pink/green checkerboard (for opacity demo)
+	ImageOpacity float32
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -296,6 +343,9 @@ type DismissDialogMsg struct{}
 type DialogConfirmedMsg struct{}
 type DialogInputChangedMsg struct{ Value string }
 type NativeConfirmMsg struct{}
+
+// Image messages
+type SetImageOpacityMsg struct{ Value float32 }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -396,6 +446,10 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 	// Sub-Models section: delegate to SubModel
 	case SubCounterIncrMsg, SubCounterDecrMsg:
 		m = app.Delegate(subCounterModel, m, msg)
+
+	// Images
+	case SetImageOpacityMsg:
+		m.ImageOpacity = msg.Value
 
 	// Phase 2: Spring Animation
 	case SetSpringPresetMsg:
@@ -595,8 +649,16 @@ func view(m Model) ui.Element {
 	nav := ui.Tree(ui.TreeConfig{
 		RootIDs:  sectionIDs,
 		Children: sectionChildren,
-		BuildNode: func(id string, _ int, _, selected bool) ui.Element {
-			return ui.Text(sectionLabel(id))
+		BuildNode: func(id string, depth int, _, selected bool) ui.Element {
+			label := sectionLabel(id)
+			if depth == 0 {
+				// Group nodes rendered bold
+				return ui.TextStyled(label, draw.TextStyle{
+					Size:   13,
+					Weight: draw.FontWeightSemiBold,
+				})
+			}
+			return ui.Text(label)
 		},
 		NodeHeight: 28,
 		MaxHeight:  0,
@@ -718,7 +780,23 @@ func sectionContent(m Model) ui.Element {
 	// Phase G
 	case "effects":
 		return effectsSection()
+	// Images & Media
+	case "images":
+		return imagesSection(m)
+	case "shader-effects":
+		return shaderEffectsSection()
 	default:
+		// Group nodes show a hint to expand
+		if children := sectionGroupChildren[m.ActiveSection]; len(children) > 0 {
+			items := make([]ui.Element, 0, len(children)+2)
+			items = append(items, sectionHeader(sectionLabel(m.ActiveSection)))
+			items = append(items, ui.Text("Expand this group in the tree to see:"))
+			items = append(items, ui.Spacer(8))
+			for _, child := range children {
+				items = append(items, ui.Text("  "+sectionLabel(child)))
+			}
+			return ui.Column(items...)
+		}
 		return ui.Column(
 			ui.Spacer(24),
 			ui.Text("Select a section from the tree on the left."),
@@ -2661,6 +2739,160 @@ func multiWindowSection(m Model) ui.Element {
 	)
 }
 
+// ── Image Helpers ────────────────────────────────────────────────
+
+// generateColorChecker creates a checkerboard image with the given two colors.
+func generateColorChecker(store *luximage.Store, w, h, cellSize int, r1, g1, b1, r2, g2, b2 byte) draw.ImageID {
+	rgba := make([]byte, w*h*4)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			off := (y*w + x) * 4
+			if ((x/cellSize)+(y/cellSize))%2 == 0 {
+				rgba[off], rgba[off+1], rgba[off+2], rgba[off+3] = r1, g1, b1, 255
+			} else {
+				rgba[off], rgba[off+1], rgba[off+2], rgba[off+3] = r2, g2, b2, 255
+			}
+		}
+	}
+	id, err := store.LoadFromRGBA(w, h, rgba)
+	if err != nil {
+		log.Printf("generateColorChecker: %v", err)
+		return 0
+	}
+	return id
+}
+
+// ── Images Section ───────────────────────────────────────────────
+
+func imagesSection(m Model) ui.Element {
+	return ui.Column(
+		sectionHeader("Images"),
+		ui.Text("The ui.Image widget renders loaded images with size, scale mode, and opacity options."),
+		ui.Text("Images are loaded via image.Store and referenced by draw.ImageID."),
+		ui.Spacer(12),
+
+		// 1. Basic image display — blue/gray checkerboard stretched to various sizes
+		ui.TextStyled("Blue Checker (64×64 source → stretched to various sizes)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Row(
+			ui.Image(m.ImgChecker1, ui.WithImageSize(64, 64), ui.WithImageScaleMode(draw.ImageScaleStretch)),
+			ui.Spacer(8),
+			ui.Image(m.ImgChecker1, ui.WithImageSize(128, 64), ui.WithImageScaleMode(draw.ImageScaleStretch)),
+			ui.Spacer(8),
+			ui.Image(m.ImgChecker1, ui.WithImageSize(48, 48), ui.WithImageScaleMode(draw.ImageScaleStretch)),
+		),
+		ui.Spacer(16),
+
+		// 2. Scale modes — orange/teal checkerboard (128×64 → 100×100 box)
+		ui.TextStyled("Scale Modes (orange/teal 128×64 → 100×100)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Row(
+			ui.Column(
+				ui.Text("Fit"),
+				ui.Image(m.ImgChecker2, ui.WithImageSize(100, 100), ui.WithImageScaleMode(draw.ImageScaleFit)),
+			),
+			ui.Spacer(12),
+			ui.Column(
+				ui.Text("Fill"),
+				ui.Image(m.ImgChecker2, ui.WithImageSize(100, 100), ui.WithImageScaleMode(draw.ImageScaleFill)),
+			),
+			ui.Spacer(12),
+			ui.Column(
+				ui.Text("Stretch"),
+				ui.Image(m.ImgChecker2, ui.WithImageSize(100, 100), ui.WithImageScaleMode(draw.ImageScaleStretch)),
+			),
+		),
+		ui.Spacer(16),
+
+		// 3. Opacity control — pink/green checkerboard
+		ui.TextStyled("Opacity (pink/green checker)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Row(
+			ui.Image(m.ImgChecker3, ui.WithImageSize(120, 60), ui.WithImageScaleMode(draw.ImageScaleStretch), ui.WithImageOpacity(m.ImageOpacity)),
+			ui.Spacer(12),
+			ui.Text(fmt.Sprintf("%.0f%%", m.ImageOpacity*100)),
+		),
+		ui.Slider(m.ImageOpacity, func(v float32) { app.Send(SetImageOpacityMsg{v}) }),
+		ui.Spacer(16),
+
+		// 4. Alt text — blue checker again
+		ui.TextStyled("Accessibility", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Image(m.ImgChecker1,
+			ui.WithImageSize(64, 64),
+			ui.WithImageScaleMode(draw.ImageScaleStretch),
+			ui.WithImageAlt("Blue and white checkerboard pattern"),
+		),
+		ui.Text("  Alt: \"Blue and white checkerboard pattern\""),
+		ui.Spacer(16),
+
+		// 5. API reference
+		ui.TextStyled("API", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("  store := image.NewStore()"),
+		ui.Text("  id, _ := store.LoadFromFile(\"photo.png\")"),
+		ui.Text("  id, _ := store.LoadFromBytes(data)"),
+		ui.Text("  id, _ := store.LoadFromRGBA(w, h, rgba)"),
+		ui.Text("  ui.Image(id, ui.WithImageSize(200, 150))"),
+		ui.Text("  ui.Image(id, ui.WithImageScaleMode(draw.ImageScaleFit))"),
+		ui.Text("  ui.Image(id, ui.WithImageOpacity(0.5))"),
+	)
+}
+
+// ── Shader Effects Section ───────────────────────────────────────
+
+func shaderEffectsSection() ui.Element {
+	// Create Paint variant examples for display.
+	noisePaint := draw.ShaderEffectPaint(draw.ShaderEffectNoise, 8.0)
+	plasmaPaint := draw.ShaderEffectPaint(draw.ShaderEffectPlasma, 2.0)
+	voronoiPaint := draw.ShaderEffectPaint(draw.ShaderEffectVoronoi, 12.0)
+	_ = noisePaint
+	_ = plasmaPaint
+	_ = voronoiPaint
+
+	return ui.Column(
+		sectionHeader("Shader Effects"),
+		ui.Text("GPU shader-based visual effects via the Paint system."),
+		ui.Text("Requires WGPU backend for rendering."),
+		ui.Spacer(12),
+
+		// Built-in effects
+		ui.TextStyled("Built-in Shader Effects", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("  ShaderEffectNoise   — Simplex/Perlin noise pattern"),
+		ui.Text("  ShaderEffectPlasma  — Animated plasma effect"),
+		ui.Text("  ShaderEffectVoronoi — Voronoi cell pattern"),
+		ui.Spacer(12),
+
+		// Paint API
+		ui.TextStyled("Paint Variants for Backgrounds", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("Image-based paints:"),
+		ui.Text("  draw.ImagePaint(id, draw.ImageScaleFit)     — stretched/fitted image fill"),
+		ui.Text("  draw.PatternPaint(id, draw.Size{32, 32})    — tiled image fill"),
+		ui.Spacer(8),
+		ui.Text("Shader paints:"),
+		ui.Text("  draw.ShaderEffectPaint(draw.ShaderEffectNoise, 8.0)"),
+		ui.Text("  draw.ShaderEffectPaint(draw.ShaderEffectPlasma, 2.0)"),
+		ui.Text("  draw.ShaderEffectPaint(draw.ShaderEffectVoronoi, 12.0)"),
+		ui.Spacer(8),
+		ui.Text("Custom WGSL shader:"),
+		ui.Text("  draw.ShaderPaint(wgslSource, params...)"),
+		ui.Spacer(8),
+		ui.Text("Shader + image texture:"),
+		ui.Text("  draw.ShaderImagePaint(imgID, wgslSource, params...)"),
+		ui.Spacer(16),
+
+		// Integration notes
+		ui.TextStyled("Integration", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		ui.Spacer(4),
+		ui.Text("Paints are used as fill styles for surfaces and backgrounds."),
+		ui.Text("Custom WGSL fragments receive uniforms via Params[0..7] and"),
+		ui.Text("an optional image texture for PaintShaderImage."),
+		ui.Text("Built-in effects are pre-compiled and cached by the GPU renderer."),
+	)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
@@ -2692,7 +2924,23 @@ func main() {
 		LayoutGap:          30,
 		CurrentLocale:      "en",
 		Pyramid:            NewPyramidSurface(),
+		ImageStore:          luximage.NewStore(),
+		ImageOpacity:        1.0,
 	}
+	// Generate procedural demo images — each with distinct colors for easy identification.
+	initial.ImgChecker1 = generateColorChecker(initial.ImageStore, 64, 64, 8,
+		220, 220, 240, // light blue-gray
+		59, 130, 246,  // blue
+	)
+	initial.ImgChecker2 = generateColorChecker(initial.ImageStore, 128, 64, 12,
+		255, 160, 50, // orange
+		30, 180, 160, // teal
+	)
+	initial.ImgChecker3 = generateColorChecker(initial.ImageStore, 120, 60, 10,
+		230, 80, 160, // pink
+		80, 200, 80,  // green
+	)
+
 	initial.FadeOpacity.SetImmediate(1.0)
 
 	// Global handler that logs key events (Phase 1: §2.8).
@@ -2747,6 +2995,8 @@ func main() {
 		app.WithGlobalHandler(keyLogger),
 		// Phase 2: State Persistence (RFC §3.4)
 		persistence,
+		// Image store for GPU texture sync
+		app.WithImageStore(initial.ImageStore),
 	}
 	if rf := pyramidRendererFactory(initial.Pyramid); rf != nil {
 		runOpts = append(runOpts, app.WithRenderer(rf))

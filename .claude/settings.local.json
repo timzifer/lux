@@ -38,7 +38,12 @@
       "Bash(echo \"exit: $?\")",
       "Bash(/usr/bin/xcrun --sdk macosx metal -c /tmp/metal_test.metal -o /dev/null)",
       "Bash(cp -r /Users/tim.ebbinghaus/go/pkg/mod/github.com/gogpu/wgpu@v0.21.3 /Users/tim.ebbinghaus/Documents/Development/Go/lux/vendor_gogpu_wgpu)",
-      "Bash(chmod -R u+w /Users/tim.ebbinghaus/Documents/Development/Go/lux/vendor_gogpu_wgpu)"
+      "Bash(chmod -R u+w /Users/tim.ebbinghaus/Documents/Development/Go/lux/vendor_gogpu_wgpu)",
+      "Bash(find /g/golang/lux -type f -name *kitchen* -o -name *sink*)",
+      "Bash(find /g/golang/lux -type f \\\\\\(-name *image* -o -name *img* \\\\\\))",
+      "Bash(find /g/golang/lux -type d -name widget* -o -type d -name component*)",
+      "Bash(find \"G:/golang/lux\" -name \"*.go\" -type f -exec grep -l \"image.Store\" {})",
+      "Bash(find \"G:/golang/lux/ui\" -name \"*.go\" -type f -exec grep -l \"type Image\\\\|DrawImage\" {})"
     ]
   }
 }
