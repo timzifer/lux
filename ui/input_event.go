@@ -16,6 +16,13 @@ const (
 	EventFocusLost
 	EventIMECompose // IME composition state changed (RFC-002 §2.2)
 	EventIMECommit  // IME text committed (RFC-002 §2.2)
+
+	// Gesture events derived from TouchMsg sequences (RFC-004 §3.3).
+	EventTap
+	EventLongPress
+	EventSwipe
+	EventDrag
+	EventPinch
 )
 
 // InputEvent is a typed union wrapper for all input events delivered to
@@ -36,6 +43,13 @@ type InputEvent struct {
 
 	IMECompose *input.IMEComposeMsg // pre-edit composition (RFC-002 §2.2)
 	IMECommit  *input.IMECommitMsg  // final committed text (RFC-002 §2.2)
+
+	// Gesture events (RFC-004 §3.3).
+	Tap       *input.TapMsg
+	LongPress *input.LongPressMsg
+	Swipe     *input.SwipeMsg
+	Drag      *input.DragMsg
+	Pinch     *input.PinchMsg
 }
 
 // KeyEvent constructs an InputEvent from a KeyMsg.
@@ -86,4 +100,29 @@ func IMEComposeEvent(msg input.IMEComposeMsg) InputEvent {
 // IMECommitEvent constructs an InputEvent from an IMECommitMsg.
 func IMECommitEvent(msg input.IMECommitMsg) InputEvent {
 	return InputEvent{Kind: EventIMECommit, IMECommit: &msg}
+}
+
+// TapEvent constructs an InputEvent from a TapMsg.
+func TapEvent(msg input.TapMsg) InputEvent {
+	return InputEvent{Kind: EventTap, Tap: &msg}
+}
+
+// LongPressEvent constructs an InputEvent from a LongPressMsg.
+func LongPressEvent(msg input.LongPressMsg) InputEvent {
+	return InputEvent{Kind: EventLongPress, LongPress: &msg}
+}
+
+// SwipeEvent constructs an InputEvent from a SwipeMsg.
+func SwipeEvent(msg input.SwipeMsg) InputEvent {
+	return InputEvent{Kind: EventSwipe, Swipe: &msg}
+}
+
+// DragEvent constructs an InputEvent from a DragMsg.
+func DragEvent(msg input.DragMsg) InputEvent {
+	return InputEvent{Kind: EventDrag, Drag: &msg}
+}
+
+// PinchEvent constructs an InputEvent from a PinchMsg.
+func PinchEvent(msg input.PinchMsg) InputEvent {
+	return InputEvent{Kind: EventPinch, Pinch: &msg}
 }

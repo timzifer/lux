@@ -148,6 +148,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 	reconciler := ui.NewReconciler()
 	currentModel := model
+	currentLocale := cfg.locale // BCP 47 tag, propagated to RenderCtx (RFC-003 §3.8)
 
 	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
 	dispatchCmd := func(cmd Cmd) {
@@ -202,7 +203,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		}
 	}
 
-	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil)
+	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil, currentLocale)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
@@ -248,6 +249,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					modelDirty = true
 
 				case SetLocaleMsg:
+					currentLocale = m.Locale
 					applyLocale(m.Locale)
 					modelDirty = true // triggers full layout invalidation
 
@@ -450,7 +452,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				dispatcher.Dispatch()
 
 				newTree := view(currentModel)
-				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm)
+				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm, currentLocale)
 
 				// Sort tab order derived from layout tree (RFC-002 §2.3).
 				fm.SortOrder()

@@ -47,7 +47,7 @@ func TestBuildAccessTree_Button(t *testing.T) {
 	th := theme.LuxLight
 	reconciler := NewReconciler()
 	tree := Component(w)
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil)
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
 
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{})
 	buttons := accessTree.FindByRole(a11y.RoleButton)
@@ -72,7 +72,7 @@ func TestBuildAccessTree_PlainWidgetFallback(t *testing.T) {
 	th := theme.LuxLight
 	reconciler := NewReconciler()
 	tree := Component(w)
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil)
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
 
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{})
 	groups := accessTree.FindByRole(a11y.RoleGroup)

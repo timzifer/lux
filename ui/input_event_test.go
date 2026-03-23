@@ -106,6 +106,68 @@ func TestInputEventKindValues(t *testing.T) {
 	if EventFocusLost != 7 {
 		t.Errorf("EventFocusLost = %d, want 7", EventFocusLost)
 	}
+	// Gesture event kinds follow IME kinds.
+	if EventTap != 10 {
+		t.Errorf("EventTap = %d, want 10", EventTap)
+	}
+	if EventPinch != 14 {
+		t.Errorf("EventPinch = %d, want 14", EventPinch)
+	}
+}
+
+func TestTapEventConstructor(t *testing.T) {
+	msg := input.TapMsg{Pos: input.GesturePoint{X: 50, Y: 60}, Count: 2}
+	ev := TapEvent(msg)
+	if ev.Kind != EventTap {
+		t.Errorf("Kind = %d, want EventTap", ev.Kind)
+	}
+	if ev.Tap == nil || ev.Tap.Count != 2 || ev.Tap.Pos.X != 50 {
+		t.Error("Tap field not populated correctly")
+	}
+}
+
+func TestLongPressEventConstructor(t *testing.T) {
+	msg := input.LongPressMsg{Pos: input.GesturePoint{X: 10, Y: 20}, Phase: input.LongPressBegan}
+	ev := LongPressEvent(msg)
+	if ev.Kind != EventLongPress {
+		t.Errorf("Kind = %d, want EventLongPress", ev.Kind)
+	}
+	if ev.LongPress == nil || ev.LongPress.Phase != input.LongPressBegan {
+		t.Error("LongPress field not populated correctly")
+	}
+}
+
+func TestSwipeEventConstructor(t *testing.T) {
+	msg := input.SwipeMsg{Direction: input.SwipeLeft, Velocity: 400, Start: input.GesturePoint{X: 200, Y: 100}, End: input.GesturePoint{X: 50, Y: 100}}
+	ev := SwipeEvent(msg)
+	if ev.Kind != EventSwipe {
+		t.Errorf("Kind = %d, want EventSwipe", ev.Kind)
+	}
+	if ev.Swipe == nil || ev.Swipe.Direction != input.SwipeLeft || ev.Swipe.Velocity != 400 {
+		t.Error("Swipe field not populated correctly")
+	}
+}
+
+func TestDragEventConstructor(t *testing.T) {
+	msg := input.DragMsg{Phase: input.DragMoved, Start: input.GesturePoint{X: 10, Y: 10}, Pos: input.GesturePoint{X: 50, Y: 50}, Delta: input.GesturePoint{X: 3, Y: 4}}
+	ev := DragEvent(msg)
+	if ev.Kind != EventDrag {
+		t.Errorf("Kind = %d, want EventDrag", ev.Kind)
+	}
+	if ev.Drag == nil || ev.Drag.Phase != input.DragMoved || ev.Drag.Delta.X != 3 {
+		t.Error("Drag field not populated correctly")
+	}
+}
+
+func TestPinchEventConstructor(t *testing.T) {
+	msg := input.PinchMsg{Phase: input.PinchChanged, Center: input.GesturePoint{X: 100, Y: 100}, Scale: 1.5}
+	ev := PinchEvent(msg)
+	if ev.Kind != EventPinch {
+		t.Errorf("Kind = %d, want EventPinch", ev.Kind)
+	}
+	if ev.Pinch == nil || ev.Pinch.Scale != 1.5 {
+		t.Error("Pinch field not populated correctly")
+	}
 }
 
 func TestRenderCtxEventsField(t *testing.T) {
