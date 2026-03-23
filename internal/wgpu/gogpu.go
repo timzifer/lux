@@ -42,6 +42,16 @@ type goInstance struct {
 }
 
 func (i *goInstance) CreateSurface(desc *SurfaceDescriptor) Surface {
+	if desc.DRMfd >= 0 {
+		// DRM/KMS: create surface via VK_KHR_display.
+		s, err := i.inst.CreateDisplaySurface(desc.DRMfd, desc.DRMConnectorID)
+		if err != nil {
+			log.Printf("wgpu/gogpu: CreateDisplaySurface (DRM fd=%d connector=%d) failed: %v",
+				desc.DRMfd, desc.DRMConnectorID, err)
+			return &goSurface{}
+		}
+		return &goSurface{surface: s}
+	}
 	s, err := i.inst.CreateSurface(desc.NativeDisplay, desc.NativeHandle)
 	if err != nil {
 		log.Printf("wgpu/gogpu: CreateSurface failed: %v", err)

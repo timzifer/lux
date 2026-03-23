@@ -23,6 +23,9 @@ func platformSurfaceExtension() string {
 	return "VK_KHR_win32_surface\x00"
 }
 
+// platformExtraExtensions returns no extra extensions on Windows.
+func platformExtraExtensions() []string { return nil }
+
 // CreateSurface creates a Windows surface from HINSTANCE and HWND.
 func (i *Instance) CreateSurface(hinstance, hwnd uintptr) (hal.Surface, error) {
 	// If hinstance is 0, get the current module handle

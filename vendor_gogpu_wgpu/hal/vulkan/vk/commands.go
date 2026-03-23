@@ -320,6 +320,21 @@ func (c *Commands) HasCreateMetalSurfaceEXT() bool {
 	return c.createMetalSurfaceEXT != nil
 }
 
+// HasGetPhysicalDeviceDisplayPropertiesKHR returns true if VK_KHR_display is available.
+func (c *Commands) HasGetPhysicalDeviceDisplayPropertiesKHR() bool {
+	return c.getPhysicalDeviceDisplayPropertiesKHR != nil
+}
+
+// HasCreateDisplayPlaneSurfaceKHR returns true if vkCreateDisplayPlaneSurfaceKHR is available.
+func (c *Commands) HasCreateDisplayPlaneSurfaceKHR() bool {
+	return c.createDisplayPlaneSurfaceKHR != nil
+}
+
+// HasGetDisplayModePropertiesKHR returns true if vkGetDisplayModePropertiesKHR is available.
+func (c *Commands) HasGetDisplayModePropertiesKHR() bool {
+	return c.getDisplayModePropertiesKHR != nil
+}
+
 // HasDebugUtils returns true if vkSetDebugUtilsObjectNameEXT is available.
 // When true, Vulkan objects can be labeled with human-readable names for
 // validation layer messages and GPU debugging tools (RenderDoc, NSight).

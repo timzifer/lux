@@ -26,9 +26,12 @@ type Renderer interface {
 
 // Config holds GPU initialization parameters.
 type Config struct {
-	Width        int
-	Height       int
-	NativeHandle uintptr // Platform-specific window handle (HWND on Windows, 0 otherwise).
+	Width         int
+	Height        int
+	NativeHandle  uintptr // Platform-specific window handle (HWND, X11 Window, wl_surface*, etc.).
+	NativeDisplay uintptr // Platform-specific display handle (X11 Display*, wl_display*, 0 on macOS/Windows).
+	DRMfd         int     // DRM file descriptor for VK_KHR_display surface creation (-1 if unused).
+	DRMConnectorID uint32 // DRM connector ID for display selection (0 if unused).
 }
 
 // ImageUploader is an optional interface for renderers that support image textures.

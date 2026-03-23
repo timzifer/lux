@@ -235,8 +235,13 @@ func (p *Platform) CreateWGPUSurface(instance uintptr) uintptr {
 	return uintptr(unsafe.Pointer(p.surface))
 }
 
-// NativeHandle returns the Wayland display pointer for renderer initialization.
+// NativeHandle returns the wl_surface* pointer for renderer initialization.
 func (p *Platform) NativeHandle() uintptr {
+	return uintptr(unsafe.Pointer(p.surface))
+}
+
+// NativeDisplay returns the wl_display* pointer for Vulkan surface creation.
+func (p *Platform) NativeDisplay() uintptr {
 	return uintptr(unsafe.Pointer(p.display))
 }
 

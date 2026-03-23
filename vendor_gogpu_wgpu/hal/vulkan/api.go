@@ -55,6 +55,9 @@ func (Backend) CreateInstance(desc *hal.InstanceDescriptor) (hal.Instance, error
 	// Platform-specific surface extension
 	extensions = append(extensions, platformSurfaceExtension())
 
+	// Platform-specific extra extensions (e.g. VK_KHR_display on Linux).
+	extensions = append(extensions, platformExtraExtensions()...)
+
 	// Optional: validation layers for debug (only if available)
 	var layers []string
 	var validationEnabled bool

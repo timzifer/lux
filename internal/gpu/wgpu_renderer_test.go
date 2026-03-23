@@ -22,3 +22,30 @@ func TestNoopRendererLifecycle(t *testing.T) {
 	r.EndFrame()
 	r.Destroy()
 }
+
+// TestConfigDRMFields verifies the DRM fields on Config.
+func TestConfigDRMFields(t *testing.T) {
+	cfg := Config{
+		Width:          1920,
+		Height:         1080,
+		DRMfd:          3,
+		DRMConnectorID: 42,
+	}
+	if cfg.DRMfd != 3 {
+		t.Errorf("DRMfd = %d, want 3", cfg.DRMfd)
+	}
+	if cfg.DRMConnectorID != 42 {
+		t.Errorf("DRMConnectorID = %d, want 42", cfg.DRMConnectorID)
+	}
+	if cfg.NativeDisplay != 0 {
+		t.Errorf("NativeDisplay = %d, want 0", cfg.NativeDisplay)
+	}
+}
+
+// TestConfigDRMSentinel verifies that -1 is the sentinel for unused DRM fd.
+func TestConfigDRMSentinel(t *testing.T) {
+	cfg := Config{DRMfd: -1}
+	if cfg.DRMfd >= 0 {
+		t.Error("DRMfd -1 should be treated as unused")
+	}
+}

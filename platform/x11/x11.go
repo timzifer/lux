@@ -388,6 +388,11 @@ func (p *Platform) NativeHandle() uintptr {
 	return uintptr(p.window)
 }
 
+// NativeDisplay returns the X11 Display* handle for Vulkan surface creation.
+func (p *Platform) NativeDisplay() uintptr {
+	return uintptr(unsafe.Pointer(p.display))
+}
+
 func (p *Platform) internAtom(name string) C.Atom {
 	cName := C.CString(name)
 	defer C.free(unsafe.Pointer(cName))
