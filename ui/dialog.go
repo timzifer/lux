@@ -16,11 +16,9 @@ import (
 
 // Dialog layout constants.
 const (
-	dialogPanelWidth = 80  // dp — colored icon panel on the left
-	dialogIconSize   = 32  // dp — Phosphor icon size inside the panel
-	dialogGap        = 16  // dp — gap between icon panel and content
-	dialogWidth      = 420 // dp — total dialog width (message & confirm)
-	dialogInputWidth = 460 // dp — total dialog width (input variant)
+	dialogPanelWidth = 80 // dp — colored icon panel on the left
+	dialogIconSize   = 32 // dp — Phosphor icon size inside the panel
+	dialogGap        = 16 // dp — gap between icon panel and content
 )
 
 // MessageDialog returns an overlay element displaying a message with an OK button.
@@ -32,17 +30,15 @@ func MessageDialog(id OverlayID, title, message string, kind platform.DialogKind
 		OnDismiss:   onClose,
 		Backdrop:    true,
 		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
-		Content: SizedBox(dialogWidth, 0,
-			DialogLayout(kind,
-				Column(
-					TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-					Spacer(12),
-					Text(message),
-					Spacer(16),
-					Row(
-						Spacer(0),
-						ButtonText("OK", onClose),
-					),
+		Content: DialogLayout(kind,
+			Column(
+				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+				Spacer(12),
+				Text(message),
+				Spacer(16),
+				Row(
+					Spacer(0),
+					ButtonText("OK", onClose),
 				),
 			),
 		),
@@ -58,19 +54,17 @@ func ConfirmDialog(id OverlayID, title, message string, onConfirm, onCancel func
 		OnDismiss:   onCancel,
 		Backdrop:    true,
 		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
-		Content: SizedBox(dialogWidth, 0,
-			DialogLayout(platform.DialogInfo,
-				Column(
-					TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-					Spacer(12),
-					Text(message),
-					Spacer(16),
-					Row(
-						Spacer(0),
-						ButtonOutlinedText("Cancel", onCancel),
-						Spacer(8),
-						ButtonText("Confirm", onConfirm),
-					),
+		Content: DialogLayout(platform.DialogInfo,
+			Column(
+				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+				Spacer(12),
+				Text(message),
+				Spacer(16),
+				Row(
+					Spacer(0),
+					ButtonOutlinedText("Cancel", onCancel),
+					Spacer(8),
+					ButtonText("Confirm", onConfirm),
 				),
 			),
 		),
@@ -86,21 +80,19 @@ func InputDialog(id OverlayID, title, message, value, placeholder string, onValu
 		OnDismiss:   onCancel,
 		Backdrop:    true,
 		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
-		Content: SizedBox(dialogInputWidth, 0,
-			DialogLayout(platform.DialogInfo,
-				Column(
-					TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-					Spacer(12),
-					Text(message),
-					Spacer(12),
-					TextField(value, placeholder, WithOnChange(onValueChange)),
-					Spacer(16),
-					Row(
-						Spacer(0),
-						ButtonOutlinedText("Cancel", onCancel),
-						Spacer(8),
-						ButtonText("OK", onConfirm),
-					),
+		Content: DialogLayout(platform.DialogInfo,
+			Column(
+				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+				Spacer(12),
+				Text(message),
+				Spacer(12),
+				TextField(value, placeholder, WithOnChange(onValueChange)),
+				Spacer(16),
+				Row(
+					Spacer(0),
+					ButtonOutlinedText("Cancel", onCancel),
+					Spacer(8),
+					ButtonText("OK", onConfirm),
 				),
 			),
 		),
