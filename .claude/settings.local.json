@@ -48,7 +48,14 @@
       "Bash(find /g/golang/lux -type f \\\\\\(-name *.go -o -name *.wgsl -o -name *.zig \\\\\\))",
       "Bash(find /g/golang/lux/ui -type f -name *.go)",
       "Bash(for file:*)",
-      "Bash(do echo:*)"
+      "Bash(do echo:*)",
+      "Bash(gh repo:*)",
+      "Bash(GOFLAGS=\"-mod=mod\" go list -m -json github.com/gogpu/wgpu@v0.21.3)",
+      "Bash(GOFLAGS=\"-mod=mod\" go list -m -json github.com/gogpu/ui@latest)",
+      "Bash(gh search:*)",
+      "Bash(GOFLAGS=\"-mod=mod\" go list -m -json github.com/gogpu/ui@v0.1.5 2>&1)",
+      "Bash(GOFLAGS=\"-mod=mod\" go list -m -json github.com/gogpu/wgpu@v0.22.1 2>&1)",
+      "Bash(GOFLAGS=\"-mod=mod\" go mod download github.com/gogpu/wgpu@v0.22.1 2>&1)"
     ]
   }
 }
