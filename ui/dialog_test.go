@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/ui/icons"
 )
 
 func TestMessageDialogIsOverlay(t *testing.T) {
@@ -75,20 +76,20 @@ func TestInputDialogRenders(t *testing.T) {
 	_ = scene
 }
 
-func TestDialogIconInfo(t *testing.T) {
-	if icon := dialogIcon(platform.DialogInfo); icon != "ℹ" {
-		t.Errorf("DialogInfo icon = %q, want ℹ", icon)
+func TestDialogPhosphorIconInfo(t *testing.T) {
+	if icon := dialogPhosphorIcon(platform.DialogInfo); icon != icons.Info {
+		t.Errorf("DialogInfo icon = %q, want icons.Info %q", icon, icons.Info)
 	}
 }
 
-func TestDialogIconWarning(t *testing.T) {
-	if icon := dialogIcon(platform.DialogWarning); icon != "⚠" {
-		t.Errorf("DialogWarning icon = %q, want ⚠", icon)
+func TestDialogPhosphorIconWarning(t *testing.T) {
+	if icon := dialogPhosphorIcon(platform.DialogWarning); icon != icons.Warning {
+		t.Errorf("DialogWarning icon = %q, want icons.Warning %q", icon, icons.Warning)
 	}
 }
 
-func TestDialogIconError(t *testing.T) {
-	if icon := dialogIcon(platform.DialogError); icon != "✖" {
-		t.Errorf("DialogError icon = %q, want ✖", icon)
+func TestDialogPhosphorIconError(t *testing.T) {
+	if icon := dialogPhosphorIcon(platform.DialogError); icon != icons.X {
+		t.Errorf("DialogError icon = %q, want icons.X %q", icon, icons.X)
 	}
 }
