@@ -302,7 +302,7 @@ func glfwKeyName(key glfw.Key) string {
 	switch key {
 	case glfw.KeySpace:
 		return "Space"
-	case glfw.KeyEnter:
+	case glfw.KeyEnter, glfw.KeyKPEnter:
 		return "Enter"
 	case glfw.KeyTab:
 		return "Tab"

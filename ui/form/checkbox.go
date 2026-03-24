@@ -7,6 +7,7 @@ import (
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/icons"
 )
 
 // Layout constants for checkbox and radio (shared).
@@ -109,13 +110,16 @@ func (n Checkbox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		ui.DrawFocusRing(canvas, boxRect, tokens.Radii.Input, tokens)
 	}
 
-	// Checkmark
+	// Checkmark (Phosphor icon)
 	if n.Checked {
 		checkStyle := draw.TextStyle{
-			Size:   float32(checkboxSize - checkboxBorder*2 - 2),
-			Weight: draw.FontWeightBold,
+			FontFamily: "Phosphor",
+			Size:       float32(checkboxSize - checkboxBorder*2 - 2),
+			Weight:     draw.FontWeightRegular,
+			LineHeight: 1.0,
+			Raster:     true,
 		}
-		canvas.DrawText("✓",
+		canvas.DrawText(icons.Check,
 			draw.Pt(float32(area.X+checkboxBorder+1), float32(boxY+checkboxBorder+1)),
 			checkStyle, tokens.Colors.Text.OnAccent)
 	}

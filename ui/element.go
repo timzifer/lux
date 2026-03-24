@@ -1310,9 +1310,11 @@ func (s *ScrollState) ScrollBy(delta float32, contentHeight, viewportHeight floa
 // the framework can handle KeyMsg/CharMsg internally without exposing
 // raw input events to userland.
 type InputState struct {
-	Value    string
-	OnChange func(string)
-	FocusUID UID
+	Value        string
+	OnChange     func(string)
+	FocusUID     UID
+	CursorOffset int  // byte offset of cursor within Value
+	Multiline    bool // true for TextArea: Enter inserts \n, Up/Down navigate lines
 
 	// IME composition state (RFC-002 §2.2).
 	ComposeText        string // current pre-edit text (empty when not composing)
@@ -2823,13 +2825,16 @@ func layoutCheckbox(node CheckboxElement, area Bounds, canvas draw.Canvas, th th
 		DrawFocusRing(canvas, boxRect, tokens.Radii.Input, tokens)
 	}
 
-	// Checkmark
+	// Checkmark (Phosphor icon)
 	if node.Checked {
 		checkStyle := draw.TextStyle{
-			Size:   float32(checkboxSize - checkboxBorder*2 - 2),
-			Weight: draw.FontWeightBold,
+			FontFamily: "Phosphor",
+			Size:       float32(checkboxSize - checkboxBorder*2 - 2),
+			Weight:     draw.FontWeightRegular,
+			LineHeight: 1.0,
+			Raster:     true,
 		}
-		canvas.DrawText("✓",
+		canvas.DrawText(icons.Check,
 			draw.Pt(float32(area.X+checkboxBorder+1), float32(boxY+checkboxBorder+1)),
 			checkStyle, tokens.Colors.Text.OnAccent)
 	}

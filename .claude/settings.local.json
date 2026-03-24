@@ -55,7 +55,10 @@
       "Bash(gh search:*)",
       "Bash(GOFLAGS=\"-mod=mod\" go list -m -json github.com/gogpu/ui@v0.1.5 2>&1)",
       "Bash(GOFLAGS=\"-mod=mod\" go list -m -json github.com/gogpu/wgpu@v0.22.1 2>&1)",
-      "Bash(GOFLAGS=\"-mod=mod\" go mod download github.com/gogpu/wgpu@v0.22.1 2>&1)"
+      "Bash(GOFLAGS=\"-mod=mod\" go mod download github.com/gogpu/wgpu@v0.22.1 2>&1)",
+      "Bash(find /g/golang/lux -type f -name *.md -path *CLAUDE* -o -name README*)",
+      "Bash(find /g/golang/lux -type f -name *ime* -o -name *input*)",
+      "Bash(find /g/golang/lux -type d -maxdepth 2 -name test* -o -type d -maxdepth 2 -name *test*)"
     ]
   }
 }

@@ -25,8 +25,11 @@ import (
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/icons"
 	"github.com/timzifer/lux/validation"
+
+	"github.com/timzifer/lux/internal/text"
 )
 
 // ── Section Registry ──────────────────────────────────────────────
@@ -58,7 +61,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
 	"group-overlays":     {"overlays", "dialogs"},
-	"group-text":         {"rich-text", "text-shaping"},
+	"group-text":         {"rich-text", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
 	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
@@ -143,6 +146,10 @@ func sectionLabel(id string) string {
 		return "Scoped Themes"
 	case "text-shaping":
 		return "Text Shaping"
+	case "grapheme-nav":
+		return "Grapheme Navigation"
+	case "line-breaking":
+		return "Line Breaking"
 	case "commands":
 		return "Commands"
 	case "sub-models":
@@ -310,6 +317,9 @@ type Model struct {
 	ValRoleState   *ui.SelectState
 	ValResults     validation.FormResult
 	ValPwRevealed  bool
+	// TextArea
+	TextAreaValue  string
+	TextAreaScroll *ui.ScrollState
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -382,6 +392,8 @@ type NativeConfirmMsg struct{}
 type SetImageOpacityMsg struct{ Value float32 }
 
 // Validation messages
+type SetTextAreaMsg struct{ Value string }
+
 type SetValEmailMsg struct{ Value string }
 type SetValPasswordMsg struct{ Value string }
 type SetValConfirmMsg struct{ Value string }
@@ -438,6 +450,8 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.SliderVal = msg.Value
 	case SetTextMsg:
 		m.TextValue = msg.Value
+	case SetTextAreaMsg:
+		m.TextAreaValue = msg.Value
 	case SelectSectionMsg:
 		m.ActiveSection = msg.Section
 	case SetTabMsg:
@@ -829,6 +843,10 @@ func sectionContent(m Model) ui.Element {
 		return scopedThemesSection()
 	case "text-shaping":
 		return textShapingSection()
+	case "grapheme-nav":
+		return graphemeNavSection()
+	case "line-breaking":
+		return lineBreakingSection()
 	case "commands":
 		return commandsSection(m)
 	case "sub-models":
@@ -1057,6 +1075,14 @@ func formControlsSection(m Model) ui.Element {
 		ui.TextField(m.TextValue, "Enter text...",
 			ui.WithOnChange(func(v string) { app.Send(SetTextMsg{v}) }),
 			ui.WithFocus(app.Focus()),
+		),
+		ui.Spacer(12),
+		ui.Text("TextArea:"),
+		form.NewTextArea(m.TextAreaValue, "Multiline (press Enter for newline)...",
+			form.TextAreaOnChange(func(v string) { app.Send(SetTextAreaMsg{v}) }),
+			form.TextAreaFocus(app.Focus()),
+			form.TextAreaRows(4),
+			form.TextAreaScroll(m.TextAreaScroll),
 		),
 		ui.Spacer(8),
 		ui.Checkbox("Enable notifications", m.CheckA, func(v bool) { app.Send(SetCheckAMsg{v}) }),
@@ -1894,6 +1920,85 @@ func textShapingSection() ui.Element {
 	)
 }
 
+// ── Grapheme Navigation Section ───────────────────────────────────
+
+func graphemeNavSection() ui.Element {
+	type sample struct {
+		label string
+		text  string
+	}
+	samples := []sample{
+		{"ASCII", "Hello"},
+		{"Flag 🇩🇪", "\U0001F1E9\U0001F1EA"},
+		{"ZWJ family 👨\u200D👩\u200D👧", "\U0001F468\u200D\U0001F469\u200D\U0001F467"},
+		{"Combining e\u0301", "e\u0301"},
+		{"Skin tone 👩🏽", "\U0001F469\U0001F3FD"},
+	}
+
+	items := []ui.Element{
+		sectionHeader("Grapheme Navigation"),
+		ui.Text("Grapheme cluster analysis (UAX #29) — each row shows cluster count,"),
+		ui.Text("byte length, and rune count for sample strings."),
+		ui.Spacer(12),
+	}
+
+	for _, s := range samples {
+		clusters := text.GraphemeClusters(s.text)
+		nClusters := len(clusters) - 1
+		if len(s.text) == 0 {
+			nClusters = 0
+		}
+		nRunes := 0
+		for range s.text {
+			nRunes++
+		}
+		info := fmt.Sprintf("  %s — %d cluster(s), %d bytes, %d rune(s)",
+			s.label, nClusters, len(s.text), nRunes)
+		items = append(items, ui.Text(info))
+		items = append(items, ui.Spacer(4))
+	}
+	return ui.Column(items...)
+}
+
+// ── Line Breaking Section ────────────────────────────────────────
+
+func lineBreakingSection() ui.Element {
+	type sample struct {
+		label string
+		text  string
+	}
+	samples := []sample{
+		{"English", "The quick brown fox jumps over the lazy dog."},
+		{"CJK", "你好世界测试文本换行"},
+		{"Mandatory (\\n)", "Line one.\nLine two.\nLine three."},
+		{"Non-breaking space", "100\u00A0km should not break"},
+	}
+
+	items := []ui.Element{
+		sectionHeader("Line Breaking"),
+		ui.Text("UAX #14 line break analysis — mandatory and opportunity breaks."),
+		ui.Spacer(12),
+	}
+
+	for _, s := range samples {
+		breaks := text.DefaultLineBreaker.Breaks(s.text)
+		mandatory := 0
+		opportunity := 0
+		for _, b := range breaks {
+			if b.Kind == text.LineBreakMandatory {
+				mandatory++
+			} else {
+				opportunity++
+			}
+		}
+		info := fmt.Sprintf("  %s — %d mandatory, %d opportunity break(s)",
+			s.label, mandatory, opportunity)
+		items = append(items, ui.Text(info))
+		items = append(items, ui.Spacer(4))
+	}
+	return ui.Column(items...)
+}
+
 // ── Commands Section ──────────────────────────────────────────────
 
 func commandsSection(m Model) ui.Element {
@@ -2185,7 +2290,36 @@ func rtlLayoutSection() ui.Element {
 		ui.Spacer(8),
 
 		ui.Text("Switch to Arabic locale (in 'Locale' section) to see RTL mirroring."),
+
+		ui.Spacer(16),
+		ui.TextStyled("BiDi Run Analysis", draw.TextStyle{
+			Size:   14,
+			Weight: draw.FontWeightSemiBold,
+		}),
+		ui.Spacer(4),
+		ui.Text("text.BidiParagraph() decomposes mixed-direction text into runs:"),
+		ui.Spacer(8),
+		bidiAnalysis("Arabic+English", "مرحبا Hello عالم", text.TextDirectionRTL),
+		bidiAnalysis("Hebrew+English", "שלום Hello עולם", text.TextDirectionRTL),
+		bidiAnalysis("English only", "Hello World", text.TextDirectionLTR),
 	)
+}
+
+func bidiAnalysis(label, sample string, dir text.TextDirection) ui.Element {
+	runs := text.BidiParagraph(sample, dir)
+	items := []ui.Element{
+		ui.Text(fmt.Sprintf("  %s: %q → %d run(s)", label, sample, len(runs))),
+	}
+	for i, r := range runs {
+		dirStr := "LTR"
+		if r.Direction == text.TextDirectionRTL {
+			dirStr = "RTL"
+		}
+		items = append(items, ui.Text(fmt.Sprintf("    run %d: %s, script=%s, %q",
+			i, dirStr, r.Script, r.Text)))
+	}
+	items = append(items, ui.Spacer(4))
+	return ui.Column(items...)
 }
 
 func localeSection(m Model) ui.Element {
@@ -3378,6 +3512,7 @@ func main() {
 		Pyramid:            NewPyramidSurface(),
 		ImageStore:          luximage.NewStore(),
 		ImageOpacity:        1.0,
+		TextAreaScroll:      &ui.ScrollState{},
 	}
 	// Generate procedural demo images — each with distinct colors for easy identification.
 	initial.ImgChecker1 = generateColorChecker(initial.ImageStore, 64, 64, 8,

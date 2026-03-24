@@ -344,14 +344,70 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 						// Framework-internal keyboard handling for TextFields.
 						if is := fm.Input; is != nil {
+							// DEBUG: visible test for ANY key reaching this point
+							if m.Key == input.KeyEnter {
+								marker := fmt.Sprintf("[E:%v]", is.Multiline)
+								v := is.Value[:is.CursorOffset] + marker + is.Value[is.CursorOffset:]
+								is.CursorOffset += len(marker)
+								is.Value = v
+								is.OnChange(v)
+								modelDirty = true
+							}
 							switch m.Key {
-							case input.KeyBackspace:
-								if len(is.Value) > 0 {
-									v, _ := text.DeleteBackward(is.Value, len(is.Value))
+							case input.KeyEnter:
+								if is.Multiline {
+									v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
+									is.CursorOffset++
 									is.Value = v
 									is.OnChange(v)
 									modelDirty = true
 								}
+							case input.KeyBackspace:
+								if is.CursorOffset > 0 {
+									v, newOff := text.DeleteBackward(is.Value, is.CursorOffset)
+									is.Value = v
+									is.CursorOffset = newOff
+									is.OnChange(v)
+									modelDirty = true
+								}
+							case input.KeyLeft:
+								if m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.PrevWordBoundary(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = text.PrevGraphemeCluster(is.Value, is.CursorOffset)
+								}
+								modelDirty = true
+							case input.KeyRight:
+								if m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.NextWordBoundary(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = text.NextGraphemeCluster(is.Value, is.CursorOffset)
+								}
+								modelDirty = true
+							case input.KeyUp:
+								if is.Multiline {
+									is.CursorOffset = text.CursorUp(is.Value, is.CursorOffset)
+									modelDirty = true
+								}
+							case input.KeyDown:
+								if is.Multiline {
+									is.CursorOffset = text.CursorDown(is.Value, is.CursorOffset)
+									modelDirty = true
+								}
+							case input.KeyHome:
+								if is.Multiline && !m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.LineStart(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = 0
+								}
+								modelDirty = true
+							case input.KeyEnd:
+								if is.Multiline && !m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.LineEnd(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = len(is.Value)
+								}
+								modelDirty = true
 							case input.KeyEscape:
 								oldUID := fm.FocusedUID()
 								fm.Blur()
@@ -366,11 +422,23 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					// Collect for widget-level dispatch.
 					dispatcher.Collect(m)
 					// Framework-internal character input for TextFields.
-					if is := fm.Input; is != nil && m.Char >= 32 {
-						v := is.Value + string(m.Char)
-						is.Value = v
-						is.OnChange(v)
-						modelDirty = true
+					if is := fm.Input; is != nil {
+						if m.Char == '\r' || m.Char == '\n' {
+							// DEBUG: insert visible marker to verify handler is reached
+							marker := fmt.Sprintf("{%d/%v}", m.Char, is.Multiline)
+							v := is.Value[:is.CursorOffset] + marker + is.Value[is.CursorOffset:]
+							is.CursorOffset += len(marker)
+							is.Value = v
+							is.OnChange(v)
+							modelDirty = true
+						} else if m.Char >= 32 {
+							ch := string(m.Char)
+							v := is.Value[:is.CursorOffset] + ch + is.Value[is.CursorOffset:]
+							is.CursorOffset += len(ch)
+							is.Value = v
+							is.OnChange(v)
+							modelDirty = true
+						}
 					}
 					return true
 
@@ -379,7 +447,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					dispatcher.Collect(m)
 					// Framework-internal IME input for TextFields.
 					if is := fm.Input; is != nil && m.Text != "" {
-						v := is.Value + m.Text
+						v := is.Value[:is.CursorOffset] + m.Text + is.Value[is.CursorOffset:]
+						is.CursorOffset += len(m.Text)
 						is.Value = v
 						is.OnChange(v)
 						modelDirty = true
@@ -402,7 +471,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					// Insert committed text into focused TextField.
 					if is := fm.Input; is != nil && m.Text != "" {
 						is.ComposeText = "" // clear composition
-						v := is.Value + m.Text
+						v := is.Value[:is.CursorOffset] + m.Text + is.Value[is.CursorOffset:]
+						is.CursorOffset += len(m.Text)
 						is.Value = v
 						is.OnChange(v)
 						modelDirty = true

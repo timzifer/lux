@@ -15,6 +15,7 @@ var allWidgetKinds = []WidgetKind{
 	WidgetKindSlider, WidgetKindProgressBar, WidgetKindSelect,
 	WidgetKindCard, WidgetKindTabs, WidgetKindAccordion, WidgetKindTooltip,
 	WidgetKindBadge, WidgetKindChip, WidgetKindMenuBar, WidgetKindContextMenu,
+	WidgetKindTextArea,
 }
 
 // CachedTheme wraps a Theme and caches the resolved TokenSet and DrawFuncs.

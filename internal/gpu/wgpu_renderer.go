@@ -804,6 +804,9 @@ func (r *WGPURenderer) ImageSize(id draw.ImageID) (w, h int) {
 
 // Resize updates the viewport.
 func (r *WGPURenderer) Resize(width, height int) {
+	if width <= 0 || height <= 0 {
+		return
+	}
 	r.width = width
 	r.height = height
 	if r.surfaceOK {
@@ -2080,6 +2083,9 @@ func (r *WGPURenderer) DestroyWindow(id uint32) {
 
 // ResizeWindow reconfigures a per-window surface after resize.
 func (r *WGPURenderer) ResizeWindow(id uint32, width, height int) {
+	if width <= 0 || height <= 0 {
+		return
+	}
 	ws, ok := r.windows[id]
 	if !ok {
 		return

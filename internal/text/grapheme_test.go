@@ -188,3 +188,169 @@ func TestNextWordBoundary(t *testing.T) {
 		t.Errorf("NextWordBoundary(%q, 6) = %d, want 11", text, got)
 	}
 }
+
+// ── Skin Tone Emoji ──────────────────────────────────────────────
+
+func TestPrevGraphemeClusterSkinTone(t *testing.T) {
+	// Woman + medium skin tone = 1 grapheme cluster (8 bytes, 2 runes).
+	text := "\U0001F469\U0001F3FD"
+	got := PrevGraphemeCluster(text, len(text))
+	if got != 0 {
+		t.Errorf("PrevGraphemeCluster(skin-tone emoji, %d) = %d, want 0", len(text), got)
+	}
+}
+
+func TestNextGraphemeClusterSkinTone(t *testing.T) {
+	text := "\U0001F469\U0001F3FD"
+	got := NextGraphemeCluster(text, 0)
+	if got != len(text) {
+		t.Errorf("NextGraphemeCluster(skin-tone emoji, 0) = %d, want %d", got, len(text))
+	}
+}
+
+// ── Hangul Jamo ──────────────────────────────────────────────────
+
+func TestGraphemeClustersHangulJamo(t *testing.T) {
+	// Decomposed Hangul syllable: L + V + T = 1 grapheme cluster.
+	text := "\u1100\u1161\u11A8" // ᄀ + ᅡ + ᆨ = 각
+	boundaries := GraphemeClusters(text)
+	// Should be [0, len(text)] — a single cluster.
+	if len(boundaries) != 2 {
+		t.Errorf("GraphemeClusters(Hangul jamo) = %v, want 2 boundaries (1 cluster)", boundaries)
+	}
+}
+
+func TestPrevGraphemeClusterHangulJamo(t *testing.T) {
+	text := "\u1100\u1161\u11A8"
+	got := PrevGraphemeCluster(text, len(text))
+	if got != 0 {
+		t.Errorf("PrevGraphemeCluster(Hangul jamo, %d) = %d, want 0", len(text), got)
+	}
+}
+
+// ── Variation Selector ───────────────────────────────────────────
+
+func TestGraphemeClustersVariationSelector(t *testing.T) {
+	// Heart + VS16 = 1 grapheme cluster.
+	text := "\u2764\uFE0F"
+	boundaries := GraphemeClusters(text)
+	if len(boundaries) != 2 {
+		t.Errorf("GraphemeClusters(heart+VS16) = %v, want 2 boundaries (1 cluster)", boundaries)
+	}
+}
+
+func TestNextGraphemeClusterVariationSelector(t *testing.T) {
+	text := "\u2764\uFE0F"
+	got := NextGraphemeCluster(text, 0)
+	if got != len(text) {
+		t.Errorf("NextGraphemeCluster(heart+VS16, 0) = %d, want %d", got, len(text))
+	}
+}
+
+// ── Keycap Sequence ──────────────────────────────────────────────
+
+func TestGraphemeClustersKeycap(t *testing.T) {
+	// Keycap 3: "3" + VS16 + combining enclosing keycap = 1 cluster.
+	text := "3\uFE0F\u20E3"
+	boundaries := GraphemeClusters(text)
+	if len(boundaries) != 2 {
+		t.Errorf("GraphemeClusters(keycap 3) = %v, want 2 boundaries (1 cluster)", boundaries)
+	}
+}
+
+// ── Multi-person ZWJ ─────────────────────────────────────────────
+
+func TestGraphemeClustersMultipleZWJ(t *testing.T) {
+	// Family: man + ZWJ + woman + ZWJ + girl + ZWJ + boy = 1 cluster.
+	text := "\U0001F468\u200D\U0001F469\u200D\U0001F467\u200D\U0001F466"
+	boundaries := GraphemeClusters(text)
+	if len(boundaries) != 2 {
+		t.Errorf("GraphemeClusters(family emoji) = %v, want 2 boundaries (1 cluster)", boundaries)
+	}
+}
+
+// ── Mid-cluster Offset ───────────────────────────────────────────
+
+func TestPrevGraphemeClusterMidCluster(t *testing.T) {
+	// Flag emoji is 8 bytes (2 regional indicators). Offset 4 is mid-cluster.
+	text := "\U0001F1E9\U0001F1EA" // 🇩🇪
+	got := PrevGraphemeCluster(text, 4)
+	if got != 0 {
+		t.Errorf("PrevGraphemeCluster(flag, mid-cluster offset 4) = %d, want 0", got)
+	}
+}
+
+// ── Delete Backward for Complex Emoji ────────────────────────────
+
+func TestDeleteBackwardSkinTone(t *testing.T) {
+	text := "Hi\U0001F469\U0001F3FD"
+	result, off := DeleteBackward(text, len(text))
+	if result != "Hi" || off != 2 {
+		t.Errorf("DeleteBackward(skin-tone) = (%q, %d), want (\"Hi\", 2)", result, off)
+	}
+}
+
+func TestDeleteBackwardZWJFamily(t *testing.T) {
+	text := "\U0001F468\u200D\U0001F469\u200D\U0001F467"
+	result, off := DeleteBackward(text, len(text))
+	if result != "" || off != 0 {
+		t.Errorf("DeleteBackward(ZWJ family) = (%q, %d), want (\"\", 0)", result, off)
+	}
+}
+
+// ── CJK Word Boundaries ─────────────────────────────────────────
+
+func TestWordAtCJK(t *testing.T) {
+	text := "你好世界"
+	start, end := WordAt(text, 0)
+	// CJK characters are each treated as separate word segments by uniseg.
+	if start != 0 {
+		t.Errorf("WordAt CJK start = %d, want 0", start)
+	}
+	if end > len(text) {
+		t.Errorf("WordAt CJK end = %d, exceeds text length %d", end, len(text))
+	}
+}
+
+func TestPrevWordBoundaryCJK(t *testing.T) {
+	text := "你好世界"
+	got := PrevWordBoundary(text, len(text))
+	// Should move backward to some word boundary within the CJK text.
+	if got >= len(text) {
+		t.Errorf("PrevWordBoundary(CJK, end) = %d, want < %d", got, len(text))
+	}
+}
+
+// ── Table-Driven Consolidation ───────────────────────────────────
+
+func TestGraphemeClustersTableDriven(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		clusters int // expected number of grapheme clusters
+	}{
+		{"ASCII", "Hello", 5},
+		{"empty", "", 0},
+		{"flag", "\U0001F1E9\U0001F1EA", 1},
+		{"skin-tone", "\U0001F469\U0001F3FD", 1},
+		{"combining", "e\u0301", 1},
+		{"keycap", "3\uFE0F\u20E3", 1},
+		{"ZWJ-family", "\U0001F468\u200D\U0001F469\u200D\U0001F467\u200D\U0001F466", 1},
+		{"variation-selector", "\u2764\uFE0F", 1},
+		{"Hangul-jamo", "\u1100\u1161\u11A8", 1},
+		{"multi-flag", "\U0001F1E9\U0001F1EA\U0001F1EB\U0001F1F7", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			boundaries := GraphemeClusters(tt.text)
+			got := len(boundaries) - 1 // clusters = boundaries - 1
+			if tt.text == "" {
+				got = 0 // special case: [0] → 0 clusters
+			}
+			if got != tt.clusters {
+				t.Errorf("GraphemeClusters(%q) = %d clusters, want %d (boundaries: %v)",
+					tt.text, got, tt.clusters, boundaries)
+			}
+		})
+	}
+}

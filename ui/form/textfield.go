@@ -129,7 +129,11 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 		// Cursor when focused
 		if focused {
-			metrics := canvas.MeasureText(n.Value, style)
+			cursorOff := len(n.Value) // default: end
+			if focus != nil && focus.Input != nil {
+				cursorOff = focus.Input.CursorOffset
+			}
+			metrics := canvas.MeasureText(n.Value[:cursorOff], style)
 			cursorX := float32(textX) + metrics.Width
 			canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
 				draw.SolidPaint(tokens.Colors.Text.Primary))
@@ -140,9 +144,10 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// handle KeyMsg/CharMsg internally (no userland boilerplate needed).
 	if focused && n.OnChange != nil && focus != nil {
 		focus.Input = &ui.InputState{
-			Value:    n.Value,
-			OnChange: n.OnChange,
-			FocusUID: focusUID,
+			Value:        n.Value,
+			OnChange:     n.OnChange,
+			FocusUID:     focusUID,
+			CursorOffset: len(n.Value),
 		}
 	}
 

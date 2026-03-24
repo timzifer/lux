@@ -43,6 +43,7 @@ const (
 	WidgetKindSplitView
 	WidgetKindDialog
 	WidgetKindFormField
+	WidgetKindTextArea
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).
