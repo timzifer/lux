@@ -680,20 +680,9 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case wmKeyDown:
-			vk := int(wParam)
-			// DEBUG: change window title to confirm wmKeyDown fires for Enter
-			if vk == 0x0D {
-				title, _ := syscall.UTF16PtrFromString(fmt.Sprintf("ENTER PRESSED vk=0x%X", vk))
-				procSetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(title)))
-			}
 			if p.callbacks.OnKey != nil {
-				name := win32KeyName(vk)
+				name := win32KeyName(int(wParam))
 				p.callbacks.OnKey(name, 0, 0) // press
-			}
-			// Enter: also fire as OnChar('\n') so multiline TextArea works
-			// even if TranslateMessage/wmChar doesn't deliver it.
-			if vk == 0x0D && p.callbacks.OnChar != nil {
-				p.callbacks.OnChar('\n')
 			}
 			return 0
 		case wmKeyUp:
@@ -704,12 +693,7 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		case wmChar:
 			if p.callbacks.OnChar != nil {
-				ch := rune(wParam)
-				// Skip \r from Enter — already handled in wmKeyDown as \n.
-				if ch == '\r' {
-					return 0
-				}
-				p.callbacks.OnChar(ch)
+				p.callbacks.OnChar(rune(wParam))
 			}
 			return 0
 		case wmClose:

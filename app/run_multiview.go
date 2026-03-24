@@ -309,14 +309,60 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 						}
 						if is := fm.Input; is != nil {
 							switch m.Key {
-							case input.KeyBackspace:
-								if len(is.Value) > 0 {
-									runes := []rune(is.Value)
-									v := string(runes[:len(runes)-1])
+							case input.KeyEnter:
+								if is.Multiline {
+									v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
+									is.CursorOffset++
 									is.Value = v
 									is.OnChange(v)
 									modelDirty = true
 								}
+							case input.KeyBackspace:
+								if is.CursorOffset > 0 {
+									v, newOff := text.DeleteBackward(is.Value, is.CursorOffset)
+									is.Value = v
+									is.CursorOffset = newOff
+									is.OnChange(v)
+									modelDirty = true
+								}
+							case input.KeyLeft:
+								if m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.PrevWordBoundary(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = text.PrevGraphemeCluster(is.Value, is.CursorOffset)
+								}
+								modelDirty = true
+							case input.KeyRight:
+								if m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.NextWordBoundary(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = text.NextGraphemeCluster(is.Value, is.CursorOffset)
+								}
+								modelDirty = true
+							case input.KeyUp:
+								if is.Multiline {
+									is.CursorOffset = text.CursorUp(is.Value, is.CursorOffset)
+									modelDirty = true
+								}
+							case input.KeyDown:
+								if is.Multiline {
+									is.CursorOffset = text.CursorDown(is.Value, is.CursorOffset)
+									modelDirty = true
+								}
+							case input.KeyHome:
+								if is.Multiline && !m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.LineStart(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = 0
+								}
+								modelDirty = true
+							case input.KeyEnd:
+								if is.Multiline && !m.Modifiers.Has(input.ModCtrl) {
+									is.CursorOffset = text.LineEnd(is.Value, is.CursorOffset)
+								} else {
+									is.CursorOffset = len(is.Value)
+								}
+								modelDirty = true
 							case input.KeyEscape:
 								oldUID := fm.FocusedUID()
 								fm.Blur()
@@ -329,18 +375,31 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 
 				case input.CharMsg:
 					mainWC.dispatcher.Collect(m)
-					if is := fm.Input; is != nil && m.Char >= 32 {
-						v := is.Value + string(m.Char)
-						is.Value = v
-						is.OnChange(v)
-						modelDirty = true
+					if is := fm.Input; is != nil {
+						if m.Char == '\r' || m.Char == '\n' {
+							if is.Multiline {
+								v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
+								is.CursorOffset++
+								is.Value = v
+								is.OnChange(v)
+								modelDirty = true
+							}
+						} else if m.Char >= 32 {
+							ch := string(m.Char)
+							v := is.Value[:is.CursorOffset] + ch + is.Value[is.CursorOffset:]
+							is.CursorOffset += len(ch)
+							is.Value = v
+							is.OnChange(v)
+							modelDirty = true
+						}
 					}
 					return true
 
 				case input.TextInputMsg:
 					mainWC.dispatcher.Collect(m)
 					if is := fm.Input; is != nil && m.Text != "" {
-						v := is.Value + m.Text
+						v := is.Value[:is.CursorOffset] + m.Text + is.Value[is.CursorOffset:]
+						is.CursorOffset += len(m.Text)
 						is.Value = v
 						is.OnChange(v)
 						modelDirty = true
@@ -361,7 +420,8 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					mainWC.dispatcher.Collect(m)
 					if is := fm.Input; is != nil && m.Text != "" {
 						is.ComposeText = ""
-						v := is.Value + m.Text
+						v := is.Value[:is.CursorOffset] + m.Text + is.Value[is.CursorOffset:]
+						is.CursorOffset += len(m.Text)
 						is.Value = v
 						is.OnChange(v)
 						modelDirty = true

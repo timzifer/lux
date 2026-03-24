@@ -344,15 +344,6 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 						// Framework-internal keyboard handling for TextFields.
 						if is := fm.Input; is != nil {
-							// DEBUG: visible test for ANY key reaching this point
-							if m.Key == input.KeyEnter {
-								marker := fmt.Sprintf("[E:%v]", is.Multiline)
-								v := is.Value[:is.CursorOffset] + marker + is.Value[is.CursorOffset:]
-								is.CursorOffset += len(marker)
-								is.Value = v
-								is.OnChange(v)
-								modelDirty = true
-							}
 							switch m.Key {
 							case input.KeyEnter:
 								if is.Multiline {
@@ -424,13 +415,14 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					// Framework-internal character input for TextFields.
 					if is := fm.Input; is != nil {
 						if m.Char == '\r' || m.Char == '\n' {
-							// DEBUG: insert visible marker to verify handler is reached
-							marker := fmt.Sprintf("{%d/%v}", m.Char, is.Multiline)
-							v := is.Value[:is.CursorOffset] + marker + is.Value[is.CursorOffset:]
-							is.CursorOffset += len(marker)
-							is.Value = v
-							is.OnChange(v)
-							modelDirty = true
+							// Enter via char callback (some platforms).
+							if is.Multiline {
+								v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
+								is.CursorOffset++
+								is.Value = v
+								is.OnChange(v)
+								modelDirty = true
+							}
 						} else if m.Char >= 32 {
 							ch := string(m.Char)
 							v := is.Value[:is.CursorOffset] + ch + is.Value[is.CursorOffset:]
