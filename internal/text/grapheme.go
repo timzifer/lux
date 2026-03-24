@@ -226,6 +226,19 @@ func DeleteBackward(text string, offset int) (string, int) {
 	return text[:prev] + text[offset:], prev
 }
 
+// DeleteForward removes one grapheme cluster after offset and returns
+// the resulting text and the (unchanged) cursor offset.
+func DeleteForward(text string, offset int) (string, int) {
+	if offset >= len(text) || len(text) == 0 {
+		return text, offset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	next := NextGraphemeCluster(text, offset)
+	return text[:offset] + text[next:], offset
+}
+
 // isWordRune returns true for runes that are part of a "word"
 // (letters, digits, combining marks).
 func isWordRune(r rune) bool {

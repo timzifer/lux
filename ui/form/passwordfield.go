@@ -172,10 +172,21 @@ func (n PasswordField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Store input state for framework key handling.
 	if focused && n.OnChange != nil && focus != nil {
+		cursorOff := len(n.Value)
+		selStart := -1
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			selStart = focus.Input.SelectionStart
+			if cursorOff > len(n.Value) {
+				cursorOff = len(n.Value)
+			}
+		}
 		focus.Input = &ui.InputState{
-			Value:    n.Value,
-			OnChange: n.OnChange,
-			FocusUID: focusUID,
+			Value:          n.Value,
+			OnChange:       n.OnChange,
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: selStart,
 		}
 	}
 
