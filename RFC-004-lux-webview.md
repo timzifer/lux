@@ -2,7 +2,7 @@
 
 **Repository:** `github.com/timzifer/lux`
 
-**Status:** Theoretical
+**Status:** In Development
 **Version:** 0.1.0
 **Datum:** 2026-03-19
 **Abhängigkeit:** RFC-001-lux.md §8 (Surface-Slots)
