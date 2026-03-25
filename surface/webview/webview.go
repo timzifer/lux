@@ -239,6 +239,27 @@ func (w *WebView) syncHistoryFlagsLocked() {
 	w.canGoForward = w.historyIndex >= 0 && w.historyIndex < len(w.history)-1
 }
 
+// Title returns the current page title.
+func (w *WebView) Title() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.title
+}
+
+// CurrentURL returns the URL of the currently loaded page.
+func (w *WebView) CurrentURL() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.currentURL
+}
+
+// IsLoading reports whether a navigation is currently in progress.
+func (w *WebView) IsLoading() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.loading
+}
+
 func (w *WebView) setTitle(title string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
