@@ -8,6 +8,7 @@ import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/display"
 )
 
 // Button is a clickable button element with arbitrary content.
@@ -22,7 +23,7 @@ type Button struct {
 // Text creates a filled button with a text label.
 func Text(label string, onClick func()) ui.Element {
 	return Button{
-		Content: ui.TextElement{Content: label},
+		Content: display.TextElement{Content: label},
 		OnClick: onClick,
 		Variant: ui.ButtonFilled,
 	}
@@ -31,7 +32,7 @@ func Text(label string, onClick func()) ui.Element {
 // TextDisabled creates a disabled filled button with a text label.
 func TextDisabled(label string) ui.Element {
 	return Button{
-		Content:  ui.TextElement{Content: label},
+		Content:  display.TextElement{Content: label},
 		Variant:  ui.ButtonFilled,
 		Disabled: true,
 	}
@@ -50,7 +51,7 @@ func VariantOf(variant ui.ButtonVariant, content ui.Element, onClick func()) ui.
 // OutlinedText creates an outlined button with a text label.
 func OutlinedText(label string, onClick func()) ui.Element {
 	return Button{
-		Content: ui.TextElement{Content: label},
+		Content: display.TextElement{Content: label},
 		OnClick: onClick,
 		Variant: ui.ButtonOutlined,
 	}
@@ -59,7 +60,7 @@ func OutlinedText(label string, onClick func()) ui.Element {
 // GhostText creates a text-only (chromeless) button.
 func GhostText(label string, onClick func()) ui.Element {
 	return Button{
-		Content: ui.TextElement{Content: label},
+		Content: display.TextElement{Content: label},
 		OnClick: onClick,
 		Variant: ui.ButtonGhost,
 	}
@@ -68,7 +69,7 @@ func GhostText(label string, onClick func()) ui.Element {
 // TonalText creates a tonal button with a text label.
 func TonalText(label string, onClick func()) ui.Element {
 	return Button{
-		Content: ui.TextElement{Content: label},
+		Content: display.TextElement{Content: label},
 		OnClick: onClick,
 		Variant: ui.ButtonTonal,
 	}
@@ -159,7 +160,7 @@ func (n Button) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		// Pass 2: render content centered.
-		if txt, ok := n.Content.(ui.TextElement); ok {
+		if txt, ok := n.Content.(display.TextElement); ok {
 			style := tokens.Typography.Label
 			metrics := canvas.MeasureText(txt.Content, style)
 			labelW := int(math.Ceil(float64(metrics.Width)))
@@ -223,7 +224,7 @@ func (n Button) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 
 // extractLabel tries to get a text label from a button's content element.
 func extractLabel(el ui.Element) string {
-	if txt, ok := el.(ui.TextElement); ok {
+	if txt, ok := el.(display.TextElement); ok {
 		return txt.Content
 	}
 	return ""

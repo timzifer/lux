@@ -1,8 +1,5 @@
-// Package ui — dialog.go provides fallback dialog elements rendered as overlays.
-//
-// These are used when the platform does not implement NativeDialogProvider,
-// or when native dialogs fail. Each function returns an Overlay element
-// with Backdrop: true and PlacementCenter positioning.
+// Package ui — dialog_layout.go provides the DialogLayout element used by
+// the ui/dialog sub-package to render dialog overlays with a colored icon panel.
 package ui
 
 import (
@@ -21,84 +18,6 @@ const (
 	dialogGap        = 16 // dp — gap between icon panel and content
 )
 
-// MessageDialog returns an overlay element displaying a message with an OK button.
-func MessageDialog(id OverlayID, title, message string, kind platform.DialogKind, onClose func()) Element {
-	return Overlay{
-		ID:          id,
-		Placement:   PlacementCenter,
-		Dismissable: true,
-		OnDismiss:   onClose,
-		Backdrop:    true,
-		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
-		Content: DialogLayout(kind,
-			Column(
-				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-				Spacer(12),
-				Text(message),
-				Spacer(16),
-				Row(
-					Spacer(0),
-					ButtonText("OK", onClose),
-				),
-			),
-		),
-	}
-}
-
-// ConfirmDialog returns an overlay element with Confirm/Cancel buttons.
-func ConfirmDialog(id OverlayID, title, message string, onConfirm, onCancel func()) Element {
-	return Overlay{
-		ID:          id,
-		Placement:   PlacementCenter,
-		Dismissable: true,
-		OnDismiss:   onCancel,
-		Backdrop:    true,
-		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
-		Content: DialogLayout(platform.DialogInfo,
-			Column(
-				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-				Spacer(12),
-				Text(message),
-				Spacer(16),
-				Row(
-					Spacer(0),
-					ButtonOutlinedText("Cancel", onCancel),
-					Spacer(8),
-					ButtonText("Confirm", onConfirm),
-				),
-			),
-		),
-	}
-}
-
-// InputDialog returns an overlay element with a text field and OK/Cancel buttons.
-func InputDialog(id OverlayID, title, message, value, placeholder string, onValueChange func(string), onConfirm, onCancel func()) Element {
-	return Overlay{
-		ID:          id,
-		Placement:   PlacementCenter,
-		Dismissable: true,
-		OnDismiss:   onCancel,
-		Backdrop:    true,
-		FocusTrap:   &FocusTrap{RestoreFocus: true, TrapID: string(id)},
-		Content: DialogLayout(platform.DialogInfo,
-			Column(
-				TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-				Spacer(12),
-				Text(message),
-				Spacer(12),
-				TextField(value, placeholder, WithOnChange(onValueChange)),
-				Spacer(16),
-				Row(
-					Spacer(0),
-					ButtonOutlinedText("Cancel", onCancel),
-					Spacer(8),
-					ButtonText("OK", onConfirm),
-				),
-			),
-		),
-	}
-}
-
 // DialogLayout wraps content in a layout with a colored icon panel on the left.
 // Exported so the ui/dialog sub-package can reuse the same visual treatment.
 func DialogLayout(kind platform.DialogKind, content Element) Element {
@@ -106,7 +25,6 @@ func DialogLayout(kind platform.DialogKind, content Element) Element {
 }
 
 // dialogLayoutElement renders a colored icon panel on the left and content on the right.
-// It measures the content first to determine the panel height (similar to CardElement).
 type dialogLayoutElement struct {
 	Kind    platform.DialogKind
 	Content Element
@@ -195,8 +113,8 @@ func dialogPhosphorIcon(kind platform.DialogKind) string {
 	}
 }
 
-// dialogKindColors returns the panel background color (15% alpha) and icon color
-// for the given dialog kind, derived from the theme's status colors.
+// dialogKindColors returns the panel background color and icon color
+// for the given dialog kind.
 func dialogKindColors(kind platform.DialogKind, tokens theme.TokenSet) (panelBG, icon draw.Color) {
 	var base draw.Color
 	switch kind {

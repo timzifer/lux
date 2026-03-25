@@ -3,6 +3,7 @@ package display
 import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/layout"
 )
 
 // Card layout constants.
@@ -23,7 +24,7 @@ func Card(children ...ui.Element) ui.Element {
 	if len(children) == 1 {
 		return CardElement{Child: children[0]}
 	}
-	return CardElement{Child: ui.BoxElement{Axis: ui.AxisColumn, Children: children}}
+	return CardElement{Child: layout.Column(children...)}
 }
 
 // LayoutSelf implements ui.Layouter.

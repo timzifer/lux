@@ -9,7 +9,7 @@ import (
 // ContextMenu renders a floating context menu at a given position.
 type ContextMenu struct {
 	ui.BaseElement
-	Items   []ui.MenuItem
+	Items   []MenuItem
 	Visible bool
 	PosX    float32
 	PosY    float32
@@ -17,12 +17,12 @@ type ContextMenu struct {
 }
 
 // NewContextMenu creates a context menu at the given position.
-func NewContextMenu(items []ui.MenuItem, visible bool, x, y float32) ui.Element {
+func NewContextMenu(items []MenuItem, visible bool, x, y float32) ui.Element {
 	return ContextMenu{Items: items, Visible: visible, PosX: x, PosY: y}
 }
 
 // NewContextMenuBlur creates a context menu with frosted-glass backdrop (RFC-008 §11.5).
-func NewContextMenuBlur(items []ui.MenuItem, visible bool, x, y float32) ui.Element {
+func NewContextMenuBlur(items []MenuItem, visible bool, x, y float32) ui.Element {
 	return ContextMenu{Items: items, Visible: visible, PosX: x, PosY: y, Blur: true}
 }
 

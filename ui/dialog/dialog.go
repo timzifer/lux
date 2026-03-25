@@ -9,6 +9,10 @@ import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/button"
+	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/form"
+	"github.com/timzifer/lux/ui/layout"
 )
 
 // MessageDialog returns an overlay element displaying a message with an OK button.
@@ -20,14 +24,14 @@ func MessageDialog(id ui.OverlayID, title, message string, kind platform.DialogK
 		OnDismiss:   onClose,
 		Backdrop:    true,
 		Content: ui.DialogLayout(kind,
-			ui.Column(
-				ui.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-				ui.Spacer(12),
-				ui.Text(message),
-				ui.Spacer(16),
-				ui.Row(
-					ui.Spacer(0),
-					ui.ButtonText("OK", onClose),
+			layout.Column(
+				display.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+				display.Spacer(12),
+				display.Text(message),
+				display.Spacer(16),
+				layout.Row(
+					display.Spacer(0),
+					button.Text("OK", onClose),
 				),
 			),
 		),
@@ -43,16 +47,16 @@ func ConfirmDialog(id ui.OverlayID, title, message string, onConfirm, onCancel f
 		OnDismiss:   onCancel,
 		Backdrop:    true,
 		Content: ui.DialogLayout(platform.DialogInfo,
-			ui.Column(
-				ui.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-				ui.Spacer(12),
-				ui.Text(message),
-				ui.Spacer(16),
-				ui.Row(
-					ui.Spacer(0),
-					ui.ButtonOutlinedText("Cancel", onCancel),
-					ui.Spacer(8),
-					ui.ButtonText("Confirm", onConfirm),
+			layout.Column(
+				display.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+				display.Spacer(12),
+				display.Text(message),
+				display.Spacer(16),
+				layout.Row(
+					display.Spacer(0),
+					button.OutlinedText("Cancel", onCancel),
+					display.Spacer(8),
+					button.Text("Confirm", onConfirm),
 				),
 			),
 		),
@@ -68,18 +72,18 @@ func InputDialog(id ui.OverlayID, title, message, value, placeholder string, onV
 		OnDismiss:   onCancel,
 		Backdrop:    true,
 		Content: ui.DialogLayout(platform.DialogInfo,
-			ui.Column(
-				ui.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-				ui.Spacer(12),
-				ui.Text(message),
-				ui.Spacer(12),
-				ui.TextField(value, placeholder, ui.WithOnChange(onValueChange)),
-				ui.Spacer(16),
-				ui.Row(
-					ui.Spacer(0),
-					ui.ButtonOutlinedText("Cancel", onCancel),
-					ui.Spacer(8),
-					ui.ButtonText("OK", onConfirm),
+			layout.Column(
+				display.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+				display.Spacer(12),
+				display.Text(message),
+				display.Spacer(12),
+				form.NewTextField(value, placeholder, form.WithOnChange(onValueChange)),
+				display.Spacer(16),
+				layout.Row(
+					display.Spacer(0),
+					button.OutlinedText("Cancel", onCancel),
+					display.Spacer(8),
+					button.Text("OK", onConfirm),
 				),
 			),
 		),

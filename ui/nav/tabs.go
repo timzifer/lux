@@ -6,6 +6,12 @@ import (
 	"github.com/timzifer/lux/ui"
 )
 
+// TabItem defines a single tab with an arbitrary header Element and content.
+type TabItem struct {
+	Header  ui.Element
+	Content ui.Element
+}
+
 // Layout constants matching the core ui package values.
 const (
 	tabHeaderPadX = 16
@@ -17,13 +23,13 @@ const (
 // Tabs displays a row of tab headers with selectable content panels.
 type Tabs struct {
 	ui.BaseElement
-	Items    []ui.TabItem
+	Items    []TabItem
 	Selected int
 	OnSelect func(int)
 }
 
 // New creates a Tabs element.
-func New(items []ui.TabItem, selected int, onSelect func(int)) ui.Element {
+func New(items []TabItem, selected int, onSelect func(int)) ui.Element {
 	return Tabs{Items: items, Selected: selected, OnSelect: onSelect}
 }
 

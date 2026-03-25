@@ -82,18 +82,14 @@ func WithGap(gap float32) FlexOption {
 	return func(e *Flex) { e.Gap = gap }
 }
 
-// expandedChild extracts the Expanded info from a child, checking both
-// the layout.Expanded type and the legacy ui.ExpandedElement type.
+// expandedChild extracts the Expanded info from a child.
 type expandedChild struct {
 	child ui.Element
 	grow  float32
 }
 
 func asExpanded(el ui.Element) (expandedChild, bool) {
-	switch e := el.(type) {
-	case Expanded:
-		return expandedChild{child: e.Child, grow: e.Grow}, true
-	case ui.ExpandedElement:
+	if e, ok := el.(Expanded); ok {
 		return expandedChild{child: e.Child, grow: e.Grow}, true
 	}
 	return expandedChild{}, false

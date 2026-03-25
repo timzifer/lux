@@ -54,3 +54,6 @@ func (n TextElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) u
 func (n TextElement) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	b.AddNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: n.Content}, parentIdx, a11y.Rect{})
 }
+
+// ElementLabel implements ui.Labeler.
+func (n TextElement) ElementLabel() string { return n.Content }

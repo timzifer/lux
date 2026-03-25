@@ -1,10 +1,53 @@
 package form
 
 import (
+	"time"
+
 	"github.com/timzifer/lux/a11y"
+	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
+
+// ToggleState tracks the toggle thumb animation.
+type ToggleState struct {
+	thumbPos anim.Anim[float32] // 0.0 = off, 1.0 = on
+	lastOn   bool
+	inited   bool
+}
+
+// NewToggleState creates a ready-to-use ToggleState.
+func NewToggleState() *ToggleState { return &ToggleState{} }
+
+// Update returns the current animation progress [0,1] and starts a
+// new transition if the on state has changed.
+func (ts *ToggleState) Update(on bool, de theme.DurationEasing) float32 {
+	if !ts.inited {
+		if on {
+			ts.thumbPos.SetImmediate(1.0)
+		}
+		ts.lastOn = on
+		ts.inited = true
+		return ts.thumbPos.Value()
+	}
+	if on != ts.lastOn {
+		target := float32(0)
+		if on {
+			target = 1
+		}
+		ts.thumbPos.SetTarget(target, de.Duration, de.Easing)
+		ts.lastOn = on
+	}
+	return ts.thumbPos.Value()
+}
+
+// Tick advances the toggle animation by dt.
+func (ts *ToggleState) Tick(dt time.Duration) {
+	if ts != nil {
+		ts.thumbPos.Tick(dt)
+	}
+}
 
 // Layout constants for toggle.
 const (
@@ -19,14 +62,14 @@ type Toggle struct {
 	ui.BaseElement
 	On       bool
 	OnToggle func(bool)
-	State    *ui.ToggleState
+	State    *ToggleState
 	Disabled bool
 }
 
 // NewToggle creates a toggle element. An optional ToggleState pointer enables
 // smooth thumb animation; pass nil for instant snap.
-func NewToggle(on bool, onToggle func(bool), state ...*ui.ToggleState) ui.Element {
-	var s *ui.ToggleState
+func NewToggle(on bool, onToggle func(bool), state ...*ToggleState) ui.Element {
+	var s *ToggleState
 	if len(state) > 0 {
 		s = state[0]
 	}
