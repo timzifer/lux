@@ -24,6 +24,7 @@ const (
 
 	wsOverlappedWindow = 0x00CF0000
 	wsVisible          = 0x10000000
+	wsClipChildren     = 0x02000000
 
 	wmDestroy      = 0x0002
 	wmSize         = 0x0005
@@ -170,7 +171,7 @@ func (p *Platform) Init(cfg platform.Config) error {
 		0,
 		uintptr(unsafe.Pointer(windowClassName)),
 		uintptr(unsafe.Pointer(titlePtr)),
-		wsOverlappedWindow|wsVisible,
+		wsOverlappedWindow|wsVisible|wsClipChildren,
 		cwUseDefault,
 		cwUseDefault,
 		uintptr(w),
@@ -649,6 +650,9 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case wmLButtonDown, wmRButtonDown, wmMButtonDown:
+			// Reclaim keyboard focus from any child HWND (e.g. WebView2)
+			// so that subsequent keystrokes reach the parent window.
+			procSetFocus.Call(hwnd)
 			if p.callbacks.OnMouseButton != nil {
 				x := float32(int16(lParam & 0xFFFF))
 				y := float32(int16((lParam >> 16) & 0xFFFF))

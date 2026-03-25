@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/timzifer/lux/app"
+	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/surface/webview"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
@@ -35,6 +36,7 @@ type Model struct {
 	canBack     bool
 	canForward  bool
 	initialized bool
+	renderer    *gpu.WGPURenderer // set by rendererFactory
 }
 
 // Messages
@@ -55,6 +57,7 @@ func update(m Model, msg app.Msg) Model {
 	switch msg := msg.(type) {
 	case app.TickMsg:
 		if !m.initialized {
+			m.renderer = browserRenderer
 			m = initWebView(m)
 		}
 		if m.wv != nil {
@@ -112,10 +115,24 @@ func initWebView(m Model) Model {
 		return m
 	}
 
-	m.wv = webview.New(defaultURL, webview.WithParentWindow(hwnd))
+	opts := []webview.Option{webview.WithParentWindow(hwnd)}
+	if m.renderer != nil {
+		opts = append(opts, webview.WithRenderer(m.renderer))
+	}
+	m.wv = webview.New(defaultURL, opts...)
 	m.addressBar = defaultURL
 	m.initialized = true
 	return m
+}
+
+// browserRendererFactory stores the renderer in the model so WebView can
+// use it for texture capture (same pattern as kitchen-sink/pyramid).
+var browserRenderer *gpu.WGPURenderer
+
+func browserRendererFactory() gpu.Renderer {
+	r := gpu.NewWGPU()
+	browserRenderer = r
+	return r
 }
 
 func view(m Model) ui.Element {
@@ -190,6 +207,7 @@ func main() {
 		app.WithTitle("Lux Browser"),
 		app.WithSize(1280, 900),
 		app.WithTheme(theme.Default),
+		app.WithRenderer(browserRendererFactory),
 	); err != nil {
 		log.Fatal(err)
 	}

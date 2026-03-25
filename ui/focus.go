@@ -67,6 +67,11 @@ type FocusManager struct {
 
 	// FocusTrap support (RFC-001 §11.7).
 	Trap *FocusTrapManager
+
+	// dirty is set when focus state changes outside the normal message-drain
+	// path (e.g. from a click handler). The run loop checks this to force a
+	// re-layout so that fm.Input is created for the newly focused TextField.
+	dirty bool
 }
 
 type focusEntry struct {
@@ -91,6 +96,9 @@ func (fm *FocusManager) FocusedUID() UID {
 // SetFocusedUID sets focus to the given UID.
 func (fm *FocusManager) SetFocusedUID(uid UID) {
 	if fm != nil {
+		if fm.focusedUID != uid {
+			fm.dirty = true
+		}
 		fm.focusedUID = uid
 	}
 }
@@ -98,8 +106,23 @@ func (fm *FocusManager) SetFocusedUID(uid UID) {
 // Blur removes focus from any widget.
 func (fm *FocusManager) Blur() {
 	if fm != nil {
+		if fm.focusedUID != 0 {
+			fm.dirty = true
+		}
 		fm.focusedUID = 0
 	}
+}
+
+// ConsumeDirty returns true if focus state changed since the last call, and
+// resets the flag. The run loop uses this to force a re-layout when focus
+// changes from click handlers (which run outside the message-drain path).
+func (fm *FocusManager) ConsumeDirty() bool {
+	if fm == nil {
+		return false
+	}
+	d := fm.dirty
+	fm.dirty = false
+	return d
 }
 
 // IsFocused reports whether the given UID currently has focus.

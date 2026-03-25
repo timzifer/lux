@@ -5,12 +5,15 @@ package webview
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"syscall"
 	"unsafe"
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/internal/gpu"
+	"github.com/timzifer/lux/internal/wgpu"
 	"github.com/timzifer/lux/ui"
 	"github.com/zzl/go-com/com"
 	wv2 "github.com/zzl/go-webview2/wv2"
@@ -22,6 +25,55 @@ var (
 
 	// WebView2 + DXGI bootstrap entrypoint for the COM environment.
 	procCreateCoreWebView2EnvironmentWithOptions = webView2Loader.NewProc("CreateCoreWebView2EnvironmentWithOptions")
+
+	wvUser32             = syscall.NewLazyDLL("user32.dll")
+	procWVCreateWindowEx = wvUser32.NewProc("CreateWindowExW")
+	procWVDestroyWindow  = wvUser32.NewProc("DestroyWindow")
+	procWVMoveWindow     = wvUser32.NewProc("MoveWindow")
+	procWVShowWindow     = wvUser32.NewProc("ShowWindow")
+	procWVClientToScreen = wvUser32.NewProc("ClientToScreen")
+	procPrintWindow      = wvUser32.NewProc("PrintWindow")
+	procPostMessageW     = wvUser32.NewProc("PostMessageW")
+	procSetFocus         = wvUser32.NewProc("SetFocus")
+	procGetWindow        = wvUser32.NewProc("GetWindow")
+	procScreenToClient   = wvUser32.NewProc("ScreenToClient")
+
+	wvGdi32              = syscall.NewLazyDLL("gdi32.dll")
+	procCreateCompatDC   = wvGdi32.NewProc("CreateCompatibleDC")
+	procDeleteDC         = wvGdi32.NewProc("DeleteDC")
+	procSelectObject     = wvGdi32.NewProc("SelectObject")
+	procDeleteObject     = wvGdi32.NewProc("DeleteObject")
+	procCreateDIBSection = wvGdi32.NewProc("CreateDIBSection")
+
+)
+
+const (
+	wsPopup        = 0x80000000
+	wsClipChildren = 0x02000000
+	wsExToolWindow = 0x00000080
+	swShow         = 5
+	swShowNA       = 8 // ShowWindow without activating
+
+	pwRenderFullContent = 0x00000002 // PrintWindow: capture from DWM
+
+	gwChild = 5 // GetWindow: first child
+
+	// Win32 mouse messages
+	wmWVMouseMove   = 0x0200
+	wmWVLButtonDown = 0x0201
+	wmWVLButtonUp   = 0x0202
+	wmWVRButtonDown = 0x0204
+	wmWVRButtonUp   = 0x0205
+	wmWVMButtonDown = 0x0207
+	wmWVMButtonUp   = 0x0208
+	wmWVMouseWheel  = 0x020A
+	wmWVKeyDown     = 0x0100
+	wmWVKeyUp       = 0x0101
+	wmWVChar        = 0x0102
+
+	mkWVLButton = 0x0001
+	mkWVRButton = 0x0002
+	mkWVMButton = 0x0010
 )
 
 func init() {
@@ -30,12 +82,13 @@ func init() {
 	}
 }
 
-// windowsBackend models the RFC-004 §7 integration path:
-// ICoreWebView2CompositionController -> DXGI Shared Handle -> Lux TextureID.
+// windowsBackend hosts WebView2 in an offscreen popup window and captures
+// its rendered output into a WGPU texture for compositing into the main
+// swapchain. This eliminates the DWM dual-pipeline flicker problem and
+// enables overlay support.
 //
-// The backend now performs real WebView2 COM bootstrap calls and wires core
-// navigation/title/history events. The DXGI Shared Handle export path remains
-// the next step once Lux has a concrete DComp/WGPU import bridge.
+// When no renderer is configured (WithRenderer not called), the backend
+// falls back to positioning the popup over the main window (legacy mode).
 type windowsBackend struct {
 	w *WebView
 
@@ -48,19 +101,29 @@ type windowsBackend struct {
 	comInit  com.Initialized
 	comScope *com.Scope
 
-	hwnd win32.HWND
+	hwnd      win32.HWND // main application window
+	popupHWND uintptr    // offscreen popup that hosts WebView2
 
 	environment *wv2.ICoreWebView2Environment
-	env3        *wv2.ICoreWebView2Environment3
 	controller  *wv2.ICoreWebView2Controller
-
-	// COM anchor: ICoreWebView2CompositionController.
-	composition *wv2.ICoreWebView2CompositionController
 	core        *wv2.ICoreWebView2
 
-	// Zero-copy anchor: DXGI Shared Handle imported by Lux/WGPU later.
-	dxgiSharedHandle uintptr
-	textureID        draw.TextureID
+	// --- Texture capture state (when renderer is available) ---
+	renderer  *gpu.WGPURenderer
+	capDC     uintptr        // memory DC for PrintWindow capture
+	capBMP    uintptr        // DIB section bitmap (top-down, BGRA)
+	capPixels unsafe.Pointer // direct pointer to DIB pixel buffer
+	capW, capH int32         // current capture dimensions
+	capTex     wgpu.Texture
+	capView    wgpu.TextureView
+	capTexID    draw.TextureID // stable texture ID (no churn)
+	contentHWND uintptr       // WebView2's content child HWND (for input forwarding)
+
+	// --- Legacy overlay state (when no renderer) ---
+	textureID          draw.TextureID
+	cachedClientBounds draw.Rect
+	lastScreenRect     screenRect
+	visible            bool
 
 	lastErr error
 
@@ -68,7 +131,7 @@ type windowsBackend struct {
 	pendingScripts []pendingScript
 
 	envCompleted         *wv2.ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
-	controllerCompleted  *wv2.ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler
+	controllerCompleted  *wv2.ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 	navigationStarting   *wv2.ICoreWebView2NavigationStartingEventHandler
 	navigationCompleted  *wv2.ICoreWebView2NavigationCompletedEventHandler
 	historyChanged       *wv2.ICoreWebView2HistoryChangedEventHandler
@@ -80,18 +143,67 @@ type windowsBackend struct {
 	documentTitleChangedToken wv2.EventRegistrationToken
 }
 
+type screenRect struct {
+	left, top, right, bottom int32
+}
+
 type pendingScript struct {
 	js   string
 	done chan error
 }
 
+// bitmapInfoHeader is the BITMAPINFOHEADER structure for CreateDIBSection.
+type bitmapInfoHeader struct {
+	Size          uint32
+	Width         int32
+	Height        int32
+	Planes        uint16
+	BitCount      uint16
+	Compression   uint32
+	SizeImage     uint32
+	XPelsPerMeter int32
+	YPelsPerMeter int32
+	ClrUsed       uint32
+	ClrImportant  uint32
+}
+
 func newWindowsBackend(w *WebView) *windowsBackend {
 	b := &windowsBackend{
-		w:    w,
-		hwnd: win32.HWND(w.cfg.parentWindow),
+		w:        w,
+		hwnd:     win32.HWND(w.cfg.parentWindow),
+		renderer: w.cfg.renderer,
 	}
 	b.bootstrap()
 	return b
+}
+
+// useCapture reports whether the backend should capture to a WGPU texture
+// instead of overlaying the popup.
+func (b *windowsBackend) useCapture() bool {
+	return b.renderer != nil
+}
+
+// createPopup creates the popup HWND. When using capture mode, the popup
+// is positioned offscreen so WebView2 renders without being visible.
+func (b *windowsBackend) createPopup() uintptr {
+	className := syscall.StringToUTF16Ptr("LuxM1Window")
+
+	// Offscreen position for capture mode; on-screen placeholder for legacy.
+	x, y := 0, 0
+	if b.useCapture() {
+		x, y = -32000, -32000
+	}
+
+	hwnd, _, _ := procWVCreateWindowEx.Call(
+		uintptr(wsExToolWindow),            // no taskbar entry
+		uintptr(unsafe.Pointer(className)), // reuse existing class
+		0,                                  // no title
+		uintptr(wsPopup|wsClipChildren),    // borderless popup
+		uintptr(x), uintptr(y), 1, 1,      // initial size; resized in applyBounds
+		uintptr(b.hwnd), // owner = main window
+		0, 0, 0,
+	)
+	return hwnd
 }
 
 func (b *windowsBackend) bootstrap() {
@@ -100,7 +212,14 @@ func (b *windowsBackend) bootstrap() {
 		return
 	}
 	if b.hwnd == 0 {
-		b.setError(errors.New("webview2 composition controller requires a parent HWND; use WithParentWindow"))
+		b.setError(errors.New("webview2 controller requires a parent HWND; use WithParentWindow"))
+		return
+	}
+
+	b.popupHWND = b.createPopup()
+	log.Printf("[webview] createPopup: hwnd=%#x popup=%#x capture=%v", b.hwnd, b.popupHWND, b.useCapture())
+	if b.popupHWND == 0 {
+		b.setError(errors.New("failed to create WebView2 popup host window"))
 		return
 	}
 
@@ -119,28 +238,55 @@ func (b *windowsBackend) bootstrap() {
 
 			b.mu.Lock()
 			b.environment = createdEnvironment
-			b.env3 = (*wv2.ICoreWebView2Environment3)(unsafe.Pointer(createdEnvironment))
 			b.mu.Unlock()
 
-			b.controllerCompleted = wv2.NewICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandlerByFunc(
-				func(errorCode com.Error, webView *wv2.ICoreWebView2CompositionController) com.Error {
-					if errorCode < 0 || webView == nil {
-						b.setError(fmt.Errorf("CreateCoreWebView2CompositionController callback failed: 0x%08x", uint32(errorCode)))
+			b.controllerCompleted = wv2.NewICoreWebView2CreateCoreWebView2ControllerCompletedHandlerByFunc(
+				func(errorCode com.Error, controller *wv2.ICoreWebView2Controller) com.Error {
+					if errorCode < 0 || controller == nil {
+						b.setError(fmt.Errorf("CreateCoreWebView2Controller callback failed: 0x%08x", uint32(errorCode)))
 						return errorCode
 					}
-					webView.AddRef()
+					controller.AddRef()
 
-					controller, core, err := b.bindCompositionController(webView)
-					if err != nil {
-						b.setError(err)
+					var core *wv2.ICoreWebView2
+					if err := controller.GetCoreWebView2(&core); err < 0 {
+						b.setError(fmt.Errorf("GetCoreWebView2 failed: 0x%08x", uint32(err)))
 						return com.Error(win32.E_FAIL)
 					}
+					if core == nil {
+						b.setError(errors.New("GetCoreWebView2 returned nil core"))
+						return com.Error(win32.E_FAIL)
+					}
+					core.AddRef()
+
+					log.Printf("[webview] controller ready, popup=%#x", b.popupHWND)
+					controller.SetIsVisible(1)
+
+					// Find WebView2's content child HWND for input forwarding.
+					childHWND, _, _ := procGetWindow.Call(b.popupHWND, gwChild)
+					if childHWND != 0 {
+						// WebView2 nests: popup → Chrome_WidgetWin → content.
+						// Walk to the deepest first-child for input delivery.
+						for {
+							next, _, _ := procGetWindow.Call(childHWND, gwChild)
+							if next == 0 {
+								break
+							}
+							childHWND = next
+						}
+					}
+					log.Printf("[webview] content child HWND=%#x", childHWND)
 
 					b.mu.Lock()
-					b.composition = webView
 					b.controller = controller
 					b.core = core
+					b.contentHWND = childHWND
 					b.mu.Unlock()
+
+					// Show the popup so DWM maintains its surface for capture.
+					if b.useCapture() {
+						procWVShowWindow.Call(b.popupHWND, swShowNA)
+					}
 
 					b.applyBounds(b.w.lastBounds)
 					b.installEventHandlers(core)
@@ -150,8 +296,10 @@ func (b *windowsBackend) bootstrap() {
 				}, true,
 			)
 
-			if err := b.env3.CreateCoreWebView2CompositionController(b.hwnd, b.controllerCompleted); err < 0 {
-				b.setError(fmt.Errorf("CreateCoreWebView2CompositionController failed: 0x%08x", uint32(err)))
+			if err := createdEnvironment.CreateCoreWebView2Controller(
+				win32.HWND(b.popupHWND), b.controllerCompleted,
+			); err < 0 {
+				b.setError(fmt.Errorf("CreateCoreWebView2Controller failed: 0x%08x", uint32(err)))
 				return err
 			}
 			return 0
@@ -169,7 +317,7 @@ func (b *windowsBackend) bootstrap() {
 		0,
 		uintptr(unsafe.Pointer(b.envCompleted)),
 	)
-	hr = win32.HRESULT(r1)
+	hr := win32.HRESULT(r1)
 	if callErr != syscall.Errno(0) {
 		b.setError(fmt.Errorf("CreateCoreWebView2EnvironmentWithOptions call failed: %w", callErr))
 		return
@@ -177,26 +325,6 @@ func (b *windowsBackend) bootstrap() {
 	if win32.FAILED(hr) {
 		b.setError(fmt.Errorf("CreateCoreWebView2EnvironmentWithOptions failed: 0x%08x", uint32(hr)))
 	}
-}
-
-func (b *windowsBackend) bindCompositionController(comp *wv2.ICoreWebView2CompositionController) (*wv2.ICoreWebView2Controller, *wv2.ICoreWebView2, error) {
-	var controller *wv2.ICoreWebView2Controller
-	if hr := ((*win32.IUnknown)(unsafe.Pointer(comp))).QueryInterface(&wv2.IID_ICoreWebView2Controller, unsafe.Pointer(&controller)); win32.FAILED(hr) {
-		return nil, nil, fmt.Errorf("QueryInterface(ICoreWebView2Controller) failed: 0x%08x", uint32(hr))
-	}
-	if controller == nil {
-		return nil, nil, errors.New("QueryInterface(ICoreWebView2Controller) returned nil controller")
-	}
-
-	var core *wv2.ICoreWebView2
-	if err := controller.GetCoreWebView2(&core); err < 0 {
-		return nil, nil, fmt.Errorf("GetCoreWebView2 failed: 0x%08x", uint32(err))
-	}
-	if core == nil {
-		return nil, nil, errors.New("GetCoreWebView2 returned nil core")
-	}
-	core.AddRef()
-	return controller, core, nil
 }
 
 func (b *windowsBackend) installEventHandlers(core *wv2.ICoreWebView2) {
@@ -399,10 +527,6 @@ func (b *windowsBackend) Close() error {
 		b.core.Release()
 		b.core = nil
 	}
-	if b.composition != nil {
-		b.composition.Release()
-		b.composition = nil
-	}
 	if b.controller != nil {
 		_ = b.controller.Close()
 		b.controller.Release()
@@ -411,10 +535,30 @@ func (b *windowsBackend) Close() error {
 	if b.environment != nil {
 		b.environment.Release()
 		b.environment = nil
-		b.env3 = nil
 	}
-	b.dxgiSharedHandle = 0
+	if b.popupHWND != 0 {
+		procWVDestroyWindow.Call(b.popupHWND)
+		b.popupHWND = 0
+	}
+
+	// Clean up capture resources.
+	b.destroyCaptureDC()
+	if b.capView != nil {
+		b.capView.Destroy()
+		b.capView = nil
+	}
+	if b.capTex != nil {
+		b.capTex.Destroy()
+		b.capTex = nil
+	}
+	if b.capTexID != 0 && b.renderer != nil {
+		b.renderer.UnregisterSurfaceTexture(b.capTexID)
+	}
+
 	b.textureID = 0
+	b.visible = false
+	b.cachedClientBounds = draw.Rect{}
+	b.lastScreenRect = screenRect{}
 	if b.comInitialized {
 		if b.comScope != nil {
 			b.comScope.Leave()
@@ -426,101 +570,344 @@ func (b *windowsBackend) Close() error {
 	return b.lastErr
 }
 
+// ─── AcquireFrame ──────────────────────────────────────────────────
+
 func (b *windowsBackend) AcquireFrame(bounds draw.Rect) (draw.TextureID, ui.FrameToken) {
+	if b.useCapture() {
+		return b.acquireFrameCapture(bounds)
+	}
+	return b.acquireFrameLegacy(bounds)
+}
+
+// acquireFrameCapture captures the offscreen popup via PrintWindow and
+// uploads the pixels to a WGPU texture for blitting.
+//
+// Hot path optimizations:
+//   - Top-down DIB (negative Height) → no row flip needed
+//   - DIB pixel buffer passed directly to WriteTexture → zero alloc per frame
+//   - Stable texture ID → no register/unregister churn
+func (b *windowsBackend) acquireFrameCapture(bounds draw.Rect) (draw.TextureID, ui.FrameToken) {
+	b.mu.Lock()
+	controller := b.controller
+	popup := b.popupHWND
+	b.mu.Unlock()
+
+	w, h := int32(bounds.W), int32(bounds.H)
+	if controller == nil || popup == 0 || w <= 0 || h <= 0 {
+		b.w.mu.Lock()
+		defer b.w.mu.Unlock()
+		return 0, b.w.currentTextureTokenLocked()
+	}
+
+	// Resize the offscreen popup and capture resources when bounds change.
+	if w != b.capW || h != b.capH {
+		procWVMoveWindow.Call(popup, uintptr(0xFFFF8300), uintptr(0xFFFF8300), uintptr(w), uintptr(h), 0) // -32000
+		_ = controller.SetBounds(wv2.TagRECT{Left: 0, Top: 0, Right: w, Bottom: h})
+		b.capW = w
+		b.capH = h
+		b.ensureCaptureDC(w, h)
+		b.ensureCaptureTexture(w, h)
+	}
+
+	// Capture + upload (zero-alloc hot path).
+	if b.capDC != 0 && b.capPixels != nil && b.capTex != nil {
+		procPrintWindow.Call(popup, b.capDC, pwRenderFullContent)
+
+		// DIB is top-down (negative Height) → pixels are already in correct
+		// order for WGPU. Pass the DIB memory directly, no copy.
+		stride := uint32(w) * 4
+		pixels := unsafe.Slice((*byte)(b.capPixels), int(stride)*int(h))
+
+		b.renderer.Queue().WriteTexture(
+			&wgpu.ImageCopyTexture{Texture: b.capTex},
+			pixels,
+			&wgpu.TextureDataLayout{BytesPerRow: stride, RowsPerImage: uint32(h)},
+			wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1},
+		)
+	}
+
+	// Use a stable texture ID — the view doesn't change between frames.
+	if b.capTexID == 0 {
+		b.capTexID = 1
+	}
+	if b.capView != nil {
+		b.renderer.RegisterSurfaceTexture(b.capTexID, b.capView)
+	}
+
+	b.w.mu.Lock()
+	defer b.w.mu.Unlock()
+	return b.capTexID, b.w.currentTextureTokenLocked()
+}
+
+// acquireFrameLegacy positions the popup over the main window (old behavior).
+func (b *windowsBackend) acquireFrameLegacy(bounds draw.Rect) (draw.TextureID, ui.FrameToken) {
 	b.applyBounds(bounds)
 	b.w.mu.Lock()
 	defer b.w.mu.Unlock()
 	return b.textureID, b.w.currentTextureTokenLocked()
 }
 
+// ─── Capture infrastructure ────────────────────────────────────────
+
+// ensureCaptureDC creates or recreates the GDI memory DC and DIB section
+// for PrintWindow capture at the given dimensions.
+func (b *windowsBackend) ensureCaptureDC(w, h int32) {
+	b.destroyCaptureDC()
+
+	hdc, _, _ := procCreateCompatDC.Call(0) // NULL = screen DC
+	if hdc == 0 {
+		log.Println("[webview] CreateCompatibleDC failed")
+		return
+	}
+
+	bmi := bitmapInfoHeader{
+		Size:     uint32(unsafe.Sizeof(bitmapInfoHeader{})),
+		Width:    w,
+		Height:   -h, // negative = top-down DIB (row 0 = top, no flip needed)
+		Planes:   1,
+		BitCount: 32, // BGRA
+	}
+	var bits unsafe.Pointer
+	bmp, _, _ := procCreateDIBSection.Call(
+		hdc,
+		uintptr(unsafe.Pointer(&bmi)),
+		0, // DIB_RGB_COLORS
+		uintptr(unsafe.Pointer(&bits)),
+		0, 0,
+	)
+	if bmp == 0 {
+		procDeleteDC.Call(hdc)
+		log.Println("[webview] CreateDIBSection failed")
+		return
+	}
+
+	procSelectObject.Call(hdc, bmp)
+
+	b.capDC = hdc
+	b.capBMP = bmp
+	b.capPixels = bits
+}
+
+func (b *windowsBackend) destroyCaptureDC() {
+	if b.capBMP != 0 {
+		procDeleteObject.Call(b.capBMP)
+		b.capBMP = 0
+	}
+	if b.capDC != 0 {
+		procDeleteDC.Call(b.capDC)
+		b.capDC = 0
+	}
+	b.capPixels = nil
+}
+
+// ensureCaptureTexture creates or recreates the WGPU texture for upload.
+func (b *windowsBackend) ensureCaptureTexture(w, h int32) {
+	if b.capView != nil {
+		b.capView.Destroy()
+		b.capView = nil
+	}
+	if b.capTex != nil {
+		b.capTex.Destroy()
+		b.capTex = nil
+	}
+
+	device := b.renderer.Device()
+	b.capTex = device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "webview-capture",
+		Size:   wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatBGRA8Unorm,
+		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+	})
+	if b.capTex != nil {
+		b.capView = b.capTex.CreateView()
+	}
+}
+
+// ─── Legacy overlay applyBounds ────────────────────────────────────
+
 func (b *windowsBackend) applyBounds(bounds draw.Rect) {
 	b.mu.Lock()
 	controller := b.controller
+	prevScreen := b.lastScreenRect
+	wasVisible := b.visible
+	popup := b.popupHWND
+	lastW := int32(b.cachedClientBounds.W)
+	lastH := int32(b.cachedClientBounds.H)
 	b.mu.Unlock()
-	if controller == nil || bounds.W <= 0 || bounds.H <= 0 {
+
+	if controller == nil || popup == 0 || bounds.W <= 0 || bounds.H <= 0 {
 		return
 	}
-	_ = controller.SetBounds(wv2.TagRECT{
-		Left:   int32(bounds.X),
-		Top:    int32(bounds.Y),
-		Right:  int32(bounds.X + bounds.W),
-		Bottom: int32(bounds.Y + bounds.H),
-	})
+
+	w, h := int32(bounds.W), int32(bounds.H)
+	sizeChanged := w != lastW || h != lastH
+
+	var pt [2]int32
+	pt[0] = int32(bounds.X)
+	pt[1] = int32(bounds.Y)
+	procWVClientToScreen.Call(uintptr(b.hwnd), uintptr(unsafe.Pointer(&pt[0])))
+
+	cur := screenRect{left: pt[0], top: pt[1], right: pt[0] + w, bottom: pt[1] + h}
+
+	if !sizeChanged && prevScreen != (screenRect{}) {
+		dx := cur.left - prevScreen.left
+		dy := cur.top - prevScreen.top
+		if dx < 0 {
+			dx = -dx
+		}
+		if dy < 0 {
+			dy = -dy
+		}
+		if dx <= 2 && dy <= 2 {
+			return
+		}
+	}
+
+	procWVMoveWindow.Call(popup, uintptr(pt[0]), uintptr(pt[1]), uintptr(w), uintptr(h), 0)
+
+	if sizeChanged {
+		_ = controller.SetBounds(wv2.TagRECT{Left: 0, Top: 0, Right: w, Bottom: h})
+	}
+
+	b.mu.Lock()
+	b.cachedClientBounds = bounds
+	b.lastScreenRect = cur
+	b.mu.Unlock()
+
+	if !wasVisible {
+		procWVShowWindow.Call(popup, swShow)
+		b.mu.Lock()
+		b.visible = true
+		b.mu.Unlock()
+	}
 }
 
 func (b *windowsBackend) ReleaseFrame(ui.FrameToken) {}
 
 func (b *windowsBackend) HandleMsg(msg any) bool {
 	b.mu.Lock()
-	composition := b.composition
+	child := b.contentHWND
+	popup := b.popupHWND
 	b.mu.Unlock()
-	if composition == nil {
+
+	// In legacy (overlay) mode, input goes directly to the popup via the
+	// Windows message pump — no forwarding needed.
+	if !b.useCapture() || child == 0 {
 		return false
 	}
 
-	switch msg := msg.(type) {
+	switch m := msg.(type) {
 	case ui.SurfaceMouseMsg:
-		kind, mouseData, ok := mouseEventKind(msg)
-		if !ok {
+		x := int32(m.Pos.X)
+		y := int32(m.Pos.Y)
+		lParam := uintptr(uint16(y))<<16 | uintptr(uint16(x))
+
+		switch m.Action {
+		case input.MousePress:
+			// Give Win32 focus to the WebView2 content HWND so it receives
+			// keyboard input directly through the message pump.
+			procSetFocus.Call(child)
+
+			wmDown, mk := mouseButtonToWin32(m.Button)
+			if wmDown != 0 {
+				procPostMessageW.Call(child, uintptr(wmDown), uintptr(mk), lParam)
+			}
+
+		case input.MouseMove:
+			// During drag, report which button is held.
+			_, mk := mouseButtonToWin32(m.Button)
+			procPostMessageW.Call(child, wmWVMouseMove, uintptr(mk), lParam)
+
+		case input.MouseRelease:
+			wmUp, _ := mouseButtonRelease(m.Button)
+			if wmUp != 0 {
+				procPostMessageW.Call(child, uintptr(wmUp), 0, lParam)
+			}
+		}
+		return true
+
+	case ui.SurfaceKeyMsg:
+		// Keyboard events are normally delivered directly by Win32 focus.
+		// This handles the case where the framework intercepts a key
+		// before it reaches the popup (e.g. Tab navigation).
+		vk := keyToVK(m.Key)
+		if vk == 0 {
 			return false
 		}
-		virtualKeys := mouseVirtualKeys(msg)
-		point := wv2.TagPOINT{X: int32(msg.Pos.X), Y: int32(msg.Pos.Y)}
-		return composition.SendMouseInput(kind, virtualKeys, mouseData, point) >= 0
-	case ui.SurfaceKeyMsg:
-		// Keyboard input for the composition path is still delivered via the host
-		// HWND message pump. The parent window supplied via WithParentWindow is the
-		// expected route for WM_KEY* forwarding.
-		_ = msg
-		return false
-	default:
-		return false
+		switch m.Action {
+		case input.KeyPress, input.KeyRepeat:
+			procPostMessageW.Call(popup, wmWVKeyDown, uintptr(vk), 0)
+		case input.KeyRelease:
+			procPostMessageW.Call(popup, wmWVKeyUp, uintptr(vk), 0)
+		}
+		return true
 	}
+	return false
 }
 
-func mouseEventKind(msg ui.SurfaceMouseMsg) (kind int32, mouseData uint32, ok bool) {
-	switch msg.Action {
-	case input.MouseMove:
-		return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE, 0, true
-	case input.MouseEnter:
-		return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE, 0, true
-	case input.MouseLeave:
-		return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_LEAVE, 0, true
-	case input.MouseScroll:
-		return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL, uint32(120), true
-	case input.MousePress:
-		switch msg.Button {
-		case input.MouseButtonLeft:
-			return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_DOWN, 0, true
-		case input.MouseButtonRight:
-			return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_RIGHT_BUTTON_DOWN, 0, true
-		case input.MouseButtonMiddle:
-			return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_MIDDLE_BUTTON_DOWN, 0, true
-		}
-	case input.MouseRelease:
-		switch msg.Button {
-		case input.MouseButtonLeft:
-			return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_UP, 0, true
-		case input.MouseButtonRight:
-			return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_RIGHT_BUTTON_UP, 0, true
-		case input.MouseButtonMiddle:
-			return wv2.COREWEBVIEW2_MOUSE_EVENT_KIND.COREWEBVIEW2_MOUSE_EVENT_KIND_MIDDLE_BUTTON_UP, 0, true
-		}
-	}
-	return 0, 0, false
-}
-
-func mouseVirtualKeys(msg ui.SurfaceMouseMsg) int32 {
-	var keys int32
-	switch msg.Button {
+// mouseButtonToWin32 returns the WM_*BUTTONDOWN message and MK_* flag.
+func mouseButtonToWin32(btn input.MouseButton) (uint32, uint32) {
+	switch btn {
 	case input.MouseButtonLeft:
-		keys |= wv2.COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS.COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_LEFT_BUTTON
+		return wmWVLButtonDown, mkWVLButton
 	case input.MouseButtonRight:
-		keys |= wv2.COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS.COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_RIGHT_BUTTON
+		return wmWVRButtonDown, mkWVRButton
 	case input.MouseButtonMiddle:
-		keys |= wv2.COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS.COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_MIDDLE_BUTTON
+		return wmWVMButtonDown, mkWVMButton
 	}
-	return keys
+	return 0, 0
+}
+
+// mouseButtonRelease returns the WM_*BUTTONUP message.
+func mouseButtonRelease(btn input.MouseButton) (uint32, uint32) {
+	switch btn {
+	case input.MouseButtonLeft:
+		return wmWVLButtonUp, 0
+	case input.MouseButtonRight:
+		return wmWVRButtonUp, 0
+	case input.MouseButtonMiddle:
+		return wmWVMButtonUp, 0
+	}
+	return 0, 0
+}
+
+// keyToVK maps framework key constants to Win32 virtual key codes.
+func keyToVK(k input.Key) uintptr {
+	switch k {
+	case input.KeyTab:
+		return 0x09
+	case input.KeyEnter:
+		return 0x0D
+	case input.KeyEscape:
+		return 0x1B
+	case input.KeyBackspace:
+		return 0x08
+	case input.KeyDelete:
+		return 0x2E
+	case input.KeyLeft:
+		return 0x25
+	case input.KeyUp:
+		return 0x26
+	case input.KeyRight:
+		return 0x27
+	case input.KeyDown:
+		return 0x28
+	case input.KeyHome:
+		return 0x24
+	case input.KeyEnd:
+		return 0x23
+	case input.KeySpace:
+		return 0x20
+	case input.KeyA:
+		return 0x41
+	case input.KeyC:
+		return 0x43
+	case input.KeyV:
+		return 0x56
+	case input.KeyX:
+		return 0x58
+	}
+	return 0
 }
 
 func (b *windowsBackend) setError(err error) {

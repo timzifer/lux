@@ -82,7 +82,17 @@
       "Bash(git config:*)",
       "Bash(git:*)",
       "WebFetch(domain:api.github.com)",
-      "Bash(curl -s https://api.github.com/repos/timzifer/lux/pulls/72)"
+      "Bash(curl -s https://api.github.com/repos/timzifer/lux/pulls/72)",
+      "Bash(curl -s https://raw.githubusercontent.com/zed-industries/zed/main/Cargo.toml)",
+      "Bash(curl -s \"https://api.github.com/repos/lapce/lapce\")",
+      "Bash(curl -s https://raw.githubusercontent.com/zed-industries/zed/main/LICENSE-GPL)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/lapce/lapce/master/Cargo.toml\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/lapce/lapce/main/Cargo.toml\")",
+      "Bash(curl -s https://raw.githubusercontent.com/zed-industries/zed/main/LICENSE-AGPL)",
+      "Bash(curl -s \"https://api.github.com/repos/lapce/lapce/contents/\")",
+      "Bash(curl:*)",
+      "WebFetch(domain:deepwiki.com)",
+      "Bash(find /g/golang/lux -name RFC* -o -name rfc*)"
     ]
   }
 }

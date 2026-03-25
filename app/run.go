@@ -627,7 +627,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			tickDirty := modelChanged(any(tickModel), any(currentModel))
 			currentModel = tickModel
 			dispatchCmd(tickCmd)
-			modelDirty = modelDirty || tickDirty || animDirty || stateDirty
+			focusDirty := fm.ConsumeDirty()
+			modelDirty = modelDirty || tickDirty || animDirty || stateDirty || focusDirty
 
 			// Re-run view and reconcile only when the model changed.
 			if modelDirty {

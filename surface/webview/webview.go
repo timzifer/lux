@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/ui"
 )
 
@@ -14,6 +15,7 @@ type config struct {
 	title        string
 	parentWindow uintptr
 	userDataDir  string
+	renderer     *gpu.WGPURenderer
 }
 
 // WithTitle sets the initial page title metadata.
@@ -30,6 +32,13 @@ func WithParentWindow(hwnd uintptr) Option {
 // WithUserDataDir overrides the WebView2 user-data folder.
 func WithUserDataDir(dir string) Option {
 	return func(cfg *config) { cfg.userDataDir = dir }
+}
+
+// WithRenderer connects the WebView to the WGPU renderer for texture capture.
+// When set, the backend renders WebView2 content into a WGPU texture that is
+// blitted into the main swapchain (no popup overlay, full overlay support).
+func WithRenderer(r *gpu.WGPURenderer) Option {
+	return func(cfg *config) { cfg.renderer = r }
 }
 
 // WebView is a ui.SurfaceProvider that renders web content.
@@ -138,7 +147,7 @@ func (w *WebView) Reload() {
 // Back navigates backwards in history if possible.
 func (w *WebView) Back() {
 	w.mu.Lock()
-	if w.closed || !w.canGoBack {
+	if w.closed || !w.canGoBack || w.historyIndex <= 0 {
 		w.mu.Unlock()
 		return
 	}
@@ -155,7 +164,7 @@ func (w *WebView) Back() {
 // Forward navigates forwards in history if possible.
 func (w *WebView) Forward() {
 	w.mu.Lock()
-	if w.closed || !w.canGoForward {
+	if w.closed || !w.canGoForward || w.historyIndex+1 >= len(w.history) {
 		w.mu.Unlock()
 		return
 	}
