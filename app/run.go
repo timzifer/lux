@@ -131,6 +131,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	atlas := text.NewGlyphAtlas(512, 512)
 	shaper := text.NewGoTextShaper(fonts.Fallback)
 	shaper.RegisterFamily(fonts.PhosphorFamily)
+	shaper.RegisterFamily(fonts.NotoEmojiFamily)
 
 	// If the renderer supports atlas-based text, wire it up.
 	type atlasSetter interface{ SetAtlas(*text.GlyphAtlas) }
@@ -531,18 +532,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					dispatcher.Collect(m)
 					// Framework-internal character input for TextFields.
 					if is := fm.Input; is != nil {
-						if m.Char == '\r' || m.Char == '\n' {
-							// Enter via char callback (some platforms).
-							if is.Multiline {
-								is.DeleteSelection()
-								v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
-								is.CursorOffset++
-								is.Value = v
-								is.ClearSelection()
-								is.OnChange(v)
-								modelDirty = true
-							}
-						} else if m.Char >= 32 {
+						// Skip CR and LF -- Enter is already handled by KeyMsg(KeyEnter).
+						// On Windows/GLFW both a KeyMsg and a CharMsg fire for Enter,
+						// which would insert a double newline without this guard.
+						if m.Char >= 32 {
 							is.DeleteSelection()
 							ch := string(m.Char)
 							v := is.Value[:is.CursorOffset] + ch + is.Value[is.CursorOffset:]
@@ -867,3 +860,4 @@ func syncImages(store *luximage.Store, renderer gpu.Renderer) {
 
 // Ensure ViewFunc constraint is satisfied at compile time.
 var _ ViewFunc[struct{}] = func(_ struct{}) ui.Element { return ui.Empty() }
+

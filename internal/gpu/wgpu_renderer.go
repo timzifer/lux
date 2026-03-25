@@ -40,11 +40,12 @@ type WGPURenderer struct {
 	queue          wgpu.Queue
 
 	// Rendering pipelines
-	rectPipeline     wgpu.RenderPipeline
-	textInstPipeline wgpu.RenderPipeline // instanced text pipeline
-	msdfInstPipeline wgpu.RenderPipeline // instanced MSDF pipeline
-	surfPipeline     wgpu.RenderPipeline // surface texture blit pipeline
-	gradPipeline     wgpu.RenderPipeline // gradient rectangle pipeline
+	rectPipeline      wgpu.RenderPipeline
+	textInstPipeline  wgpu.RenderPipeline // instanced text pipeline
+	msdfInstPipeline  wgpu.RenderPipeline // instanced MSDF pipeline
+	emojiInstPipeline wgpu.RenderPipeline // instanced color emoji pipeline
+	surfPipeline      wgpu.RenderPipeline // surface texture blit pipeline
+	gradPipeline      wgpu.RenderPipeline // gradient rectangle pipeline
 
 	// Shared resources
 	projBuffer     wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 params (grain, reserved)
@@ -58,6 +59,8 @@ type WGPURenderer struct {
 	atlasSampler   wgpu.Sampler
 	msdfTexture    wgpu.Texture
 	msdfView       wgpu.TextureView
+	emojiTexture   wgpu.Texture
+	emojiView      wgpu.TextureView
 
 	// Bind group layouts (kept for recreating bind groups on atlas resize / per-window)
 	projLayout     wgpu.BindGroupLayout // projection bind group layout (group 0) — kept for per-window bind groups
@@ -72,6 +75,7 @@ type WGPURenderer struct {
 	projBindGroup  wgpu.BindGroup
 	textBindGroup  wgpu.BindGroup
 	msdfBindGroup  wgpu.BindGroup
+	emojiBindGroup wgpu.BindGroup
 
 	// Surface texture registry
 	surfaceTextures map[draw.TextureID]wgpu.TextureView
@@ -116,7 +120,7 @@ type WGPURenderer struct {
 
 	// CPU-side retained buffers — grow-only, reset to [:0] each frame.
 	rectBuf  []float32
-	glyphBuf []float32 // unified: [text main|text overlay|msdf main|msdf overlay]
+	glyphBuf []float32 // unified: [text main|text overlay|msdf main|msdf overlay|emoji main|emoji overlay]
 
 	// GPU buffer capacities (bytes) — for grow-on-demand.
 	rectInstBufCap  uint64
@@ -127,6 +131,7 @@ type WGPURenderer struct {
 	surfaceOK      bool
 	atlasW, atlasH int // last known atlas texture size
 	msdfW, msdfH   int // last known MSDF atlas texture size
+	emojiW, emojiH int // last known color emoji atlas texture size
 
 	// Performance metrics
 	perfFrames     int
@@ -155,10 +160,11 @@ type windowSurface struct {
 	surfaceOK     bool
 	bgColor       draw.Color
 	projBuffer    wgpu.Buffer
-	projBindGroup wgpu.BindGroup
-	textBindGroup wgpu.BindGroup // text pipeline uses projBuffer at binding 0
-	msdfUniBuffer wgpu.Buffer
-	msdfBindGroup wgpu.BindGroup
+	projBindGroup  wgpu.BindGroup
+	textBindGroup  wgpu.BindGroup // text pipeline uses projBuffer at binding 0
+	msdfUniBuffer  wgpu.Buffer
+	msdfBindGroup  wgpu.BindGroup
+	emojiBindGroup wgpu.BindGroup // emoji pipeline uses projBuffer at binding 0
 }
 
 // NewWGPU creates a new wgpu-based renderer.
@@ -289,6 +295,16 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	})
 	r.msdfView = r.msdfTexture.CreateView()
 
+	// Create color emoji atlas texture (initially 512x512, RGBA).
+	r.emojiW, r.emojiH = 512, 512
+	r.emojiTexture = device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "emoji-atlas",
+		Size:   wgpu.Extent3D{Width: uint32(r.emojiW), Height: uint32(r.emojiH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatRGBA8Unorm,
+		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+	})
+	r.emojiView = r.emojiTexture.CreateView()
+
 	// Create sampler.
 	r.atlasSampler = device.CreateSampler(&wgpu.SamplerDescriptor{
 		Label: "atlas-sampler",
@@ -312,6 +328,12 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Source: wgslMSDFInstancedShader,
 	})
 	defer msdfShader.Destroy()
+
+	emojiShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "emoji-instanced-shader",
+		Source: wgslEmojiInstancedShader,
+	})
+	defer emojiShader.Destroy()
 
 	// Create bind group layouts.
 	r.projLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
@@ -418,6 +440,22 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		BindGroupLayouts: []wgpu.BindGroupLayout{r.textLayout},
 	})
 
+	r.emojiInstPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "emoji-instanced-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     emojiShader,
+			EntryPoint: "vs_main",
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, unitQuadLayout, glyphInstanceLayout},
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     emojiShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{r.textLayout},
+	})
+
 	// Create bind groups.
 	r.projBindGroup = device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label:  "proj-bind-group",
@@ -443,6 +481,16 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: r.msdfUniBuffer, Size: 80},
 			{Binding: 1, Texture: r.msdfView},
+			{Binding: 2, Sampler: r.atlasSampler},
+		},
+	})
+
+	r.emojiBindGroup = device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  "emoji-bind-group",
+		Layout: r.textLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
+			{Binding: 1, Texture: r.emojiView},
 			{Binding: 2, Sampler: r.atlasSampler},
 		},
 	})
@@ -869,6 +917,13 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 			r.msdfTexture.Write(r.queue, r.atlas.MSDFImage.Pix, uint32(r.atlas.MSDFImage.Stride))
 			r.atlas.MSDFDirty = false
 		}
+		if r.atlas.ColorWidth != r.emojiW || r.atlas.ColorHeight != r.emojiH {
+			r.resizeEmojiTexture()
+		}
+		if r.atlas.ColorDirty {
+			r.emojiTexture.Write(r.queue, r.atlas.ColorImage.Pix, uint32(r.atlas.ColorImage.Stride))
+			r.atlas.ColorDirty = false
+		}
 	}
 
 	// Rects: concatenate main + overlay instance data using retained buffer.
@@ -895,15 +950,18 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		r.rectInstBuffer.Write(r.queue, float32SliceToBytes(r.rectBuf))
 	}
 
-	// Glyph instances: unified buffer [text main | text overlay | msdf main | msdf overlay].
+	// Glyph instances: unified buffer [text main | text overlay | msdf main | msdf overlay | emoji main | emoji overlay].
 	// 12 floats per glyph instance (glyph_rect + glyph_uv + color).
 	var mainTextGlyphs, overlayTextGlyphs int
 	var mainMSDFGlyphs, overlayMSDFGlyphs int
+	var mainEmojiGlyphs, overlayEmojiGlyphs int
 	if r.atlas != nil {
 		atlasW := float32(r.atlas.Width)
 		atlasH := float32(r.atlas.Height)
 		msdfW := float32(r.atlas.MSDFWidth)
 		msdfH := float32(r.atlas.MSDFHeight)
+		emojiW := float32(r.atlas.ColorWidth)
+		emojiH := float32(r.atlas.ColorHeight)
 
 		r.glyphBuf = r.glyphBuf[:0]
 
@@ -926,6 +984,16 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		}
 		mainMSDFGlyphs = len(scene.MSDFGlyphs)
 		overlayMSDFGlyphs = len(scene.OverlayMSDFGlyphs)
+
+		// Emoji glyphs: main + overlay
+		for _, g := range scene.EmojiGlyphs {
+			r.glyphBuf = appendGlyphInstance(r.glyphBuf, g, emojiW, emojiH)
+		}
+		for _, g := range scene.OverlayEmojiGlyphs {
+			r.glyphBuf = appendGlyphInstance(r.glyphBuf, g, emojiW, emojiH)
+		}
+		mainEmojiGlyphs = len(scene.EmojiGlyphs)
+		overlayEmojiGlyphs = len(scene.OverlayEmojiGlyphs)
 
 		// Upload unified glyph instance buffer.
 		if len(r.glyphBuf) > 0 {
@@ -1042,11 +1110,13 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 
 	// MSDF instances start after all text instances in the unified buffer.
 	msdfGPUOffset := mainTextGlyphs + overlayTextGlyphs
+	// Emoji instances start after all text + MSDF instances.
+	emojiGPUOffset := msdfGPUOffset + mainMSDFGlyphs + overlayMSDFGlyphs
 
 	// Draw main content via scissor clip batches.
 	r.drawClipBatches(renderPass, scene.ClipBatches,
-		int(mainRectCount), mainTextGlyphs, mainMSDFGlyphs, int(mainShadowCount),
-		0, 0, msdfGPUOffset, 0, // MSDF starts after all text glyphs in unified buffer
+		int(mainRectCount), mainTextGlyphs, mainMSDFGlyphs, mainEmojiGlyphs, int(mainShadowCount),
+		0, 0, msdfGPUOffset, emojiGPUOffset, 0, // MSDF starts after all text, emoji after all MSDF
 		totalRectBufSize, glyphBufSize, totalShadowBufSize,
 		scene.GradientRects, 0,
 		vpW, vpH)
@@ -1060,8 +1130,8 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 	if !hasBlur {
 		// No blur: overlay in same pass (fast path).
 		r.drawClipBatches(renderPass, scene.OverlayClipBatches,
-			int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs, int(overlayShadowCount),
-			int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs, int(mainShadowCount),
+			int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs, overlayEmojiGlyphs, int(overlayShadowCount),
+			int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs, emojiGPUOffset+mainEmojiGlyphs, int(mainShadowCount),
 			totalRectBufSize, glyphBufSize, totalShadowBufSize,
 			scene.OverlayGradientRects, mainGradCount,
 			vpW, vpH)
@@ -1261,7 +1331,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		// --- Overlay pass (post-blur): render overlay content on top of blurred surface ---
 		// This enables frosted glass: blurred backdrop + sharp overlay content.
 		hasOverlay := overlayRectCount > 0 || overlayTextGlyphs > 0 || overlayMSDFGlyphs > 0 ||
-			len(scene.OverlayGradientRects) > 0 || overlayShadowCount > 0
+			overlayEmojiGlyphs > 0 || len(scene.OverlayGradientRects) > 0 || overlayShadowCount > 0
 		if hasOverlay {
 			overlayPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 				ColorAttachments: []wgpu.RenderPassColorAttachment{{
@@ -1272,8 +1342,8 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 			})
 			overlayPass.SetScissorRect(0, 0, vpW, vpH)
 			r.drawClipBatches(overlayPass, scene.OverlayClipBatches,
-				int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs, int(overlayShadowCount),
-				int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs, int(mainShadowCount),
+				int(overlayRectCount), overlayTextGlyphs, overlayMSDFGlyphs, overlayEmojiGlyphs, int(overlayShadowCount),
+				int(mainRectCount), mainTextGlyphs, msdfGPUOffset+mainMSDFGlyphs, emojiGPUOffset+mainEmojiGlyphs, int(mainShadowCount),
 				totalRectBufSize, glyphBufSize, totalShadowBufSize,
 				scene.OverlayGradientRects, mainGradCount,
 				vpW, vpH)
@@ -1354,6 +1424,7 @@ func (r *WGPURenderer) Destroy() {
 	r.projBindGroup.Destroy()
 	r.textBindGroup.Destroy()
 	r.msdfBindGroup.Destroy()
+	r.emojiBindGroup.Destroy()
 	r.projBuffer.Destroy()
 	r.msdfUniBuffer.Destroy()
 	r.gradUniBuffer.Destroy()
@@ -1365,11 +1436,14 @@ func (r *WGPURenderer) Destroy() {
 	r.atlasTexture.Destroy()
 	r.msdfView.Destroy()
 	r.msdfTexture.Destroy()
+	r.emojiView.Destroy()
+	r.emojiTexture.Destroy()
 	r.atlasSampler.Destroy()
 	r.surfSampler.Destroy()
 	r.rectPipeline.Destroy()
 	r.textInstPipeline.Destroy()
 	r.msdfInstPipeline.Destroy()
+	r.emojiInstPipeline.Destroy()
 	r.surfPipeline.Destroy()
 	r.imagePipeline.Destroy()
 	r.imageInstBuffer.Destroy()
@@ -1432,6 +1506,7 @@ func (r *WGPURenderer) Destroy() {
 		ws.textBindGroup.Destroy()
 		ws.msdfBindGroup.Destroy()
 		ws.msdfUniBuffer.Destroy()
+		ws.emojiBindGroup.Destroy()
 		ws.surface.Destroy()
 	}
 	// Surface must be released before Device — DX12 needs the command queue for waitForGPU.
@@ -1519,6 +1594,44 @@ func (r *WGPURenderer) resizeMSDFTexture() {
 	r.updateMSDFUniforms()
 }
 
+func (r *WGPURenderer) resizeEmojiTexture() {
+	r.emojiView.Destroy()
+	r.emojiTexture.Destroy()
+	r.emojiW, r.emojiH = r.atlas.ColorWidth, r.atlas.ColorHeight
+	r.emojiTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "emoji-atlas",
+		Size:   wgpu.Extent3D{Width: uint32(r.emojiW), Height: uint32(r.emojiH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatRGBA8Unorm,
+		Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+	})
+	r.emojiView = r.emojiTexture.CreateView()
+	// Recreate emoji bind group with new texture view.
+	r.emojiBindGroup.Destroy()
+	r.emojiBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  "emoji-bind-group",
+		Layout: r.textLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: r.projBuffer, Size: 80},
+			{Binding: 1, Texture: r.emojiView},
+			{Binding: 2, Sampler: r.atlasSampler},
+		},
+	})
+	// Recreate per-window emoji bind groups.
+	for id, ws := range r.windows {
+		ws.emojiBindGroup.Destroy()
+		ws.emojiBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label:  fmt.Sprintf("emoji-bg-win-%d", id),
+			Layout: r.textLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Buffer: ws.projBuffer, Size: 80},
+				{Binding: 1, Texture: r.emojiView},
+				{Binding: 2, Sampler: r.atlasSampler},
+			},
+		})
+	}
+	r.atlas.ColorDirty = true
+}
+
 func (r *WGPURenderer) resizeBlurTextures() {
 	if r.blurSrcTexture != nil {
 		r.blurSrcView.Destroy()
@@ -1567,26 +1680,26 @@ func (r *WGPURenderer) ensureGPUBuffer(buf *wgpu.Buffer, cap *uint64, needed uin
 }
 
 // drawClipBatches iterates over ClipBatches, setting scissor rects and drawing
-// the appropriate ranges of rects/text/MSDF from the pre-uploaded GPU buffers.
+// the appropriate ranges of rects/text/MSDF/emoji from the pre-uploaded GPU buffers.
 //
-// totalRects/totalTextGlyphs/totalMSDFGlyphs are counts for this layer (main or overlay).
-// gpuRectOffset/gpuTextGlyphOffset/gpuMSDFGlyphOffset are the offsets into the
+// totalRects/totalTextGlyphs/totalMSDFGlyphs/totalEmojiGlyphs are counts for this layer (main or overlay).
+// gpuRectOffset/gpuTextGlyphOffset/gpuMSDFGlyphOffset/gpuEmojiGlyphOffset are the offsets into the
 // concatenated GPU buffers (0 for main, mainCount for overlay).
 func (r *WGPURenderer) drawClipBatches(
 	renderPass wgpu.RenderPass,
 	batches []draw.ClipBatch,
-	totalRects, totalTextGlyphs, totalMSDFGlyphs, totalShadows int,
-	gpuRectOffset, gpuTextGlyphOffset, gpuMSDFGlyphOffset, gpuShadowOffset int,
+	totalRects, totalTextGlyphs, totalMSDFGlyphs, totalEmojiGlyphs, totalShadows int,
+	gpuRectOffset, gpuTextGlyphOffset, gpuMSDFGlyphOffset, gpuEmojiGlyphOffset, gpuShadowOffset int,
 	rectBufSize, glyphBufSize, shadowBufSize uint64,
 	gradientRects []draw.DrawGradientRect, gradBindGroupOffset int,
 	vpW, vpH uint32,
 ) {
-	if totalRects == 0 && totalTextGlyphs == 0 && totalMSDFGlyphs == 0 && len(gradientRects) == 0 && totalShadows == 0 {
+	if totalRects == 0 && totalTextGlyphs == 0 && totalMSDFGlyphs == 0 && totalEmojiGlyphs == 0 && len(gradientRects) == 0 && totalShadows == 0 {
 		return
 	}
 
 	// Pipeline state tracking for draw-call merging.
-	var lastPipeline int // 0=none, 1=rect, 2=text, 3=msdf, 4=shadow
+	var lastPipeline int // 0=none, 1=rect, 2=text, 3=msdf, 4=shadow, 5=emoji
 
 	setShadowPipeline := func() {
 		if lastPipeline != 4 {
@@ -1628,6 +1741,16 @@ func (r *WGPURenderer) drawClipBatches(
 		}
 	}
 
+	setEmojiPipeline := func() {
+		if lastPipeline != 5 {
+			renderPass.SetPipeline(r.emojiInstPipeline)
+			renderPass.SetBindGroup(0, r.emojiBindGroup)
+			renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.glyphInstBuffer, 0, glyphBufSize)
+			lastPipeline = 5
+		}
+	}
+
 	// No clip batches → draw everything as a single full-viewport batch.
 	if len(batches) == 0 {
 		renderPass.SetScissorRect(0, 0, vpW, vpH)
@@ -1647,6 +1770,10 @@ func (r *WGPURenderer) drawClipBatches(
 			setMSDFPipeline()
 			renderPass.DrawInstanced(6, uint32(totalMSDFGlyphs), 0, uint32(gpuMSDFGlyphOffset))
 		}
+		if totalEmojiGlyphs > 0 {
+			setEmojiPipeline()
+			renderPass.DrawInstanced(6, uint32(totalEmojiGlyphs), 0, uint32(gpuEmojiGlyphOffset))
+		}
 		for gi := range gradientRects {
 			r.drawGradientRect(renderPass, gradBindGroupOffset+gi)
 			lastPipeline = 0
@@ -1660,6 +1787,7 @@ func (r *WGPURenderer) drawClipBatches(
 	baseRectIdx := batches[0].RectIdx
 	baseTextIdx := batches[0].TextIdx
 	baseMSDFIdx := batches[0].MSDFIdx
+	baseEmojiIdx := batches[0].EmojiIdx
 	baseGradIdx := batches[0].GradientIdx
 	baseShadowIdx := batches[0].ShadowIdx
 
@@ -1682,17 +1810,19 @@ func (r *WGPURenderer) drawClipBatches(
 		}
 
 		// Compute draw counts from batch boundaries.
-		var endRectIdx, endTextIdx, endMSDFIdx, endGradIdx, endShadowIdx int
+		var endRectIdx, endTextIdx, endMSDFIdx, endEmojiIdx, endGradIdx, endShadowIdx int
 		if i+1 < len(batches) {
 			endRectIdx = batches[i+1].RectIdx
 			endTextIdx = batches[i+1].TextIdx
 			endMSDFIdx = batches[i+1].MSDFIdx
+			endEmojiIdx = batches[i+1].EmojiIdx
 			endGradIdx = batches[i+1].GradientIdx
 			endShadowIdx = batches[i+1].ShadowIdx
 		} else {
 			endRectIdx = baseRectIdx + totalRects
 			endTextIdx = baseTextIdx + totalTextGlyphs
 			endMSDFIdx = baseMSDFIdx + totalMSDFGlyphs
+			endEmojiIdx = baseEmojiIdx + totalEmojiGlyphs
 			endGradIdx = baseGradIdx + len(gradientRects)
 			endShadowIdx = baseShadowIdx + totalShadows
 		}
@@ -1700,12 +1830,14 @@ func (r *WGPURenderer) drawClipBatches(
 		nRects := uint32(endRectIdx - batch.RectIdx)
 		nTextGlyphs := uint32(endTextIdx - batch.TextIdx)
 		nMSDFGlyphs := uint32(endMSDFIdx - batch.MSDFIdx)
+		nEmojiGlyphs := uint32(endEmojiIdx - batch.EmojiIdx)
 		nShadows := uint32(endShadowIdx - batch.ShadowIdx)
 
 		// GPU offsets: scene index relative to base + layer offset in GPU buffer.
 		rectFirst := uint32(batch.RectIdx-baseRectIdx) + uint32(gpuRectOffset)
 		textFirst := uint32(batch.TextIdx-baseTextIdx) + uint32(gpuTextGlyphOffset)
 		msdfFirst := uint32(batch.MSDFIdx-baseMSDFIdx) + uint32(gpuMSDFGlyphOffset)
+		emojiFirst := uint32(batch.EmojiIdx-baseEmojiIdx) + uint32(gpuEmojiGlyphOffset)
 		shadowFirst := uint32(batch.ShadowIdx-baseShadowIdx) + uint32(gpuShadowOffset)
 
 		// Draw shadows BEFORE rects (shadows go behind content).
@@ -1724,6 +1856,10 @@ func (r *WGPURenderer) drawClipBatches(
 		if nMSDFGlyphs > 0 {
 			setMSDFPipeline()
 			renderPass.DrawInstanced(6, nMSDFGlyphs, 0, msdfFirst)
+		}
+		if nEmojiGlyphs > 0 {
+			setEmojiPipeline()
+			renderPass.DrawInstanced(6, nEmojiGlyphs, 0, emojiFirst)
 		}
 
 		// Draw gradient rects for this batch (1 draw call per gradient).
@@ -2054,6 +2190,17 @@ func (r *WGPURenderer) InitWindow(id uint32, cfg Config) error {
 		},
 	})
 
+	// Per-window emoji bind group (uses per-window projBuffer + shared emoji atlas).
+	ws.emojiBindGroup = r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  fmt.Sprintf("emoji-bg-win-%d", id),
+		Layout: r.textLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: ws.projBuffer, Size: 80},
+			{Binding: 1, Texture: r.emojiView},
+			{Binding: 2, Sampler: r.atlasSampler},
+		},
+	})
+
 	// Inherit background color from main window.
 	ws.bgColor = r.bgColor
 
@@ -2075,6 +2222,7 @@ func (r *WGPURenderer) DestroyWindow(id uint32) {
 	ws.textBindGroup.Destroy()
 	ws.msdfBindGroup.Destroy()
 	ws.msdfUniBuffer.Destroy()
+	ws.emojiBindGroup.Destroy()
 	if ws.surface != nil {
 		ws.surface.Destroy()
 	}
@@ -2128,6 +2276,7 @@ func (r *WGPURenderer) DrawWindow(id uint32, scene draw.Scene) {
 	origTextBG := r.textBindGroup
 	origMSDF := r.msdfUniBuffer
 	origMSDBG := r.msdfBindGroup
+	origEmojiBG := r.emojiBindGroup
 
 	// Swap to per-window state.
 	r.surface = ws.surface
@@ -2140,6 +2289,7 @@ func (r *WGPURenderer) DrawWindow(id uint32, scene draw.Scene) {
 	r.textBindGroup = ws.textBindGroup
 	r.msdfUniBuffer = ws.msdfUniBuffer
 	r.msdfBindGroup = ws.msdfBindGroup
+	r.emojiBindGroup = ws.emojiBindGroup
 
 	r.Draw(scene)
 
@@ -2154,6 +2304,7 @@ func (r *WGPURenderer) DrawWindow(id uint32, scene draw.Scene) {
 	r.textBindGroup = origTextBG
 	r.msdfUniBuffer = origMSDF
 	r.msdfBindGroup = origMSDBG
+	r.emojiBindGroup = origEmojiBG
 }
 
 // EndFrameWindow presents a secondary window's surface.

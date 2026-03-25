@@ -94,6 +94,43 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	w := area.W
 	if needsScroll {
 		ui.DrawScrollbar(ctx.Canvas, ctx.Tokens, ctx.IX, n.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
+
+		// Fade hints: draw a short gradient at the top/bottom edges
+		// to indicate more content is available in that direction.
+		fadeH := float32(24)
+		bgColor := ctx.Tokens.Colors.Surface.Base
+		transparent := draw.Color{R: bgColor.R, G: bgColor.G, B: bgColor.B, A: 0}
+
+		maxScroll := float32(contentH) - float32(viewportH)
+		vx := float32(area.X)
+		vw := float32(contentW)
+
+		// Top fade — visible when scrolled down.
+		if offset > 1 {
+			ctx.Canvas.FillRect(
+				draw.R(vx, float32(area.Y), vw, fadeH),
+				draw.LinearGradientPaint(
+					draw.Pt(0, 0),
+					draw.Pt(0, fadeH),
+					draw.GradientStop{Offset: 0, Color: bgColor},
+					draw.GradientStop{Offset: 1, Color: transparent},
+				),
+			)
+		}
+
+		// Bottom fade — visible when not scrolled to the end.
+		if offset < maxScroll-1 {
+			bottomY := float32(area.Y+viewportH) - fadeH
+			ctx.Canvas.FillRect(
+				draw.R(vx, bottomY, vw, fadeH),
+				draw.LinearGradientPaint(
+					draw.Pt(0, 0),
+					draw.Pt(0, fadeH),
+					draw.GradientStop{Offset: 0, Color: transparent},
+					draw.GradientStop{Offset: 1, Color: bgColor},
+				),
+			)
+		}
 	} else {
 		w = max(childBounds.W, area.W)
 	}

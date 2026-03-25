@@ -1,0 +1,99 @@
+[CLICK] x=331 y=237 hitTargets=42
+[CLICK] target=true onClickAt=true onClick=false draggable=true
+[CLICK] after: focusUID=9223372036854775810 input=false pending=0
+[KEY] key=8 action=0 mods=0 input=true
+[INPUT] key=8 shift=false ctrl=false multiline=true cursor=0 sel=-1
+[KEY] key=5 action=0 mods=0 input=true
+[INPUT] key=5 shift=false ctrl=false multiline=true cursor=1 sel=-1
+[KEY] key=23 action=0 mods=0 input=true
+[INPUT] key=23 shift=false ctrl=false multiline=true cursor=2 sel=-1
+[KEY] key=8 action=1 mods=0 input=true
+[KEY] key=119 action=0 mods=0 input=true
+[INPUT] key=119 shift=false ctrl=false multiline=true cursor=3 sel=-1
+[KEY] key=5 action=1 mods=0 input=true
+[KEY] key=23 action=1 mods=0 input=true
+[KEY] key=119 action=1 mods=0 input=true
+[KEY] key=13 action=0 mods=0 input=true
+[INPUT] key=13 shift=false ctrl=false multiline=true cursor=4 sel=-1
+[KEY] key=23 action=0 mods=0 input=true
+[INPUT] key=23 shift=false ctrl=false multiline=true cursor=5 sel=-1
+[KEY] key=13 action=1 mods=0 input=true
+[KEY] key=24 action=0 mods=0 input=true
+[INPUT] key=24 shift=false ctrl=false multiline=true cursor=6 sel=-1
+[KEY] key=23 action=1 mods=0 input=true
+[KEY] key=24 action=1 mods=0 input=true
+[KEY] key=119 action=0 mods=0 input=true
+[INPUT] key=119 shift=false ctrl=false multiline=true cursor=7 sel=-1
+[KEY] key=119 action=1 mods=0 input=true
+[KEY] key=9 action=0 mods=0 input=true
+[INPUT] key=9 shift=false ctrl=false multiline=true cursor=8 sel=-1
+[KEY] key=9 action=1 mods=0 input=true
+[KEY] key=13 action=0 mods=0 input=true
+[INPUT] key=13 shift=false ctrl=false multiline=true cursor=9 sel=-1
+[KEY] key=18 action=0 mods=0 input=true
+[INPUT] key=18 shift=false ctrl=false multiline=true cursor=10 sel=-1
+[KEY] key=13 action=1 mods=0 input=true
+[KEY] key=18 action=1 mods=0 input=true
+[KEY] key=119 action=0 mods=0 input=true
+[INPUT] key=119 shift=false ctrl=false multiline=true cursor=11 sel=-1
+[KEY] key=119 action=1 mods=0 input=true
+[KEY] key=0 action=0 mods=1 input=true
+[INPUT] key=0 shift=true ctrl=false multiline=true cursor=12 sel=-1
+[KEY] key=24 action=0 mods=1 input=true
+[INPUT] key=24 shift=true ctrl=false multiline=true cursor=12 sel=-1
+[KEY] key=9 action=0 mods=1 input=true
+[INPUT] key=9 shift=true ctrl=false multiline=true cursor=13 sel=-1
+[KEY] key=0 action=1 mods=0 input=true
+[KEY] key=24 action=1 mods=0 input=true
+[KEY] key=9 action=1 mods=0 input=true
+[KEY] key=23 action=0 mods=0 input=true
+[INPUT] key=23 shift=false ctrl=false multiline=true cursor=14 sel=-1
+[KEY] key=24 action=0 mods=0 input=true
+[INPUT] key=24 shift=false ctrl=false multiline=true cursor=15 sel=-1
+[KEY] key=23 action=1 mods=0 input=true
+[KEY] key=24 action=1 mods=0 input=true
+[KEY] key=0 action=0 mods=1 input=true
+[INPUT] key=0 shift=true ctrl=false multiline=true cursor=16 sel=-1
+[KEY] key=47 action=0 mods=1 input=true
+[INPUT] key=47 shift=true ctrl=false multiline=true cursor=16 sel=-1
+[KEY] key=47 action=1 mods=1 input=true
+[KEY] key=0 action=1 mods=0 input=true
+[KEY] key=127 action=0 mods=0 input=true
+[INPUT] key=127 shift=false ctrl=false multiline=true cursor=17 sel=-1
+[KEY] key=127 action=1 mods=0 input=true
+[KEY] key=0 action=0 mods=1 input=true
+[INPUT] key=0 shift=true ctrl=false multiline=true cursor=11 sel=-1
+[KEY] key=127 action=0 mods=1 input=true
+[INPUT] key=127 shift=true ctrl=false multiline=true cursor=11 sel=-1
+[KEY] key=127 action=1 mods=1 input=true
+[KEY] key=0 action=1 mods=0 input=true
+[CLICK] x=337 y=249 hitTargets=42
+[CLICK] target=true onClickAt=true onClick=false draggable=true
+[CLICK] after: focusUID=9223372036854775810 input=true pending=-1
+[CLICK]   cursor=7 sel=-1 val="das\nist\nein\nTEst!"
+[CLICK] x=254 y=253 hitTargets=42
+[CLICK] target=true onClickAt=true onClick=false draggable=true
+[CLICK] after: focusUID=9223372036854775810 input=true pending=-1
+[CLICK]   cursor=4 sel=-1 val="das\nist\nein\nTEst!"
+[KEY] key=5 action=0 mods=0 input=true
+[INPUT] key=5 shift=false ctrl=false multiline=true cursor=17 sel=4
+[KEY] key=23 action=0 mods=0 input=true
+[INPUT] key=23 shift=false ctrl=false multiline=true cursor=5 sel=-1
+[KEY] key=8 action=0 mods=0 input=true
+[INPUT] key=8 shift=false ctrl=false multiline=true cursor=6 sel=-1
+[KEY] key=5 action=1 mods=0 input=true
+[KEY] key=23 action=1 mods=0 input=true
+[KEY] key=8 action=1 mods=0 input=true
+[KEY] key=5 action=0 mods=0 input=true
+[INPUT] key=5 shift=false ctrl=false multiline=true cursor=7 sel=-1
+[KEY] key=23 action=0 mods=0 input=true
+[INPUT] key=23 shift=false ctrl=false multiline=true cursor=8 sel=-1
+[KEY] key=8 action=0 mods=0 input=true
+[INPUT] key=8 shift=false ctrl=false multiline=true cursor=9 sel=-1
+[KEY] key=23 action=1 mods=0 input=true
+[KEY] key=5 action=1 mods=0 input=true
+[KEY] key=8 action=1 mods=0 input=true
+[CLICK] x=485 y=384 hitTargets=42
+[CLICK] target=false onClickAt=false onClick=false draggable=false
+[CLICK] after: focusUID=0 input=true pending=-1
+[CLICK]   cursor=10 sel=-1 val="das\nasdasd"

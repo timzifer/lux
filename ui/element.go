@@ -12,6 +12,7 @@ import (
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui/icons"
 	"github.com/timzifer/lux/validation"
@@ -2770,6 +2771,38 @@ func layoutScrollView(node ScrollViewElement, area Bounds, canvas draw.Canvas, t
 	w := area.W
 	if needsScroll {
 		DrawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
+
+		// Fade hints at top/bottom edges to indicate more content.
+		fadeH := float32(24)
+		bgColor := tokens.Colors.Surface.Base
+		transparent := draw.Color{R: bgColor.R, G: bgColor.G, B: bgColor.B, A: 0}
+		maxScroll := float32(contentH) - float32(viewportH)
+		vx := float32(area.X)
+		vw := float32(contentW)
+
+		if offset > 1 {
+			canvas.FillRect(
+				draw.R(vx, float32(area.Y), vw, fadeH),
+				draw.LinearGradientPaint(
+					draw.Pt(0, 0),
+					draw.Pt(0, fadeH),
+					draw.GradientStop{Offset: 0, Color: bgColor},
+					draw.GradientStop{Offset: 1, Color: transparent},
+				),
+			)
+		}
+		if offset < maxScroll-1 {
+			bottomY := float32(area.Y+viewportH) - fadeH
+			canvas.FillRect(
+				draw.R(vx, bottomY, vw, fadeH),
+				draw.LinearGradientPaint(
+					draw.Pt(0, 0),
+					draw.Pt(0, fadeH),
+					draw.GradientStop{Offset: 0, Color: transparent},
+					draw.GradientStop{Offset: 1, Color: bgColor},
+				),
+			)
+		}
 	} else {
 		w = max(childBounds.W, area.W)
 	}
@@ -3233,6 +3266,8 @@ func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th 
 	}
 	focused := !node.Disabled && focus.IsElementFocused(focusUID)
 
+	textX := area.X + textFieldPadX
+
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindTextField); df != nil {
 		df(theme.DrawCtx{
@@ -3267,7 +3302,6 @@ func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th 
 		}
 
 		// Text or placeholder
-		textX := area.X + textFieldPadX
 		textY := area.Y + textFieldPadY
 		textColor := tokens.Colors.Text.Primary
 		if node.Disabled {
@@ -3279,9 +3313,36 @@ func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th 
 			canvas.DrawText(node.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
 		}
 
-		// Cursor when focused
+		// Selection highlight + cursor when focused.
 		if focused {
-			metrics := canvas.MeasureText(node.Value, style)
+			cursorOff := len(node.Value)
+			if focus != nil && focus.Input != nil {
+				cursorOff = focus.Input.CursorOffset
+				if cursorOff > len(node.Value) {
+					cursorOff = len(node.Value)
+				}
+			}
+
+			// Draw selection highlight.
+			if focus != nil && focus.Input != nil && focus.Input.HasSelection() {
+				selA, selB := focus.Input.SelectionRange()
+				if selA > len(node.Value) {
+					selA = len(node.Value)
+				}
+				if selB > len(node.Value) {
+					selB = len(node.Value)
+				}
+				mA := canvas.MeasureText(node.Value[:selA], style)
+				mB := canvas.MeasureText(node.Value[:selB], style)
+				selX := float32(textX) + mA.Width
+				selW := mB.Width - mA.Width
+				selColor := tokens.Colors.Accent.Primary
+				selColor.A = 0.3
+				canvas.FillRect(draw.R(selX, float32(textY), selW, style.Size),
+					draw.SolidPaint(selColor))
+			}
+
+			metrics := canvas.MeasureText(node.Value[:cursorOff], style)
 			cursorX := float32(textX) + metrics.Width
 			canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
 				draw.SolidPaint(tokens.Colors.Text.Primary))
@@ -3300,6 +3361,16 @@ func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th 
 				cursorOff = len(node.Value)
 			}
 		}
+		// Apply pending cursor offset from a click that occurred before
+		// InputState existed (first click to focus).
+		if focus.PendingCursorOffset >= 0 {
+			cursorOff = focus.PendingCursorOffset
+			if cursorOff > len(node.Value) {
+				cursorOff = len(node.Value)
+			}
+			selStart = -1
+			focus.PendingCursorOffset = -1
+		}
 		focus.Input = &InputState{
 			Value:          node.Value,
 			OnChange:       node.OnChange,
@@ -3309,15 +3380,74 @@ func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th 
 		}
 	}
 
-	// Hit target for focus acquisition.
+	// Pre-compute grapheme boundary X positions for click-to-cursor.
+	boundaries := text.GraphemeClusters(node.Value)
+	boundaryXs := make([]float32, len(boundaries))
+	for i, boff := range boundaries {
+		if boff == 0 {
+			boundaryXs[i] = float32(textX)
+		} else {
+			m := canvas.MeasureText(node.Value[:boff], style)
+			boundaryXs[i] = float32(textX) + m.Width
+		}
+	}
+
+	// Hit target for focus acquisition and click-to-position cursor.
 	if node.OnChange != nil && focus != nil && !node.Disabled {
 		uid := focusUID
 		fm := focus
-		ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			func() { fm.SetFocusedUID(uid) })
+		bXs := boundaryXs
+		bOffs := boundaries
+		dragAnchor := -1
+		ix.RegisterDrag(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			func(mx, _ float32) {
+				fm.SetFocusedUID(uid)
+				off := closestGraphemeBoundary(bXs, bOffs, mx)
+				if dragAnchor < 0 {
+					// Initial press — set anchor, clear selection.
+					dragAnchor = off
+					if fm.Input != nil {
+						fm.Input.CursorOffset = off
+						fm.Input.ClearSelection()
+					} else {
+						fm.PendingCursorOffset = off
+					}
+				} else {
+					// Drag move — extend selection from anchor.
+					if fm.Input != nil {
+						fm.Input.CursorOffset = off
+						if off != dragAnchor {
+							fm.Input.SelectionStart = dragAnchor
+						} else {
+							fm.Input.ClearSelection()
+						}
+					}
+				}
+			})
 	}
 
 	return Bounds{X: area.X, Y: area.Y, W: w, H: h}
+}
+
+// closestGraphemeBoundary returns the byte offset of the grapheme boundary
+// closest to pixel position mx.
+func closestGraphemeBoundary(xs []float32, offsets []int, mx float32) int {
+	best := 0
+	bestDist := float32(1e9)
+	for i, x := range xs {
+		d := mx - x
+		if d < 0 {
+			d = -d
+		}
+		if d < bestDist {
+			bestDist = d
+			best = i
+		}
+	}
+	if best < len(offsets) {
+		return offsets[best]
+	}
+	return 0
 }
 
 // Layout constants for the password reveal button.
@@ -3568,14 +3698,15 @@ func layoutSelect(node SelectElement, area Bounds, canvas draw.Canvas, th theme.
 			canvas.DrawText(node.Value, draw.Pt(float32(textX), float32(textY)), style, textColor)
 		}
 
-		// Down arrow indicator
+		// Down arrow indicator (Phosphor icon for reliable rendering).
 		arrowStyle := tokens.Typography.LabelSmall
+		arrowStyle.FontFamily = "Phosphor"
 		arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
 		arrowColor := tokens.Colors.Text.Secondary
 		if node.Disabled {
 			arrowColor = tokens.Colors.Text.Disabled
 		}
-		canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, arrowColor)
+		canvas.DrawText(icons.CaretDown, draw.Pt(float32(arrowX), float32(textY)), arrowStyle, arrowColor)
 
 		// Focus glow (RFC-008 §9.4).
 		if focused || isOpen {

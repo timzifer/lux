@@ -53,6 +53,7 @@ func (c *SceneCanvas) emitClipIfChanged() {
 		RectIdx:      len(c.scene.Rects),
 		TextIdx:      len(c.scene.TexturedGlyphs),
 		MSDFIdx:      len(c.scene.MSDFGlyphs),
+		EmojiIdx:     len(c.scene.EmojiGlyphs),
 		GradientIdx:  len(c.scene.GradientRects),
 		ShadowIdx:    len(c.scene.ShadowRects),
 		FullViewport: fullViewport,
@@ -61,6 +62,7 @@ func (c *SceneCanvas) emitClipIfChanged() {
 		batch.RectIdx = len(c.scene.OverlayRects)
 		batch.TextIdx = len(c.scene.OverlayTexturedGlyphs)
 		batch.MSDFIdx = len(c.scene.OverlayMSDFGlyphs)
+		batch.EmojiIdx = len(c.scene.OverlayEmojiGlyphs)
 		batch.GradientIdx = len(c.scene.OverlayGradientRects)
 		batch.ShadowIdx = len(c.scene.OverlayShadowRects)
 		c.scene.OverlayClipBatches = append(c.scene.OverlayClipBatches, batch)
@@ -420,11 +422,6 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 
 	sizePx := uint16(text.DpToPixels(style.Size))
 
-	// Use MSDF only for large sizes where the scalable SDF sharpness
-	// advantage outweighs the lack of hinting. Below the threshold,
-	// the hinted bitmap rasterizer produces crisper results.
-	useMSDF := f.SfntFont() != nil && sizePx >= text.MSDFMinSize && !style.Raster
-
 	// Compute the font ascent so we can convert the top-left origin to
 	// a baseline for glyph placement: baseline = origin.Y + ascent.
 	// Snap baseline to integer pixels to prevent glyphs from jumping
@@ -442,31 +439,54 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			continue
 		}
 
+		// Determine effective font for this glyph (may differ from primary
+		// font when per-glyph fallback was used during shaping).
+		glyphFont := f
+		glyphFontID := fontID
+		if sg.Font != nil {
+			glyphFont = sg.Font
+			glyphFontID = sg.Font.ID()
+		}
+		glyphUseMSDF := glyphFont.SfntFont() != nil && sizePx >= text.MSDFMinSize && !style.Raster
+
 		var entry text.AtlasEntry
 		var ok bool
+		isColorEmoji := glyphFont.HasCBDT()
 
-		if useMSDF {
-			key := text.GlyphKey{FontID: fontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: uint16(text.MSDFAtlasSize), MSDF: true}
-			entry, ok = c.atlas.LookupOrInsertMSDF(key, shaper, f)
+		if isColorEmoji {
+			// Color emoji path: extract CBDT PNG bitmap.
+			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: sizePx}
+			entry, ok = c.atlas.LookupOrInsertColor(key, shaper, glyphFont, int(sizePx))
+		} else if glyphUseMSDF {
+			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: uint16(text.MSDFAtlasSize), MSDF: true}
+			entry, ok = c.atlas.LookupOrInsertMSDF(key, shaper, glyphFont)
 		}
-		if !ok {
+		if !ok && !isColorEmoji {
 			// Bitmap path (or MSDF fallback for ligature glyphs whose
 			// GlyphID has no single-rune cmap entry).
-			key := text.GlyphKey{FontID: fontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: sizePx}
-			entry, ok = c.atlas.LookupOrInsert(key, shaper, style)
+			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: sizePx}
+			entry, ok = c.atlas.LookupOrInsertWithFont(key, shaper, glyphFont, style)
 		}
 		if !ok {
 			cursorX += sg.Advance
 			continue
 		}
 
-		// Per-glyph MSDF check: ligature glyphs may fall back to bitmap
-		// even when the text run uses MSDF, since the msdf library can't
-		// render glyphs without a direct cmap rune mapping.
+		// Per-glyph rendering path: MSDF (PxRange > 0), color emoji (PxRange < 0), bitmap (PxRange == 0).
 		glyphIsMSDF := entry.PxRange > 0
 
 		var dstX, dstY, dstW, dstH float32
-		if glyphIsMSDF {
+		if isColorEmoji {
+			// Color emoji: scale from CBDT ppem to requested size.
+			emojiScale := float32(1)
+			if c.atlas.ColorPPEM > 0 {
+				emojiScale = float32(sizePx) / float32(c.atlas.ColorPPEM)
+			}
+			dstW = float32(entry.W) * emojiScale
+			dstH = float32(entry.H) * emojiScale
+			dstX = float32(math.Round(float64(cursorX + entry.BearingX*emojiScale)))
+			dstY = float32(math.Round(float64(baseline - entry.BearingY*emojiScale)))
+		} else if glyphIsMSDF {
 			dstW = float32(entry.W) * msdfScale
 			dstH = float32(entry.H) * msdfScale
 			dstX = float32(math.Round(float64(cursorX + entry.BearingX*msdfScale)))
@@ -542,7 +562,13 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 				continue
 			}
 		}
-		if glyphIsMSDF {
+		if isColorEmoji {
+			if c.overlayMode {
+				c.scene.OverlayEmojiGlyphs = append(c.scene.OverlayEmojiGlyphs, tg)
+			} else {
+				c.scene.EmojiGlyphs = append(c.scene.EmojiGlyphs, tg)
+			}
+		} else if glyphIsMSDF {
 			if c.overlayMode {
 				c.scene.OverlayMSDFGlyphs = append(c.scene.OverlayMSDFGlyphs, tg)
 			} else {

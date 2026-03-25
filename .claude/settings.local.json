@@ -58,7 +58,17 @@
       "Bash(GOFLAGS=\"-mod=mod\" go mod download github.com/gogpu/wgpu@v0.22.1 2>&1)",
       "Bash(find /g/golang/lux -type f -name *.md -path *CLAUDE* -o -name README*)",
       "Bash(find /g/golang/lux -type f -name *ime* -o -name *input*)",
-      "Bash(find /g/golang/lux -type d -maxdepth 2 -name test* -o -type d -maxdepth 2 -name *test*)"
+      "Bash(find /g/golang/lux -type d -maxdepth 2 -name test* -o -type d -maxdepth 2 -name *test*)",
+      "Bash(cd:*)",
+      "Bash(xxd \"G:\\\\golang\\\\lux\\\\app\\\\run.go\")",
+      "Bash(xxd)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3:*)",
+      "Bash(curl -L -o \"G:/golang/lux/fonts/noto/NotoEmoji-Regular.ttf\" \"https://github.com/google/fonts/raw/main/ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf\")",
+      "Bash(curl -L -o \"G:/golang/lux/fonts/noto/NotoColorEmoji-Regular.ttf\" \"https://github.com/google/fonts/raw/main/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf\")",
+      "Bash(curl -L -o \"/tmp/NotoColorEmoji-CBDT.ttf\" \"https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf\")",
+      "Bash(cp /tmp/NotoColorEmoji-CBDT.ttf G:/golang/lux/fonts/noto/NotoColorEmoji-CBDT.ttf)",
+      "Bash(sed 's|/tmp/NotoColorEmoji-CBDT.ttf|fonts/noto/NotoColorEmoji-CBDT.ttf|' /tmp/test_cbdt.go)"
     ]
   }
 }

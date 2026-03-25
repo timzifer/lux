@@ -178,6 +178,16 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				cursorOff = len(n.Value)
 			}
 		}
+		// Apply pending cursor offset from a click that occurred before
+		// InputState existed (first click to focus).
+		if focus.PendingCursorOffset >= 0 {
+			cursorOff = focus.PendingCursorOffset
+			if cursorOff > len(n.Value) {
+				cursorOff = len(n.Value)
+			}
+			selStart = -1
+			focus.PendingCursorOffset = -1
+		}
 		focus.Input = &ui.InputState{
 			Value:          n.Value,
 			OnChange:       n.OnChange,
@@ -205,13 +215,28 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		fm := focus
 		bXs := boundaryXs
 		bOffs := boundaries
+		dragAnchor := -1
 		ix.RegisterDrag(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
 			func(mx, _ float32) {
 				fm.SetFocusedUID(uid)
-				if fm.Input != nil {
-					off := closestBoundary(bXs, bOffs, mx)
-					fm.Input.CursorOffset = off
-					fm.Input.ClearSelection()
+				off := closestBoundary(bXs, bOffs, mx)
+				if dragAnchor < 0 {
+					dragAnchor = off
+					if fm.Input != nil {
+						fm.Input.CursorOffset = off
+						fm.Input.ClearSelection()
+					} else {
+						fm.PendingCursorOffset = off
+					}
+				} else {
+					if fm.Input != nil {
+						fm.Input.CursorOffset = off
+						if off != dragAnchor {
+							fm.Input.SelectionStart = dragAnchor
+						} else {
+							fm.Input.ClearSelection()
+						}
+					}
 				}
 			})
 	}

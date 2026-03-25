@@ -219,6 +219,7 @@ type ClipBatch struct {
 	RectIdx      int  // start index in Rects[]
 	TextIdx      int  // start index in TexturedGlyphs[]
 	MSDFIdx      int  // start index in MSDFGlyphs[]
+	EmojiIdx     int  // start index in EmojiGlyphs[]
 	GradientIdx  int  // start index in GradientRects[]
 	ShadowIdx    int  // start index in ShadowRects[]
 	ImageIdx     int  // start index in ImageRects[]
@@ -240,6 +241,7 @@ type Scene struct {
 	Glyphs         []DrawGlyph      // legacy bitmap glyphs
 	TexturedGlyphs []TexturedGlyph  // atlas-based glyphs
 	MSDFGlyphs     []TexturedGlyph  // MSDF atlas-based glyphs
+	EmojiGlyphs    []TexturedGlyph  // color emoji atlas-based glyphs
 
 	// External surface texture blits (RFC §8).
 	Surfaces []DrawSurface
@@ -262,6 +264,7 @@ type Scene struct {
 	OverlayGlyphs         []DrawGlyph
 	OverlayTexturedGlyphs []TexturedGlyph
 	OverlayMSDFGlyphs     []TexturedGlyph
+	OverlayEmojiGlyphs    []TexturedGlyph
 	OverlayGradientRects  []DrawGradientRect
 	OverlayShadowRects    []DrawShadowRect
 	OverlayImageRects     []DrawImageRect
