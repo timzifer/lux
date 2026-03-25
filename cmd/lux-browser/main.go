@@ -11,6 +11,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/surface/webview"
@@ -70,7 +71,9 @@ func update(m Model, msg app.Msg) Model {
 
 	case NavigateMsg:
 		if m.wv != nil && m.addressBar != "" {
-			m.wv.Navigate(m.addressBar)
+			url := ensureScheme(m.addressBar)
+			m.addressBar = url
+			m.wv.Navigate(url)
 		}
 
 	case BackMsg:
@@ -116,7 +119,7 @@ func initWebView(m Model) Model {
 }
 
 func view(m Model) ui.Element {
-	// Toolbar
+	// Toolbar buttons
 	backBtn := button.Text("\u2190", func() { app.Send(BackMsg{}) })
 	forwardBtn := button.Text("\u2192", func() { app.Send(ForwardMsg{}) })
 	reloadBtn := button.Text("\u21BB", func() { app.Send(ReloadMsg{}) })
@@ -137,13 +140,14 @@ func view(m Model) ui.Element {
 
 	goBtn := button.Text("Go", func() { app.Send(NavigateMsg{}) })
 
-	toolbar := layout.Row(
+	// Toolbar: Flex row so the address bar can Expand to fill remaining space.
+	toolbar := layout.NewFlex([]ui.Element{
 		backBtn,
 		forwardBtn,
 		reloadBtn,
 		layout.Expand(addressField),
 		goBtn,
-	)
+	}, layout.WithDirection(layout.FlexRow), layout.WithGap(4))
 
 	// Browser content area
 	var content ui.Element
@@ -159,11 +163,23 @@ func view(m Model) ui.Element {
 		statusText = fmt.Sprintf("Loading: %s", m.url)
 	}
 	if m.title != "" {
-		statusText = fmt.Sprintf("%s — %s", m.title, statusText)
+		statusText = fmt.Sprintf("%s \u2014 %s", m.title, statusText)
 	}
-	statusBar := layout.Row(display.Text(statusText))
+	statusBar := display.Text(statusText)
 
-	return layout.Column(toolbar, content, statusBar)
+	// Main layout: Flex column so the content area Expands vertically.
+	return layout.NewFlex([]ui.Element{
+		toolbar,
+		content,
+		statusBar,
+	}, layout.WithDirection(layout.FlexColumn))
+}
+
+func ensureScheme(url string) string {
+	if !strings.Contains(url, "://") {
+		return "https://" + url
+	}
+	return url
 }
 
 func main() {
