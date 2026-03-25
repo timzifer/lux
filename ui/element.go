@@ -1316,10 +1316,56 @@ type InputState struct {
 	CursorOffset int  // byte offset of cursor within Value
 	Multiline    bool // true for TextArea: Enter inserts \n, Up/Down navigate lines
 
+	// Selection state: SelectionStart is the anchor byte offset.
+	// -1 means no active selection. The selected range is
+	// [min(SelectionStart, CursorOffset), max(SelectionStart, CursorOffset)).
+	SelectionStart int
+
 	// IME composition state (RFC-002 §2.2).
 	ComposeText        string // current pre-edit text (empty when not composing)
 	ComposeCursorStart int    // cursor position within compose text (rune index)
 	ComposeCursorEnd   int    // selection end within compose text (rune index)
+}
+
+// HasSelection reports whether there is an active text selection.
+func (is *InputState) HasSelection() bool {
+	return is.SelectionStart >= 0 && is.SelectionStart != is.CursorOffset
+}
+
+// SelectionRange returns the ordered (start, end) byte offsets of the selection.
+func (is *InputState) SelectionRange() (int, int) {
+	a, b := is.SelectionStart, is.CursorOffset
+	if a > b {
+		a, b = b, a
+	}
+	return a, b
+}
+
+// SelectedText returns the currently selected text.
+func (is *InputState) SelectedText() string {
+	if !is.HasSelection() {
+		return ""
+	}
+	a, b := is.SelectionRange()
+	return is.Value[a:b]
+}
+
+// DeleteSelection removes the selected text, updates Value and CursorOffset,
+// and clears the selection. Returns true if a deletion occurred.
+func (is *InputState) DeleteSelection() bool {
+	if !is.HasSelection() {
+		return false
+	}
+	a, b := is.SelectionRange()
+	is.Value = is.Value[:a] + is.Value[b:]
+	is.CursorOffset = a
+	is.SelectionStart = -1
+	return true
+}
+
+// ClearSelection clears the selection without deleting text.
+func (is *InputState) ClearSelection() {
+	is.SelectionStart = -1
 }
 
 // FocusState is a type alias for backward compatibility.
@@ -3245,10 +3291,21 @@ func layoutTextField(node TextFieldElement, area Bounds, canvas draw.Canvas, th 
 	// Store input state for the focused TextField so the framework can
 	// handle KeyMsg/CharMsg internally (no userland boilerplate needed).
 	if focused && node.OnChange != nil && focus != nil {
+		cursorOff := len(node.Value)
+		selStart := -1
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			selStart = focus.Input.SelectionStart
+			if cursorOff > len(node.Value) {
+				cursorOff = len(node.Value)
+			}
+		}
 		focus.Input = &InputState{
-			Value:    node.Value,
-			OnChange: node.OnChange,
-			FocusUID: focusUID,
+			Value:          node.Value,
+			OnChange:       node.OnChange,
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: selStart,
 		}
 	}
 
@@ -3363,10 +3420,21 @@ func layoutPasswordField(node PasswordFieldElement, area Bounds, canvas draw.Can
 
 	// Store input state for framework key handling.
 	if focused && node.OnChange != nil && focus != nil {
+		cursorOff := len(node.Value)
+		selStart := -1
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			selStart = focus.Input.SelectionStart
+			if cursorOff > len(node.Value) {
+				cursorOff = len(node.Value)
+			}
+		}
 		focus.Input = &InputState{
-			Value:    node.Value,
-			OnChange: node.OnChange,
-			FocusUID: focusUID,
+			Value:          node.Value,
+			OnChange:       node.OnChange,
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: selStart,
 		}
 	}
 

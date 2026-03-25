@@ -207,6 +207,59 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		clipRect := draw.R(contentX, contentY, contentW, contentH)
 		canvas.PushClip(clipRect)
 
+		// Draw selection highlight.
+		if focused && focus != nil && focus.Input != nil && focus.Input.HasSelection() {
+			selA, selB := focus.Input.SelectionRange()
+			if selA > len(n.Value) {
+				selA = len(n.Value)
+			}
+			if selB > len(n.Value) {
+				selB = len(n.Value)
+			}
+			selColor := tokens.Colors.Accent.Primary
+			selColor.A = 0.3
+			for i, span := range lines {
+				y := contentY + lineH*float32(i) - scrollOff
+				if y+lineH < contentY || y > contentY+contentH {
+					continue
+				}
+				// Compute overlap of selection with this line.
+				lineSelStart := selA
+				if lineSelStart < span.Start {
+					lineSelStart = span.Start
+				}
+				lineSelEnd := selB
+				if lineSelEnd > span.End {
+					lineSelEnd = span.End
+				}
+				if lineSelStart >= lineSelEnd {
+					// Check if selection extends past line end (newline selected).
+					if selA <= span.End && selB > span.End && i < len(lines)-1 {
+						// Highlight to end of text on this line.
+						lineText := n.Value[span.Start:span.End]
+						mEnd := canvas.MeasureText(lineText, style)
+						canvas.FillRect(draw.R(contentX+mEnd.Width, y, 4, lineH),
+							draw.SolidPaint(selColor))
+					}
+					continue
+				}
+				lineText := n.Value[span.Start:span.End]
+				offA := lineSelStart - span.Start
+				offB := lineSelEnd - span.Start
+				mA := canvas.MeasureText(lineText[:offA], style)
+				mB := canvas.MeasureText(lineText[:offB], style)
+				sx := contentX + mA.Width
+				sw := mB.Width - mA.Width
+				canvas.FillRect(draw.R(sx, y, sw, lineH),
+					draw.SolidPaint(selColor))
+				// If selection continues past line end, show newline selection.
+				if selB > span.End && i < len(lines)-1 {
+					canvas.FillRect(draw.R(contentX+mB.Width, y, 4, lineH),
+						draw.SolidPaint(selColor))
+				}
+			}
+		}
+
 		// Draw text or placeholder.
 		textColor := tokens.Colors.Text.Primary
 		if n.Disabled {
@@ -237,12 +290,22 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Store input state for the focused TextArea.
 	if focused && n.OnChange != nil && focus != nil {
+		cursorOff := len(n.Value)
+		selStart := -1
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			selStart = focus.Input.SelectionStart
+			if cursorOff > len(n.Value) {
+				cursorOff = len(n.Value)
+			}
+		}
 		focus.Input = &ui.InputState{
-			Value:        n.Value,
-			OnChange:     n.OnChange,
-			FocusUID:     focusUID,
-			CursorOffset: len(n.Value),
-			Multiline:    true,
+			Value:          n.Value,
+			OnChange:       n.OnChange,
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: selStart,
+			Multiline:      true,
 		}
 	}
 

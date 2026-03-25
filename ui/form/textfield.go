@@ -3,6 +3,7 @@ package form
 import (
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -81,6 +82,8 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	focused := !n.Disabled && focus != nil && focus.IsElementFocused(focusUID)
 
+	textX := area.X + textFieldPadX
+
 	// Custom theme DrawFunc dispatch (RFC §5.3).
 	if df := th.DrawFunc(theme.WidgetKindTextField); df != nil {
 		df(theme.DrawCtx{
@@ -115,7 +118,6 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		// Text or placeholder
-		textX := area.X + textFieldPadX
 		textY := area.Y + textFieldPadY
 		textColor := tokens.Colors.Text.Primary
 		if n.Disabled {
@@ -127,12 +129,35 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			canvas.DrawText(n.Placeholder, draw.Pt(float32(textX), float32(textY)), style, tokens.Colors.Text.Disabled)
 		}
 
-		// Cursor when focused
+		// Selection highlight + cursor when focused.
 		if focused {
 			cursorOff := len(n.Value) // default: end
 			if focus != nil && focus.Input != nil {
 				cursorOff = focus.Input.CursorOffset
+				if cursorOff > len(n.Value) {
+					cursorOff = len(n.Value)
+				}
 			}
+
+			// Draw selection highlight.
+			if focus != nil && focus.Input != nil && focus.Input.HasSelection() {
+				selA, selB := focus.Input.SelectionRange()
+				if selA > len(n.Value) {
+					selA = len(n.Value)
+				}
+				if selB > len(n.Value) {
+					selB = len(n.Value)
+				}
+				mA := canvas.MeasureText(n.Value[:selA], style)
+				mB := canvas.MeasureText(n.Value[:selB], style)
+				selX := float32(textX) + mA.Width
+				selW := mB.Width - mA.Width
+				selColor := tokens.Colors.Accent.Primary
+				selColor.A = 0.3
+				canvas.FillRect(draw.R(selX, float32(textY), selW, style.Size),
+					draw.SolidPaint(selColor))
+			}
+
 			metrics := canvas.MeasureText(n.Value[:cursorOff], style)
 			cursorX := float32(textX) + metrics.Width
 			canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
@@ -143,20 +168,52 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Store input state for the focused TextField so the framework can
 	// handle KeyMsg/CharMsg internally (no userland boilerplate needed).
 	if focused && n.OnChange != nil && focus != nil {
+		cursorOff := len(n.Value)
+		selStart := -1
+		// Preserve cursor/selection from previous frame if this field was already focused.
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			selStart = focus.Input.SelectionStart
+			if cursorOff > len(n.Value) {
+				cursorOff = len(n.Value)
+			}
+		}
 		focus.Input = &ui.InputState{
-			Value:        n.Value,
-			OnChange:     n.OnChange,
-			FocusUID:     focusUID,
-			CursorOffset: len(n.Value),
+			Value:          n.Value,
+			OnChange:       n.OnChange,
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: selStart,
 		}
 	}
 
-	// Hit target for focus acquisition.
+	// Pre-compute grapheme boundary X positions for click-to-cursor.
+	boundaries := text.GraphemeClusters(n.Value)
+	boundaryXs := make([]float32, len(boundaries))
+	for i, boff := range boundaries {
+		if boff == 0 {
+			boundaryXs[i] = float32(textX)
+		} else {
+			m := canvas.MeasureText(n.Value[:boff], style)
+			boundaryXs[i] = float32(textX) + m.Width
+		}
+	}
+
+	// Hit target for focus acquisition and click-to-position cursor.
 	if n.OnChange != nil && focus != nil && !n.Disabled {
 		uid := focusUID
 		fm := focus
-		ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			func() { fm.SetFocusedUID(uid) })
+		bXs := boundaryXs
+		bOffs := boundaries
+		ix.RegisterDrag(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			func(mx, _ float32) {
+				fm.SetFocusedUID(uid)
+				if fm.Input != nil {
+					off := closestBoundary(bXs, bOffs, mx)
+					fm.Input.CursorOffset = off
+					fm.Input.ClearSelection()
+				}
+			})
 	}
 
 	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: h}
@@ -186,4 +243,25 @@ func (n TextField) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 		},
 	}
 	b.AddNode(an, parentIdx, a11y.Rect{})
+}
+
+// closestBoundary returns the byte offset of the grapheme boundary
+// closest to pixel position mx.
+func closestBoundary(xs []float32, offsets []int, mx float32) int {
+	best := 0
+	bestDist := float32(1e9)
+	for i, x := range xs {
+		d := mx - x
+		if d < 0 {
+			d = -d
+		}
+		if d < bestDist {
+			bestDist = d
+			best = i
+		}
+	}
+	if best < len(offsets) {
+		return offsets[best]
+	}
+	return 0
 }
