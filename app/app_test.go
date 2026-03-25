@@ -13,6 +13,9 @@ import (
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/layout"
+	"github.com/timzifer/lux/ui/nav"
 )
 
 type testModel struct {
@@ -35,8 +38,8 @@ func testView(m testModel) ui.Element {
 
 // m2HelloView is the M2 hello world view.
 func m2HelloView(m testModel) ui.Element {
-	return ui.Column(
-		ui.Text("HELLO WORLD"),
+	return layout.Column(
+		display.Text("HELLO WORLD"),
 		ui.ButtonText("CLICK ME", nil),
 	)
 }
@@ -167,9 +170,9 @@ func m3CounterUpdate(m testModel, msg Msg) testModel {
 }
 
 func m3CounterView(m testModel) ui.Element {
-	return ui.Column(
-		ui.Text(fmt.Sprintf("Count: %d", m.Count)),
-		ui.Row(
+	return layout.Column(
+		display.Text(fmt.Sprintf("Count: %d", m.Count)),
+		layout.Row(
 			ui.ButtonText("−", func() { Send(decrMsg{}) }),
 			ui.ButtonText("+", func() { Send(incrMsg{}) }),
 		),
@@ -523,10 +526,10 @@ func TestScrollViewReactsToScrollWheel(t *testing.T) {
 	scroll := &ui.ScrollState{}
 	view := func(m testModel) ui.Element {
 		// Tall content that exceeds viewport.
-		return ui.ScrollView(ui.Column(
-			ui.Text("A"), ui.Text("B"), ui.Text("C"), ui.Text("D"),
-			ui.Text("E"), ui.Text("F"), ui.Text("G"), ui.Text("H"),
-			ui.Text("I"), ui.Text("J"), ui.Text("K"), ui.Text("L"),
+		return nav.NewScrollView(layout.Column(
+			display.Text("A"), display.Text("B"), display.Text("C"), display.Text("D"),
+			display.Text("E"), display.Text("F"), display.Text("G"), display.Text("H"),
+			display.Text("I"), display.Text("J"), display.Text("K"), display.Text("L"),
 		), 40, scroll)
 	}
 
@@ -551,10 +554,10 @@ func TestScrollViewReactsToScrollWheel(t *testing.T) {
 func TestScrollViewTrackClick(t *testing.T) {
 	scroll := &ui.ScrollState{}
 	view := func(m testModel) ui.Element {
-		return ui.ScrollView(ui.Column(
-			ui.Text("A"), ui.Text("B"), ui.Text("C"), ui.Text("D"),
-			ui.Text("E"), ui.Text("F"), ui.Text("G"), ui.Text("H"),
-			ui.Text("I"), ui.Text("J"), ui.Text("K"), ui.Text("L"),
+		return nav.NewScrollView(layout.Column(
+			display.Text("A"), display.Text("B"), display.Text("C"), display.Text("D"),
+			display.Text("E"), display.Text("F"), display.Text("G"), display.Text("H"),
+			display.Text("I"), display.Text("J"), display.Text("K"), display.Text("L"),
 		), 40, scroll)
 	}
 
@@ -586,7 +589,7 @@ type tickState struct {
 func (tickWidget) Render(_ ui.RenderCtx, raw ui.WidgetState) (ui.Element, ui.WidgetState) {
 	s := ui.AdoptState[tickState](raw)
 	s.Ticks++
-	return ui.Text(fmt.Sprintf("ticks=%d", s.Ticks)), s
+	return display.Text(fmt.Sprintf("ticks=%d", s.Ticks)), s
 }
 
 func TestReconcilerPreservesWidgetStateThroughFrames(t *testing.T) {
@@ -636,7 +639,7 @@ func TestNoRebuildWithoutModelChange(t *testing.T) {
 	viewCalls := 0
 	view := func(m testModel) ui.Element {
 		viewCalls++
-		return ui.Text(fmt.Sprintf("count=%d", m.Count))
+		return display.Text(fmt.Sprintf("count=%d", m.Count))
 	}
 
 	// Run for 3 frames with no messages → view should be called only once (initial).
@@ -666,7 +669,7 @@ func TestTickMsgDrivesAnimation(t *testing.T) {
 	}
 	view := func(m animModel) ui.Element {
 		viewCalls++
-		return ui.Text(fmt.Sprintf("t=%.2f", m.Time))
+		return display.Text(fmt.Sprintf("t=%.2f", m.Time))
 	}
 
 	err := Run(animModel{}, update, view,
@@ -739,7 +742,7 @@ func TestTickMsgWithNonComparableModel(t *testing.T) {
 		return m
 	}
 	view := func(m sliceModel) ui.Element {
-		return ui.Text(fmt.Sprintf("len=%d", len(m.Items)))
+		return display.Text(fmt.Sprintf("len=%d", len(m.Items)))
 	}
 
 	err := Run(sliceModel{Items: []string{"init"}}, update, view,
@@ -769,7 +772,7 @@ func TestTickMsgWithMapModel(t *testing.T) {
 		return m
 	}
 	view := func(m mapModel) ui.Element {
-		return ui.Text("map-model")
+		return display.Text("map-model")
 	}
 
 	err := Run(mapModel{}, update, view,
@@ -790,7 +793,7 @@ func TestTickMsgUnchangedModelNoBuild(t *testing.T) {
 	}
 	view := func(m testModel) ui.Element {
 		viewCalls++
-		return ui.Text(fmt.Sprintf("count=%d", m.Count))
+		return display.Text(fmt.Sprintf("count=%d", m.Count))
 	}
 
 	err := Run(testModel{Count: 0}, update, view,
@@ -822,7 +825,7 @@ func TestMessageWithoutModelChangeNoRebuild(t *testing.T) {
 			sentOnce = true
 			Send(ignoreMsg{})
 		}
-		return ui.Text("static")
+		return display.Text("static")
 	}
 
 	err := Run(testModel{}, update, view,
@@ -850,7 +853,7 @@ func TestThemeSwitchTriggersRepaint(t *testing.T) {
 			sentOnce = true
 			Send(SetThemeMsg{Theme: theme.Light})
 		}
-		return ui.Text("themed")
+		return display.Text("themed")
 	}
 
 	err := Run(testModel{}, update, view,

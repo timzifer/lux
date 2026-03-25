@@ -6,6 +6,23 @@ import (
 	"github.com/timzifer/lux/ui"
 )
 
+// MenuItem defines an item in a MenuBar or ContextMenu.
+type MenuItem struct {
+	Label   ui.Element
+	OnClick func()
+	Items   []MenuItem // sub-items (nested menus)
+}
+
+// MenuBarState tracks which top-level menu is open (-1 = all closed).
+type MenuBarState struct {
+	OpenIndex int
+}
+
+// NewMenuBarState creates a MenuBarState with all menus closed.
+func NewMenuBarState() *MenuBarState {
+	return &MenuBarState{OpenIndex: -1}
+}
+
 // MenuBar layout constants.
 const (
 	menuBarHeight   = 32
@@ -17,12 +34,12 @@ const (
 // MenuBar renders a horizontal menu bar with dropdown submenus.
 type MenuBar struct {
 	ui.BaseElement
-	Items []ui.MenuItem
-	State *ui.MenuBarState
+	Items []MenuItem
+	State *MenuBarState
 }
 
 // NewMenuBar creates a horizontal menu bar element.
-func NewMenuBar(items []ui.MenuItem, state *ui.MenuBarState) ui.Element {
+func NewMenuBar(items []MenuItem, state *MenuBarState) ui.Element {
 	return MenuBar{Items: items, State: state}
 }
 
@@ -120,7 +137,7 @@ func (n MenuBar) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // layoutMenuDropdown renders a dropdown menu at the given position.
 // Shared by MenuBar dropdowns and context menus.
-func layoutMenuDropdown(items []ui.MenuItem, posX, posY int, nc ui.NullCanvas, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *ui.Interactor) {
+func layoutMenuDropdown(items []MenuItem, posX, posY int, nc ui.NullCanvas, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *ui.Interactor) {
 	// Measure all items.
 	maxItemW := 0
 	measureCtx := &ui.LayoutContext{

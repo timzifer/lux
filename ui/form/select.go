@@ -8,12 +8,17 @@ import (
 	"github.com/timzifer/lux/ui/icons"
 )
 
+// SelectState holds the open/closed state for a Select dropdown.
+type SelectState struct {
+	Open bool
+}
+
 // Select is a dropdown selector.
 type Select struct {
 	ui.BaseElement
 	Value    string
 	Options  []string
-	State    *ui.SelectState
+	State    *SelectState
 	OnSelect func(string)
 	Disabled bool
 }
@@ -22,7 +27,7 @@ type Select struct {
 type SelectOption func(*Select)
 
 // WithSelectState links the Select to a SelectState for dropdown behaviour.
-func WithSelectState(s *ui.SelectState) SelectOption {
+func WithSelectState(s *SelectState) SelectOption {
 	return func(e *Select) { e.State = s }
 }
 

@@ -5,6 +5,22 @@ import (
 	"github.com/timzifer/lux/ui"
 )
 
+// AccordionSection defines a collapsible section with header and content.
+type AccordionSection struct {
+	Header  ui.Element
+	Content ui.Element
+}
+
+// AccordionState tracks which accordion sections are expanded.
+type AccordionState struct {
+	Expanded map[int]bool
+}
+
+// NewAccordionState creates a ready-to-use AccordionState.
+func NewAccordionState() *AccordionState {
+	return &AccordionState{Expanded: make(map[int]bool)}
+}
+
 // Layout constants matching the core ui package values.
 const (
 	accordionHeaderH = 36
@@ -14,12 +30,12 @@ const (
 // Accordion displays collapsible sections with headers and content.
 type Accordion struct {
 	ui.BaseElement
-	Sections []ui.AccordionSection
-	State    *ui.AccordionState
+	Sections []AccordionSection
+	State    *AccordionState
 }
 
 // NewAccordion creates an Accordion element.
-func NewAccordion(sections []ui.AccordionSection, state *ui.AccordionState) ui.Element {
+func NewAccordion(sections []AccordionSection, state *AccordionState) ui.Element {
 	return Accordion{Sections: sections, State: state}
 }
 

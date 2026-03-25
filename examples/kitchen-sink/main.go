@@ -25,8 +25,16 @@ import (
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/button"
+	"github.com/timzifer/lux/ui/data"
+	uidialog "github.com/timzifer/lux/ui/dialog"
+	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/effects"
 	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/icons"
+	"github.com/timzifer/lux/ui/layout"
+	"github.com/timzifer/lux/ui/menu"
+	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/validation"
 
 	"github.com/timzifer/lux/internal/text"
@@ -227,23 +235,23 @@ type Model struct {
 	SliderVal      float32
 	Progress       float32
 	SelectVal      string
-	SelectState    *ui.SelectState
+	SelectState    *form.SelectState
 	TextValue      string
 	Scroll         *ui.ScrollState
 	AnimTime       float64
 	NavTree        *ui.TreeState
 	ActiveSection  string
-	ToggleAnim     *ui.ToggleState
+	ToggleAnim     *form.ToggleState
 	VListScroll    *ui.ScrollState
 	DemoTree       *ui.TreeState
 	TabIndex       int
-	AccordionState *ui.AccordionState
+	AccordionState *nav.AccordionState
 	ChipASelected  bool
 	ChipBSelected  bool
 	ChipCSelected  bool
 	ChipDismissed  bool
 	LastMenuAction string
-	MenuBarState   *ui.MenuBarState
+	MenuBarState   *menu.MenuBarState
 	// SplitView
 	NavSplitRatio      float32
 	SplitHorizontal    float32
@@ -314,7 +322,7 @@ type Model struct {
 	ValPassword    string
 	ValConfirm     string
 	ValRole        string
-	ValRoleState   *ui.SelectState
+	ValRoleState   *form.SelectState
 	ValResults     validation.FormResult
 	ValPwRevealed  bool
 	// TextArea
@@ -757,19 +765,19 @@ func view(m Model) ui.Element {
 	}
 
 	// Left panel: Tree navigation (MaxHeight 0 = fill available space)
-	nav := ui.Tree(ui.TreeConfig{
+	navTree := data.NewTree(ui.TreeConfig{
 		RootIDs:  sectionIDs,
 		Children: sectionChildren,
 		BuildNode: func(id string, depth int, _, selected bool) ui.Element {
 			label := sectionLabel(id)
 			if depth == 0 {
 				// Group nodes rendered bold
-				return ui.TextStyled(label, draw.TextStyle{
+				return display.TextStyled(label, draw.TextStyle{
 					Size:   13,
 					Weight: draw.FontWeightSemiBold,
 				})
 			}
-			return ui.Text(label)
+			return display.Text(label)
 		},
 		NodeHeight: 28,
 		MaxHeight:  0,
@@ -778,24 +786,24 @@ func view(m Model) ui.Element {
 	})
 
 	// Right panel: active section content (maxHeight 0 = fill available space)
-	content := ui.ScrollView(sectionContent(m), 0, m.Scroll)
+	content := nav.NewScrollView(sectionContent(m), 0, m.Scroll)
 
-	return ui.Padding(ui.UniformInsets(16), ui.Flex(
+	return layout.Pad(ui.UniformInsets(16), layout.NewFlex(
 		[]ui.Element{
 			// SplitView: nav on the left, content on the right — Expanded fills remaining height
-			ui.Expanded(ui.SplitView(
-				nav,
+			layout.Expand(nav.NewSplitView(
+				navTree,
 				content,
 				m.NavSplitRatio,
 				func(r float32) { app.Send(SetNavSplitMsg{r}) },
 			)),
 			// Footer
-			ui.Spacer(12),
-			ui.Row(
-				ui.ButtonText(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
+			display.Spacer(12),
+			layout.Row(
+				button.Text(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
 			),
 		},
-		ui.WithDirection(ui.FlexColumn),
+		layout.WithDirection(layout.FlexColumn),
 	))
 }
 
@@ -914,16 +922,16 @@ func sectionContent(m Model) ui.Element {
 		if children := sectionGroupChildren[m.ActiveSection]; len(children) > 0 {
 			items := make([]ui.Element, 0, len(children)+2)
 			items = append(items, sectionHeader(sectionLabel(m.ActiveSection)))
-			items = append(items, ui.Text("Expand this group in the tree to see:"))
-			items = append(items, ui.Spacer(8))
+			items = append(items, display.Text("Expand this group in the tree to see:"))
+			items = append(items, display.Spacer(8))
 			for _, child := range children {
-				items = append(items, ui.Text("  "+sectionLabel(child)))
+				items = append(items, display.Text("  "+sectionLabel(child)))
 			}
-			return ui.Column(items...)
+			return layout.Column(items...)
 		}
-		return ui.Column(
-			ui.Spacer(24),
-			ui.Text("Select a section from the tree on the left."),
+		return layout.Column(
+			display.Spacer(24),
+			display.Text("Select a section from the tree on the left."),
 		)
 	}
 }
@@ -931,93 +939,93 @@ func sectionContent(m Model) ui.Element {
 // ── Section Views ────────────────────────────────────────────────
 
 func sectionHeader(title string) ui.Element {
-	return ui.Column(
-		ui.Spacer(8),
-		ui.TextStyled(title, draw.TextStyle{
+	return layout.Column(
+		display.Spacer(8),
+		display.TextStyled(title, draw.TextStyle{
 			Size:   16,
 			Weight: draw.FontWeightSemiBold,
 		}),
-		ui.Spacer(4),
+		display.Spacer(4),
 	)
 }
 
 func typographySection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Typography"),
-		ui.TextStyled("Heading 1 (H1)", theme.Default.Tokens().Typography.H1),
-		ui.TextStyled("Heading 2 (H2)", theme.Default.Tokens().Typography.H2),
-		ui.TextStyled("Heading 3 (H3)", theme.Default.Tokens().Typography.H3),
-		ui.Text("Body text — the quick brown fox jumps over the lazy dog."),
-		ui.TextStyled("Body Small — metadata and captions", theme.Default.Tokens().Typography.BodySmall),
+		display.TextStyled("Heading 1 (H1)", theme.Default.Tokens().Typography.H1),
+		display.TextStyled("Heading 2 (H2)", theme.Default.Tokens().Typography.H2),
+		display.TextStyled("Heading 3 (H3)", theme.Default.Tokens().Typography.H3),
+		display.Text("Body text — the quick brown fox jumps over the lazy dog."),
+		display.TextStyled("Body Small — metadata and captions", theme.Default.Tokens().Typography.BodySmall),
 	)
 }
 
 func buttonsSection(m Model) ui.Element {
 	noop := func() {}
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Buttons & Icons"),
 
 		// Counter
-		ui.Text(fmt.Sprintf("Counter: %d", m.Count)),
-		ui.Row(
-			ui.ButtonText("-", func() { app.Send(DecrMsg{}) }),
-			ui.ButtonText("+", func() { app.Send(IncrMsg{}) }),
+		display.Text(fmt.Sprintf("Counter: %d", m.Count)),
+		layout.Row(
+			button.Text("-", func() { app.Send(DecrMsg{}) }),
+			button.Text("+", func() { app.Send(IncrMsg{}) }),
 		),
 
 		// Filled Buttons
-		ui.Spacer(8),
-		ui.Text("Filled (default):"),
-		ui.Row(
-			ui.ButtonText("Action", noop),
-			ui.ButtonText("Save", noop),
-			ui.Button(ui.Row(ui.Icon(icons.Download), ui.Text("Download")), noop),
+		display.Spacer(8),
+		display.Text("Filled (default):"),
+		layout.Row(
+			button.Text("Action", noop),
+			button.Text("Save", noop),
+			button.New(layout.Row(display.Icon(icons.Download), display.Text("Download")), noop),
 		),
 
 		// Outlined Buttons
-		ui.Spacer(8),
-		ui.Text("Outlined:"),
-		ui.Row(
-			ui.ButtonOutlinedText("Cancel", noop),
-			ui.ButtonOutlinedText("Details", noop),
-			ui.ButtonVariantOf(ui.ButtonOutlined, ui.Row(ui.Icon(icons.Share), ui.Text("Share")), noop),
+		display.Spacer(8),
+		display.Text("Outlined:"),
+		layout.Row(
+			button.OutlinedText("Cancel", noop),
+			button.OutlinedText("Details", noop),
+			button.VariantOf(ui.ButtonOutlined, layout.Row(display.Icon(icons.Share), display.Text("Share")), noop),
 		),
 
 		// Text (Ghost) Buttons
-		ui.Spacer(8),
-		ui.Text("Text (chromeless):"),
-		ui.Row(
-			ui.ButtonGhostText("Learn more", noop),
-			ui.ButtonGhostText("Skip", noop),
-			ui.ButtonVariantOf(ui.ButtonGhost, ui.Row(ui.Icon(icons.ArrowRight), ui.Text("Next")), noop),
+		display.Spacer(8),
+		display.Text("Text (chromeless):"),
+		layout.Row(
+			button.GhostText("Learn more", noop),
+			button.GhostText("Skip", noop),
+			button.VariantOf(ui.ButtonGhost, layout.Row(display.Icon(icons.ArrowRight), display.Text("Next")), noop),
 		),
 
 		// Tonal Buttons
-		ui.Spacer(8),
-		ui.Text("Tonal:"),
-		ui.Row(
-			ui.ButtonTonalText("Draft", noop),
-			ui.ButtonTonalText("Archive", noop),
-			ui.ButtonVariantOf(ui.ButtonTonal, ui.Row(ui.Icon(icons.Copy), ui.Text("Duplicate")), noop),
+		display.Spacer(8),
+		display.Text("Tonal:"),
+		layout.Row(
+			button.TonalText("Draft", noop),
+			button.TonalText("Archive", noop),
+			button.VariantOf(ui.ButtonTonal, layout.Row(display.Icon(icons.Copy), display.Text("Duplicate")), noop),
 		),
 
 		// Icon Buttons
-		ui.Spacer(8),
-		ui.Text("Icon Buttons:"),
-		ui.Row(
-			ui.IconButton(icons.Heart, noop),
-			ui.IconButton(icons.Star, noop),
-			ui.IconButton(icons.Trash, noop),
-			ui.IconButtonVariant(ui.ButtonOutlined, icons.Pencil, noop),
-			ui.IconButtonVariant(ui.ButtonOutlined, icons.Share, noop),
-			ui.IconButtonVariant(ui.ButtonGhost, icons.DotsThreeVertical, noop),
-			ui.IconButtonVariant(ui.ButtonTonal, icons.Play, noop),
+		display.Spacer(8),
+		display.Text("Icon Buttons:"),
+		layout.Row(
+			button.IconButton(icons.Heart, noop),
+			button.IconButton(icons.Star, noop),
+			button.IconButton(icons.Trash, noop),
+			button.IconButtonVariant(ui.ButtonOutlined, icons.Pencil, noop),
+			button.IconButtonVariant(ui.ButtonOutlined, icons.Share, noop),
+			button.IconButtonVariant(ui.ButtonGhost, icons.DotsThreeVertical, noop),
+			button.IconButtonVariant(ui.ButtonTonal, icons.Play, noop),
 		),
 
 		// Split Button
-		ui.Spacer(8),
-		ui.Text("Split Button:"),
-		ui.Row(
-			ui.SplitButton("Merge", noop, noop, []ui.SplitButtonItem{
+		display.Spacer(8),
+		display.Text("Split Button:"),
+		layout.Row(
+			button.SplitButton("Merge", noop, noop, []button.SplitItem{
 				{Label: "Merge commit", OnClick: noop},
 				{Label: "Squash and merge", OnClick: noop},
 				{Label: "Rebase and merge", OnClick: noop},
@@ -1025,309 +1033,309 @@ func buttonsSection(m Model) ui.Element {
 		),
 
 		// Segmented Buttons
-		ui.Spacer(8),
-		ui.Text("Segmented Buttons:"),
-		ui.SegmentedButtons([]ui.SegmentedItem{
+		display.Spacer(8),
+		display.Text("Segmented Buttons:"),
+		button.SegmentedButtons([]button.SegmentedItem{
 			{Label: "Day", OnClick: noop},
 			{Label: "Week", OnClick: noop},
 			{Label: "Month", OnClick: noop},
 			{Label: "Year", OnClick: noop},
 		}, 1),
-		ui.Spacer(4),
-		ui.SegmentedButtons([]ui.SegmentedItem{
+		display.Spacer(4),
+		button.SegmentedButtons([]button.SegmentedItem{
 			{Icon: icons.SortAscending, Label: "Sort", OnClick: noop},
 			{Icon: icons.FunnelSimple, Label: "Filter", OnClick: noop},
 			{Icon: icons.MagnifyingGlass, Label: "Search", OnClick: noop},
 		}, 0),
-		ui.Spacer(4),
-		ui.SegmentedButtons([]ui.SegmentedItem{
+		display.Spacer(4),
+		button.SegmentedButtons([]button.SegmentedItem{
 			{Icon: icons.Play, OnClick: noop},
 			{Icon: icons.Pause, OnClick: noop},
 		}, 0),
 
 		// Icons
-		ui.Spacer(8),
-		ui.Text("Icons (Phosphor):"),
-		ui.Row(
-			ui.Icon(icons.Star),
-			ui.Icon(icons.ArrowRight),
-			ui.Icon(icons.Heart),
-			ui.Icon(icons.Gear),
-			ui.Icon(icons.Eye),
-			ui.Icon(icons.Sun),
-			ui.Icon(icons.Moon),
+		display.Spacer(8),
+		display.Text("Icons (Phosphor):"),
+		layout.Row(
+			display.Icon(icons.Star),
+			display.Icon(icons.ArrowRight),
+			display.Icon(icons.Heart),
+			display.Icon(icons.Gear),
+			display.Icon(icons.Eye),
+			display.Icon(icons.Sun),
+			display.Icon(icons.Moon),
 		),
-		ui.Row(
-			ui.Icon(icons.Download),
-			ui.Icon(icons.Upload),
-			ui.Icon(icons.Share),
-			ui.Icon(icons.Copy),
-			ui.Icon(icons.Link),
-			ui.Icon(icons.Play),
-			ui.Icon(icons.Pause),
+		layout.Row(
+			display.Icon(icons.Download),
+			display.Icon(icons.Upload),
+			display.Icon(icons.Share),
+			display.Icon(icons.Copy),
+			display.Icon(icons.Link),
+			display.Icon(icons.Play),
+			display.Icon(icons.Pause),
 		),
 	)
 }
 
 func formControlsSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Form Controls"),
-		ui.TextField(m.TextValue, "Enter text...",
-			ui.WithOnChange(func(v string) { app.Send(SetTextMsg{v}) }),
-			ui.WithFocus(app.Focus()),
+		form.NewTextField(m.TextValue, "Enter text...",
+			form.WithOnChange(func(v string) { app.Send(SetTextMsg{v}) }),
+			form.WithFocus(app.Focus()),
 		),
-		ui.Spacer(12),
-		ui.Text("TextArea:"),
+		display.Spacer(12),
+		display.Text("TextArea:"),
 		form.NewTextArea(m.TextAreaValue, "Multiline (press Enter for newline)...",
 			form.TextAreaOnChange(func(v string) { app.Send(SetTextAreaMsg{v}) }),
 			form.TextAreaFocus(app.Focus()),
 			form.TextAreaRows(4),
 			form.TextAreaScroll(m.TextAreaScroll),
 		),
-		ui.Spacer(8),
-		ui.Checkbox("Enable notifications", m.CheckA, func(v bool) { app.Send(SetCheckAMsg{v}) }),
-		ui.Checkbox("Auto-save", m.CheckB, func(v bool) { app.Send(SetCheckBMsg{v}) }),
-		ui.Spacer(8),
-		ui.Radio("Alpha", m.RadioChoice == "alpha", func() { app.Send(SetRadioMsg{"alpha"}) }),
-		ui.Radio("Beta", m.RadioChoice == "beta", func() { app.Send(SetRadioMsg{"beta"}) }),
-		ui.Radio("Gamma", m.RadioChoice == "gamma", func() { app.Send(SetRadioMsg{"gamma"}) }),
-		ui.Spacer(8),
-		ui.Row(
-			ui.Text("Dark mode:"),
-			ui.Toggle(m.ToggleOn, func(v bool) { app.Send(SetToggleMsg{v}) }, m.ToggleAnim),
+		display.Spacer(8),
+		form.NewCheckbox("Enable notifications", m.CheckA, func(v bool) { app.Send(SetCheckAMsg{v}) }),
+		form.NewCheckbox("Auto-save", m.CheckB, func(v bool) { app.Send(SetCheckBMsg{v}) }),
+		display.Spacer(8),
+		form.NewRadio("Alpha", m.RadioChoice == "alpha", func() { app.Send(SetRadioMsg{"alpha"}) }),
+		form.NewRadio("Beta", m.RadioChoice == "beta", func() { app.Send(SetRadioMsg{"beta"}) }),
+		form.NewRadio("Gamma", m.RadioChoice == "gamma", func() { app.Send(SetRadioMsg{"gamma"}) }),
+		display.Spacer(8),
+		layout.Row(
+			display.Text("Dark mode:"),
+			form.NewToggle(m.ToggleOn, func(v bool) { app.Send(SetToggleMsg{v}) }, m.ToggleAnim),
 		),
 	)
 }
 
 func rangeProgressSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Range & Progress"),
-		ui.Text(fmt.Sprintf("Slider value: %.0f%%", m.SliderVal*100)),
-		ui.Slider(m.SliderVal, func(v float32) { app.Send(SetSliderMsg{v}) }),
-		ui.Spacer(8),
-		ui.Text(fmt.Sprintf("Progress: %.0f%%", m.Progress*100)),
-		ui.ProgressBar(m.Progress),
-		ui.Spacer(4),
-		ui.Text("Indeterminate:"),
-		ui.ProgressBarIndeterminate(float32(math.Mod(m.AnimTime*0.8, 1.0))),
+		display.Text(fmt.Sprintf("Slider value: %.0f%%", m.SliderVal*100)),
+		form.NewSlider(m.SliderVal, func(v float32) { app.Send(SetSliderMsg{v}) }),
+		display.Spacer(8),
+		display.Text(fmt.Sprintf("Progress: %.0f%%", m.Progress*100)),
+		form.NewProgressBar(m.Progress),
+		display.Spacer(4),
+		display.Text("Indeterminate:"),
+		form.ProgressBarIndeterminate(float32(math.Mod(m.AnimTime*0.8, 1.0))),
 	)
 }
 
 func selectionSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Selection"),
-		ui.Select(m.SelectVal, []string{"Option 1", "Option 2", "Option 3"},
-			ui.WithSelectState(m.SelectState),
-			ui.WithOnSelect(func(v string) { app.Send(SetSelectValMsg{v}) }),
+		form.NewSelect(m.SelectVal, []string{"Option 1", "Option 2", "Option 3"},
+			form.WithSelectState(m.SelectState),
+			form.WithOnSelect(func(v string) { app.Send(SetSelectValMsg{v}) }),
 		),
 	)
 }
 
 func validationSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Validation & Hints"),
 
 		// Email with hint (info icon by default in Lux theme).
-		ui.FormField(
-			ui.TextField(m.ValEmail, "you@example.com",
-				ui.WithOnChange(func(v string) { app.Send(SetValEmailMsg{v}) }),
-				ui.WithFocus(app.Focus()),
+		form.NewFormField(
+			form.NewTextField(m.ValEmail, "you@example.com",
+				form.WithOnChange(func(v string) { app.Send(SetValEmailMsg{v}) }),
+				form.WithFocus(app.Focus()),
 			),
-			ui.WithFormLabel("Email"),
-			ui.WithFormHint("We'll never share your email."),
-			ui.WithFormValidation(m.ValResults.Get("email")),
+			form.WithFormLabel("Email"),
+			form.WithFormHint("We'll never share your email."),
+			form.WithFormValidation(m.ValResults.Get("email")),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Password with hint rendered as label (overridden per field).
-		ui.FormField(
-			ui.PasswordField(m.ValPassword, "Min. 8 characters",
-				ui.WithPasswordOnChange(func(v string) { app.Send(SetValPasswordMsg{v}) }),
-				ui.WithPasswordFocus(app.Focus()),
-				ui.WithPasswordReveal(m.ValPwRevealed, func(b bool) { app.Send(SetValPwRevealedMsg{b}) }),
+		form.NewFormField(
+			form.NewPasswordField(m.ValPassword, "Min. 8 characters",
+				form.WithPasswordOnChange(func(v string) { app.Send(SetValPasswordMsg{v}) }),
+				form.WithPasswordFocus(app.Focus()),
+				form.WithPasswordReveal(m.ValPwRevealed, func(b bool) { app.Send(SetValPwRevealedMsg{b}) }),
 			),
-			ui.WithFormLabel("Password"),
-			ui.WithFormHint("Use a strong password with letters, numbers, and symbols."),
-			ui.WithFormHintMode(theme.HintModeLabel),
-			ui.WithFormValidation(m.ValResults.Get("password")),
+			form.WithFormLabel("Password"),
+			form.WithFormHint("Use a strong password with letters, numbers, and symbols."),
+			form.WithFormHintMode(theme.HintModeLabel),
+			form.WithFormValidation(m.ValResults.Get("password")),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Confirm password (cross-field validation).
-		ui.FormField(
-			ui.PasswordField(m.ValConfirm, "Repeat password",
-				ui.WithPasswordOnChange(func(v string) { app.Send(SetValConfirmMsg{v}) }),
-				ui.WithPasswordFocus(app.Focus()),
+		form.NewFormField(
+			form.NewPasswordField(m.ValConfirm, "Repeat password",
+				form.WithPasswordOnChange(func(v string) { app.Send(SetValConfirmMsg{v}) }),
+				form.WithPasswordFocus(app.Focus()),
 			),
-			ui.WithFormLabel("Confirm Password"),
-			ui.WithFormValidation(m.ValResults.Get("confirm")),
+			form.WithFormLabel("Confirm Password"),
+			form.WithFormValidation(m.ValResults.Get("confirm")),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Role select (required validation).
-		ui.FormField(
-			ui.Select(m.ValRole, []string{"Admin", "Editor", "Viewer"},
-				ui.WithSelectState(m.ValRoleState),
-				ui.WithOnSelect(func(v string) { app.Send(SetValRoleMsg{v}) }),
+		form.NewFormField(
+			form.NewSelect(m.ValRole, []string{"Admin", "Editor", "Viewer"},
+				form.WithSelectState(m.ValRoleState),
+				form.WithOnSelect(func(v string) { app.Send(SetValRoleMsg{v}) }),
 			),
-			ui.WithFormLabel("Role"),
-			ui.WithFormHint("Select your role."),
-			ui.WithFormValidation(m.ValResults.Get("role")),
+			form.WithFormLabel("Role"),
+			form.WithFormHint("Select your role."),
+			form.WithFormValidation(m.ValResults.Get("role")),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
-		ui.ButtonText("Validate", func() { app.Send(ValidateFormMsg{}) }),
+		button.Text("Validate", func() { app.Send(ValidateFormMsg{}) }),
 	)
 }
 
 func layoutSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Layout"),
 
 		// Row
-		ui.Text("Row:"),
-		ui.Row(ui.Text("A"), ui.Text("B"), ui.Text("C")),
-		ui.Spacer(8),
+		display.Text("Row:"),
+		layout.Row(display.Text("A"), display.Text("B"), display.Text("C")),
+		display.Spacer(8),
 
 		// Stack
-		ui.Text("Stack (overlapping):"),
-		ui.Stack(ui.Text("Bottom"), ui.Text("Top")),
-		ui.Spacer(8),
+		display.Text("Stack (overlapping):"),
+		layout.Stack(display.Text("Bottom"), display.Text("Top")),
+		display.Spacer(8),
 
 		// Flex with Justify
-		ui.Text("Flex (JustifySpaceBetween):"),
-		ui.Flex([]ui.Element{
-			ui.Text("Left"),
-			ui.Text("Center"),
-			ui.Text("Right"),
-		}, ui.WithJustify(ui.JustifySpaceBetween)),
-		ui.Spacer(8),
+		display.Text("Flex (JustifySpaceBetween):"),
+		layout.NewFlex([]ui.Element{
+			display.Text("Left"),
+			display.Text("Center"),
+			display.Text("Right"),
+		}, layout.WithJustify(layout.JustifySpaceBetween)),
+		display.Spacer(8),
 
 		// Flex with Expanded
-		ui.Text("Flex with Expanded:"),
-		ui.Flex([]ui.Element{
-			ui.ButtonText("Fixed", nil),
-			ui.Expanded(ui.Text("← takes remaining space →")),
-			ui.ButtonText("Fixed", nil),
+		display.Text("Flex with Expanded:"),
+		layout.NewFlex([]ui.Element{
+			button.Text("Fixed", nil),
+			layout.Expand(display.Text("← takes remaining space →")),
+			button.Text("Fixed", nil),
 		}),
-		ui.Spacer(8),
+		display.Spacer(8),
 
 		// Grid
-		ui.Text("Grid (3 columns):"),
-		ui.Grid(3, []ui.Element{
-			ui.Text("Cell 1"), ui.Text("Cell 2"), ui.Text("Cell 3"),
-			ui.Text("Cell 4"), ui.Text("Cell 5"), ui.Text("Cell 6"),
-		}, ui.WithColGap(12), ui.WithRowGap(8)),
-		ui.Spacer(8),
+		display.Text("Grid (3 columns):"),
+		layout.NewGrid(3, []ui.Element{
+			display.Text("Cell 1"), display.Text("Cell 2"), display.Text("Cell 3"),
+			display.Text("Cell 4"), display.Text("Cell 5"), display.Text("Cell 6"),
+		}, layout.WithColGap(12), layout.WithRowGap(8)),
+		display.Spacer(8),
 
 		// Padding
-		ui.Text("Padding (16dp):"),
-		ui.Padding(ui.UniformInsets(16), ui.Text("Padded content")),
-		ui.Spacer(8),
+		display.Text("Padding (16dp):"),
+		layout.Pad(ui.UniformInsets(16), display.Text("Padded content")),
+		display.Spacer(8),
 
 		// SizedBox
-		ui.Text("SizedBox (100x50):"),
-		ui.SizedBox(100, 50, ui.Text("Sized")),
+		display.Text("SizedBox (100x50):"),
+		layout.Sized(100, 50, display.Text("Sized")),
 	)
 }
 
 func splitViewSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("SplitView"),
-		ui.Text("Draggable split panes — resize by dragging the divider."),
+		display.Text("Draggable split panes — resize by dragging the divider."),
 
 		// 1. Horizontal (side-by-side)
-		ui.Spacer(12),
-		ui.Text("Horizontal split (default):"),
-		ui.Spacer(4),
-		ui.SizedBox(0, 120, ui.SplitView(
-			ui.Padding(ui.UniformInsets(8), ui.Column(
-				ui.TextStyled("Left Pane", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
-				ui.Spacer(4),
-				ui.Text("This panel resizes"),
-				ui.Text("when you drag the divider."),
+		display.Spacer(12),
+		display.Text("Horizontal split (default):"),
+		display.Spacer(4),
+		layout.Sized(0, 120, nav.NewSplitView(
+			layout.Pad(ui.UniformInsets(8), layout.Column(
+				display.TextStyled("Left Pane", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				display.Spacer(4),
+				display.Text("This panel resizes"),
+				display.Text("when you drag the divider."),
 			)),
-			ui.Padding(ui.UniformInsets(8), ui.Column(
-				ui.TextStyled("Right Pane", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
-				ui.Spacer(4),
-				ui.Text("Content is clipped"),
-				ui.Text("at the pane boundary."),
+			layout.Pad(ui.UniformInsets(8), layout.Column(
+				display.TextStyled("Right Pane", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				display.Spacer(4),
+				display.Text("Content is clipped"),
+				display.Text("at the pane boundary."),
 			)),
 			m.SplitHorizontal,
 			func(r float32) { app.Send(SetSplitHorizontalMsg{r}) },
 		)),
 
 		// 2. Vertical (stacked)
-		ui.Spacer(12),
-		ui.Text("Vertical split (stacked, WithSplitAxis):"),
-		ui.Spacer(4),
-		ui.SizedBox(0, 160, ui.SplitView(
-			ui.Padding(ui.UniformInsets(8), ui.Column(
-				ui.TextStyled("Top", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
-				ui.Spacer(4),
-				ui.Text("Vertical divider splits top/bottom."),
+		display.Spacer(12),
+		display.Text("Vertical split (stacked, WithSplitAxis):"),
+		display.Spacer(4),
+		layout.Sized(0, 160, nav.NewSplitView(
+			layout.Pad(ui.UniformInsets(8), layout.Column(
+				display.TextStyled("Top", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				display.Spacer(4),
+				display.Text("Vertical divider splits top/bottom."),
 			)),
-			ui.Padding(ui.UniformInsets(8), ui.Column(
-				ui.TextStyled("Bottom", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
-				ui.Spacer(4),
-				ui.Text("Drag the horizontal bar to resize."),
+			layout.Pad(ui.UniformInsets(8), layout.Column(
+				display.TextStyled("Bottom", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				display.Spacer(4),
+				display.Text("Drag the horizontal bar to resize."),
 			)),
 			m.SplitVertical,
 			func(r float32) { app.Send(SetSplitVerticalMsg{r}) },
-			ui.WithSplitAxis(ui.AxisColumn),
+			nav.WithSplitAxis(ui.AxisColumn),
 		)),
 
 		// 3. Nested splits (editor-like layout)
-		ui.Spacer(12),
-		ui.Text("Nested splits (IDE-style layout):"),
-		ui.Spacer(4),
-		ui.SizedBox(0, 180, ui.SplitView(
-			ui.Padding(ui.UniformInsets(8), ui.Column(
-				ui.Row(ui.Icon(icons.Folder), ui.Text(" Explorer")),
-				ui.Spacer(4),
-				ui.Text("  src/"),
-				ui.Text("  docs/"),
-				ui.Text("  tests/"),
+		display.Spacer(12),
+		display.Text("Nested splits (IDE-style layout):"),
+		display.Spacer(4),
+		layout.Sized(0, 180, nav.NewSplitView(
+			layout.Pad(ui.UniformInsets(8), layout.Column(
+				layout.Row(display.Icon(icons.Folder), display.Text(" Explorer")),
+				display.Spacer(4),
+				display.Text("  src/"),
+				display.Text("  docs/"),
+				display.Text("  tests/"),
 			)),
-			ui.SplitView(
-				ui.Padding(ui.UniformInsets(8), ui.Column(
-					ui.Row(ui.Icon(icons.FileText), ui.Text(" main.go")),
-					ui.Spacer(4),
-					ui.Text("  func main() {"),
-					ui.Text("    // ..."),
-					ui.Text("  }"),
+			nav.NewSplitView(
+				layout.Pad(ui.UniformInsets(8), layout.Column(
+					layout.Row(display.Icon(icons.FileText), display.Text(" main.go")),
+					display.Spacer(4),
+					display.Text("  func main() {"),
+					display.Text("    // ..."),
+					display.Text("  }"),
 				)),
-				ui.Padding(ui.UniformInsets(8), ui.Column(
-					ui.Row(ui.Icon(icons.Play), ui.Text(" Terminal")),
-					ui.Spacer(4),
-					ui.Text("  $ go run ."),
+				layout.Pad(ui.UniformInsets(8), layout.Column(
+					layout.Row(display.Icon(icons.Play), display.Text(" Terminal")),
+					display.Spacer(4),
+					display.Text("  $ go run ."),
 				)),
 				m.SplitNested2,
 				func(r float32) { app.Send(SetSplitNested2Msg{r}) },
-				ui.WithSplitAxis(ui.AxisColumn),
+				nav.WithSplitAxis(ui.AxisColumn),
 			),
 			m.SplitNested1,
 			func(r float32) { app.Send(SetSplitNested1Msg{r}) },
 		)),
 
 		// 4. Three-column layout
-		ui.Spacer(12),
-		ui.Text("Three columns (nested horizontal):"),
-		ui.Spacer(4),
-		ui.SizedBox(0, 120, ui.SplitView(
-			ui.Padding(ui.UniformInsets(8), ui.Column(
-				ui.TextStyled("Nav", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
-				ui.Text("Home"),
-				ui.Text("Settings"),
+		display.Spacer(12),
+		display.Text("Three columns (nested horizontal):"),
+		display.Spacer(4),
+		layout.Sized(0, 120, nav.NewSplitView(
+			layout.Pad(ui.UniformInsets(8), layout.Column(
+				display.TextStyled("Nav", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+				display.Text("Home"),
+				display.Text("Settings"),
 			)),
-			ui.SplitView(
-				ui.Padding(ui.UniformInsets(8), ui.Column(
-					ui.TextStyled("Content", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
-					ui.Text("Main area"),
+			nav.NewSplitView(
+				layout.Pad(ui.UniformInsets(8), layout.Column(
+					display.TextStyled("Content", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+					display.Text("Main area"),
 				)),
-				ui.Padding(ui.UniformInsets(8), ui.Column(
-					ui.TextStyled("Details", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
-					ui.Text("Inspector"),
+				layout.Pad(ui.UniformInsets(8), layout.Column(
+					display.TextStyled("Details", draw.TextStyle{Size: 14, Weight: draw.FontWeightSemiBold}),
+					display.Text("Inspector"),
 				)),
 				m.SplitThreeColRight,
 				func(r float32) { app.Send(SetSplitThreeColRightMsg{r}) },
@@ -1337,12 +1345,12 @@ func splitViewSection(m Model) ui.Element {
 		)),
 
 		// 5. Fixed (non-draggable)
-		ui.Spacer(12),
-		ui.Text("Fixed split (no drag — nil onResize):"),
-		ui.Spacer(4),
-		ui.SizedBox(0, 80, ui.SplitView(
-			ui.Padding(ui.UniformInsets(8), ui.Text("Fixed left (30%)")),
-			ui.Padding(ui.UniformInsets(8), ui.Text("Fixed right (70%)")),
+		display.Spacer(12),
+		display.Text("Fixed split (no drag — nil onResize):"),
+		display.Spacer(4),
+		layout.Sized(0, 80, nav.NewSplitView(
+			layout.Pad(ui.UniformInsets(8), display.Text("Fixed left (30%)")),
+			layout.Pad(ui.UniformInsets(8), display.Text("Fixed right (70%)")),
 			0.3,
 			nil,
 		)),
@@ -1350,27 +1358,27 @@ func splitViewSection(m Model) ui.Element {
 }
 
 func richTextSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("RichText"),
-		ui.Text("Mixed styles in a single line:"),
-		ui.Spacer(4),
-		ui.RichTextSpans(
-			ui.Span{Text: "Bold text ", Style: ui.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Size: 13}}},
-			ui.Span{Text: "and normal text "},
-			ui.Span{Text: "with color", Style: ui.SpanStyle{Color: draw.Hex("#3b82f6")}},
+		display.Text("Mixed styles in a single line:"),
+		display.Spacer(4),
+		display.RichTextSpans(
+			display.Span{Text: "Bold text ", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Size: 13}}},
+			display.Span{Text: "and normal text "},
+			display.Span{Text: "with color", Style: display.SpanStyle{Color: draw.Hex("#3b82f6")}},
 		),
-		ui.Spacer(12),
-		ui.Text("Multiple paragraphs:"),
-		ui.Spacer(4),
-		ui.RichText(
-			ui.RichParagraph{Spans: []ui.Span{
+		display.Spacer(12),
+		display.Text("Multiple paragraphs:"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{Spans: []display.Span{
 				{Text: "First paragraph with "},
-				{Text: "bold", Style: ui.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Size: 13}}},
+				{Text: "bold", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Size: 13}}},
 				{Text: " and "},
-				{Text: "colored", Style: ui.SpanStyle{Color: draw.Hex("#ef4444")}},
+				{Text: "colored", Style: display.SpanStyle{Color: draw.Hex("#ef4444")}},
 				{Text: " spans."},
 			}},
-			ui.RichParagraph{Spans: []ui.Span{
+			display.RichParagraph{Spans: []display.Span{
 				{Text: "Second paragraph. Rich text supports per-span styling."},
 			}},
 		),
@@ -1378,15 +1386,15 @@ func richTextSection() ui.Element {
 }
 
 func virtualListSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("VirtualList"),
-		ui.Text("1000 items — only visible items are rendered:"),
-		ui.Spacer(8),
-		ui.VirtualList(ui.VirtualListConfig{
+		display.Text("1000 items — only visible items are rendered:"),
+		display.Spacer(8),
+		data.NewVirtualList(ui.VirtualListConfig{
 			ItemCount:  1000,
 			ItemHeight: 24,
 			BuildItem: func(i int) ui.Element {
-				return ui.Text(fmt.Sprintf("  Item %d — virtualized row", i))
+				return display.Text(fmt.Sprintf("  Item %d — virtualized row", i))
 			},
 			MaxHeight: 200,
 			State:     m.VListScroll,
@@ -1413,11 +1421,11 @@ func demoTreeChildren(id string) []string {
 }
 
 func treeSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Tree"),
-		ui.Text("Hierarchical tree with expand/collapse:"),
-		ui.Spacer(8),
-		ui.Tree(ui.TreeConfig{
+		display.Text("Hierarchical tree with expand/collapse:"),
+		display.Spacer(8),
+		data.NewTree(ui.TreeConfig{
 			RootIDs:  demoTreeRoots,
 			Children: demoTreeChildren,
 			BuildNode: func(id string, _ int, expanded, _ bool) ui.Element {
@@ -1427,9 +1435,9 @@ func treeSection(m Model) ui.Element {
 					if expanded {
 						icon = icons.FolderOpen
 					}
-					return ui.Row(ui.Icon(icon), ui.Text(id))
+					return layout.Row(display.Icon(icon), display.Text(id))
 				}
-				return ui.Row(ui.Icon(icons.FileText), ui.Text(id))
+				return layout.Row(display.Icon(icons.FileText), display.Text(id))
 			},
 			NodeHeight: 24,
 			MaxHeight:  200,
@@ -1441,64 +1449,64 @@ func treeSection(m Model) ui.Element {
 // ── Tier 3 Section Views ─────────────────────────────────────────
 
 func cardsSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Cards"),
-		ui.Text("Card with text content:"),
-		ui.Spacer(4),
-		ui.Card(
-			ui.Text("This content lives inside a Card."),
-			ui.Text("Cards have elevation and borders."),
+		display.Text("Card with text content:"),
+		display.Spacer(4),
+		display.Card(
+			display.Text("This content lives inside a Card."),
+			display.Text("Cards have elevation and borders."),
 		),
-		ui.Spacer(12),
-		ui.Text("Nested cards:"),
-		ui.Spacer(4),
-		ui.Card(
-			ui.Text("Outer card"),
-			ui.Spacer(8),
-			ui.Card(ui.Text("Inner nested card")),
+		display.Spacer(12),
+		display.Text("Nested cards:"),
+		display.Spacer(4),
+		display.Card(
+			display.Text("Outer card"),
+			display.Spacer(8),
+			display.Card(display.Text("Inner nested card")),
 		),
 	)
 }
 
 func tabsSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Tabs"),
-		ui.Text("Tabs with rich headers (Icon + Text + Badge):"),
-		ui.Spacer(4),
-		ui.Tabs([]ui.TabItem{
+		display.Text("Tabs with rich headers (Icon + Text + Badge):"),
+		display.Spacer(4),
+		nav.New([]nav.TabItem{
 			{
-				Header:  ui.Row(ui.Icon(icons.Star), ui.Text("General")),
-				Content: ui.Text("General settings content goes here."),
+				Header:  layout.Row(display.Icon(icons.Star), display.Text("General")),
+				Content: display.Text("General settings content goes here."),
 			},
 			{
-				Header:  ui.Row(ui.Icon(icons.Gear), ui.Text("Advanced"), ui.BadgeText("3")),
-				Content: ui.Column(ui.Text("Advanced settings."), ui.Text("With multiple items.")),
+				Header:  layout.Row(display.Icon(icons.Gear), display.Text("Advanced"), display.BadgeText("3")),
+				Content: layout.Column(display.Text("Advanced settings."), display.Text("With multiple items.")),
 			},
 			{
-				Header:  ui.Row(ui.Icon(icons.Eye), ui.Text("Preview")),
-				Content: ui.Card(ui.Text("Preview content inside a Card.")),
+				Header:  layout.Row(display.Icon(icons.Eye), display.Text("Preview")),
+				Content: display.Card(display.Text("Preview content inside a Card.")),
 			},
 		}, m.TabIndex, func(idx int) { app.Send(SetTabMsg{idx}) }),
 	)
 }
 
 func accordionSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Accordion"),
-		ui.Text("Collapsible sections (click to expand/collapse):"),
-		ui.Spacer(4),
-		ui.Accordion([]ui.AccordionSection{
+		display.Text("Collapsible sections (click to expand/collapse):"),
+		display.Spacer(4),
+		nav.NewAccordion([]nav.AccordionSection{
 			{
-				Header:  ui.Text("Section 1 — Getting Started"),
-				Content: ui.Text("Welcome! This section covers the basics."),
+				Header:  display.Text("Section 1 — Getting Started"),
+				Content: display.Text("Welcome! This section covers the basics."),
 			},
 			{
-				Header:  ui.Text("Section 2 — Configuration"),
-				Content: ui.Column(ui.Text("Configure your settings here."), ui.Text("Multiple widgets supported.")),
+				Header:  display.Text("Section 2 — Configuration"),
+				Content: layout.Column(display.Text("Configure your settings here."), display.Text("Multiple widgets supported.")),
 			},
 			{
-				Header:  ui.Text("Section 3 — Advanced Topics"),
-				Content: ui.Card(ui.Text("Advanced content inside a Card.")),
+				Header:  display.Text("Section 3 — Advanced Topics"),
+				Content: display.Card(display.Text("Advanced content inside a Card.")),
 			},
 		}, m.AccordionState),
 	)
@@ -1509,33 +1517,33 @@ func badgesChipsSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Badges & Chips"),
 
-		ui.Text("Badges (colorful pill indicators):"),
-		ui.Spacer(4),
-		ui.Row(
-			ui.BadgeText("3"),
-			ui.BadgeColor(ui.Text("99+"), tokens.Colors.Status.Error),
-			ui.BadgeColor(ui.Icon(icons.Star), tokens.Colors.Status.Warning),
-			ui.BadgeColor(ui.Text("New"), tokens.Colors.Status.Success),
-			ui.BadgeColor(ui.Row(ui.Icon(icons.Heart), ui.Text("Hot")), tokens.Colors.Accent.Secondary),
+		display.Text("Badges (colorful pill indicators):"),
+		display.Spacer(4),
+		layout.Row(
+			display.BadgeText("3"),
+			display.BadgeColor(display.Text("99+"), tokens.Colors.Status.Error),
+			display.BadgeColor(display.Icon(icons.Star), tokens.Colors.Status.Warning),
+			display.BadgeColor(display.Text("New"), tokens.Colors.Status.Success),
+			display.BadgeColor(layout.Row(display.Icon(icons.Heart), display.Text("Hot")), tokens.Colors.Accent.Secondary),
 		),
 
-		ui.Spacer(12),
-		ui.Text("Chips (selectable):"),
-		ui.Spacer(4),
-		ui.Row(
-			ui.Chip(ui.Text("Go"), m.ChipASelected, func() { app.Send(ToggleChipAMsg{}) }),
-			ui.Chip(ui.Text("Rust"), m.ChipBSelected, func() { app.Send(ToggleChipBMsg{}) }),
-			ui.Chip(ui.Text("Python"), m.ChipCSelected, func() { app.Send(ToggleChipCMsg{}) }),
+		display.Spacer(12),
+		display.Text("Chips (selectable):"),
+		display.Spacer(4),
+		layout.Row(
+			display.Chip(display.Text("Go"), m.ChipASelected, func() { app.Send(ToggleChipAMsg{}) }),
+			display.Chip(display.Text("Rust"), m.ChipBSelected, func() { app.Send(ToggleChipBMsg{}) }),
+			display.Chip(display.Text("Python"), m.ChipCSelected, func() { app.Send(ToggleChipCMsg{}) }),
 		),
 	}
 
 	// Dismissible chip (shown until dismissed)
 	if !m.ChipDismissed {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text("Dismissible chip (click × to remove):"),
-			ui.ChipDismissible(
-				ui.Row(ui.Icon(icons.Star), ui.Text("Featured")),
+			display.Spacer(8),
+			display.Text("Dismissible chip (click × to remove):"),
+			display.ChipDismissible(
+				layout.Row(display.Icon(icons.Star), display.Text("Featured")),
 				true,
 				func() {},
 				func() { app.Send(DismissChipMsg{}) },
@@ -1543,24 +1551,24 @@ func badgesChipsSection(m Model) ui.Element {
 		)
 	} else {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text("Chip dismissed!"),
+			display.Spacer(8),
+			display.Text("Chip dismissed!"),
 		)
 	}
 
 	children = append(children,
-		ui.Spacer(12),
-		ui.Text("Tooltip (hover to show):"),
-		ui.Spacer(4),
-		ui.Row(
-			ui.Tooltip(
-				ui.Text("← Hover me for tooltip"),
-				ui.Text("This is a tooltip with arbitrary content!"),
+		display.Spacer(12),
+		display.Text("Tooltip (hover to show):"),
+		display.Spacer(4),
+		layout.Row(
+			menu.NewTooltip(
+				display.Text("← Hover me for tooltip"),
+				display.Text("This is a tooltip with arbitrary content!"),
 			),
 		),
 	)
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 func menusSection(m Model) ui.Element {
@@ -1571,49 +1579,49 @@ func menusSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Menus"),
 
-		ui.Text("MenuBar (click to open dropdown):"),
-		ui.Spacer(4),
-		ui.MenuBar([]ui.MenuItem{
-			{Label: ui.Text("File"), Items: []ui.MenuItem{
-				{Label: ui.Text("New"), OnClick: menuAction("File > New")},
-				{Label: ui.Text("Open"), OnClick: menuAction("File > Open")},
-				{Label: ui.Text("Save"), OnClick: menuAction("File > Save")},
+		display.Text("MenuBar (click to open dropdown):"),
+		display.Spacer(4),
+		menu.NewMenuBar([]menu.MenuItem{
+			{Label: display.Text("File"), Items: []menu.MenuItem{
+				{Label: display.Text("New"), OnClick: menuAction("File > New")},
+				{Label: display.Text("Open"), OnClick: menuAction("File > Open")},
+				{Label: display.Text("Save"), OnClick: menuAction("File > Save")},
 			}},
-			{Label: ui.Text("Edit"), Items: []ui.MenuItem{
-				{Label: ui.Text("Undo"), OnClick: menuAction("Edit > Undo")},
-				{Label: ui.Text("Redo"), OnClick: menuAction("Edit > Redo")},
-				{Label: ui.Text("Cut"), OnClick: menuAction("Edit > Cut")},
-				{Label: ui.Text("Copy"), OnClick: menuAction("Edit > Copy")},
-				{Label: ui.Text("Paste"), OnClick: menuAction("Edit > Paste")},
+			{Label: display.Text("Edit"), Items: []menu.MenuItem{
+				{Label: display.Text("Undo"), OnClick: menuAction("Edit > Undo")},
+				{Label: display.Text("Redo"), OnClick: menuAction("Edit > Redo")},
+				{Label: display.Text("Cut"), OnClick: menuAction("Edit > Cut")},
+				{Label: display.Text("Copy"), OnClick: menuAction("Edit > Copy")},
+				{Label: display.Text("Paste"), OnClick: menuAction("Edit > Paste")},
 			}},
-			{Label: ui.Text("View"), Items: []ui.MenuItem{
-				{Label: ui.Text("Zoom In"), OnClick: menuAction("View > Zoom In")},
-				{Label: ui.Text("Zoom Out"), OnClick: menuAction("View > Zoom Out")},
+			{Label: display.Text("View"), Items: []menu.MenuItem{
+				{Label: display.Text("Zoom In"), OnClick: menuAction("View > Zoom In")},
+				{Label: display.Text("Zoom Out"), OnClick: menuAction("View > Zoom Out")},
 			}},
-			{Label: ui.Text("Help"), OnClick: menuAction("Help")},
+			{Label: display.Text("Help"), OnClick: menuAction("Help")},
 		}, m.MenuBarState),
 	}
 
 	if m.LastMenuAction != "" {
 		children = append(children,
-			ui.Spacer(4),
-			ui.Text(fmt.Sprintf("Last action: %s", m.LastMenuAction)),
+			display.Spacer(4),
+			display.Text(fmt.Sprintf("Last action: %s", m.LastMenuAction)),
 		)
 	}
 
 	children = append(children,
-		ui.Spacer(12),
-		ui.Text("ContextMenu:"),
-		ui.Spacer(4),
-		ui.ContextMenu([]ui.MenuItem{
-			{Label: ui.Text("Cut"), OnClick: menuAction("Cut")},
-			{Label: ui.Text("Copy"), OnClick: menuAction("Copy")},
-			{Label: ui.Text("Paste"), OnClick: menuAction("Paste")},
-			{Label: ui.Text("Delete"), OnClick: menuAction("Delete")},
+		display.Spacer(12),
+		display.Text("ContextMenu:"),
+		display.Spacer(4),
+		menu.NewContextMenu([]menu.MenuItem{
+			{Label: display.Text("Cut"), OnClick: menuAction("Cut")},
+			{Label: display.Text("Copy"), OnClick: menuAction("Copy")},
+			{Label: display.Text("Paste"), OnClick: menuAction("Paste")},
+			{Label: display.Text("Delete"), OnClick: menuAction("Delete")},
 		}, true, 0, 0),
 	)
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 // ── Phase 1 Sections ──────────────────────────────────────────────
@@ -1621,49 +1629,49 @@ func menusSection(m Model) ui.Element {
 func shortcutsSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Keyboard Shortcuts"),
-		ui.Text("Registered shortcuts:"),
-		ui.Spacer(4),
-		ui.Text("  Ctrl+I → Increment counter"),
-		ui.Text("  Ctrl+D → Decrement counter"),
-		ui.Spacer(8),
-		ui.Text(fmt.Sprintf("Counter value: %d", m.Count)),
+		display.Text("Registered shortcuts:"),
+		display.Spacer(4),
+		display.Text("  Ctrl+I → Increment counter"),
+		display.Text("  Ctrl+D → Decrement counter"),
+		display.Spacer(8),
+		display.Text(fmt.Sprintf("Counter value: %d", m.Count)),
 	}
 
 	if m.ShortcutLog != "" {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text(fmt.Sprintf("Last shortcut: %s", m.ShortcutLog)),
+			display.Spacer(8),
+			display.Text(fmt.Sprintf("Last shortcut: %s", m.ShortcutLog)),
 		)
 	}
 
 	children = append(children,
-		ui.Spacer(16),
+		display.Spacer(16),
 		sectionHeader("Global Handler Layer"),
-		ui.Text("A global handler logs all key events before widget dispatch."),
+		display.Text("A global handler logs all key events before widget dispatch."),
 	)
 	if m.HandlerLog != "" {
 		children = append(children,
-			ui.Spacer(4),
-			ui.Text(fmt.Sprintf("Handler log: %s", m.HandlerLog)),
+			display.Spacer(4),
+			display.Text(fmt.Sprintf("Handler log: %s", m.HandlerLog)),
 		)
 	}
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 func overlaysSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Overlay System"),
-		ui.Text("Click the button to toggle a dismissable overlay:"),
-		ui.Spacer(4),
-		ui.ButtonText("Toggle Overlay", func() { app.Send(ToggleOverlayMsg{}) }),
+		display.Text("Click the button to toggle a dismissable overlay:"),
+		display.Spacer(4),
+		button.Text("Toggle Overlay", func() { app.Send(ToggleOverlayMsg{}) }),
 	}
 
 	if m.OverlayOpen {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text("Overlay is OPEN (click outside or press button to close)"),
-			ui.Spacer(4),
+			display.Spacer(8),
+			display.Text("Overlay is OPEN (click outside or press button to close)"),
+			display.Spacer(4),
 			// The actual Overlay element rendered above normal flow.
 			ui.Overlay{
 				ID:          "demo-overlay",
@@ -1671,30 +1679,30 @@ func overlaysSection(m Model) ui.Element {
 				Placement:   ui.PlacementBelow,
 				Dismissable: true,
 				OnDismiss:   func() { app.Send(DismissOverlayMsg{}) },
-				Content: ui.Card(ui.Column(
-					ui.Text("This is an overlay!"),
-					ui.Spacer(4),
-					ui.Text("It renders above normal content."),
-					ui.Spacer(8),
-					ui.ButtonText("Close", func() { app.Send(DismissOverlayMsg{}) }),
+				Content: display.Card(layout.Column(
+					display.Text("This is an overlay!"),
+					display.Spacer(4),
+					display.Text("It renders above normal content."),
+					display.Spacer(8),
+					button.Text("Close", func() { app.Send(DismissOverlayMsg{}) }),
 				)),
 			},
 		)
 	} else {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text("Overlay is closed."),
+			display.Spacer(8),
+			display.Text("Overlay is closed."),
 		)
 	}
 
 	children = append(children,
-		ui.Spacer(16),
+		display.Spacer(16),
 		sectionHeader("Kinetic Scrolling"),
-		ui.Text("KineticScroll with friction-decay physics is available."),
-		ui.Text("Use trackpad for smooth kinetic scrolling or mouse wheel for discrete steps."),
+		display.Text("KineticScroll with friction-decay physics is available."),
+		display.Text("Use trackpad for smooth kinetic scrolling or mouse wheel for discrete steps."),
 	)
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 // ── Phase 3 Sections ──────────────────────────────────────────
@@ -1743,33 +1751,33 @@ func canvasPaintsSection() ui.Element {
 		CacheHint: true,
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Canvas & Paints (Phase 3)"),
 
-		ui.Text("New Canvas API (GPU stubs — API validation):"),
-		ui.Spacer(4),
-		ui.Text("  PathBuilder.ArcTo — elliptical arc segments"),
-		ui.Text("  PushClipRoundRect / PushClipPath — advanced clipping"),
-		ui.Text("  PushBlur / PopBlur — backdrop blur effects"),
-		ui.Text("  PushLayer / PopLayer — compositing layers"),
-		ui.Text("  PushScale — uniform/non-uniform scaling"),
-		ui.Text("  DrawTextLayout — rich text layout with alignment"),
-		ui.Text("  DrawImageSlice — 9-slice image rendering"),
-		ui.Text("  DrawTexture — external texture surfaces"),
+		display.Text("New Canvas API (GPU stubs — API validation):"),
+		display.Spacer(4),
+		display.Text("  PathBuilder.ArcTo — elliptical arc segments"),
+		display.Text("  PushClipRoundRect / PushClipPath — advanced clipping"),
+		display.Text("  PushBlur / PopBlur — backdrop blur effects"),
+		display.Text("  PushLayer / PopLayer — compositing layers"),
+		display.Text("  PushScale — uniform/non-uniform scaling"),
+		display.Text("  DrawTextLayout — rich text layout with alignment"),
+		display.Text("  DrawImageSlice — 9-slice image rendering"),
+		display.Text("  DrawTexture — external texture surfaces"),
 
-		ui.Spacer(12),
-		ui.Text("Paint Variants:"),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("  LinearGradientPaint: %d stops", 2)),
-		ui.Text(fmt.Sprintf("  RadialGradientPaint: radius=%.0f", float64(50))),
-		ui.Text("  PatternPaint: tiled image fills"),
+		display.Spacer(12),
+		display.Text("Paint Variants:"),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("  LinearGradientPaint: %d stops", 2)),
+		display.Text(fmt.Sprintf("  RadialGradientPaint: radius=%.0f", float64(50))),
+		display.Text("  PatternPaint: tiled image fills"),
 
-		ui.Spacer(12),
-		ui.Text("Theme-Lookup-Cache:"),
-		ui.Spacer(4),
-		ui.Text("  CachedTheme wraps Theme with lazy resolution"),
-		ui.Text("  Auto-invalidation on SetThemeMsg / SetDarkModeMsg"),
-		ui.Text("  Warm-up before first frame in app.Run"),
+		display.Spacer(12),
+		display.Text("Theme-Lookup-Cache:"),
+		display.Spacer(4),
+		display.Text("  CachedTheme wraps Theme with lazy resolution"),
+		display.Text("  Auto-invalidation on SetThemeMsg / SetDarkModeMsg"),
+		display.Text("  Warm-up before first frame in app.Run"),
 	)
 }
 
@@ -1821,102 +1829,102 @@ var (
 )
 
 func scopedThemesSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Scoped Themes"),
-		ui.Text("ui.Themed() overrides the theme for a subtree."),
-		ui.Text("Buttons below inherit their accent color from scoped themes:"),
-		ui.Spacer(12),
+		display.Text("ui.Themed() overrides the theme for a subtree."),
+		display.Text("Buttons below inherit their accent color from scoped themes:"),
+		display.Spacer(12),
 
 		// Default (no override)
-		ui.Text("Default theme:"),
-		ui.Spacer(4),
-		ui.Row(
-			ui.ButtonText("Save", nil),
-			ui.ButtonText("Submit", nil),
+		display.Text("Default theme:"),
+		display.Spacer(4),
+		layout.Row(
+			button.Text("Save", nil),
+			button.Text("Submit", nil),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Danger theme
-		ui.Text("Danger theme (red accent):"),
-		ui.Spacer(4),
+		display.Text("Danger theme (red accent):"),
+		display.Spacer(4),
 		ui.Themed(dangerTheme,
-			ui.Row(
-				ui.ButtonText("Delete", nil),
-				ui.ButtonText("Reset All", nil),
+			layout.Row(
+				button.Text("Delete", nil),
+				button.Text("Reset All", nil),
 			),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Success theme
-		ui.Text("Success theme (green accent):"),
-		ui.Spacer(4),
+		display.Text("Success theme (green accent):"),
+		display.Spacer(4),
 		ui.Themed(successTheme,
-			ui.Row(
-				ui.ButtonText("Confirm", nil),
-				ui.ButtonText("Approve", nil),
+			layout.Row(
+				button.Text("Confirm", nil),
+				button.Text("Approve", nil),
 			),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Warning theme
-		ui.Text("Warning theme (amber accent):"),
-		ui.Spacer(4),
+		display.Text("Warning theme (amber accent):"),
+		display.Spacer(4),
 		ui.Themed(warningTheme,
-			ui.Row(
-				ui.ButtonText("Proceed", nil),
-				ui.ButtonText("Override", nil),
+			layout.Row(
+				button.Text("Proceed", nil),
+				button.Text("Override", nil),
 			),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Mixed: default and themed side by side
-		ui.Text("Mixed — default and danger in one row:"),
-		ui.Spacer(4),
-		ui.Row(
-			ui.ButtonText("Normal", nil),
+		display.Text("Mixed — default and danger in one row:"),
+		display.Spacer(4),
+		layout.Row(
+			button.Text("Normal", nil),
 			ui.Themed(dangerTheme,
-				ui.ButtonText("Danger", nil),
+				button.Text("Danger", nil),
 			),
-			ui.ButtonText("Normal", nil),
+			button.Text("Normal", nil),
 		),
 	)
 }
 func textShapingSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Text Shaping (Phase 4)"),
 
-		ui.Text("GoTextShaper — go-text/typesetting with full OpenType GSUB/GPOS:"),
-		ui.Spacer(8),
+		display.Text("GoTextShaper — go-text/typesetting with full OpenType GSUB/GPOS:"),
+		display.Spacer(8),
 
 		// Size comparison: MSDF vs bitmap threshold at 24px
-		ui.Text("Size Rendering (MSDF >= 24px, Bitmap < 24px):"),
-		ui.Spacer(4),
-		ui.TextStyled("12px — bitmap rasterized, hinted", draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular}),
-		ui.TextStyled("18px — bitmap rasterized, hinted", draw.TextStyle{Size: 18, Weight: draw.FontWeightRegular}),
-		ui.TextStyled("24px — MSDF rendered, scalable", draw.TextStyle{Size: 24, Weight: draw.FontWeightRegular}),
-		ui.TextStyled("32px — MSDF rendered, scalable", draw.TextStyle{Size: 32, Weight: draw.FontWeightRegular}),
+		display.Text("Size Rendering (MSDF >= 24px, Bitmap < 24px):"),
+		display.Spacer(4),
+		display.TextStyled("12px — bitmap rasterized, hinted", draw.TextStyle{Size: 12, Weight: draw.FontWeightRegular}),
+		display.TextStyled("18px — bitmap rasterized, hinted", draw.TextStyle{Size: 18, Weight: draw.FontWeightRegular}),
+		display.TextStyled("24px — MSDF rendered, scalable", draw.TextStyle{Size: 24, Weight: draw.FontWeightRegular}),
+		display.TextStyled("32px — MSDF rendered, scalable", draw.TextStyle{Size: 32, Weight: draw.FontWeightRegular}),
 
-		ui.Spacer(12),
-		ui.Text("Font Fallback Chain (RFC-003 §3.4):"),
-		ui.Spacer(4),
-		ui.Text("Latin: The quick brown fox jumps over the lazy dog"),
-		ui.Text("Digits & Symbols: 0123456789 @#$%&*()[]{}"),
-		ui.Text("Punctuation: .,;:!? - — ' \" ... /"),
+		display.Spacer(12),
+		display.Text("Font Fallback Chain (RFC-003 §3.4):"),
+		display.Spacer(4),
+		display.Text("Latin: The quick brown fox jumps over the lazy dog"),
+		display.Text("Digits & Symbols: 0123456789 @#$%&*()[]{}"),
+		display.Text("Punctuation: .,;:!? - — ' \" ... /"),
 
-		ui.Spacer(12),
-		ui.Text("Per-Glyph Fallback:"),
-		ui.Spacer(4),
-		ui.Text("Primary font -> Fallback chain -> Embedded Noto Sans -> U+FFFD"),
-		ui.Text("Missing glyphs are individually resolved, not entire runs."),
+		display.Spacer(12),
+		display.Text("Per-Glyph Fallback:"),
+		display.Spacer(4),
+		display.Text("Primary font -> Fallback chain -> Embedded Noto Sans -> U+FFFD"),
+		display.Text("Missing glyphs are individually resolved, not entire runs."),
 
-		ui.Spacer(12),
-		ui.Text("Shaper Details:"),
-		ui.Spacer(4),
-		ui.Text("  Implementation: GoTextShaper (go-text/typesetting v0.3.4)"),
-		ui.Text("  Shaping: HarfBuzz-compatible, pure Go"),
-		ui.Text("  Scripts: Latin, Arabic, Devanagari, CJK (GSUB/GPOS)"),
-		ui.Text("  Fallback: Noto Sans (embedded)"),
-		ui.Text("  Rasterization: MSDF (>=24px) / Hinted Bitmap (<24px)"),
+		display.Spacer(12),
+		display.Text("Shaper Details:"),
+		display.Spacer(4),
+		display.Text("  Implementation: GoTextShaper (go-text/typesetting v0.3.4)"),
+		display.Text("  Shaping: HarfBuzz-compatible, pure Go"),
+		display.Text("  Scripts: Latin, Arabic, Devanagari, CJK (GSUB/GPOS)"),
+		display.Text("  Fallback: Noto Sans (embedded)"),
+		display.Text("  Rasterization: MSDF (>=24px) / Hinted Bitmap (<24px)"),
 	)
 }
 
@@ -1937,9 +1945,9 @@ func graphemeNavSection() ui.Element {
 
 	items := []ui.Element{
 		sectionHeader("Grapheme Navigation"),
-		ui.Text("Grapheme cluster analysis (UAX #29) — each row shows cluster count,"),
-		ui.Text("byte length, and rune count for sample strings."),
-		ui.Spacer(12),
+		display.Text("Grapheme cluster analysis (UAX #29) — each row shows cluster count,"),
+		display.Text("byte length, and rune count for sample strings."),
+		display.Spacer(12),
 	}
 
 	for _, s := range samples {
@@ -1954,10 +1962,10 @@ func graphemeNavSection() ui.Element {
 		}
 		info := fmt.Sprintf("  %s — %d cluster(s), %d bytes, %d rune(s)",
 			s.label, nClusters, len(s.text), nRunes)
-		items = append(items, ui.Text(info))
-		items = append(items, ui.Spacer(4))
+		items = append(items, display.Text(info))
+		items = append(items, display.Spacer(4))
 	}
-	return ui.Column(items...)
+	return layout.Column(items...)
 }
 
 // ── Line Breaking Section ────────────────────────────────────────
@@ -1976,8 +1984,8 @@ func lineBreakingSection() ui.Element {
 
 	items := []ui.Element{
 		sectionHeader("Line Breaking"),
-		ui.Text("UAX #14 line break analysis — mandatory and opportunity breaks."),
-		ui.Spacer(12),
+		display.Text("UAX #14 line break analysis — mandatory and opportunity breaks."),
+		display.Spacer(12),
 	}
 
 	for _, s := range samples {
@@ -1993,10 +2001,10 @@ func lineBreakingSection() ui.Element {
 		}
 		info := fmt.Sprintf("  %s — %d mandatory, %d opportunity break(s)",
 			s.label, mandatory, opportunity)
-		items = append(items, ui.Text(info))
-		items = append(items, ui.Spacer(4))
+		items = append(items, display.Text(info))
+		items = append(items, display.Spacer(4))
 	}
-	return ui.Column(items...)
+	return layout.Column(items...)
 }
 
 // ── Commands Section ──────────────────────────────────────────────
@@ -2004,40 +2012,40 @@ func lineBreakingSection() ui.Element {
 func commandsSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Commands (Async Side Effects)"),
-		ui.Text("Commands let your update function trigger async work."),
-		ui.Text("The result is sent back as a message when done."),
-		ui.Spacer(12),
-		ui.ButtonText("Run Async", func() { app.Send(StartAsyncMsg{}) }),
+		display.Text("Commands let your update function trigger async work."),
+		display.Text("The result is sent back as a message when done."),
+		display.Spacer(12),
+		button.Text("Run Async", func() { app.Send(StartAsyncMsg{}) }),
 	}
 
 	if m.AsyncLoading {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text("Loading..."),
+			display.Spacer(8),
+			display.Text("Loading..."),
 		)
 	}
 	if m.AsyncResult != "" {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text(fmt.Sprintf("Result: %s", m.AsyncResult)),
+			display.Spacer(8),
+			display.Text(fmt.Sprintf("Result: %s", m.AsyncResult)),
 		)
 	}
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 // ── Sub-Models Section ───────────────────────────────────────────
 
 func subModelsSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Sub-Models (Delegated State)"),
-		ui.Text("SubModel delegates messages to a child model."),
-		ui.Text("The counter below is managed by a separate update function:"),
-		ui.Spacer(12),
-		ui.Text(fmt.Sprintf("Sub-Counter: %d", m.SubCounter)),
-		ui.Row(
-			ui.ButtonText("-", func() { app.Send(SubCounterDecrMsg{}) }),
-			ui.ButtonText("+", func() { app.Send(SubCounterIncrMsg{}) }),
+		display.Text("SubModel delegates messages to a child model."),
+		display.Text("The counter below is managed by a separate update function:"),
+		display.Spacer(12),
+		display.Text(fmt.Sprintf("Sub-Counter: %d", m.SubCounter)),
+		layout.Row(
+			button.Text("-", func() { app.Send(SubCounterDecrMsg{}) }),
+			button.Text("+", func() { app.Send(SubCounterIncrMsg{}) }),
 		),
 	)
 }
@@ -2050,26 +2058,26 @@ func springAnimSection(m Model) ui.Element {
 		presetLabel = m.SpringPreset
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Spring Animation (Phase 2)"),
-		ui.Text("SpringAnim[T] — physics-based spring-damper system."),
-		ui.Text("No fixed duration — converges asymptotically."),
-		ui.Spacer(8),
+		display.Text("SpringAnim[T] — physics-based spring-damper system."),
+		display.Text("No fixed duration — converges asymptotically."),
+		display.Spacer(8),
 
-		ui.Text("Select preset:"),
-		ui.Row(
-			ui.Radio("Gentle", presetLabel == "gentle", func() { app.Send(SetSpringPresetMsg{"gentle"}) }),
-			ui.Radio("Snappy", presetLabel == "snappy", func() { app.Send(SetSpringPresetMsg{"snappy"}) }),
-			ui.Radio("Bouncy", presetLabel == "bouncy", func() { app.Send(SetSpringPresetMsg{"bouncy"}) }),
+		display.Text("Select preset:"),
+		layout.Row(
+			form.NewRadio("Gentle", presetLabel == "gentle", func() { app.Send(SetSpringPresetMsg{"gentle"}) }),
+			form.NewRadio("Snappy", presetLabel == "snappy", func() { app.Send(SetSpringPresetMsg{"snappy"}) }),
+			form.NewRadio("Bouncy", presetLabel == "bouncy", func() { app.Send(SetSpringPresetMsg{"bouncy"}) }),
 		),
-		ui.Spacer(8),
+		display.Spacer(8),
 
-		ui.ButtonText("Animate Spring", func() { app.Send(StartSpringMsg{}) }),
-		ui.Spacer(8),
-		ui.Text(fmt.Sprintf("Value: %.3f", m.SpringVal.Value())),
-		ui.ProgressBar(m.SpringVal.Value()),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("Done: %v", m.SpringVal.IsDone())),
+		button.Text("Animate Spring", func() { app.Send(StartSpringMsg{}) }),
+		display.Spacer(8),
+		display.Text(fmt.Sprintf("Value: %.3f", m.SpringVal.Value())),
+		form.NewProgressBar(m.SpringVal.Value()),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("Done: %v", m.SpringVal.IsDone())),
 	)
 }
 
@@ -2079,24 +2087,24 @@ func cubicBezierSection(m Model) ui.Element {
 		preset = "ease"
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Cubic Bezier Easing (Phase 2)"),
-		ui.Text("CubicBezier(x1, y1, x2, y2) — CSS-compatible easing."),
-		ui.Spacer(8),
+		display.Text("CubicBezier(x1, y1, x2, y2) — CSS-compatible easing."),
+		display.Spacer(8),
 
-		ui.Text("Select CSS preset:"),
-		ui.Row(
-			ui.Radio("ease", preset == "ease", func() { app.Send(SetBezierPresetMsg{"ease"}) }),
-			ui.Radio("ease-in", preset == "ease-in", func() { app.Send(SetBezierPresetMsg{"ease-in"}) }),
-			ui.Radio("ease-out", preset == "ease-out", func() { app.Send(SetBezierPresetMsg{"ease-out"}) }),
-			ui.Radio("ease-in-out", preset == "ease-in-out", func() { app.Send(SetBezierPresetMsg{"ease-in-out"}) }),
+		display.Text("Select CSS preset:"),
+		layout.Row(
+			form.NewRadio("ease", preset == "ease", func() { app.Send(SetBezierPresetMsg{"ease"}) }),
+			form.NewRadio("ease-in", preset == "ease-in", func() { app.Send(SetBezierPresetMsg{"ease-in"}) }),
+			form.NewRadio("ease-out", preset == "ease-out", func() { app.Send(SetBezierPresetMsg{"ease-out"}) }),
+			form.NewRadio("ease-in-out", preset == "ease-in-out", func() { app.Send(SetBezierPresetMsg{"ease-in-out"}) }),
 		),
-		ui.Spacer(8),
+		display.Spacer(8),
 
-		ui.ButtonText("Animate", func() { app.Send(StartBezierMsg{}) }),
-		ui.Spacer(8),
-		ui.Text(fmt.Sprintf("Value: %.3f (preset: %s)", m.BezierAnim.Value(), preset)),
-		ui.ProgressBar(m.BezierAnim.Value()),
+		button.Text("Animate", func() { app.Send(StartBezierMsg{}) }),
+		display.Spacer(8),
+		display.Text(fmt.Sprintf("Value: %.3f (preset: %s)", m.BezierAnim.Value(), preset)),
+		form.NewProgressBar(m.BezierAnim.Value()),
 	)
 }
 
@@ -2107,80 +2115,80 @@ func motionSpecSection(m Model) ui.Element {
 		preset = "standard"
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Motion Spec (Phase 2)"),
-		ui.Text("DurationEasing — theme tokens pair duration with easing."),
-		ui.Spacer(8),
-		ui.Text(fmt.Sprintf("Standard:   %v + OutCubic", tokens.Motion.Standard.Duration)),
-		ui.Text(fmt.Sprintf("Emphasized: %v + InOutCubic", tokens.Motion.Emphasized.Duration)),
-		ui.Text(fmt.Sprintf("Quick:      %v + OutExpo", tokens.Motion.Quick.Duration)),
-		ui.Spacer(12),
+		display.Text("DurationEasing — theme tokens pair duration with easing."),
+		display.Spacer(8),
+		display.Text(fmt.Sprintf("Standard:   %v + OutCubic", tokens.Motion.Standard.Duration)),
+		display.Text(fmt.Sprintf("Emphasized: %v + InOutCubic", tokens.Motion.Emphasized.Duration)),
+		display.Text(fmt.Sprintf("Quick:      %v + OutExpo", tokens.Motion.Quick.Duration)),
+		display.Spacer(12),
 
-		ui.Text("Select preset:"),
-		ui.Row(
-			ui.Radio("Standard", preset == "standard", func() { app.Send(SetMotionPresetMsg{"standard"}) }),
-			ui.Radio("Emphasized", preset == "emphasized", func() { app.Send(SetMotionPresetMsg{"emphasized"}) }),
-			ui.Radio("Quick", preset == "quick", func() { app.Send(SetMotionPresetMsg{"quick"}) }),
+		display.Text("Select preset:"),
+		layout.Row(
+			form.NewRadio("Standard", preset == "standard", func() { app.Send(SetMotionPresetMsg{"standard"}) }),
+			form.NewRadio("Emphasized", preset == "emphasized", func() { app.Send(SetMotionPresetMsg{"emphasized"}) }),
+			form.NewRadio("Quick", preset == "quick", func() { app.Send(SetMotionPresetMsg{"quick"}) }),
 		),
-		ui.Spacer(8),
+		display.Spacer(8),
 
-		ui.ButtonText("Animate", func() { app.Send(StartMotionMsg{}) }),
-		ui.Spacer(8),
-		ui.Text(fmt.Sprintf("Value: %.3f", m.MotionAnim.Value())),
-		ui.ProgressBar(m.MotionAnim.Value()),
+		button.Text("Animate", func() { app.Send(StartMotionMsg{}) }),
+		display.Spacer(8),
+		display.Text(fmt.Sprintf("Value: %.3f", m.MotionAnim.Value())),
+		form.NewProgressBar(m.MotionAnim.Value()),
 	)
 }
 
 func animationIDSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Animation ID (Phase 2)"),
-		ui.Text("SetTargetWithID — fires AnimationEnded{ID} on completion."),
-		ui.Text("The user update loop receives the message — no callbacks."),
-		ui.Spacer(8),
-		ui.ButtonText("Start Fade (500ms)", func() { app.Send(StartFadeMsg{}) }),
+		display.Text("SetTargetWithID — fires AnimationEnded{ID} on completion."),
+		display.Text("The user update loop receives the message — no callbacks."),
+		display.Spacer(8),
+		button.Text("Start Fade (500ms)", func() { app.Send(StartFadeMsg{}) }),
 	}
 
 	if m.FadeActive {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text(fmt.Sprintf("Fading... opacity: %.2f", m.FadeOpacity.Value())),
-			ui.ProgressBar(m.FadeOpacity.Value()),
+			display.Spacer(8),
+			display.Text(fmt.Sprintf("Fading... opacity: %.2f", m.FadeOpacity.Value())),
+			form.NewProgressBar(m.FadeOpacity.Value()),
 		)
 	}
 
 	if m.AnimIDResult != "" {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text(fmt.Sprintf("Received: %s", m.AnimIDResult)),
+			display.Spacer(8),
+			display.Text(fmt.Sprintf("Received: %s", m.AnimIDResult)),
 		)
 	}
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 func animGroupSeqSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("AnimGroup & AnimSeq (Phase 2)"),
-		ui.Text("AnimGroup — parallel animations. AnimSeq — sequential."),
-		ui.Spacer(8),
+		display.Text("AnimGroup — parallel animations. AnimSeq — sequential."),
+		display.Spacer(8),
 
-		ui.Text("Parallel (AnimGroup):"),
-		ui.Row(
-			ui.ButtonText("Run Group", func() { app.Send(StartGroupMsg{}) }),
+		display.Text("Parallel (AnimGroup):"),
+		layout.Row(
+			button.Text("Run Group", func() { app.Send(StartGroupMsg{}) }),
 		),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("  A: %.2f  B: %.2f", m.GroupA.Value(), m.GroupB.Value())),
-		ui.Spacer(8),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("  A: %.2f  B: %.2f", m.GroupA.Value(), m.GroupB.Value())),
+		display.Spacer(8),
 
-		ui.Text("Sequential (AnimSeq):"),
-		ui.Row(
-			ui.ButtonText("Run Seq", func() { app.Send(StartSeqMsg{}) }),
+		display.Text("Sequential (AnimSeq):"),
+		layout.Row(
+			button.Text("Run Seq", func() { app.Send(StartSeqMsg{}) }),
 		),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("  A: %.2f  B: %.2f", m.SeqA.Value(), m.SeqB.Value())),
-		ui.Spacer(8),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("  A: %.2f  B: %.2f", m.SeqA.Value(), m.SeqB.Value())),
+		display.Spacer(8),
 
-		ui.Text(fmt.Sprintf("Status: %s", m.GroupSeqStatus)),
+		display.Text(fmt.Sprintf("Status: %s", m.GroupSeqStatus)),
 	)
 }
 
@@ -2217,88 +2225,88 @@ func customLayoutSection(m Model) ui.Element {
 		gap = 30
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Custom Layout (Phase 2)"),
-		ui.Text("Layout interface — user-defined layout algorithms."),
-		ui.Text("LayoutCtx provides Measure/Place callbacks."),
-		ui.Spacer(8),
+		display.Text("Layout interface — user-defined layout algorithms."),
+		display.Text("LayoutCtx provides Measure/Place callbacks."),
+		display.Spacer(8),
 
-		ui.Text(fmt.Sprintf("Stair gap: %.0f dp", gap)),
-		ui.Slider(gap/100, func(v float32) { app.Send(SetLayoutGapMsg{v * 100}) }),
-		ui.Spacer(8),
+		display.Text(fmt.Sprintf("Stair gap: %.0f dp", gap)),
+		form.NewSlider(gap/100, func(v float32) { app.Send(SetLayoutGapMsg{v * 100}) }),
+		display.Spacer(8),
 
-		ui.Text("Stair layout demo:"),
-		ui.Spacer(4),
+		display.Text("Stair layout demo:"),
+		display.Spacer(4),
 		ui.CustomLayout(stairLayout{Gap: gap},
-			ui.ButtonText("Step 1", nil),
-			ui.ButtonText("Step 2", nil),
-			ui.ButtonText("Step 3", nil),
-			ui.ButtonText("Step 4", nil),
+			button.Text("Step 1", nil),
+			button.Text("Step 2", nil),
+			button.Text("Step 3", nil),
+			button.Text("Step 4", nil),
 		),
 
-		ui.Spacer(16),
-		ui.Text("Layout Cache:"),
-		ui.Spacer(4),
-		ui.Text("  LayoutCache stores constraints + size + childRects"),
-		ui.Text("  Invalidated when props or constraints change"),
-		ui.Text("  O(dirty subtree) re-layout, not O(n)"),
+		display.Spacer(16),
+		display.Text("Layout Cache:"),
+		display.Spacer(4),
+		display.Text("  LayoutCache stores constraints + size + childRects"),
+		display.Text("  Invalidated when props or constraints change"),
+		display.Text("  O(dirty subtree) re-layout, not O(n)"),
 	)
 }
 
 // ── Phase 4b Section Views ────────────────────────────────────────
 
 func rtlLayoutSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("RTL Layout (Phase 4b)"),
-		ui.Text("Insets now support Start/End for direction-aware spacing."),
-		ui.Spacer(8),
+		display.Text("Insets now support Start/End for direction-aware spacing."),
+		display.Spacer(8),
 
 		// Demonstrate InlineInsets — Start=40, End=8
-		ui.Text("InlineInsets(40, 8) — Start has more padding:"),
-		ui.Padding(ui.InlineInsets(40, 8),
-			ui.Card(ui.Column(
-				ui.Text("This card uses logical Start/End insets."),
-				ui.Text("In LTR: Start=Left, End=Right."),
-				ui.Text("In RTL: Start=Right, End=Left."),
+		display.Text("InlineInsets(40, 8) — Start has more padding:"),
+		layout.Pad(ui.InlineInsets(40, 8),
+			display.Card(layout.Column(
+				display.Text("This card uses logical Start/End insets."),
+				display.Text("In LTR: Start=Left, End=Right."),
+				display.Text("In RTL: Start=Right, End=Left."),
 			)),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Demonstrate LogicalInsets
-		ui.Text("LogicalInsets(8, 40, 8, 16) — top/end/bottom/start:"),
-		ui.Padding(ui.LogicalInsets(8, 40, 8, 16),
-			ui.Card(ui.Text("Four-sided logical insets.")),
+		display.Text("LogicalInsets(8, 40, 8, 16) — top/end/bottom/start:"),
+		layout.Pad(ui.LogicalInsets(8, 40, 8, 16),
+			display.Card(display.Text("Four-sided logical insets.")),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// FlexRow automatically mirrors in RTL
-		ui.Text("FlexRow mirrors child order in RTL:"),
-		ui.Spacer(4),
-		ui.Flex([]ui.Element{
-			ui.BadgeText("First"),
-			ui.BadgeText("Second"),
-			ui.BadgeText("Third"),
-		}, ui.WithDirection(ui.FlexRow), ui.WithGap(8)),
-		ui.Spacer(8),
+		display.Text("FlexRow mirrors child order in RTL:"),
+		display.Spacer(4),
+		layout.NewFlex([]ui.Element{
+			display.BadgeText("First"),
+			display.BadgeText("Second"),
+			display.BadgeText("Third"),
+		}, layout.WithDirection(layout.FlexRow), layout.WithGap(8)),
+		display.Spacer(8),
 
 		// JustifyStart resolves to left in LTR, right in RTL
-		ui.Text("JustifyStart — left-aligned in LTR, right-aligned in RTL:"),
-		ui.Spacer(4),
-		ui.Flex([]ui.Element{
-			ui.ButtonText("Start", nil),
-		}, ui.WithDirection(ui.FlexRow), ui.WithJustify(ui.JustifyStart)),
-		ui.Spacer(8),
+		display.Text("JustifyStart — left-aligned in LTR, right-aligned in RTL:"),
+		display.Spacer(4),
+		layout.NewFlex([]ui.Element{
+			button.Text("Start", nil),
+		}, layout.WithDirection(layout.FlexRow), layout.WithJustify(layout.JustifyStart)),
+		display.Spacer(8),
 
-		ui.Text("Switch to Arabic locale (in 'Locale' section) to see RTL mirroring."),
+		display.Text("Switch to Arabic locale (in 'Locale' section) to see RTL mirroring."),
 
-		ui.Spacer(16),
-		ui.TextStyled("BiDi Run Analysis", draw.TextStyle{
+		display.Spacer(16),
+		display.TextStyled("BiDi Run Analysis", draw.TextStyle{
 			Size:   14,
 			Weight: draw.FontWeightSemiBold,
 		}),
-		ui.Spacer(4),
-		ui.Text("text.BidiParagraph() decomposes mixed-direction text into runs:"),
-		ui.Spacer(8),
+		display.Spacer(4),
+		display.Text("text.BidiParagraph() decomposes mixed-direction text into runs:"),
+		display.Spacer(8),
 		bidiAnalysis("Arabic+English", "مرحبا Hello عالم", text.TextDirectionRTL),
 		bidiAnalysis("Hebrew+English", "שלום Hello עולם", text.TextDirectionRTL),
 		bidiAnalysis("English only", "Hello World", text.TextDirectionLTR),
@@ -2308,18 +2316,18 @@ func rtlLayoutSection() ui.Element {
 func bidiAnalysis(label, sample string, dir text.TextDirection) ui.Element {
 	runs := text.BidiParagraph(sample, dir)
 	items := []ui.Element{
-		ui.Text(fmt.Sprintf("  %s: %q → %d run(s)", label, sample, len(runs))),
+		display.Text(fmt.Sprintf("  %s: %q → %d run(s)", label, sample, len(runs))),
 	}
 	for i, r := range runs {
 		dirStr := "LTR"
 		if r.Direction == text.TextDirectionRTL {
 			dirStr = "RTL"
 		}
-		items = append(items, ui.Text(fmt.Sprintf("    run %d: %s, script=%s, %q",
+		items = append(items, display.Text(fmt.Sprintf("    run %d: %s, script=%s, %q",
 			i, dirStr, r.Script, r.Text)))
 	}
-	items = append(items, ui.Spacer(4))
-	return ui.Column(items...)
+	items = append(items, display.Spacer(4))
+	return layout.Column(items...)
 }
 
 func localeSection(m Model) ui.Element {
@@ -2327,31 +2335,31 @@ func localeSection(m Model) ui.Element {
 	if currentLocale == "" {
 		currentLocale = "en (default)"
 	}
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Locale / i18n (Phase 4b)"),
-		ui.Text("app.WithLocale() sets the BCP 47 locale at startup."),
-		ui.Text("app.SetLocaleMsg switches locale at runtime."),
-		ui.Spacer(8),
+		display.Text("app.WithLocale() sets the BCP 47 locale at startup."),
+		display.Text("app.SetLocaleMsg switches locale at runtime."),
+		display.Spacer(8),
 
-		ui.Text(fmt.Sprintf("Current locale: %s", currentLocale)),
-		ui.Spacer(8),
+		display.Text(fmt.Sprintf("Current locale: %s", currentLocale)),
+		display.Spacer(8),
 
-		ui.Text("Switch locale:"),
-		ui.Spacer(4),
-		ui.Row(
-			ui.ButtonText("English (LTR)", func() { app.Send(SetLocaleChoiceMsg{Locale: "en"}) }),
-			ui.ButtonText("العربية (RTL)", func() { app.Send(SetLocaleChoiceMsg{Locale: "ar"}) }),
-			ui.ButtonText("עברית (RTL)", func() { app.Send(SetLocaleChoiceMsg{Locale: "he"}) }),
-			ui.ButtonText("Deutsch (LTR)", func() { app.Send(SetLocaleChoiceMsg{Locale: "de"}) }),
+		display.Text("Switch locale:"),
+		display.Spacer(4),
+		layout.Row(
+			button.Text("English (LTR)", func() { app.Send(SetLocaleChoiceMsg{Locale: "en"}) }),
+			button.Text("العربية (RTL)", func() { app.Send(SetLocaleChoiceMsg{Locale: "ar"}) }),
+			button.Text("עברית (RTL)", func() { app.Send(SetLocaleChoiceMsg{Locale: "he"}) }),
+			button.Text("Deutsch (LTR)", func() { app.Send(SetLocaleChoiceMsg{Locale: "de"}) }),
 		),
-		ui.Spacer(12),
+		display.Spacer(12),
 
-		ui.Text("The layout direction is derived from the locale:"),
-		ui.Text("  Arabic (ar) → RTL"),
-		ui.Text("  Hebrew (he) → RTL"),
-		ui.Text("  English (en), German (de) → LTR"),
-		ui.Spacer(8),
-		ui.Text("Switching triggers full layout invalidation."),
+		display.Text("The layout direction is derived from the locale:"),
+		display.Text("  Arabic (ar) → RTL"),
+		display.Text("  Hebrew (he) → RTL"),
+		display.Text("  English (en), German (de) → LTR"),
+		display.Spacer(8),
+		display.Text("Switching triggers full layout invalidation."),
 	)
 }
 
@@ -2361,69 +2369,69 @@ func imeComposeSection(m Model) ui.Element {
 		composeStatus = fmt.Sprintf("Composing: [%s]", m.IMEComposeText)
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("IME Compose (Phase 4b)"),
-		ui.Text("IME composition support for CJK and other input methods."),
-		ui.Spacer(8),
+		display.Text("IME composition support for CJK and other input methods."),
+		display.Spacer(8),
 
-		ui.Text("New message types:"),
-		ui.Text("  • IMEComposeMsg — pre-edit text (composition in progress)"),
-		ui.Text("  • IMECommitMsg — final committed text"),
-		ui.Spacer(8),
+		display.Text("New message types:"),
+		display.Text("  • IMEComposeMsg — pre-edit text (composition in progress)"),
+		display.Text("  • IMECommitMsg — final committed text"),
+		display.Spacer(8),
 
-		ui.Text("Platform integration:"),
-		ui.Text("  • Platform.SetIMECursorRect() — positions candidate window"),
-		ui.Text("  • GLFW: awaiting 3.4 for glfwSetPreeditCallback"),
-		ui.Text("  • Win32: IMM32 integration planned"),
-		ui.Spacer(8),
+		display.Text("Platform integration:"),
+		display.Text("  • Platform.SetIMECursorRect() — positions candidate window"),
+		display.Text("  • GLFW: awaiting 3.4 for glfwSetPreeditCallback"),
+		display.Text("  • Win32: IMM32 integration planned"),
+		display.Spacer(8),
 
-		ui.Text("TextField composition state:"),
-		ui.Text("  • InputState.ComposeText — current pre-edit string"),
-		ui.Text("  • InputState.ComposeCursorStart/End — cursor range"),
-		ui.Spacer(8),
+		display.Text("TextField composition state:"),
+		display.Text("  • InputState.ComposeText — current pre-edit string"),
+		display.Text("  • InputState.ComposeCursorStart/End — cursor range"),
+		display.Spacer(8),
 
-		ui.Text(fmt.Sprintf("Status: %s", composeStatus)),
-		ui.Spacer(8),
+		display.Text(fmt.Sprintf("Status: %s", composeStatus)),
+		display.Spacer(8),
 
-		ui.Text("EventDispatcher routes IME events to focused widget:"),
-		ui.Text("  • EventIMECompose → focused widget via RenderCtx.Events"),
-		ui.Text("  • EventIMECommit → focused widget via RenderCtx.Events"),
+		display.Text("EventDispatcher routes IME events to focused widget:"),
+		display.Text("  • EventIMECompose → focused widget via RenderCtx.Events"),
+		display.Text("  • EventIMECommit → focused widget via RenderCtx.Events"),
 	)
 }
 
 // ── Phase 5 Section Views ──────────────────────────────────────────
 
 func platformInfoSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Platform Info (Phase 5)"),
-		ui.Text("Platform-Interface erweitert (RFC §7.1):"),
-		ui.Spacer(8),
+		display.Text("Platform-Interface erweitert (RFC §7.1):"),
+		display.Spacer(8),
 
-		ui.Text("Neue Methoden:"),
-		ui.Spacer(4),
-		ui.Text("  SetSize(w, h int) — Fenstergröße ändern"),
-		ui.Text("  SetFullscreen(bool) — Vollbildmodus umschalten"),
-		ui.Text("  RequestFrame() — Nächsten Frame anfordern"),
-		ui.Text("  SetClipboard(text) / GetClipboard() — Zwischenablage"),
-		ui.Text("  CreateWGPUSurface(instance) — wgpu Surface erstellen"),
-		ui.Spacer(12),
+		display.Text("Neue Methoden:"),
+		display.Spacer(4),
+		display.Text("  SetSize(w, h int) — Fenstergröße ändern"),
+		display.Text("  SetFullscreen(bool) — Vollbildmodus umschalten"),
+		display.Text("  RequestFrame() — Nächsten Frame anfordern"),
+		display.Text("  SetClipboard(text) / GetClipboard() — Zwischenablage"),
+		display.Text("  CreateWGPUSurface(instance) — wgpu Surface erstellen"),
+		display.Spacer(12),
 
-		ui.Text("Verfügbare Backends:"),
-		ui.Spacer(4),
-		ui.Text("  • GLFW (macOS/Linux, default) — OpenGL 3.3 Core"),
-		ui.Text("  • Win32 (Windows, native) — GDI Software / wgpu"),
-		ui.Text("  • Wayland (Linux, -tags wayland) — Native Wayland + wgpu"),
-		ui.Text("  • X11 (Linux, -tags x11) — Native X11 + wgpu"),
-		ui.Text("  • Cocoa (macOS, -tags cocoa) — Native AppKit + Metal"),
-		ui.Text("  • DRM/KMS (Linux, -tags drm) — Direct framebuffer"),
-		ui.Spacer(12),
+		display.Text("Verfügbare Backends:"),
+		display.Spacer(4),
+		display.Text("  • GLFW (macOS/Linux, default) — OpenGL 3.3 Core"),
+		display.Text("  • Win32 (Windows, native) — GDI Software / wgpu"),
+		display.Text("  • Wayland (Linux, -tags wayland) — Native Wayland + wgpu"),
+		display.Text("  • X11 (Linux, -tags x11) — Native X11 + wgpu"),
+		display.Text("  • Cocoa (macOS, -tags cocoa) — Native AppKit + Metal"),
+		display.Text("  • DRM/KMS (Linux, -tags drm) — Direct framebuffer"),
+		display.Spacer(12),
 
-		ui.Text("Backend-Auswahl via Build-Tags:"),
-		ui.Spacer(4),
-		ui.Text("  go build -tags wayland ./..."),
-		ui.Text("  go build -tags x11 ./..."),
-		ui.Text("  go build -tags cocoa ./..."),
-		ui.Text("  go build -tags drm ./..."),
+		display.Text("Backend-Auswahl via Build-Tags:"),
+		display.Spacer(4),
+		display.Text("  go build -tags wayland ./..."),
+		display.Text("  go build -tags x11 ./..."),
+		display.Text("  go build -tags cocoa ./..."),
+		display.Text("  go build -tags drm ./..."),
 	)
 }
 
@@ -2433,180 +2441,180 @@ func windowControlsSection(m Model) ui.Element {
 		fsLabel = "Exit Fullscreen"
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Window Controls (Phase 5)"),
-		ui.Text("SetSize — resize the window programmatically:"),
-		ui.Spacer(8),
-		ui.Row(
-			ui.ButtonText("800×600", func() { app.Send(ResizeWindowMsg{800, 600}) }),
-			ui.ButtonText("1024×768", func() { app.Send(ResizeWindowMsg{1024, 768}) }),
-			ui.ButtonText("1280×720", func() { app.Send(ResizeWindowMsg{1280, 720}) }),
+		display.Text("SetSize — resize the window programmatically:"),
+		display.Spacer(8),
+		layout.Row(
+			button.Text("800×600", func() { app.Send(ResizeWindowMsg{800, 600}) }),
+			button.Text("1024×768", func() { app.Send(ResizeWindowMsg{1024, 768}) }),
+			button.Text("1280×720", func() { app.Send(ResizeWindowMsg{1280, 720}) }),
 		),
-		ui.Spacer(12),
-		ui.Text("SetFullscreen — toggle fullscreen mode:"),
-		ui.Spacer(4),
-		ui.ButtonText(fsLabel, func() { app.Send(ToggleFullscreenMsg{}) }),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("Fullscreen: %v", m.IsFullscreen)),
-		ui.Spacer(12),
-		ui.Text("RequestFrame — request immediate repaint:"),
-		ui.Spacer(4),
-		ui.Text("Used internally to trigger repaints outside the normal event loop."),
+		display.Spacer(12),
+		display.Text("SetFullscreen — toggle fullscreen mode:"),
+		display.Spacer(4),
+		button.Text(fsLabel, func() { app.Send(ToggleFullscreenMsg{}) }),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("Fullscreen: %v", m.IsFullscreen)),
+		display.Spacer(12),
+		display.Text("RequestFrame — request immediate repaint:"),
+		display.Spacer(4),
+		display.Text("Used internally to trigger repaints outside the normal event loop."),
 	)
 }
 
 func clipboardSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Clipboard (Phase 5)"),
-		ui.Text("SetClipboard / GetClipboard — system clipboard access:"),
-		ui.Spacer(8),
+		display.Text("SetClipboard / GetClipboard — system clipboard access:"),
+		display.Spacer(8),
 
-		ui.Text("Text to copy:"),
-		ui.Spacer(4),
-		ui.TextField(m.ClipboardText, "Enter text to copy...",
-			ui.WithOnChange(func(v string) { app.Send(SetClipboardTextMsg{v}) }),
-			ui.WithFocus(app.Focus()),
+		display.Text("Text to copy:"),
+		display.Spacer(4),
+		form.NewTextField(m.ClipboardText, "Enter text to copy...",
+			form.WithOnChange(func(v string) { app.Send(SetClipboardTextMsg{v}) }),
+			form.WithFocus(app.Focus()),
 		),
-		ui.Spacer(8),
+		display.Spacer(8),
 
-		ui.Row(
-			ui.ButtonText("Copy to Clipboard", func() { app.Send(CopyToClipboardMsg{}) }),
-			ui.ButtonText("Paste from Clipboard", func() { app.Send(PasteFromClipboardMsg{}) }),
+		layout.Row(
+			button.Text("Copy to Clipboard", func() { app.Send(CopyToClipboardMsg{}) }),
+			button.Text("Paste from Clipboard", func() { app.Send(PasteFromClipboardMsg{}) }),
 		),
-		ui.Spacer(8),
-		ui.Text(fmt.Sprintf("Current text: %q", m.ClipboardText)),
-		ui.Spacer(12),
+		display.Spacer(8),
+		display.Text(fmt.Sprintf("Current text: %q", m.ClipboardText)),
+		display.Spacer(12),
 
-		ui.Text("API:"),
-		ui.Spacer(4),
-		ui.Text("  app.SetClipboard(text) — set clipboard (package-level)"),
-		ui.Text("  app.GetClipboard() — get clipboard (package-level)"),
-		ui.Text("  platform.SetClipboard(text) — per-backend implementation"),
+		display.Text("API:"),
+		display.Spacer(4),
+		display.Text("  app.SetClipboard(text) — set clipboard (package-level)"),
+		display.Text("  app.GetClipboard() — get clipboard (package-level)"),
+		display.Text("  platform.SetClipboard(text) — per-backend implementation"),
 	)
 }
 
 func gpuBackendSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("GPU Backend (Phase 5)"),
-		ui.Text("wgpu — WebGPU-basiertes GPU-Backend (RFC §6.1):"),
-		ui.Spacer(8),
+		display.Text("wgpu — WebGPU-basiertes GPU-Backend (RFC §6.1):"),
+		display.Spacer(8),
 
-		ui.Text("Zwei Implementierungen:"),
-		ui.Spacer(4),
-		ui.Text("  1. wgpu-native (CGo, Default)"),
-		ui.Text("     Wrapper für die C-Library wgpu-native"),
-		ui.Text("     Backends: Vulkan (Linux), Metal (macOS), D3D12 (Windows)"),
-		ui.Spacer(4),
-		ui.Text("  2. gogpu (Pure Go, -tags gogpu)"),
-		ui.Text("     Vollständig in Go, keine CGo-Abhängigkeit"),
-		ui.Text("     Backend: Vulkan via pure-Go Bindings"),
-		ui.Spacer(12),
+		display.Text("Zwei Implementierungen:"),
+		display.Spacer(4),
+		display.Text("  1. wgpu-native (CGo, Default)"),
+		display.Text("     Wrapper für die C-Library wgpu-native"),
+		display.Text("     Backends: Vulkan (Linux), Metal (macOS), D3D12 (Windows)"),
+		display.Spacer(4),
+		display.Text("  2. gogpu (Pure Go, -tags gogpu)"),
+		display.Text("     Vollständig in Go, keine CGo-Abhängigkeit"),
+		display.Text("     Backend: Vulkan via pure-Go Bindings"),
+		display.Spacer(12),
 
-		ui.Text("Shim-Interface (internal/wgpu/):"),
-		ui.Spacer(4),
-		ui.Text("  Instance, Adapter, Device, Surface, SwapChain"),
-		ui.Text("  RenderPipeline, Buffer, Texture, CommandEncoder"),
-		ui.Text("  RenderPass, ShaderModule, BindGroup, Queue"),
-		ui.Spacer(12),
+		display.Text("Shim-Interface (internal/wgpu/):"),
+		display.Spacer(4),
+		display.Text("  Instance, Adapter, Device, Surface, SwapChain"),
+		display.Text("  RenderPipeline, Buffer, Texture, CommandEncoder"),
+		display.Text("  RenderPass, ShaderModule, BindGroup, Queue"),
+		display.Spacer(12),
 
-		ui.Text("wgpu-Renderer (internal/gpu/wgpu_renderer.go):"),
-		ui.Spacer(4),
-		ui.Text("  WGSL-Shader für:"),
-		ui.Text("    • Rounded Rectangles (SDF-basiert, instanced)"),
-		ui.Text("    • Atlas-basierte Bitmap-Glyphen (<24px)"),
-		ui.Text("    • MSDF-Text (>=24px, Chlumsky-Methode)"),
-		ui.Spacer(12),
+		display.Text("wgpu-Renderer (internal/gpu/wgpu_renderer.go):"),
+		display.Spacer(4),
+		display.Text("  WGSL-Shader für:"),
+		display.Text("    • Rounded Rectangles (SDF-basiert, instanced)"),
+		display.Text("    • Atlas-basierte Bitmap-Glyphen (<24px)"),
+		display.Text("    • MSDF-Text (>=24px, Chlumsky-Methode)"),
+		display.Spacer(12),
 
-		ui.Text("Migration von OpenGL 3.3:"),
-		ui.Spacer(4),
-		ui.Text("  • GLSL 330 → WGSL Shader-Konvertierung"),
-		ui.Text("  • glScissor → wgpu RenderPass Clipping"),
-		ui.Text("  • glDrawArraysInstanced → wgpu DrawInstanced"),
-		ui.Text("  • glBufferData → wgpu Queue.WriteBuffer"),
+		display.Text("Migration von OpenGL 3.3:"),
+		display.Spacer(4),
+		display.Text("  • GLSL 330 → WGSL Shader-Konvertierung"),
+		display.Text("  • glScissor → wgpu RenderPass Clipping"),
+		display.Text("  • glDrawArraysInstanced → wgpu DrawInstanced"),
+		display.Text("  • glBufferData → wgpu Queue.WriteBuffer"),
 	)
 }
 
 // ── Phase 6 Section Views ──────────────────────────────────────────
 
 func surfacesSection(pyramid *PyramidSurface) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("External Surfaces (Phase 6)"),
-		ui.Text("Surface Slots — RFC §8: Externe Surfaces"),
-		ui.Spacer(8),
+		display.Text("Surface Slots — RFC §8: Externe Surfaces"),
+		display.Spacer(8),
 
-		ui.Text("SurfaceProvider Interface:"),
-		ui.Spacer(4),
-		ui.Text("  AcquireFrame(bounds) → (TextureID, FrameToken)"),
-		ui.Text("  ReleaseFrame(token)"),
-		ui.Text("  HandleMsg(msg) → consumed"),
-		ui.Spacer(12),
+		display.Text("SurfaceProvider Interface:"),
+		display.Spacer(4),
+		display.Text("  AcquireFrame(bounds) → (TextureID, FrameToken)"),
+		display.Text("  ReleaseFrame(token)"),
+		display.Text("  HandleMsg(msg) → consumed"),
+		display.Spacer(12),
 
-		ui.Text("Zero-Copy Paths:"),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("  Preferred mode on this platform: %d", ui.PreferredZeroCopyMode())),
-		ui.Spacer(4),
-		ui.Text("  • macOS: IOSurface → wgpu Shared Texture"),
-		ui.Text("  • Linux: DMA-buf → wgpu External Memory"),
-		ui.Text("  • Windows: DXGI Shared Handle"),
-		ui.Text("  • Fallback: OSR → CPU-Copy → Upload"),
-		ui.Spacer(12),
+		display.Text("Zero-Copy Paths:"),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("  Preferred mode on this platform: %d", ui.PreferredZeroCopyMode())),
+		display.Spacer(4),
+		display.Text("  • macOS: IOSurface → wgpu Shared Texture"),
+		display.Text("  • Linux: DMA-buf → wgpu External Memory"),
+		display.Text("  • Windows: DXGI Shared Handle"),
+		display.Text("  • Fallback: OSR → CPU-Copy → Upload"),
+		display.Spacer(12),
 
-		ui.Text("RGB Cube (drag to rotate):"),
-		ui.Spacer(4),
+		display.Text("RGB Cube (drag to rotate):"),
+		display.Spacer(4),
 		ui.Surface(1, pyramid, 400, 300),
-		ui.Spacer(12),
+		display.Spacer(12),
 
-		ui.Text("Input Routing:"),
-		ui.Spacer(4),
-		ui.Text("  Mouse/Key events in surface area → SurfaceMouseMsg/SurfaceKeyMsg"),
-		ui.Text("  Routed via SurfaceProvider.HandleMsg()"),
+		display.Text("Input Routing:"),
+		display.Spacer(4),
+		display.Text("  Mouse/Key events in surface area → SurfaceMouseMsg/SurfaceKeyMsg"),
+		display.Text("  Routed via SurfaceProvider.HandleMsg()"),
 	)
 }
 
 // ── Gradients Section (Phase E) ──────────────────────────────────
 
 func gradientsSection() ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Gradients (Phase E)"),
-		ui.Text("GPU-rendered gradient fills via the gradient pipeline:"),
-		ui.Spacer(12),
+		display.Text("GPU-rendered gradient fills via the gradient pipeline:"),
+		display.Spacer(12),
 
 		// Linear gradient: 2-stop blue→indigo
-		ui.Text("Linear Gradient (2 stops):"),
-		ui.Spacer(4),
-		ui.GradientRect(200, 60, 8, draw.LinearGradientPaint(
+		display.Text("Linear Gradient (2 stops):"),
+		display.Spacer(4),
+		display.GradientRect(200, 60, 8, draw.LinearGradientPaint(
 			draw.Pt(0, 0), draw.Pt(200, 0),
 			draw.GradientStop{Offset: 0, Color: draw.Hex("#3b82f6")},
 			draw.GradientStop{Offset: 1, Color: draw.Hex("#6366f1")},
 		)),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Linear gradient: 4-stop rainbow
-		ui.Text("Linear Gradient (4 stops):"),
-		ui.Spacer(4),
-		ui.GradientRect(200, 60, 8, draw.LinearGradientPaint(
+		display.Text("Linear Gradient (4 stops):"),
+		display.Spacer(4),
+		display.GradientRect(200, 60, 8, draw.LinearGradientPaint(
 			draw.Pt(0, 0), draw.Pt(200, 0),
 			draw.GradientStop{Offset: 0.0, Color: draw.Hex("#ef4444")},
 			draw.GradientStop{Offset: 0.33, Color: draw.Hex("#eab308")},
 			draw.GradientStop{Offset: 0.66, Color: draw.Hex("#22c55e")},
 			draw.GradientStop{Offset: 1.0, Color: draw.Hex("#3b82f6")},
 		)),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Radial gradient
-		ui.Text("Radial Gradient:"),
-		ui.Spacer(4),
-		ui.GradientRect(200, 200, 8, draw.RadialGradientPaint(
+		display.Text("Radial Gradient:"),
+		display.Spacer(4),
+		display.GradientRect(200, 200, 8, draw.RadialGradientPaint(
 			draw.Pt(100, 100), 100,
 			draw.GradientStop{Offset: 0, Color: draw.Hex("#ffffff")},
 			draw.GradientStop{Offset: 1, Color: draw.Hex("#09090b")},
 		)),
-		ui.Spacer(12),
+		display.Spacer(12),
 
 		// Sharp rect (no radius)
-		ui.Text("Sharp Linear Gradient (no radius):"),
-		ui.Spacer(4),
-		ui.GradientRect(200, 40, 0, draw.LinearGradientPaint(
+		display.Text("Sharp Linear Gradient (no radius):"),
+		display.Spacer(4),
+		display.GradientRect(200, 40, 0, draw.LinearGradientPaint(
 			draw.Pt(0, 0), draw.Pt(0, 40),
 			draw.GradientStop{Offset: 0, Color: draw.Hex("#f97316")},
 			draw.GradientStop{Offset: 1, Color: draw.Hex("#dc2626")},
@@ -2619,35 +2627,35 @@ func gradientsSection() ui.Element {
 func dialogsSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("Modal Dialogs"),
-		ui.Text("Framework-rendered dialog overlays with backdrop scrim:"),
-		ui.Spacer(8),
-		ui.Row(
-			ui.ButtonText("Info", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogInfo}) }),
-			ui.Spacer(8),
-			ui.ButtonText("Warning", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogWarning}) }),
-			ui.Spacer(8),
-			ui.ButtonText("Error", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogError}) }),
+		display.Text("Framework-rendered dialog overlays with backdrop scrim:"),
+		display.Spacer(8),
+		layout.Row(
+			button.Text("Info", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogInfo}) }),
+			display.Spacer(8),
+			button.Text("Warning", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogWarning}) }),
+			display.Spacer(8),
+			button.Text("Error", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogError}) }),
 		),
-		ui.Spacer(8),
-		ui.Row(
-			ui.ButtonText("Confirm", func() { app.Send(ShowConfirmDialogMsg{}) }),
-			ui.Spacer(8),
-			ui.ButtonText("Input", func() { app.Send(ShowInputDialogMsg{}) }),
-			ui.Spacer(8),
-			ui.ButtonOutlinedText("Native Confirm", func() { app.Send(NativeConfirmMsg{}) }),
+		display.Spacer(8),
+		layout.Row(
+			button.Text("Confirm", func() { app.Send(ShowConfirmDialogMsg{}) }),
+			display.Spacer(8),
+			button.Text("Input", func() { app.Send(ShowInputDialogMsg{}) }),
+			display.Spacer(8),
+			button.OutlinedText("Native Confirm", func() { app.Send(NativeConfirmMsg{}) }),
 		),
 	}
 
 	if m.DialogResult != "" {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text(fmt.Sprintf("Result: %s", m.DialogResult)),
+			display.Spacer(8),
+			display.Text(fmt.Sprintf("Result: %s", m.DialogResult)),
 		)
 	}
 
 	// Render active dialog overlays.
 	if m.ShowMsgDialog {
-		children = append(children, ui.MessageDialog(
+		children = append(children, uidialog.MessageDialog(
 			"demo-msg-dialog",
 			"Message",
 			"This is a sample message dialog.",
@@ -2656,7 +2664,7 @@ func dialogsSection(m Model) ui.Element {
 		))
 	}
 	if m.ShowConfirmDialog {
-		children = append(children, ui.ConfirmDialog(
+		children = append(children, uidialog.ConfirmDialog(
 			"demo-confirm-dialog",
 			"Confirm Action",
 			"Are you sure you want to proceed?",
@@ -2665,7 +2673,7 @@ func dialogsSection(m Model) ui.Element {
 		))
 	}
 	if m.ShowInputDialog {
-		children = append(children, ui.InputDialog(
+		children = append(children, uidialog.InputDialog(
 			"demo-input-dialog",
 			"Enter Value",
 			"Please provide a value:",
@@ -2677,7 +2685,7 @@ func dialogsSection(m Model) ui.Element {
 		))
 	}
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 // ── Blur Section (Phase F) ───────────────────────────────────────
@@ -2687,24 +2695,24 @@ func blurSection() ui.Element {
 	items := make([]ui.Element, 0, len(radii)+3)
 	items = append(items,
 		sectionHeader("Blur (Phase F)"),
-		ui.Text("Gaussian blur at various radii (PushBlur / PopBlur):"),
-		ui.Spacer(8),
+		display.Text("Gaussian blur at various radii (PushBlur / PopBlur):"),
+		display.Spacer(8),
 	)
 
 	for _, r := range radii {
 		radius := r
 		items = append(items,
-			ui.Spacer(4),
-			ui.BlurBox(radius,
-				ui.Stack(
-					ui.GradientRect(200, 60, 8, draw.LinearGradientPaint(
+			display.Spacer(4),
+			effects.BlurBox(radius,
+				layout.Stack(
+					display.GradientRect(200, 60, 8, draw.LinearGradientPaint(
 						draw.Pt(0, 0), draw.Pt(200, 0),
 						draw.GradientStop{Offset: 0, Color: draw.Hex("#3366cc")},
 						draw.GradientStop{Offset: 1, Color: draw.Hex("#ffcc33")},
 					)),
-					ui.SizedBox(200, 60,
-						ui.Padding(ui.UniformInsets(8),
-							ui.Text(fmt.Sprintf("radius = %.0f", radius)),
+					layout.Sized(200, 60,
+						layout.Pad(ui.UniformInsets(8),
+							display.Text(fmt.Sprintf("radius = %.0f", radius)),
 						),
 					),
 				),
@@ -2712,7 +2720,7 @@ func blurSection() ui.Element {
 		)
 	}
 
-	return ui.Column(items...)
+	return layout.Column(items...)
 }
 
 // ── Effects Section (Phase G) ────────────────────────────────────
@@ -2724,8 +2732,8 @@ func effectsSection() ui.Element {
 
 	// --- Shadows ---
 	items = append(items,
-		ui.Text("Soft Shadows (None / Low / Med / High):"),
-		ui.Spacer(8),
+		display.Text("Soft Shadows (None / Low / Med / High):"),
+		display.Spacer(8),
 	)
 
 	type shadowLevel struct {
@@ -2741,66 +2749,66 @@ func effectsSection() ui.Element {
 	}
 	shadowCards := make([]ui.Element, len(levels))
 	for i, lv := range levels {
-		shadowCards[i] = ui.Padding(ui.UniformInsets(20),
-			ui.ShadowBox(lv.shadow, 8,
-				ui.Stack(
-					ui.GradientRect(132, 82, 8, draw.SolidPaint(lv.bg)),
-					ui.Padding(ui.UniformInsets(16),
-						ui.SizedBox(100, 50,
-							ui.Text(lv.label),
+		shadowCards[i] = layout.Pad(ui.UniformInsets(20),
+			effects.ShadowBox(lv.shadow, 8,
+				layout.Stack(
+					display.GradientRect(132, 82, 8, draw.SolidPaint(lv.bg)),
+					layout.Pad(ui.UniformInsets(16),
+						layout.Sized(100, 50,
+							display.Text(lv.label),
 						),
 					),
 				),
 			),
 		)
 	}
-	items = append(items, ui.Row(shadowCards...))
+	items = append(items, layout.Row(shadowCards...))
 
 	// --- Opacity ---
 	items = append(items,
-		ui.Spacer(16),
-		ui.Text("Opacity (1.0, 0.75, 0.5, 0.25):"),
-		ui.Spacer(8),
+		display.Spacer(16),
+		display.Text("Opacity (1.0, 0.75, 0.5, 0.25):"),
+		display.Spacer(8),
 	)
 
 	alphas := []float32{1.0, 0.75, 0.5, 0.25}
 	opacityBoxes := make([]ui.Element, len(alphas))
 	for i, a := range alphas {
-		opacityBoxes[i] = ui.Padding(ui.UniformInsets(4),
-			ui.OpacityBox(a,
-				ui.Stack(
-					ui.GradientRect(104, 64, 6, draw.SolidPaint(draw.Hex("#3b82f6"))),
-					ui.Padding(ui.UniformInsets(12),
-						ui.SizedBox(80, 40,
-							ui.Text(fmt.Sprintf("%.0f%%", a*100)),
+		opacityBoxes[i] = layout.Pad(ui.UniformInsets(4),
+			effects.OpacityBox(a,
+				layout.Stack(
+					display.GradientRect(104, 64, 6, draw.SolidPaint(draw.Hex("#3b82f6"))),
+					layout.Pad(ui.UniformInsets(12),
+						layout.Sized(80, 40,
+							display.Text(fmt.Sprintf("%.0f%%", a*100)),
 						),
 					),
 				),
 			),
 		)
 	}
-	items = append(items, ui.Row(opacityBoxes...))
+	items = append(items, layout.Row(opacityBoxes...))
 
 	// --- Frosted Glass ---
 	items = append(items,
-		ui.Spacer(16),
-		ui.Text("Frosted Glass (blur backdrop + sharp overlay panel):"),
-		ui.Spacer(8),
+		display.Spacer(16),
+		display.Text("Frosted Glass (blur backdrop + sharp overlay panel):"),
+		display.Spacer(8),
 	)
 
 	items = append(items,
-		ui.Stack(
+		layout.Stack(
 			// Complex background: colorful checkerboard pattern makes blur effect obvious
-			ui.CheckerRect(420, 160, 16),
+			display.CheckerRect(420, 160, 16),
 			// Frosted glass panel overlaid on the pattern
-			ui.Padding(draw.Insets{Top: 24, Left: 50, Right: 50, Bottom: 24},
-				ui.FrostedGlass(16, draw.Color{R: 1, G: 1, B: 1, A: 0.18},
-					ui.SizedBox(320, 112,
-						ui.Padding(ui.UniformInsets(16),
-							ui.Column(
-								ui.Text("Frosted Glass Panel"),
-								ui.Spacer(4),
-								ui.Text("Background is blurred, text stays sharp."),
+			layout.Pad(draw.Insets{Top: 24, Left: 50, Right: 50, Bottom: 24},
+				effects.FrostedGlass(16, draw.Color{R: 1, G: 1, B: 1, A: 0.18},
+					layout.Sized(320, 112,
+						layout.Pad(ui.UniformInsets(16),
+							layout.Column(
+								display.Text("Frosted Glass Panel"),
+								display.Spacer(4),
+								display.Text("Background is blurred, text stays sharp."),
 							),
 						),
 					),
@@ -2811,101 +2819,101 @@ func effectsSection() ui.Element {
 
 	// --- Inner Shadow (Tier 2) ---
 	items = append(items,
-		ui.Spacer(16),
-		ui.Text("Inner Shadow (light inset, deeper inset):"),
-		ui.Spacer(8),
+		display.Spacer(16),
+		display.Text("Inner Shadow (light inset, deeper inset):"),
+		display.Spacer(8),
 	)
 
 	innerShadowCards := []ui.Element{
-		ui.Padding(ui.UniformInsets(12),
-			ui.InnerShadowBox(
+		layout.Pad(ui.UniformInsets(12),
+			effects.InnerShadowBox(
 				draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.5}, BlurRadius: 10},
 				8,
-				ui.Stack(
-					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#e2e8f0"))),
-					ui.Padding(ui.UniformInsets(16),
-						ui.SizedBox(100, 50, ui.Text("Light Inset")),
+				layout.Stack(
+					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#e2e8f0"))),
+					layout.Pad(ui.UniformInsets(16),
+						layout.Sized(100, 50, display.Text("Light Inset")),
 					),
 				),
 			),
 		),
-		ui.Padding(ui.UniformInsets(12),
-			ui.InnerShadowBox(
+		layout.Pad(ui.UniformInsets(12),
+			effects.InnerShadowBox(
 				draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.85}, BlurRadius: 20},
 				8,
-				ui.Stack(
-					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#cbd5e1"))),
-					ui.Padding(ui.UniformInsets(16),
-						ui.SizedBox(100, 50, ui.Text("Deep Inset")),
+				layout.Stack(
+					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#cbd5e1"))),
+					layout.Pad(ui.UniformInsets(16),
+						layout.Sized(100, 50, display.Text("Deep Inset")),
 					),
 				),
 			),
 		),
 	}
-	items = append(items, ui.Row(innerShadowCards...))
+	items = append(items, layout.Row(innerShadowCards...))
 
 	// --- Elevation / Hover-Responsive Shadows (Tier 2) ---
 	items = append(items,
-		ui.Spacer(16),
-		ui.Text("Elevation (hover to see shadow lift):"),
-		ui.Spacer(8),
+		display.Spacer(16),
+		display.Text("Elevation (hover to see shadow lift):"),
+		display.Spacer(8),
 	)
 
 	elevationCards := []ui.Element{
-		ui.Padding(ui.UniformInsets(16),
-			ui.ElevationCard(nil,
-				ui.Stack(
-					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#6366f1"))),
-					ui.Padding(ui.UniformInsets(16),
-						ui.SizedBox(100, 50, ui.Text("Card A")),
+		layout.Pad(ui.UniformInsets(16),
+			effects.ElevationCard(nil,
+				layout.Stack(
+					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#6366f1"))),
+					layout.Pad(ui.UniformInsets(16),
+						layout.Sized(100, 50, display.Text("Card A")),
 					),
 				),
 			),
 		),
-		ui.Padding(ui.UniformInsets(16),
-			ui.ElevationCard(nil,
-				ui.Stack(
-					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#3b82f6"))),
-					ui.Padding(ui.UniformInsets(16),
-						ui.SizedBox(100, 50, ui.Text("Card B")),
+		layout.Pad(ui.UniformInsets(16),
+			effects.ElevationCard(nil,
+				layout.Stack(
+					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#3b82f6"))),
+					layout.Pad(ui.UniformInsets(16),
+						layout.Sized(100, 50, display.Text("Card B")),
 					),
 				),
 			),
 		),
-		ui.Padding(ui.UniformInsets(16),
-			ui.ElevationCard(nil,
-				ui.Stack(
-					ui.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#0ea5e9"))),
-					ui.Padding(ui.UniformInsets(16),
-						ui.SizedBox(100, 50, ui.Text("Card C")),
+		layout.Pad(ui.UniformInsets(16),
+			effects.ElevationCard(nil,
+				layout.Stack(
+					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#0ea5e9"))),
+					layout.Pad(ui.UniformInsets(16),
+						layout.Sized(100, 50, display.Text("Card C")),
 					),
 				),
 			),
 		),
 	}
-	items = append(items, ui.Row(elevationCards...))
+	items = append(items, layout.Row(elevationCards...))
 
 	// --- Vibrancy / Tinted Blur (Tier 2) ---
 	items = append(items,
-		ui.Spacer(16),
-		ui.Text("Vibrancy vs Frosted Glass (accent-tinted blur — compare the color cast):"),
-		ui.Spacer(8),
+		display.Spacer(16),
+		display.Text("Vibrancy vs Frosted Glass (accent-tinted blur — compare the color cast):"),
+		display.Spacer(8),
 	)
 
 	items = append(items,
-		ui.Row(
+		layout.Row(
 			// Frosted Glass reference (neutral white tint)
-			ui.Padding(ui.UniformInsets(8),
-				ui.Stack(
-					ui.CheckerRect(210, 160, 16),
-					ui.Padding(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
-						ui.FrostedGlass(16, draw.Color{R: 1, G: 1, B: 1, A: 0.18},
-							ui.SizedBox(178, 120,
-								ui.Padding(ui.UniformInsets(12),
-									ui.Column(
-										ui.Text("Frosted Glass"),
-										ui.Spacer(4),
-										ui.Text("Neutral white tint"),
+			layout.Pad(ui.UniformInsets(8),
+				layout.Stack(
+					display.CheckerRect(210, 160, 16),
+					layout.Pad(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
+						effects.FrostedGlass(16, draw.Color{R: 1, G: 1, B: 1, A: 0.18},
+							layout.Sized(178, 120,
+								layout.Pad(ui.UniformInsets(12),
+									layout.Column(
+										display.Text("Frosted Glass"),
+										display.Spacer(4),
+										display.Text("Neutral white tint"),
 									),
 								),
 							),
@@ -2914,17 +2922,17 @@ func effectsSection() ui.Element {
 				),
 			),
 			// Vibrancy (accent-tinted, visibly colored)
-			ui.Padding(ui.UniformInsets(8),
-				ui.Stack(
-					ui.CheckerRect(210, 160, 16),
-					ui.Padding(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
-						ui.Vibrancy(0.35,
-							ui.SizedBox(178, 120,
-								ui.Padding(ui.UniformInsets(12),
-									ui.Column(
-										ui.Text("Vibrancy"),
-										ui.Spacer(4),
-										ui.Text("Accent-tinted blur"),
+			layout.Pad(ui.UniformInsets(8),
+				layout.Stack(
+					display.CheckerRect(210, 160, 16),
+					layout.Pad(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
+						effects.Vibrancy(0.35,
+							layout.Sized(178, 120,
+								layout.Pad(ui.UniformInsets(12),
+									layout.Column(
+										display.Text("Vibrancy"),
+										display.Spacer(4),
+										display.Text("Accent-tinted blur"),
 									),
 								),
 							),
@@ -2937,21 +2945,21 @@ func effectsSection() ui.Element {
 
 	// --- Noise/Grain (Tier 3) ---
 	items = append(items,
-		ui.Spacer(16),
-		ui.Text("Noise/Grain (always-on dither — zoom in to see noise preventing banding):"),
-		ui.Spacer(8),
+		display.Spacer(16),
+		display.Text("Noise/Grain (always-on dither — zoom in to see noise preventing banding):"),
+		display.Spacer(8),
 	)
 	items = append(items,
-		ui.Row(
-			ui.Padding(ui.UniformInsets(8),
-				ui.GradientRect(200, 80, 8, draw.LinearGradientPaint(
+		layout.Row(
+			layout.Pad(ui.UniformInsets(8),
+				display.GradientRect(200, 80, 8, draw.LinearGradientPaint(
 					draw.Pt(0, 0), draw.Pt(200, 0),
 					draw.GradientStop{Offset: 0, Color: draw.Hex("#1e3a5f")},
 					draw.GradientStop{Offset: 1, Color: draw.Hex("#4a90d9")},
 				)),
 			),
-			ui.Padding(ui.UniformInsets(8),
-				ui.GradientRect(200, 80, 8, draw.LinearGradientPaint(
+			layout.Pad(ui.UniformInsets(8),
+				display.GradientRect(200, 80, 8, draw.LinearGradientPaint(
 					draw.Pt(0, 0), draw.Pt(0, 80),
 					draw.GradientStop{Offset: 0, Color: draw.Hex("#2d1b4e")},
 					draw.GradientStop{Offset: 1, Color: draw.Hex("#7c3aed")},
@@ -2962,54 +2970,54 @@ func effectsSection() ui.Element {
 
 	// --- Glow (Tier 3) ---
 	items = append(items,
-		ui.Spacer(16),
-		ui.Text("Glow (soft outer glow using shadow pipeline):"),
-		ui.Spacer(8),
+		display.Spacer(16),
+		display.Text("Glow (soft outer glow using shadow pipeline):"),
+		display.Spacer(8),
 	)
 	glowCards := []ui.Element{
-		ui.Padding(ui.UniformInsets(16),
-			ui.Glow(12, 8,
-				ui.SizedBox(120, 80,
-					ui.Padding(ui.UniformInsets(12),
-						ui.Column(
-							ui.Text("Accent"),
-							ui.Spacer(4),
-							ui.Text("blur=12"),
+		layout.Pad(ui.UniformInsets(16),
+			effects.Glow(12, 8,
+				layout.Sized(120, 80,
+					layout.Pad(ui.UniformInsets(12),
+						layout.Column(
+							display.Text("Accent"),
+							display.Spacer(4),
+							display.Text("blur=12"),
 						),
 					),
 				),
 			),
 		),
-		ui.Padding(ui.UniformInsets(16),
-			ui.GlowBox(draw.Color{R: 0.2, G: 0.9, B: 0.4, A: 0.6}, 16, 8,
-				ui.SizedBox(120, 80,
-					ui.Padding(ui.UniformInsets(12),
-						ui.Column(
-							ui.Text("Green"),
-							ui.Spacer(4),
-							ui.Text("blur=16"),
+		layout.Pad(ui.UniformInsets(16),
+			effects.GlowBox(draw.Color{R: 0.2, G: 0.9, B: 0.4, A: 0.6}, 16, 8,
+				layout.Sized(120, 80,
+					layout.Pad(ui.UniformInsets(12),
+						layout.Column(
+							display.Text("Green"),
+							display.Spacer(4),
+							display.Text("blur=16"),
 						),
 					),
 				),
 			),
 		),
-		ui.Padding(ui.UniformInsets(16),
-			ui.GlowBox(draw.Color{R: 0.9, G: 0.2, B: 0.2, A: 0.6}, 20, 8,
-				ui.SizedBox(120, 80,
-					ui.Padding(ui.UniformInsets(12),
-						ui.Column(
-							ui.Text("Red"),
-							ui.Spacer(4),
-							ui.Text("blur=20"),
+		layout.Pad(ui.UniformInsets(16),
+			effects.GlowBox(draw.Color{R: 0.9, G: 0.2, B: 0.2, A: 0.6}, 20, 8,
+				layout.Sized(120, 80,
+					layout.Pad(ui.UniformInsets(12),
+						layout.Column(
+							display.Text("Red"),
+							display.Spacer(4),
+							display.Text("blur=20"),
 						),
 					),
 				),
 			),
 		),
 	}
-	items = append(items, ui.Row(glowCards...))
+	items = append(items, layout.Row(glowCards...))
 
-	return ui.Column(items...)
+	return layout.Column(items...)
 }
 
 // ── Multi-Window Section (Phase F) ──────────────────────────────
@@ -3017,11 +3025,11 @@ func effectsSection() ui.Element {
 func multiWindowSection(m Model) ui.Element {
 	var btn ui.Element
 	if m.SecondWindowOpen {
-		btn = ui.ButtonText("Close Second Window", func() {
+		btn = button.Text("Close Second Window", func() {
 			app.Send(app.CloseWindowMsg{ID: 1})
 		})
 	} else {
-		btn = ui.ButtonText("Open Second Window", func() {
+		btn = button.Text("Open Second Window", func() {
 			app.Send(app.OpenWindowMsg{
 				ID: 1,
 				Config: app.WindowConfig{
@@ -3035,13 +3043,13 @@ func multiWindowSection(m Model) ui.Element {
 		})
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Multi-Window (Phase F)"),
-		ui.Text("Multi-window support:"),
-		ui.Spacer(8),
-		ui.Padding(ui.UniformInsets(8), btn),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("Second window open: %v", m.SecondWindowOpen)),
+		display.Text("Multi-window support:"),
+		display.Spacer(8),
+		layout.Pad(ui.UniformInsets(8), btn),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("Second window open: %v", m.SecondWindowOpen)),
 	)
 }
 
@@ -3071,77 +3079,77 @@ func generateColorChecker(store *luximage.Store, w, h, cellSize int, r1, g1, b1,
 // ── Images Section ───────────────────────────────────────────────
 
 func imagesSection(m Model) ui.Element {
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Images"),
-		ui.Text("The ui.Image widget renders loaded images with size, scale mode, and opacity options."),
-		ui.Text("Images are loaded via image.Store and referenced by draw.ImageID."),
-		ui.Spacer(12),
+		display.Text("The ui.Image widget renders loaded images with size, scale mode, and opacity options."),
+		display.Text("Images are loaded via image.Store and referenced by draw.ImageID."),
+		display.Spacer(12),
 
 		// 1. Basic image display — blue/gray checkerboard stretched to various sizes
-		ui.TextStyled("Blue Checker (64×64 source → stretched to various sizes)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Row(
-			ui.Image(m.ImgChecker1, ui.WithImageSize(64, 64), ui.WithImageScaleMode(draw.ImageScaleStretch)),
-			ui.Spacer(8),
-			ui.Image(m.ImgChecker1, ui.WithImageSize(128, 64), ui.WithImageScaleMode(draw.ImageScaleStretch)),
-			ui.Spacer(8),
-			ui.Image(m.ImgChecker1, ui.WithImageSize(48, 48), ui.WithImageScaleMode(draw.ImageScaleStretch)),
+		display.TextStyled("Blue Checker (64×64 source → stretched to various sizes)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		layout.Row(
+			display.Image(m.ImgChecker1, display.WithImageSize(64, 64), display.WithImageScaleMode(draw.ImageScaleStretch)),
+			display.Spacer(8),
+			display.Image(m.ImgChecker1, display.WithImageSize(128, 64), display.WithImageScaleMode(draw.ImageScaleStretch)),
+			display.Spacer(8),
+			display.Image(m.ImgChecker1, display.WithImageSize(48, 48), display.WithImageScaleMode(draw.ImageScaleStretch)),
 		),
-		ui.Spacer(16),
+		display.Spacer(16),
 
 		// 2. Scale modes — orange/teal checkerboard (128×64 → 100×100 box)
-		ui.TextStyled("Scale Modes (orange/teal 128×64 → 100×100)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Row(
-			ui.Column(
-				ui.Text("Fit"),
-				ui.Image(m.ImgChecker2, ui.WithImageSize(100, 100), ui.WithImageScaleMode(draw.ImageScaleFit)),
+		display.TextStyled("Scale Modes (orange/teal 128×64 → 100×100)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		layout.Row(
+			layout.Column(
+				display.Text("Fit"),
+				display.Image(m.ImgChecker2, display.WithImageSize(100, 100), display.WithImageScaleMode(draw.ImageScaleFit)),
 			),
-			ui.Spacer(12),
-			ui.Column(
-				ui.Text("Fill"),
-				ui.Image(m.ImgChecker2, ui.WithImageSize(100, 100), ui.WithImageScaleMode(draw.ImageScaleFill)),
+			display.Spacer(12),
+			layout.Column(
+				display.Text("Fill"),
+				display.Image(m.ImgChecker2, display.WithImageSize(100, 100), display.WithImageScaleMode(draw.ImageScaleFill)),
 			),
-			ui.Spacer(12),
-			ui.Column(
-				ui.Text("Stretch"),
-				ui.Image(m.ImgChecker2, ui.WithImageSize(100, 100), ui.WithImageScaleMode(draw.ImageScaleStretch)),
+			display.Spacer(12),
+			layout.Column(
+				display.Text("Stretch"),
+				display.Image(m.ImgChecker2, display.WithImageSize(100, 100), display.WithImageScaleMode(draw.ImageScaleStretch)),
 			),
 		),
-		ui.Spacer(16),
+		display.Spacer(16),
 
 		// 3. Opacity control — pink/green checkerboard
-		ui.TextStyled("Opacity (pink/green checker)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Row(
-			ui.Image(m.ImgChecker3, ui.WithImageSize(120, 60), ui.WithImageScaleMode(draw.ImageScaleStretch), ui.WithImageOpacity(m.ImageOpacity)),
-			ui.Spacer(12),
-			ui.Text(fmt.Sprintf("%.0f%%", m.ImageOpacity*100)),
+		display.TextStyled("Opacity (pink/green checker)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		layout.Row(
+			display.Image(m.ImgChecker3, display.WithImageSize(120, 60), display.WithImageScaleMode(draw.ImageScaleStretch), display.WithImageOpacity(m.ImageOpacity)),
+			display.Spacer(12),
+			display.Text(fmt.Sprintf("%.0f%%", m.ImageOpacity*100)),
 		),
-		ui.Slider(m.ImageOpacity, func(v float32) { app.Send(SetImageOpacityMsg{v}) }),
-		ui.Spacer(16),
+		form.NewSlider(m.ImageOpacity, func(v float32) { app.Send(SetImageOpacityMsg{v}) }),
+		display.Spacer(16),
 
 		// 4. Alt text — blue checker again
-		ui.TextStyled("Accessibility", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Image(m.ImgChecker1,
-			ui.WithImageSize(64, 64),
-			ui.WithImageScaleMode(draw.ImageScaleStretch),
-			ui.WithImageAlt("Blue and white checkerboard pattern"),
+		display.TextStyled("Accessibility", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Image(m.ImgChecker1,
+			display.WithImageSize(64, 64),
+			display.WithImageScaleMode(draw.ImageScaleStretch),
+			display.WithImageAlt("Blue and white checkerboard pattern"),
 		),
-		ui.Text("  Alt: \"Blue and white checkerboard pattern\""),
-		ui.Spacer(16),
+		display.Text("  Alt: \"Blue and white checkerboard pattern\""),
+		display.Spacer(16),
 
 		// 5. API reference
-		ui.TextStyled("API", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("  store := image.NewStore()"),
-		ui.Text("  id, _ := store.LoadFromFile(\"photo.png\")"),
-		ui.Text("  id, _ := store.LoadFromBytes(data)"),
-		ui.Text("  id, _ := store.LoadFromRGBA(w, h, rgba)"),
-		ui.Text("  ui.Image(id, ui.WithImageSize(200, 150))"),
-		ui.Text("  ui.Image(id, ui.WithImageScaleMode(draw.ImageScaleFit))"),
-		ui.Text("  ui.Image(id, ui.WithImageOpacity(0.5))"),
+		display.TextStyled("API", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  store := image.NewStore()"),
+		display.Text("  id, _ := store.LoadFromFile(\"photo.png\")"),
+		display.Text("  id, _ := store.LoadFromBytes(data)"),
+		display.Text("  id, _ := store.LoadFromRGBA(w, h, rgba)"),
+		display.Text("  display.Image(id, display.WithImageSize(200, 150))"),
+		display.Text("  display.Image(id, display.WithImageScaleMode(draw.ImageScaleFit))"),
+		display.Text("  display.Image(id, display.WithImageOpacity(0.5))"),
 	)
 }
 
@@ -3156,46 +3164,46 @@ func shaderEffectsSection() ui.Element {
 	_ = plasmaPaint
 	_ = voronoiPaint
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Shader Effects"),
-		ui.Text("GPU shader-based visual effects via the Paint system."),
-		ui.Text("Requires WGPU backend for rendering."),
-		ui.Spacer(12),
+		display.Text("GPU shader-based visual effects via the Paint system."),
+		display.Text("Requires WGPU backend for rendering."),
+		display.Spacer(12),
 
 		// Built-in effects
-		ui.TextStyled("Built-in Shader Effects", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("  ShaderEffectNoise   — Simplex/Perlin noise pattern"),
-		ui.Text("  ShaderEffectPlasma  — Animated plasma effect"),
-		ui.Text("  ShaderEffectVoronoi — Voronoi cell pattern"),
-		ui.Spacer(12),
+		display.TextStyled("Built-in Shader Effects", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  ShaderEffectNoise   — Simplex/Perlin noise pattern"),
+		display.Text("  ShaderEffectPlasma  — Animated plasma effect"),
+		display.Text("  ShaderEffectVoronoi — Voronoi cell pattern"),
+		display.Spacer(12),
 
 		// Paint API
-		ui.TextStyled("Paint Variants for Backgrounds", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("Image-based paints:"),
-		ui.Text("  draw.ImagePaint(id, draw.ImageScaleFit)     — stretched/fitted image fill"),
-		ui.Text("  draw.PatternPaint(id, draw.Size{32, 32})    — tiled image fill"),
-		ui.Spacer(8),
-		ui.Text("Shader paints:"),
-		ui.Text("  draw.ShaderEffectPaint(draw.ShaderEffectNoise, 8.0)"),
-		ui.Text("  draw.ShaderEffectPaint(draw.ShaderEffectPlasma, 2.0)"),
-		ui.Text("  draw.ShaderEffectPaint(draw.ShaderEffectVoronoi, 12.0)"),
-		ui.Spacer(8),
-		ui.Text("Custom WGSL shader:"),
-		ui.Text("  draw.ShaderPaint(wgslSource, params...)"),
-		ui.Spacer(8),
-		ui.Text("Shader + image texture:"),
-		ui.Text("  draw.ShaderImagePaint(imgID, wgslSource, params...)"),
-		ui.Spacer(16),
+		display.TextStyled("Paint Variants for Backgrounds", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("Image-based paints:"),
+		display.Text("  draw.ImagePaint(id, draw.ImageScaleFit)     — stretched/fitted image fill"),
+		display.Text("  draw.PatternPaint(id, draw.Size{32, 32})    — tiled image fill"),
+		display.Spacer(8),
+		display.Text("Shader paints:"),
+		display.Text("  draw.ShaderEffectPaint(draw.ShaderEffectNoise, 8.0)"),
+		display.Text("  draw.ShaderEffectPaint(draw.ShaderEffectPlasma, 2.0)"),
+		display.Text("  draw.ShaderEffectPaint(draw.ShaderEffectVoronoi, 12.0)"),
+		display.Spacer(8),
+		display.Text("Custom WGSL shader:"),
+		display.Text("  draw.ShaderPaint(wgslSource, params...)"),
+		display.Spacer(8),
+		display.Text("Shader + image texture:"),
+		display.Text("  draw.ShaderImagePaint(imgID, wgslSource, params...)"),
+		display.Spacer(16),
 
 		// Integration notes
-		ui.TextStyled("Integration", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("Paints are used as fill styles for surfaces and backgrounds."),
-		ui.Text("Custom WGSL fragments receive uniforms via Params[0..7] and"),
-		ui.Text("an optional image texture for PaintShaderImage."),
-		ui.Text("Built-in effects are pre-compiled and cached by the GPU renderer."),
+		display.TextStyled("Integration", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("Paints are used as fill styles for surfaces and backgrounds."),
+		display.Text("Custom WGSL fragments receive uniforms via Params[0..7] and"),
+		display.Text("an optional image texture for PaintShaderImage."),
+		display.Text("Built-in effects are pre-compiled and cached by the GPU renderer."),
 	)
 }
 
@@ -3205,13 +3213,13 @@ func shaderEffectsSection() ui.Element {
 // and returns an indented text representation.
 func buildA11yTreeDemo(m Model) string {
 	// Build a sample UI to demonstrate AccessTree construction.
-	sampleUI := ui.Column(
-		ui.ButtonText("Save", func() {}),
-		ui.Checkbox("Accept Terms", m.CheckA, nil),
-		ui.Slider(m.SliderVal, nil),
-		ui.TextField(m.TextValue, "Enter text..."),
-		ui.ProgressBar(m.Progress),
-		ui.Toggle(m.ToggleOn, nil),
+	sampleUI := layout.Column(
+		button.Text("Save", func() {}),
+		form.NewCheckbox("Accept Terms", m.CheckA, nil),
+		form.NewSlider(m.SliderVal, nil),
+		form.NewTextField(m.TextValue, "Enter text..."),
+		form.NewProgressBar(m.Progress),
+		form.NewToggle(m.ToggleOn, nil),
 	)
 
 	tree := ui.RenderToAccessTree(sampleUI)
@@ -3325,62 +3333,62 @@ func roleName(role a11y.AccessRole) string {
 func a11yTreeSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("AccessTree Inspector"),
-		ui.Text("Build an AccessTree from a sample widget tree and inspect the result."),
-		ui.Text("Uses RenderToAccessTree() — the test helper from 6.2c."),
-		ui.Spacer(12),
+		display.Text("Build an AccessTree from a sample widget tree and inspect the result."),
+		display.Text("Uses RenderToAccessTree() — the test helper from 6.2c."),
+		display.Spacer(12),
 
-		ui.TextStyled("Sample Widgets", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("  Button(\"Save\")"),
-		ui.Text("  Checkbox(\"Accept Terms\")"),
-		ui.Text("  Slider(0.5)"),
-		ui.Text("  TextField(\"Enter text...\")"),
-		ui.Text("  ProgressBar(0.0)"),
-		ui.Text("  Toggle(on/off)"),
-		ui.Spacer(12),
+		display.TextStyled("Sample Widgets", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  Button(\"Save\")"),
+		display.Text("  Checkbox(\"Accept Terms\")"),
+		display.Text("  Slider(0.5)"),
+		display.Text("  TextField(\"Enter text...\")"),
+		display.Text("  ProgressBar(0.0)"),
+		display.Text("  Toggle(on/off)"),
+		display.Spacer(12),
 
-		ui.ButtonText("Build AccessTree", func() { app.Send(BuildA11yTreeMsg{}) }),
+		button.Text("Build AccessTree", func() { app.Send(BuildA11yTreeMsg{}) }),
 	}
 
 	if m.A11yTreeText != "" {
 		children = append(children,
-			ui.Spacer(12),
-			ui.TextStyled("Result", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-			ui.Spacer(4),
+			display.Spacer(12),
+			display.TextStyled("Result", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+			display.Spacer(4),
 		)
 		for _, line := range strings.Split(m.A11yTreeText, "\n") {
 			if line != "" {
-				children = append(children, ui.Text(line))
+				children = append(children, display.Text(line))
 			}
 		}
 	}
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 func a11yFocusTrapSection(m Model) ui.Element {
 	children := []ui.Element{
 		sectionHeader("FocusTrap Demo"),
-		ui.Text("Modal dialogs trap Tab/Shift+Tab navigation within the dialog."),
-		ui.Text("Focus is restored to the trigger when the dialog closes."),
-		ui.Spacer(12),
+		display.Text("Modal dialogs trap Tab/Shift+Tab navigation within the dialog."),
+		display.Text("Focus is restored to the trigger when the dialog closes."),
+		display.Spacer(12),
 
-		ui.TextStyled("RFC-001 §11.7 — Focus Trapping Rules", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("  1. Modal opens → Focus moves into dialog"),
-		ui.Text("  2. Tab at last widget → Wraps to first widget"),
-		ui.Text("  3. Shift+Tab at first → Wraps to last widget"),
-		ui.Text("  4. Escape → Dialog closes, focus restores"),
-		ui.Text("  5. Background content hidden from AccessTree"),
-		ui.Spacer(12),
+		display.TextStyled("RFC-001 §11.7 — Focus Trapping Rules", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  1. Modal opens → Focus moves into dialog"),
+		display.Text("  2. Tab at last widget → Wraps to first widget"),
+		display.Text("  3. Shift+Tab at first → Wraps to last widget"),
+		display.Text("  4. Escape → Dialog closes, focus restores"),
+		display.Text("  5. Background content hidden from AccessTree"),
+		display.Spacer(12),
 
-		ui.ButtonText("Open Modal Dialog", func() { app.Send(ToggleA11yTrapMsg{}) }),
+		button.Text("Open Modal Dialog", func() { app.Send(ToggleA11yTrapMsg{}) }),
 	}
 
 	if m.A11yTrapResult != "" {
 		children = append(children,
-			ui.Spacer(8),
-			ui.Text(fmt.Sprintf("Result: %s", m.A11yTrapResult)),
+			display.Spacer(8),
+			display.Text(fmt.Sprintf("Result: %s", m.A11yTrapResult)),
 		)
 	}
 
@@ -3393,30 +3401,30 @@ func a11yFocusTrapSection(m Model) ui.Element {
 			OnDismiss:   func() { app.Send(DismissA11yTrapMsg{}) },
 			Backdrop:    true,
 			FocusTrap:   &ui.FocusTrap{RestoreFocus: true, TrapID: "a11y-trap-demo"},
-			Content: ui.SizedBox(360, 0,
-				ui.Column(
-					ui.TextStyled("FocusTrap Demo Dialog", draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
-					ui.Spacer(12),
-					ui.Text("Tab/Shift+Tab should cycle within this dialog only."),
-					ui.Spacer(12),
-					ui.TextField(m.A11yTrapText, "Enter value...", ui.WithOnChange(func(v string) { app.Send(SetA11yTrapTextMsg{Value: v}) })),
-					ui.Spacer(8),
-					ui.Checkbox("Option A", m.A11yTrapCheckA, func(v bool) { app.Send(SetA11yTrapCheckAMsg{Value: v}) }),
-					ui.Spacer(4),
-					ui.Checkbox("Option B", m.A11yTrapCheckB, func(v bool) { app.Send(SetA11yTrapCheckBMsg{Value: v}) }),
-					ui.Spacer(16),
-					ui.Row(
-						ui.Spacer(0),
-						ui.ButtonOutlinedText("Cancel", func() { app.Send(DismissA11yTrapMsg{}) }),
-						ui.Spacer(8),
-						ui.ButtonText("Confirm", func() { app.Send(A11yTrapConfirmMsg{}) }),
+			Content: layout.Sized(360, 0,
+				layout.Column(
+					display.TextStyled("FocusTrap Demo Dialog", draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
+					display.Spacer(12),
+					display.Text("Tab/Shift+Tab should cycle within this dialog only."),
+					display.Spacer(12),
+					form.NewTextField(m.A11yTrapText, "Enter value...", form.WithOnChange(func(v string) { app.Send(SetA11yTrapTextMsg{Value: v}) })),
+					display.Spacer(8),
+					form.NewCheckbox("Option A", m.A11yTrapCheckA, func(v bool) { app.Send(SetA11yTrapCheckAMsg{Value: v}) }),
+					display.Spacer(4),
+					form.NewCheckbox("Option B", m.A11yTrapCheckB, func(v bool) { app.Send(SetA11yTrapCheckBMsg{Value: v}) }),
+					display.Spacer(16),
+					layout.Row(
+						display.Spacer(0),
+						button.OutlinedText("Cancel", func() { app.Send(DismissA11yTrapMsg{}) }),
+						display.Spacer(8),
+						button.Text("Confirm", func() { app.Send(A11yTrapConfirmMsg{}) }),
 					),
 				),
 			),
 		})
 	}
 
-	return ui.Column(children...)
+	return layout.Column(children...)
 }
 
 func a11yBridgeSection() ui.Element {
@@ -3444,36 +3452,36 @@ func a11yBridgeSection() ui.Element {
 		bridgeDesc = "No accessibility bridge available for this platform."
 	}
 
-	return ui.Column(
+	return layout.Column(
 		sectionHeader("Platform A11y Bridge"),
-		ui.Text("Lux provides platform-specific accessibility bridges that expose"),
-		ui.Text("the AccessTree to native screen readers and assistive technology."),
-		ui.Spacer(12),
+		display.Text("Lux provides platform-specific accessibility bridges that expose"),
+		display.Text("the AccessTree to native screen readers and assistive technology."),
+		display.Spacer(12),
 
-		ui.TextStyled("Current Platform", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text(fmt.Sprintf("  OS:     %s/%s", runtime.GOOS, runtime.GOARCH)),
-		ui.Text(fmt.Sprintf("  Bridge: %s", bridgeName)),
-		ui.Spacer(8),
-		ui.Text(bridgeDesc),
-		ui.Spacer(16),
+		display.TextStyled("Current Platform", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("  OS:     %s/%s", runtime.GOOS, runtime.GOARCH)),
+		display.Text(fmt.Sprintf("  Bridge: %s", bridgeName)),
+		display.Spacer(8),
+		display.Text(bridgeDesc),
+		display.Spacer(16),
 
-		ui.TextStyled("Bridge Interface (a11y.A11yBridge)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("  UpdateTree(tree AccessTree)"),
-		ui.Text("    → Replaces the access tree snapshot after each reconcile pass"),
-		ui.Text("  NotifyFocus(nodeID AccessNodeID)"),
-		ui.Text("    → Informs the bridge that keyboard focus moved"),
-		ui.Text("  NotifyLiveRegion(nodeID AccessNodeID, text string)"),
-		ui.Text("    → Announces dynamic content changes"),
-		ui.Spacer(16),
+		display.TextStyled("Bridge Interface (a11y.A11yBridge)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  UpdateTree(tree AccessTree)"),
+		display.Text("    → Replaces the access tree snapshot after each reconcile pass"),
+		display.Text("  NotifyFocus(nodeID AccessNodeID)"),
+		display.Text("    → Informs the bridge that keyboard focus moved"),
+		display.Text("  NotifyLiveRegion(nodeID AccessNodeID, text string)"),
+		display.Text("    → Announces dynamic content changes"),
+		display.Spacer(16),
 
-		ui.TextStyled("Available Bridges", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
-		ui.Spacer(4),
-		ui.Text("  Windows  — UIA (UI Automation) via CGo/COM"),
-		ui.Text("  macOS    — NSAccessibility via CGo/ObjC"),
-		ui.Text("  Linux    — AT-SPI2 via D-Bus (godbus, no CGo)"),
-		ui.Text("  DRM/KMS  — AT-SPI2 via System D-Bus (bare metal HMI)"),
+		display.TextStyled("Available Bridges", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  Windows  — UIA (UI Automation) via CGo/COM"),
+		display.Text("  macOS    — NSAccessibility via CGo/ObjC"),
+		display.Text("  Linux    — AT-SPI2 via D-Bus (godbus, no CGo)"),
+		display.Text("  DRM/KMS  — AT-SPI2 via System D-Bus (bare metal HMI)"),
 	)
 }
 
@@ -3486,16 +3494,16 @@ func main() {
 		SliderVal:          0.5,
 		Progress:           0.0,
 		SelectVal:          "Option 1",
-		SelectState:        &ui.SelectState{},
-		ValRoleState:       &ui.SelectState{},
+		SelectState:        &form.SelectState{},
+		ValRoleState:       &form.SelectState{},
 		Scroll:             &ui.ScrollState{},
-		ToggleAnim:         ui.NewToggleState(),
+		ToggleAnim:         form.NewToggleState(),
 		NavTree:            ui.NewTreeState(),
 		ActiveSection:      "typography",
 		VListScroll:        &ui.ScrollState{},
 		DemoTree:           ui.NewTreeState(),
-		AccordionState:     ui.NewAccordionState(),
-		MenuBarState:       ui.NewMenuBarState(),
+		AccordionState:     nav.NewAccordionState(),
+		MenuBarState:       menu.NewMenuBarState(),
 		KineticScroll:      ui.NewKineticScroll(theme.Default.Tokens().Scroll),
 		NavSplitRatio:      0.25,
 		SplitHorizontal:    0.5,
@@ -3608,13 +3616,13 @@ func multiView(m Model) map[app.WindowID]ui.Element {
 
 // secondWindowView renders the content for the second window.
 func secondWindowView(m Model) ui.Element {
-	return ui.Padding(ui.UniformInsets(16),
-		ui.Column(
-			ui.Text("Lux — Second Window"),
-			ui.Spacer(8),
-			ui.Text(fmt.Sprintf("Counter: %d", m.Count)),
-			ui.Spacer(8),
-			ui.ButtonText("Close This Window", func() {
+	return layout.Pad(ui.UniformInsets(16),
+		layout.Column(
+			display.Text("Lux — Second Window"),
+			display.Spacer(8),
+			display.Text(fmt.Sprintf("Counter: %d", m.Count)),
+			display.Spacer(8),
+			button.Text("Close This Window", func() {
 				app.Send(app.CloseWindowMsg{ID: 1})
 			}),
 		),
