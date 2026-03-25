@@ -119,9 +119,11 @@ type SurfaceID uint64
 
 // DrawSurface is a GPU texture blit for an external surface (RFC §8).
 type DrawSurface struct {
-	X, Y, W, H int
-	TextureID   TextureID
-	SurfaceID   SurfaceID
+	X, Y, W, H  int
+	TextureID    TextureID
+	SurfaceID    SurfaceID
+	ClipX, ClipY int // scissor clip origin (from scene clip stack)
+	ClipW, ClipH int // scissor clip size; 0 = full viewport
 }
 
 // ImageSlice describes a 9-slice image for scalable borders/backgrounds.

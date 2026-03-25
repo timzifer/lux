@@ -97,6 +97,7 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 		// Fade hints: draw a short gradient at the top/bottom edges
 		// to indicate more content is available in that direction.
+		// Rendered in overlay mode so they appear above images/surfaces.
 		fadeH := float32(24)
 		bgColor := ctx.Tokens.Colors.Surface.Base
 		transparent := draw.Color{R: bgColor.R, G: bgColor.G, B: bgColor.B, A: 0}
@@ -104,6 +105,12 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		maxScroll := float32(contentH) - float32(viewportH)
 		vx := float32(area.X)
 		vw := float32(contentW)
+
+		type overlayModeSetter interface{ SetOverlayMode(bool) }
+		oms, hasOverlay := ctx.Canvas.(overlayModeSetter)
+		if hasOverlay {
+			oms.SetOverlayMode(true)
+		}
 
 		// Top fade — visible when scrolled down.
 		if offset > 1 {
@@ -130,6 +137,10 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 					draw.GradientStop{Offset: 1, Color: bgColor},
 				),
 			)
+		}
+
+		if hasOverlay {
+			oms.SetOverlayMode(false)
 		}
 	} else {
 		w = max(childBounds.W, area.W)

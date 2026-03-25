@@ -1937,7 +1937,18 @@ func (r *WGPURenderer) drawSurfaces(renderPass wgpu.RenderPass, surfaces []draw.
 			},
 		})
 
-		renderPass.SetScissorRect(0, 0, vpW, vpH)
+		if s.ClipW > 0 && s.ClipH > 0 {
+			sx, sy, sw, sh := uint32(s.ClipX), uint32(s.ClipY), uint32(s.ClipW), uint32(s.ClipH)
+			if sx+sw > vpW {
+				sw = vpW - sx
+			}
+			if sy+sh > vpH {
+				sh = vpH - sy
+			}
+			renderPass.SetScissorRect(sx, sy, sw, sh)
+		} else {
+			renderPass.SetScissorRect(0, 0, vpW, vpH)
+		}
 		renderPass.SetPipeline(r.surfPipeline)
 		renderPass.SetBindGroup(0, r.projBindGroup)
 		renderPass.SetBindGroup(1, surfBindGroup)
@@ -2007,19 +2018,29 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 		return
 	}
 
-	// Phase 2: batch by ImageID and draw.
+	// Phase 2: batch by (ImageID, clip rect) and draw.
+	// Images sharing the same texture AND scissor clip are batched into one draw call.
+	type batchKey struct {
+		id                         draw.ImageID
+		clipX, clipY, clipW, clipH int
+	}
 	type batch struct {
-		id    draw.ImageID
+		key   batchKey
 		rects []resolvedImg
 	}
 	var batches []batch
-	batchMap := make(map[draw.ImageID]int)
+	batchMap := make(map[batchKey]int)
 	for _, img := range resolved {
-		if idx, ok := batchMap[img.ImageID]; ok {
+		key := batchKey{
+			id:    img.ImageID,
+			clipX: img.ClipX, clipY: img.ClipY,
+			clipW: img.ClipW, clipH: img.ClipH,
+		}
+		if idx, ok := batchMap[key]; ok {
 			batches[idx].rects = append(batches[idx].rects, img)
 		} else {
-			batchMap[img.ImageID] = len(batches)
-			batches = append(batches, batch{id: img.ImageID, rects: []resolvedImg{img}})
+			batchMap[key] = len(batches)
+			batches = append(batches, batch{key: key, rects: []resolvedImg{img}})
 		}
 	}
 
@@ -2030,9 +2051,9 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 
 	// Record batch offsets into the combined buffer.
 	type batchDraw struct {
-		id        draw.ImageID
-		offset    uint64 // byte offset into combined buffer
-		count     int
+		key    batchKey
+		offset uint64 // byte offset into combined buffer
+		count  int
 	}
 	var draws []batchDraw
 	r.imageBuf = r.imageBuf[:0]
@@ -2045,7 +2066,7 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 				img.Opacity,
 			)
 		}
-		draws = append(draws, batchDraw{id: b.id, offset: byteOffset, count: len(b.rects)})
+		draws = append(draws, batchDraw{key: b.key, offset: byteOffset, count: len(b.rects)})
 	}
 
 	// Upload the combined buffer once.
@@ -2056,9 +2077,9 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 	// Draw each batch using its offset into the combined buffer.
 	var bindGroups []wgpu.BindGroup
 	for _, d := range draws {
-		entry := r.imageTextures[d.id]
+		entry := r.imageTextures[d.key.id]
 		imgBindGroup := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
-			Label:  fmt.Sprintf("img-tex-%d", d.id),
+			Label:  fmt.Sprintf("img-tex-%d", d.key.id),
 			Layout: r.imageTexLayout,
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, Texture: entry.view},
@@ -2068,7 +2089,18 @@ func (r *WGPURenderer) drawImages(renderPass wgpu.RenderPass, images []draw.Draw
 		bindGroups = append(bindGroups, imgBindGroup)
 
 		batchSize := uint64(d.count) * bytesPerInstance
-		renderPass.SetScissorRect(0, 0, vpW, vpH)
+		if d.key.clipW > 0 && d.key.clipH > 0 {
+			sx, sy, sw, sh := uint32(d.key.clipX), uint32(d.key.clipY), uint32(d.key.clipW), uint32(d.key.clipH)
+			if sx+sw > vpW {
+				sw = vpW - sx
+			}
+			if sy+sh > vpH {
+				sh = vpH - sy
+			}
+			renderPass.SetScissorRect(sx, sy, sw, sh)
+		} else {
+			renderPass.SetScissorRect(0, 0, vpW, vpH)
+		}
 		renderPass.SetPipeline(r.imagePipeline)
 		renderPass.SetBindGroup(0, r.projBindGroup)
 		renderPass.SetBindGroup(1, imgBindGroup)

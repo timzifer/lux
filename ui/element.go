@@ -2773,12 +2773,19 @@ func layoutScrollView(node ScrollViewElement, area Bounds, canvas draw.Canvas, t
 		DrawScrollbar(canvas, tokens, ix, node.State, area.X+contentW, area.Y, viewportH, float32(contentH), offset)
 
 		// Fade hints at top/bottom edges to indicate more content.
+		// Rendered in overlay mode so they appear above images/surfaces.
 		fadeH := float32(24)
 		bgColor := tokens.Colors.Surface.Base
 		transparent := draw.Color{R: bgColor.R, G: bgColor.G, B: bgColor.B, A: 0}
 		maxScroll := float32(contentH) - float32(viewportH)
 		vx := float32(area.X)
 		vw := float32(contentW)
+
+		type overlayModeSetter interface{ SetOverlayMode(bool) }
+		oms, hasOverlay := canvas.(overlayModeSetter)
+		if hasOverlay {
+			oms.SetOverlayMode(true)
+		}
 
 		if offset > 1 {
 			canvas.FillRect(
@@ -2802,6 +2809,10 @@ func layoutScrollView(node ScrollViewElement, area Bounds, canvas draw.Canvas, t
 					draw.GradientStop{Offset: 1, Color: bgColor},
 				),
 			)
+		}
+
+		if hasOverlay {
+			oms.SetOverlayMode(false)
 		}
 	} else {
 		w = max(childBounds.W, area.W)

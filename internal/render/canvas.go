@@ -833,10 +833,19 @@ func (c *SceneCanvas) DrawTexture(tex draw.TextureID, dst draw.Rect) {
 		return
 	}
 	c.emitClipIfChanged()
-	c.scene.Surfaces = append(c.scene.Surfaces, draw.DrawSurface{
+	ds := draw.DrawSurface{
 		X: int(dst.X), Y: int(dst.Y), W: int(dst.W), H: int(dst.H),
 		TextureID: tex,
-	})
+	}
+	// Store current clip rect so the renderer can scissor-clip the surface.
+	if len(c.clips) > 0 {
+		clip := c.clips[len(c.clips)-1]
+		ds.ClipX = int(clip.X)
+		ds.ClipY = int(clip.Y)
+		ds.ClipW = int(clip.W)
+		ds.ClipH = int(clip.H)
+	}
+	c.scene.Surfaces = append(c.scene.Surfaces, ds)
 }
 
 // ── Shadows ──────────────────────────────────────────────────────
