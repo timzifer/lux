@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-23
+**Zuletzt abgeglichen:** 2026-03-25
 **Abhängig von:** RFC-001 (Core Architecture)
 **Folge-RFC:** RFC-003 (Widget Catalogue & Theme)
 
