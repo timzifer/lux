@@ -6,6 +6,8 @@
 package text
 
 import (
+	"image"
+
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
 )
@@ -35,15 +37,16 @@ type ShapingRun struct {
 // ShapedGlyph describes a single positioned glyph produced by shaping.
 type ShapedGlyph struct {
 	Rune     rune
-	GlyphID  GlyphID // glyph index in the font (from OpenType shaping)
-	Advance  float32 // horizontal advance in dp
-	OffsetX  float32 // kerning/positioning offset in dp
-	OffsetY  float32 // vertical positioning offset in dp
-	BearingX float32 // left-side bearing in dp
-	BearingY float32 // top bearing from baseline in dp
-	Width    float32 // glyph bounding box width in dp
-	Height   float32 // glyph bounding box height in dp
-	Cluster  int     // index in input string (for cursor positioning)
+	GlyphID  GlyphID     // glyph index in the font (from OpenType shaping)
+	Font     *fonts.Font // font this glyph was shaped with (nil = primary font for the style)
+	Advance  float32     // horizontal advance in dp
+	OffsetX  float32     // kerning/positioning offset in dp
+	OffsetY  float32     // vertical positioning offset in dp
+	BearingX float32     // left-side bearing in dp
+	BearingY float32     // top bearing from baseline in dp
+	Width    float32     // glyph bounding box width in dp
+	Height   float32     // glyph bounding box height in dp
+	Cluster  int         // index in input string (for cursor positioning)
 }
 
 // Shaper shapes a run of text into positioned glyphs (RFC-003 §3.3).
@@ -63,7 +66,18 @@ type GlyphRasterizer interface {
 	Shaper
 	ResolveFont(style draw.TextStyle) *fonts.Font
 	RasterizeGlyph(id GlyphID, style draw.TextStyle) *RasterizedGlyph
+	RasterizeGlyphWithFont(id GlyphID, f *fonts.Font, style draw.TextStyle) *RasterizedGlyph
 	RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Font, atlasSize int, pxRange float32) *MSDFRasterizedGlyph
+	RasterizeColorGlyph(id GlyphID, f *fonts.Font, sizePx int) *ColorRasterizedGlyph
+}
+
+// ColorRasterizedGlyph is an NRGBA bitmap extracted from a CBDT color font.
+type ColorRasterizedGlyph struct {
+	Image    *image.NRGBA
+	BearingX float32
+	BearingY float32
+	Advance  float32
+	PPEM     int // pixels-per-em of the source bitmap strike
 }
 
 // BitmapShaper implements Shaper using the embedded 5×7 bitmap font.

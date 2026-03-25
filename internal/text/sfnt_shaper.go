@@ -274,6 +274,54 @@ func (s *SfntShaper) RasterizeGlyph(id GlyphID, style draw.TextStyle) *Rasterize
 	}
 }
 
+// RasterizeGlyphWithFont draws a single glyph using an explicit font (for per-glyph fallback).
+func (s *SfntShaper) RasterizeGlyphWithFont(id GlyphID, f *fonts.Font, style draw.TextStyle) *RasterizedGlyph {
+	if f == nil {
+		return nil
+	}
+	sf := f.SfntFont()
+	if sf == nil {
+		return nil
+	}
+
+	sizePx := DpToPixels(style.Size)
+	ppem := fixed.I(sizePx)
+
+	glyphIdx := sfnt.GlyphIndex(id)
+	var buf sfnt.Buffer
+
+	bounds, advance, err := sf.GlyphBounds(&buf, glyphIdx, ppem, font.HintingFull)
+	if err != nil {
+		return nil
+	}
+
+	minX := bounds.Min.X.Floor()
+	minY := bounds.Min.Y.Floor()
+	maxX := bounds.Max.X.Ceil()
+	maxY := bounds.Max.Y.Ceil()
+
+	w := maxX - minX
+	h := maxY - minY
+	if w <= 0 || h <= 0 {
+		return nil
+	}
+
+	segments, err := sf.LoadGlyph(&buf, glyphIdx, ppem, &sfnt.LoadGlyphOptions{})
+	if err != nil {
+		return nil
+	}
+
+	img := rasterizeSegments(segments, w, h, -minX, -minY)
+
+	return &RasterizedGlyph{
+		Image:    img,
+		Font:     f,
+		BearingX: float32(minX),
+		BearingY: float32(-minY),
+		Advance:  fixedToFloat(advance),
+	}
+}
+
 // rasterizeSegments converts sfnt outline segments into a grayscale image
 // using golang.org/x/image/vector.Rasterizer.
 func rasterizeSegments(segments sfnt.Segments, w, h, offsetX, offsetY int) *image.Gray {
@@ -401,6 +449,28 @@ func (s *SfntShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Font
 		BearingY: bearingY,
 		Advance:  advance,
 		PxRange:  pxRange,
+	}
+}
+
+// RasterizeColorGlyph extracts a color bitmap glyph from a CBDT font.
+func (s *SfntShaper) RasterizeColorGlyph(id GlyphID, f *fonts.Font, sizePx int) *ColorRasterizedGlyph {
+	if f == nil || !f.HasCBDT() {
+		return nil
+	}
+	cbdt := ParseCBDT(f.RawData())
+	if cbdt == nil {
+		return nil
+	}
+	img, metrics := cbdt.RasterizeGlyph(uint16(id))
+	if img == nil {
+		return nil
+	}
+	return &ColorRasterizedGlyph{
+		Image:    img,
+		BearingX: float32(metrics.BearingX),
+		BearingY: float32(metrics.BearingY),
+		Advance:  float32(metrics.Advance),
+		PPEM:     cbdt.PPEM(),
 	}
 }
 

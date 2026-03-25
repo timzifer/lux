@@ -5,6 +5,7 @@ import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/icons"
 )
 
 // SelectState holds the open/closed state for a Select dropdown.
@@ -130,14 +131,15 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			canvas.DrawText(n.Value, draw.Pt(float32(textX), float32(textY)), style, textColor)
 		}
 
-		// Down arrow indicator
+		// Down arrow indicator (Phosphor icon for reliable rendering).
 		arrowStyle := tokens.Typography.LabelSmall
+		arrowStyle.FontFamily = "Phosphor"
 		arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
 		arrowColor := tokens.Colors.Text.Secondary
 		if n.Disabled {
 			arrowColor = tokens.Colors.Text.Disabled
 		}
-		canvas.DrawText("▾", draw.Pt(float32(arrowX), float32(textY)), arrowStyle, arrowColor)
+		canvas.DrawText(icons.CaretDown, draw.Pt(float32(arrowX), float32(textY)), arrowStyle, arrowColor)
 
 		// Focus glow (RFC-008 §9.4).
 		if focused || isOpen {

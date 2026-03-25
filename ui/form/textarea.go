@@ -111,6 +111,12 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	focused := !n.Disabled && focus != nil && focus.IsElementFocused(focusUID)
 
+	// Scroll offset (needed by both rendering and click-to-cursor).
+	scrollOff := float32(0)
+	if n.Scroll != nil {
+		scrollOff = n.Scroll.Offset
+	}
+
 	// Custom theme DrawFunc dispatch.
 	if df := th.DrawFunc(theme.WidgetKindTextArea); df != nil {
 		df(theme.DrawCtx{
@@ -148,12 +154,6 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		contentY := float32(area.Y + textAreaPadY)
 		contentW := float32(w - textAreaPadX*2)
 		contentH := float32(h - textAreaPadY*2)
-
-		// Scroll offset.
-		scrollOff := float32(0)
-		if n.Scroll != nil {
-			scrollOff = n.Scroll.Offset
-		}
 
 		// Compute lines and find cursor position.
 		lines := text.Lines(n.Value)
@@ -299,6 +299,16 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				cursorOff = len(n.Value)
 			}
 		}
+		// Apply pending cursor offset from a click that occurred before
+		// InputState existed (first click to focus).
+		if focus.PendingCursorOffset >= 0 {
+			cursorOff = focus.PendingCursorOffset
+			if cursorOff > len(n.Value) {
+				cursorOff = len(n.Value)
+			}
+			selStart = -1
+			focus.PendingCursorOffset = -1
+		}
 		focus.Input = &ui.InputState{
 			Value:          n.Value,
 			OnChange:       n.OnChange,
@@ -323,12 +333,80 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		)
 	}
 
-	// Hit target for focus acquisition.
+	// Hit target for focus acquisition and click-to-position cursor.
 	if n.OnChange != nil && focus != nil && !n.Disabled {
 		uid := focusUID
 		fm := focus
-		ix.RegisterHit(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			func() { fm.SetFocusedUID(uid) })
+		cX := float32(area.X + textAreaPadX)
+		cY := float32(area.Y + textAreaPadY)
+		lH := lineH
+		sOff := scrollOff
+		val := n.Value
+		ls := text.Lines(val)
+		sty := style
+
+		// Pre-compute per-line grapheme boundary positions for click-to-cursor.
+		type lineBounds struct {
+			xs   []float32
+			offs []int // byte offsets relative to start of Value
+		}
+		lineBoundsArr := make([]lineBounds, len(ls))
+		for i, span := range ls {
+			lineText := val[span.Start:span.End]
+			clusters := text.GraphemeClusters(lineText)
+			xs := make([]float32, len(clusters))
+			offs := make([]int, len(clusters))
+			for j, boff := range clusters {
+				offs[j] = span.Start + boff
+				if boff == 0 {
+					xs[j] = cX
+				} else {
+					m := canvas.MeasureText(lineText[:boff], sty)
+					xs[j] = cX + m.Width
+				}
+			}
+			lineBoundsArr[i] = lineBounds{xs: xs, offs: offs}
+		}
+
+		dragAnchor := -1
+		ix.RegisterDrag(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
+			func(mx, my float32) {
+				fm.SetFocusedUID(uid)
+				// Determine which line was clicked.
+				relY := my - cY + sOff
+				line := int(relY / lH)
+				if line < 0 {
+					line = 0
+				}
+				if line >= len(ls) {
+					line = len(ls) - 1
+				}
+				if line < 0 {
+					return
+				}
+				lb := lineBoundsArr[line]
+				off := closestBoundary(lb.xs, lb.offs, mx)
+				if dragAnchor < 0 {
+					// Initial press — set anchor, clear selection.
+					dragAnchor = off
+					if fm.Input != nil {
+						fm.Input.CursorOffset = off
+						fm.Input.ClearSelection()
+					} else {
+						fm.PendingCursorOffset = off
+					}
+				} else {
+					// Drag move — extend selection from anchor.
+					if fm.Input != nil {
+						fm.Input.CursorOffset = off
+						if off != dragAnchor {
+							fm.Input.SelectionStart = dragAnchor
+						} else {
+							fm.Input.ClearSelection()
+						}
+					}
+				}
+			})
 	}
 
 	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: h}

@@ -1,18 +1,35 @@
-# Plan: RFC-007-lux-WGPU-rendering.md
+# RFC-007 — lux: WGPU Rendering Pipeline
+
+**Repository:** `github.com/timzifer/lux`
+**Status:** Teilweise integriert
+**Version:** 0.1.0
+**Datum:** 2026-03-19
+**Zuletzt abgeglichen:** 2026-03-25
+**Abhängig von:** RFC-001 (Core Architecture)
+
+---
+
+### Implementierungsstatus
+
+| Phase | Status | Anmerkung |
+|-------|--------|-----------|
+| Phase A: gogpu-Backend | ✅ Integriert | `internal/wgpu/gogpu.go` (1227 Zeilen), vollständig via `github.com/gogpu/wgpu` |
+| Phase B: Performance-Fundament | ✅ Integriert | Buffer-Pooling, Scissor-Rects |
+| Phase C: Geometry Batcher | ✅ Integriert | Draw-Call-Merging, Instanced Text |
+| Phase D: wgpu-native Backend | ⏳ Wartend | `native.go` minimal (3 TODOs), wartet auf libwgpu_native-Verfügbarkeit |
+| Phase E: Erweiterte Features | ✅ Integriert | Surface-Pipeline, Gradient-Pipeline, WGPU-Cube Demo |
+| Phase F: Blur + Multi-Window | ✅ Integriert | Separabler 2-Pass Gaussian Blur, Multi-Window-Support |
+| Phase G: Visual Effects | ✅ Integriert | Soft Shadows, Frosted Glass, Opacity, Elevation, Vibrancy, Inner Shadow, Grain, Glow |
+
+---
 
 ## Context
 
-Lux hat bereits eine wgpu-Architektur (`internal/wgpu/`, `internal/gpu/wgpu_renderer.go`), aber:
-- `native.go`: Alle Methoden sind TODOs — kein echter wgpu-native-Call implementiert
-- `gogpu.go`: Pure No-Op-Stubs, nutzt nicht das `github.com/gogpu/wgpu`-Paket
-- `wgpu_renderer.go`: Strukturell korrekt, aber pro Frame Heap-Allokationen (`make([]float32, ...)`),
-kein Buffer-Pooling, kein Scissor-Support, Text-Shader ohne Per-Glyph-Farbe
-- Keine Validation-Kontrolle, keine CGo-Overhead-Strategie
-
-## Vorgehen
-
-RFC-007-lux-WGPU-rendering.md als Datei im Root erstellen (konsistent mit RFC-001..006).
-Die Datei wird auf Deutsch verfasst, im selben Stil wie die bestehenden RFCs.
+Lux nutzt wgpu als primären Renderer (`internal/wgpu/`, `internal/gpu/wgpu_renderer.go`):
+- `gogpu.go`: Voll implementiertes pure-Go Backend via `github.com/gogpu/wgpu` (Windows DX12, macOS Metal, Linux Vulkan)
+- `native.go`: Minimale Stubs — wartet auf libwgpu_native-Bibliothek (Phase D)
+- `wgpu_renderer.go`: Vollständiger Renderer mit Scissor, Shadows, Blur, Gradients, Opacity, Elevation, Vibrancy
+- Mehrere WGSL-Shader: Rect, Text, Surface, Gradient, Blur, Shadow
 
 ## RFC-Struktur (Gliederung)
 

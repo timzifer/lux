@@ -9,6 +9,7 @@ import (
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/theme"
 )
 

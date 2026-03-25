@@ -334,6 +334,50 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 `
 
+// wgslEmojiInstancedShader renders color emoji (NRGBA bitmaps from CBDT font tables)
+// using instanced rendering: unit quad + per-instance glyph rect/uv/color.
+// The vertex shader is identical to the text shader. The fragment shader samples
+// RGBA color directly from the emoji atlas (not as an alpha mask).
+// in.color.a is used as an opacity modulator.
+const wgslEmojiInstancedShader = `
+struct Uniforms {
+    proj: mat4x4<f32>,
+    params: vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var emoji_texture: texture_2d<f32>;
+@group(0) @binding(2) var emoji_sampler: sampler;
+
+struct VertexInput {
+    @location(0) pos: vec2<f32>,         // unit quad corner (0..1)
+    @location(1) glyph_rect: vec4<f32>,  // dstX, dstY, dstW, dstH
+    @location(2) glyph_uv: vec4<f32>,    // u0, v0, u1, v1
+    @location(3) color: vec4<f32>,       // r, g, b, a
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    let world_pos = in.glyph_rect.xy + in.pos * in.glyph_rect.zw;
+    out.position = uniforms.proj * vec4<f32>(world_pos, 0.0, 1.0);
+    out.uv = mix(in.glyph_uv.xy, in.glyph_uv.zw, in.pos);
+    out.color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let color = textureSample(emoji_texture, emoji_sampler, in.uv);
+    return vec4<f32>(color.rgb * in.color.a, color.a * in.color.a);
+}
+`
+
 // wgslShadowShader renders soft box shadows using SDF with blur falloff.
 // Instanced rendering: unit quad vertices + per-instance rect/color/radius/blurRadius/inset.
 // 12 floats per instance (48 bytes).

@@ -308,32 +308,110 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 							return true
 						}
 						if is := fm.Input; is != nil {
+							shift := m.Modifiers.Has(input.ModShift)
+							ctrl := m.Modifiers.Has(input.ModCtrl) || m.Modifiers.Has(input.ModSuper)
+							// Platform shortcuts: Ctrl+C/V/X/A.
+							if ctrl {
+								switch m.Key {
+								case input.KeyC:
+									if is.HasSelection() {
+										_ = SetClipboard(is.SelectedText())
+									}
+									modelDirty = true
+								case input.KeyX:
+									if is.HasSelection() {
+										_ = SetClipboard(is.SelectedText())
+										is.DeleteSelection()
+										is.OnChange(is.Value)
+										modelDirty = true
+									}
+								case input.KeyV:
+									if clip, err := GetClipboard(); err == nil && clip != "" {
+										is.DeleteSelection()
+										v := is.Value[:is.CursorOffset] + clip + is.Value[is.CursorOffset:]
+										is.CursorOffset += len(clip)
+										is.Value = v
+										is.ClearSelection()
+										is.OnChange(v)
+										modelDirty = true
+									}
+								case input.KeyA:
+									is.SelectionStart = 0
+									is.CursorOffset = len(is.Value)
+									modelDirty = true
+								}
+							}
+
 							switch m.Key {
 							case input.KeyEnter:
 								if is.Multiline {
+									is.DeleteSelection()
 									v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
 									is.CursorOffset++
 									is.Value = v
+									is.ClearSelection()
 									is.OnChange(v)
 									modelDirty = true
 								}
 							case input.KeyBackspace:
-								if is.CursorOffset > 0 {
+								if is.HasSelection() {
+									is.DeleteSelection()
+									is.OnChange(is.Value)
+									modelDirty = true
+								} else if is.CursorOffset > 0 {
 									v, newOff := text.DeleteBackward(is.Value, is.CursorOffset)
 									is.Value = v
 									is.CursorOffset = newOff
 									is.OnChange(v)
 									modelDirty = true
 								}
+							case input.KeyDelete:
+								if is.HasSelection() {
+									is.DeleteSelection()
+									is.OnChange(is.Value)
+									modelDirty = true
+								} else if is.CursorOffset < len(is.Value) {
+									v, newOff := text.DeleteForward(is.Value, is.CursorOffset)
+									is.Value = v
+									is.CursorOffset = newOff
+									is.OnChange(v)
+									modelDirty = true
+								}
 							case input.KeyLeft:
-								if m.Modifiers.Has(input.ModCtrl) {
+								if shift {
+									if is.SelectionStart < 0 {
+										is.SelectionStart = is.CursorOffset
+									}
+								} else if is.HasSelection() {
+									a, _ := is.SelectionRange()
+									is.CursorOffset = a
+									is.ClearSelection()
+									modelDirty = true
+									break
+								} else {
+									is.ClearSelection()
+								}
+								if ctrl {
 									is.CursorOffset = text.PrevWordBoundary(is.Value, is.CursorOffset)
 								} else {
 									is.CursorOffset = text.PrevGraphemeCluster(is.Value, is.CursorOffset)
 								}
 								modelDirty = true
 							case input.KeyRight:
-								if m.Modifiers.Has(input.ModCtrl) {
+								if shift {
+									if is.SelectionStart < 0 {
+										is.SelectionStart = is.CursorOffset
+									}
+								} else if is.HasSelection() {
+									_, b := is.SelectionRange()
+									is.CursorOffset = b
+									is.ClearSelection()
+									modelDirty = true
+									break
+								} else {
+									is.ClearSelection()
+								}
+								if ctrl {
 									is.CursorOffset = text.NextWordBoundary(is.Value, is.CursorOffset)
 								} else {
 									is.CursorOffset = text.NextGraphemeCluster(is.Value, is.CursorOffset)
@@ -341,23 +419,51 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 								modelDirty = true
 							case input.KeyUp:
 								if is.Multiline {
+									if shift {
+										if is.SelectionStart < 0 {
+											is.SelectionStart = is.CursorOffset
+										}
+									} else {
+										is.ClearSelection()
+									}
 									is.CursorOffset = text.CursorUp(is.Value, is.CursorOffset)
 									modelDirty = true
 								}
 							case input.KeyDown:
 								if is.Multiline {
+									if shift {
+										if is.SelectionStart < 0 {
+											is.SelectionStart = is.CursorOffset
+										}
+									} else {
+										is.ClearSelection()
+									}
 									is.CursorOffset = text.CursorDown(is.Value, is.CursorOffset)
 									modelDirty = true
 								}
 							case input.KeyHome:
-								if is.Multiline && !m.Modifiers.Has(input.ModCtrl) {
+								if shift {
+									if is.SelectionStart < 0 {
+										is.SelectionStart = is.CursorOffset
+									}
+								} else {
+									is.ClearSelection()
+								}
+								if is.Multiline && !ctrl {
 									is.CursorOffset = text.LineStart(is.Value, is.CursorOffset)
 								} else {
 									is.CursorOffset = 0
 								}
 								modelDirty = true
 							case input.KeyEnd:
-								if is.Multiline && !m.Modifiers.Has(input.ModCtrl) {
+								if shift {
+									if is.SelectionStart < 0 {
+										is.SelectionStart = is.CursorOffset
+									}
+								} else {
+									is.ClearSelection()
+								}
+								if is.Multiline && !ctrl {
 									is.CursorOffset = text.LineEnd(is.Value, is.CursorOffset)
 								} else {
 									is.CursorOffset = len(is.Value)
@@ -376,19 +482,16 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				case input.CharMsg:
 					mainWC.dispatcher.Collect(m)
 					if is := fm.Input; is != nil {
-						if m.Char == '\r' || m.Char == '\n' {
-							if is.Multiline {
-								v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
-								is.CursorOffset++
-								is.Value = v
-								is.OnChange(v)
-								modelDirty = true
-							}
-						} else if m.Char >= 32 {
+						// Skip CR and LF -- Enter is already handled by KeyMsg(KeyEnter).
+						// On Windows both a KeyMsg and a CharMsg fire for Enter,
+						// which would insert a double newline without this guard.
+						if m.Char >= 32 {
+							is.DeleteSelection()
 							ch := string(m.Char)
 							v := is.Value[:is.CursorOffset] + ch + is.Value[is.CursorOffset:]
 							is.CursorOffset += len(ch)
 							is.Value = v
+							is.ClearSelection()
 							is.OnChange(v)
 							modelDirty = true
 						}
@@ -743,3 +846,4 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 		},
 	})
 }
+

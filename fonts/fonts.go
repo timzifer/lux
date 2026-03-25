@@ -8,6 +8,7 @@ package fonts
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io/fs"
 	"os"
 	"strings"
@@ -41,6 +42,7 @@ type Font struct {
 	sfnt       *sfnt.Font
 	goTextFace *gotextfont.Face // go-text/typesetting face for OpenType shaping
 	rawData    []byte           // retained for go-text parsing (Face holds reference)
+	hasCBDT    bool             // true if font has CBDT/CBLC color bitmap tables
 }
 
 var nextFontID uint64 = 1
@@ -70,6 +72,12 @@ func (f *Font) HasGlyph(r rune) bool {
 	return ok
 }
 
+// RawData returns the original font file bytes.
+func (f *Font) RawData() []byte { return f.rawData }
+
+// HasCBDT reports whether this font has CBDT/CBLC color bitmap tables.
+func (f *Font) HasCBDT() bool { return f.hasCBDT }
+
 // ── Loading API (RFC-003 §3.4) ──────────────────────────────────
 
 // LoadBytes parses a TTF or OTF font from raw bytes.
@@ -89,7 +97,33 @@ func LoadBytes(data []byte) (*Font, error) {
 		f.goTextFace = gtFace
 	}
 
+	// Detect CBDT/CBLC color bitmap tables.
+	f.hasCBDT = detectCBDT(data)
+
 	return f, nil
+}
+
+// detectCBDT checks if the raw font data contains both CBDT and CBLC tables.
+func detectCBDT(data []byte) bool {
+	if len(data) < 12 {
+		return false
+	}
+	n := int(binary.BigEndian.Uint16(data[4:6]))
+	var hasCBDT, hasCBLC bool
+	for i := 0; i < n; i++ {
+		rec := 12 + i*16
+		if rec+16 > len(data) {
+			break
+		}
+		tag := string(data[rec : rec+4])
+		if tag == "CBDT" {
+			hasCBDT = true
+		}
+		if tag == "CBLC" {
+			hasCBLC = true
+		}
+	}
+	return hasCBDT && hasCBLC
 }
 
 // LoadFile loads a TTF or OTF font from a file path.
@@ -248,4 +282,8 @@ func init() {
 
 	// Load the embedded Phosphor icon font.
 	initPhosphorFont()
+
+	// Load the embedded Noto Emoji font and wire it into the fallback chain.
+	initNotoEmojiFont()
+	Fallback.Fallback = append(Fallback.Fallback, NotoEmojiFamily)
 }

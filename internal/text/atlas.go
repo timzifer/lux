@@ -62,18 +62,31 @@ type GlyphAtlas struct {
 	msdfCursorX   int
 	msdfCursorY   int
 	msdfRowHeight int
+
+	// Color emoji atlas (NRGBA with actual color data).
+	ColorImage     *image.NRGBA
+	ColorWidth     int
+	ColorHeight    int
+	ColorDirty     bool
+	ColorPPEM      int // pixels-per-em of the CBDT strike (for scaling)
+	colorCursorX   int
+	colorCursorY   int
+	colorRowHeight int
 }
 
 // NewGlyphAtlas creates an atlas with the given initial dimensions.
 func NewGlyphAtlas(w, h int) *GlyphAtlas {
 	return &GlyphAtlas{
-		Image:     image.NewGray(image.Rect(0, 0, w, h)),
-		Entries:   make(map[GlyphKey]AtlasEntry),
-		Width:     w,
-		Height:    h,
-		MSDFImage:  image.NewNRGBA(image.Rect(0, 0, 512, 512)),
-		MSDFWidth:  512,
-		MSDFHeight: 512,
+		Image:       image.NewGray(image.Rect(0, 0, w, h)),
+		Entries:     make(map[GlyphKey]AtlasEntry),
+		Width:       w,
+		Height:      h,
+		MSDFImage:   image.NewNRGBA(image.Rect(0, 0, 512, 512)),
+		MSDFWidth:   512,
+		MSDFHeight:  512,
+		ColorImage:  image.NewNRGBA(image.Rect(0, 0, 512, 512)),
+		ColorWidth:  512,
+		ColorHeight: 512,
 	}
 }
 
@@ -166,6 +179,23 @@ func (a *GlyphAtlas) LookupOrInsert(key GlyphKey, shaper GlyphRasterizer, style 
 	return entry, true
 }
 
+// LookupOrInsertWithFont looks up a glyph in the atlas, inserting it via the
+// shaper with an explicit font if missing. Used for per-glyph fallback rendering.
+func (a *GlyphAtlas) LookupOrInsertWithFont(key GlyphKey, shaper GlyphRasterizer, f *fonts.Font, style draw.TextStyle) (AtlasEntry, bool) {
+	if entry, ok := a.Lookup(key); ok {
+		return entry, true
+	}
+
+	rg := shaper.RasterizeGlyphWithFont(key.GlyphID, f, style)
+	if rg == nil {
+		return AtlasEntry{}, false
+	}
+
+	bearing := draw.Pt(rg.BearingX, rg.BearingY)
+	entry := a.Insert(key, rg.Image, bearing, rg.Advance)
+	return entry, true
+}
+
 // InsertMSDF inserts an MSDF glyph into the NRGBA atlas.
 func (a *GlyphAtlas) InsertMSDF(key GlyphKey, glyphImg *image.NRGBA, bearing draw.Point, advance, pxRange float32) AtlasEntry {
 	bounds := glyphImg.Bounds()
@@ -240,5 +270,85 @@ func (a *GlyphAtlas) LookupOrInsertMSDF(key GlyphKey, shaper GlyphRasterizer, f 
 
 	bearing := draw.Pt(rg.BearingX, rg.BearingY)
 	entry := a.InsertMSDF(key, rg.Image, bearing, rg.Advance, rg.PxRange)
+	return entry, true
+}
+
+// InsertColor inserts a color emoji glyph into the color NRGBA atlas.
+func (a *GlyphAtlas) InsertColor(key GlyphKey, glyphImg *image.NRGBA, bearing draw.Point, advance float32) AtlasEntry {
+	bounds := glyphImg.Bounds()
+	w := bounds.Dx()
+	h := bounds.Dy()
+
+	if a.colorCursorX+w > a.ColorWidth {
+		a.colorCursorY += a.colorRowHeight + 1
+		a.colorCursorX = 0
+		a.colorRowHeight = 0
+	}
+
+	if a.colorCursorY+h > a.ColorHeight {
+		a.growColor()
+	}
+
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			a.ColorImage.SetNRGBA(a.colorCursorX+x, a.colorCursorY+y,
+				glyphImg.NRGBAAt(bounds.Min.X+x, bounds.Min.Y+y))
+		}
+	}
+
+	entry := AtlasEntry{
+		X: a.colorCursorX, Y: a.colorCursorY,
+		W: w, H: h,
+		BearingX: bearing.X,
+		BearingY: bearing.Y,
+		Advance:  advance,
+		PxRange:  -1, // sentinel: negative PxRange marks color emoji entries
+	}
+	a.Entries[key] = entry
+
+	a.colorCursorX += w + 1
+	if h > a.colorRowHeight {
+		a.colorRowHeight = h
+	}
+	a.ColorDirty = true
+
+	return entry
+}
+
+func (a *GlyphAtlas) growColor() {
+	newH := a.ColorHeight * 2
+	if newH < 512 {
+		newH = 512
+	}
+	newImg := image.NewNRGBA(image.Rect(0, 0, a.ColorWidth, newH))
+
+	for y := 0; y < a.ColorHeight; y++ {
+		srcOff := y * a.ColorImage.Stride
+		dstOff := y * newImg.Stride
+		copy(newImg.Pix[dstOff:dstOff+a.ColorWidth*4], a.ColorImage.Pix[srcOff:srcOff+a.ColorWidth*4])
+	}
+
+	a.ColorImage = newImg
+	a.ColorHeight = newH
+}
+
+// LookupOrInsertColor looks up a color emoji glyph, extracting it from CBDT if missing.
+func (a *GlyphAtlas) LookupOrInsertColor(key GlyphKey, shaper GlyphRasterizer, f *fonts.Font, sizePx int) (AtlasEntry, bool) {
+	if entry, ok := a.Lookup(key); ok {
+		return entry, true
+	}
+
+	rg := shaper.RasterizeColorGlyph(key.GlyphID, f, sizePx)
+	if rg == nil {
+		return AtlasEntry{}, false
+	}
+
+	// Record PPEM once (all CBDT glyphs share the same strike size).
+	if a.ColorPPEM == 0 && rg.PPEM > 0 {
+		a.ColorPPEM = rg.PPEM
+	}
+
+	bearing := draw.Pt(rg.BearingX, rg.BearingY)
+	entry := a.InsertColor(key, rg.Image, bearing, rg.Advance)
 	return entry, true
 }

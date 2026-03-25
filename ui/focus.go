@@ -60,6 +60,11 @@ type FocusManager struct {
 	nextElemID int         // counter for assigning element UIDs during layout
 	Input      *InputState // active TextField input state (if focused is a TextField)
 
+	// PendingCursorOffset stores a cursor byte offset from a click that
+	// occurred before the InputState was created (first click to focus).
+	// -1 means no pending offset. Consumed by the layout pass.
+	PendingCursorOffset int
+
 	// FocusTrap support (RFC-001 §11.7).
 	Trap *FocusTrapManager
 }
@@ -72,7 +77,7 @@ type focusEntry struct {
 
 // NewFocusManager creates a ready-to-use FocusManager.
 func NewFocusManager() *FocusManager {
-	return &FocusManager{}
+	return &FocusManager{PendingCursorOffset: -1}
 }
 
 // FocusedUID returns the UID of the currently focused widget, or 0 if none.
@@ -116,13 +121,17 @@ func (fm *FocusManager) RegisterFocusable(uid UID, opts FocusOpts) {
 }
 
 // ResetOrder clears the focus order for rebuilding on the next layout pass.
+// Input is deliberately preserved: click handlers and key handlers modify
+// CursorOffset/SelectionStart between frames, and clearing Input here
+// would discard those changes before layout can read them. The layout
+// pass overwrites Input when a focused text field is present; if no
+// text field is focused, Input naturally becomes stale and is ignored.
 func (fm *FocusManager) ResetOrder() {
 	if fm == nil {
 		return
 	}
 	fm.focusOrder = fm.focusOrder[:0]
 	fm.nextElemID = 0
-	fm.Input = nil
 }
 
 // SortOrder sorts the focus order: elements with positive TabIndex come

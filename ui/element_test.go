@@ -1012,7 +1012,13 @@ func TestTextFieldClickSetsFocus(t *testing.T) {
 	if target == nil {
 		t.Fatal("expected hit target at TextField position")
 	}
-	target.OnClick()
+	if target.OnClickAt != nil {
+		target.OnClickAt(float32(framePadding+5), float32(framePadding+5))
+	} else if target.OnClick != nil {
+		target.OnClick()
+	} else {
+		t.Fatal("expected hit target to have OnClick or OnClickAt")
+	}
 	if fm.FocusedUID() == 0 {
 		t.Error("FocusedUID should be non-zero after click")
 	}

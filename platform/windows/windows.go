@@ -97,6 +97,7 @@ var (
 	procGlobalAlloc  = kernel32.NewProc("GlobalAlloc")
 	procGlobalLock   = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock = kernel32.NewProc("GlobalUnlock")
+	procGetKeyState  = user32.NewProc("GetKeyState")
 
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
 
@@ -682,13 +683,17 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		case wmKeyDown:
 			if p.callbacks.OnKey != nil {
 				name := win32KeyName(int(wParam))
-				p.callbacks.OnKey(name, 0, 0) // press
+				action := 0 // press
+				if lParam&(1<<30) != 0 {
+					action = 2 // repeat (bit 30 = previous key state)
+				}
+				p.callbacks.OnKey(name, action, win32Mods())
 			}
 			return 0
 		case wmKeyUp:
 			if p.callbacks.OnKey != nil {
 				name := win32KeyName(int(wParam))
-				p.callbacks.OnKey(name, 1, 0) // release
+				p.callbacks.OnKey(name, 1, win32Mods()) // release
 			}
 			return 0
 		case wmChar:
@@ -779,12 +784,16 @@ func (p *Platform) secondaryWindowProc(hwnd uintptr, msg uint32, wParam, lParam 
 		return 0
 	case wmKeyDown:
 		if p.callbacks.OnWindowKey != nil {
-			p.callbacks.OnWindowKey(wid, win32KeyName(int(wParam)), 0, 0)
+			action := 0
+			if lParam&(1<<30) != 0 {
+				action = 2
+			}
+			p.callbacks.OnWindowKey(wid, win32KeyName(int(wParam)), action, win32Mods())
 		}
 		return 0
 	case wmKeyUp:
 		if p.callbacks.OnWindowKey != nil {
-			p.callbacks.OnWindowKey(wid, win32KeyName(int(wParam)), 1, 0)
+			p.callbacks.OnWindowKey(wid, win32KeyName(int(wParam)), 1, win32Mods())
 		}
 		return 0
 	case wmChar:
@@ -850,6 +859,34 @@ type rect struct {
 	Top    int32
 	Right  int32
 	Bottom int32
+}
+
+// win32Mods queries the current modifier key state via GetKeyState and
+// returns a bitmask compatible with ModsFromBits (bit 0=Shift, 1=Ctrl, 2=Alt, 3=Super).
+func win32Mods() int {
+	const vkShift = 0x10
+	const vkControl = 0x11
+	const vkMenu = 0x12    // Alt
+	const vkLWin = 0x5B
+	const vkRWin = 0x5C
+	var mods int
+	isDown := func(vk uintptr) bool {
+		ret, _, _ := procGetKeyState.Call(vk)
+		return int16(ret) < 0 // high bit set = key is down
+	}
+	if isDown(vkShift) {
+		mods |= 1
+	}
+	if isDown(vkControl) {
+		mods |= 2
+	}
+	if isDown(vkMenu) {
+		mods |= 4
+	}
+	if isDown(vkLWin) || isDown(vkRWin) {
+		mods |= 8
+	}
+	return mods
 }
 
 // win32KeyName maps a Win32 virtual key code to a human-readable name.
