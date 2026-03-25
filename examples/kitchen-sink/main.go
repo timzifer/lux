@@ -1199,7 +1199,7 @@ func layoutSection() ui.Element {
 
 		// Stack
 		display.Text("Stack (overlapping):"),
-		layout.Stack(display.Text("Bottom"), display.Text("Top")),
+		layout.NewStack(display.Text("Bottom"), display.Text("Top")),
 		display.Spacer(8),
 
 		// Flex with Justify
@@ -1561,7 +1561,7 @@ func badgesChipsSection(m Model) ui.Element {
 		display.Text("Tooltip (hover to show):"),
 		display.Spacer(4),
 		layout.Row(
-			menu.NewTooltip(
+			menu.New(
 				display.Text("← Hover me for tooltip"),
 				display.Text("This is a tooltip with arbitrary content!"),
 			),
@@ -2704,7 +2704,7 @@ func blurSection() ui.Element {
 		items = append(items,
 			display.Spacer(4),
 			effects.BlurBox(radius,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(200, 60, 8, draw.LinearGradientPaint(
 						draw.Pt(0, 0), draw.Pt(200, 0),
 						draw.GradientStop{Offset: 0, Color: draw.Hex("#3366cc")},
@@ -2751,7 +2751,7 @@ func effectsSection() ui.Element {
 	for i, lv := range levels {
 		shadowCards[i] = layout.Pad(ui.UniformInsets(20),
 			effects.ShadowBox(lv.shadow, 8,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(132, 82, 8, draw.SolidPaint(lv.bg)),
 					layout.Pad(ui.UniformInsets(16),
 						layout.Sized(100, 50,
@@ -2776,7 +2776,7 @@ func effectsSection() ui.Element {
 	for i, a := range alphas {
 		opacityBoxes[i] = layout.Pad(ui.UniformInsets(4),
 			effects.OpacityBox(a,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(104, 64, 6, draw.SolidPaint(draw.Hex("#3b82f6"))),
 					layout.Pad(ui.UniformInsets(12),
 						layout.Sized(80, 40,
@@ -2797,7 +2797,7 @@ func effectsSection() ui.Element {
 	)
 
 	items = append(items,
-		layout.Stack(
+		layout.NewStack(
 			// Complex background: colorful checkerboard pattern makes blur effect obvious
 			display.CheckerRect(420, 160, 16),
 			// Frosted glass panel overlaid on the pattern
@@ -2829,7 +2829,7 @@ func effectsSection() ui.Element {
 			effects.InnerShadowBox(
 				draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.5}, BlurRadius: 10},
 				8,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#e2e8f0"))),
 					layout.Pad(ui.UniformInsets(16),
 						layout.Sized(100, 50, display.Text("Light Inset")),
@@ -2841,7 +2841,7 @@ func effectsSection() ui.Element {
 			effects.InnerShadowBox(
 				draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.85}, BlurRadius: 20},
 				8,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#cbd5e1"))),
 					layout.Pad(ui.UniformInsets(16),
 						layout.Sized(100, 50, display.Text("Deep Inset")),
@@ -2862,7 +2862,7 @@ func effectsSection() ui.Element {
 	elevationCards := []ui.Element{
 		layout.Pad(ui.UniformInsets(16),
 			effects.ElevationCard(nil,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#6366f1"))),
 					layout.Pad(ui.UniformInsets(16),
 						layout.Sized(100, 50, display.Text("Card A")),
@@ -2872,7 +2872,7 @@ func effectsSection() ui.Element {
 		),
 		layout.Pad(ui.UniformInsets(16),
 			effects.ElevationCard(nil,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#3b82f6"))),
 					layout.Pad(ui.UniformInsets(16),
 						layout.Sized(100, 50, display.Text("Card B")),
@@ -2882,7 +2882,7 @@ func effectsSection() ui.Element {
 		),
 		layout.Pad(ui.UniformInsets(16),
 			effects.ElevationCard(nil,
-				layout.Stack(
+				layout.NewStack(
 					display.GradientRect(132, 82, 8, draw.SolidPaint(draw.Hex("#0ea5e9"))),
 					layout.Pad(ui.UniformInsets(16),
 						layout.Sized(100, 50, display.Text("Card C")),
@@ -2904,7 +2904,7 @@ func effectsSection() ui.Element {
 		layout.Row(
 			// Frosted Glass reference (neutral white tint)
 			layout.Pad(ui.UniformInsets(8),
-				layout.Stack(
+				layout.NewStack(
 					display.CheckerRect(210, 160, 16),
 					layout.Pad(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
 						effects.FrostedGlass(16, draw.Color{R: 1, G: 1, B: 1, A: 0.18},
@@ -2923,7 +2923,7 @@ func effectsSection() ui.Element {
 			),
 			// Vibrancy (accent-tinted, visibly colored)
 			layout.Pad(ui.UniformInsets(8),
-				layout.Stack(
+				layout.NewStack(
 					display.CheckerRect(210, 160, 16),
 					layout.Pad(draw.Insets{Top: 20, Left: 16, Right: 16, Bottom: 20},
 						effects.Vibrancy(0.35,

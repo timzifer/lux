@@ -58,6 +58,13 @@ func PasswordReveal(revealed bool, onChange func(bool)) PasswordFieldOption {
 	}
 }
 
+// Aliases for backwards compatibility with the old ui.WithPassword* naming convention.
+var (
+	WithPasswordOnChange = PasswordOnChange
+	WithPasswordFocus    = PasswordFocus
+	WithPasswordReveal   = PasswordReveal
+)
+
 // NewPasswordField creates a password input field.
 func NewPasswordField(value, placeholder string, opts ...PasswordFieldOption) ui.Element {
 	el := PasswordField{Value: value, Placeholder: placeholder}

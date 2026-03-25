@@ -26,6 +26,11 @@ func NewSegmented(items []SegmentedItem, selected int) ui.Element {
 	return Segmented{Items: items, Selected: selected}
 }
 
+// SegmentedButtons is an alias for NewSegmented.
+func SegmentedButtons(items []SegmentedItem, selected int) ui.Element {
+	return NewSegmented(items, selected)
+}
+
 // LayoutSelf implements ui.Layouter.
 func (n Segmented) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area

@@ -70,7 +70,19 @@
       "Bash(cp /tmp/NotoColorEmoji-CBDT.ttf G:/golang/lux/fonts/noto/NotoColorEmoji-CBDT.ttf)",
       "Bash(sed 's|/tmp/NotoColorEmoji-CBDT.ttf|fonts/noto/NotoColorEmoji-CBDT.ttf|' /tmp/test_cbdt.go)",
       "Bash(find /g/golang/lux/internal/wgpu -name \"*.go\" -type f -exec wc -l {} +)",
-      "Bash(xargs basename:*)"
+      "Bash(xargs basename:*)",
+      "Bash(where gh:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr view 72 --json title,headRefName,baseRefName,state,mergeable)",
+      "Bash(\"/c/Program Files \\(x86\\)/GitHub CLI/gh.exe\" pr view 72 --json title,headRefName,baseRefName,state,mergeable)",
+      "Bash(cmd.exe /c \"gh pr view 72 --json title,headRefName,baseRefName,state,mergeable\")",
+      "Bash(export PATH=\"$PATH:/c/Program Files/GitHub CLI:/c/Users/te/AppData/Local/GitHub CLI:/c/Users/te/scoop/shims\")",
+      "Bash(gh pr:*)",
+      "Bash(cmd.exe /c \"where gh\" 2>/dev/null)",
+      "Bash(git fetch:*)",
+      "Bash(git config:*)",
+      "Bash(git:*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(curl -s https://api.github.com/repos/timzifer/lux/pulls/72)"
     ]
   }
 }

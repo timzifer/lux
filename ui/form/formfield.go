@@ -61,6 +61,14 @@ func WithHintMode(mode theme.HintMode) FormFieldOption {
 	return func(f *FormField) { f.HintMode = &mode }
 }
 
+// Aliases for backwards compatibility with the old ui.WithForm* naming convention.
+var (
+	WithFormLabel      = WithLabel
+	WithFormHint       = WithHint
+	WithFormValidation = WithValidation
+	WithFormHintMode   = WithHintMode
+)
+
 // NewFormField creates a FormField wrapping the given child element.
 func NewFormField(child ui.Element, opts ...FormFieldOption) ui.Element {
 	ff := FormField{Child: child}

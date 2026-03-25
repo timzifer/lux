@@ -27,6 +27,11 @@ func NewSplit(label string, onClick func(), onMenu func(), items []SplitItem) ui
 	return Split{Label: label, OnClick: onClick, MenuItems: items, OnMenu: onMenu}
 }
 
+// SplitButton is an alias for NewSplit.
+func SplitButton(label string, onClick func(), onMenu func(), items []SplitItem) ui.Element {
+	return NewSplit(label, onClick, onMenu, items)
+}
+
 // LayoutSelf implements ui.Layouter.
 func (n Split) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area

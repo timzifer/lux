@@ -9,7 +9,6 @@ import (
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -214,6 +213,27 @@ type BaseElement struct{}
 
 func (BaseElement) isElement() {}
 
+// emptyElement renders nothing. It is defined in the core ui package so
+// callers that cannot import ui/display (or want the short ui.Empty() form)
+// have access to a zero-cost empty node.
+type emptyElement struct{ BaseElement }
+
+func (n emptyElement) LayoutSelf(ctx *LayoutContext) Bounds {
+	return Bounds{X: ctx.Area.X, Y: ctx.Area.Y}
+}
+
+func (n emptyElement) TreeEqual(other Element) bool {
+	_, ok := other.(emptyElement)
+	return ok
+}
+
+func (n emptyElement) ResolveChildren(resolve func(Element, int) Element) Element { return n }
+
+func (n emptyElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32) {}
+
+// Empty returns an Element that renders nothing.
+func Empty() Element { return emptyElement{} }
+
 // Layouter is an optional interface on Element types. When implemented,
 // layoutElement dispatches to LayoutSelf instead of the central type switch.
 // Sub-packages implement this so their element types are self-laying-out.
@@ -253,7 +273,6 @@ const (
 	AxisColumn LayoutAxis = iota
 	AxisRow
 )
-
 
 // Labeler is an optional interface on Element types. Elements that hold
 // a text label (TextElement and similar) implement this so code outside
@@ -321,6 +340,7 @@ const (
 	// ButtonTonal renders with a tinted, semi-transparent background.
 	ButtonTonal
 )
+
 // WidgetElement wraps a Widget for embedding in element trees.
 // It is expanded by the Reconciler before layout.
 // ThemedElement overrides the theme for its child subtree (scoped theme).

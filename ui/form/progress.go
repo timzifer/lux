@@ -115,3 +115,6 @@ func (n ProgressBar) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	}
 	b.AddNode(an, parentIdx, a11y.Rect{})
 }
+
+// ProgressBarIndeterminate is an alias for Indeterminate.
+func ProgressBarIndeterminate(phase ...float32) ui.Element { return Indeterminate(phase...) }

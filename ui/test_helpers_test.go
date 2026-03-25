@@ -161,16 +161,6 @@ func Row(children ...Element) Element    { return BoxElement{Axis: AxisRow, Chil
 
 // ── Simple elements (test-only) ──────────────────────────────────
 
-type EmptyElement struct{ BaseElement }
-
-func (EmptyElement) isElement()                                                    {}
-func (n EmptyElement) LayoutSelf(ctx *LayoutContext) Bounds                        { return Bounds{X: ctx.Area.X, Y: ctx.Area.Y} }
-func (n EmptyElement) TreeEqual(other Element) bool                                { _, ok := other.(EmptyElement); return ok }
-func (n EmptyElement) ResolveChildren(resolve func(Element, int) Element) Element  { return n }
-func (n EmptyElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32)            {}
-
-func Empty() Element { return EmptyElement{} }
-
 type SpacerElement struct {
 	BaseElement
 	Size float32
@@ -355,9 +345,11 @@ func (n testLeafElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32)      
 
 func Checkbox(label string, checked bool, onToggle func(bool)) Element   { return testLeafElement{w: 120, h: 20} }
 func Radio(label string, selected bool, onSelect func()) Element         { return testLeafElement{w: 120, h: 20} }
+type ToggleState struct{ Pos float32 }
 func Toggle(on bool, onToggle func(bool), state ...*ToggleState) Element { return testLeafElement{w: 36, h: 20} }
 func Slider(value float32, onChange func(float32)) Element               { return testLeafElement{w: 200, h: 20} }
 func ProgressBar(value float32) Element                                  { return testLeafElement{w: 200, h: 8} }
+func ProgressBarIndeterminate(phase ...float32) Element                   { return testLeafElement{w: 200, h: 8} }
 
 func TextField(value, placeholder string, opts ...func(*testTextFieldCfg)) Element { return testLeafElement{w: 200, h: 36} }
 func Select(value string, options []string, opts ...func(*testSelectCfg)) Element  { return testLeafElement{w: 200, h: 36} }
@@ -408,11 +400,16 @@ func Card(children ...Element) Element {
 	return testLeafElement{w: 200, h: 100}
 }
 
+const badgeMinSize = 20
+
 func Badge(content Element) Element                                          { return testLeafElement{w: 20, h: 20} }
 func BadgeText(label string) Element                                         { return testLeafElement{w: 20, h: 20} }
 func Chip(label Element, selected bool, onClick func()) Element              { return testLeafElement{w: 80, h: 32} }
+func ChipDismissible(label Element, selected bool, onClick, onDismiss func()) Element { return testLeafElement{w: 80, h: 32} }
 func Tooltip(trigger, content Element) Element                               { return testLeafElement{w: 100, h: 20} }
 func TooltipVisible(trigger, content Element, visible bool) Element          { return testLeafElement{w: 100, h: 20} }
+
+func Tabs(items []TabItem, selected int, onSelect func(int)) Element        { return testLeafElement{w: 400, h: 200} }
 
 // Moved types re-declared for tests
 

@@ -21,9 +21,17 @@ func NewIcon(icon string, onClick func()) ui.Element {
 	return Icon{IconName: icon, OnClick: onClick, Variant: ui.ButtonFilled}
 }
 
+// IconButton is an alias for NewIcon.
+func IconButton(icon string, onClick func()) ui.Element { return NewIcon(icon, onClick) }
+
 // IconVariant creates an icon button with a specific variant.
 func IconVariant(variant ui.ButtonVariant, icon string, onClick func()) ui.Element {
 	return Icon{IconName: icon, OnClick: onClick, Variant: variant}
+}
+
+// IconButtonVariant is an alias for IconVariant.
+func IconButtonVariant(variant ui.ButtonVariant, icon string, onClick func()) ui.Element {
+	return IconVariant(variant, icon, onClick)
 }
 
 // LayoutSelf implements ui.Layouter.
