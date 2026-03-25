@@ -45,6 +45,9 @@ type windowsBackend struct {
 	closed           bool
 	comInitialized   bool
 
+	comInit  com.Initialized
+	comScope *com.Scope
+
 	hwnd win32.HWND
 
 	environment *wv2.ICoreWebView2Environment
@@ -101,11 +104,8 @@ func (b *windowsBackend) bootstrap() {
 		return
 	}
 
-	hr := win32.CoInitializeEx(nil, win32.COINIT_APARTMENTTHREADED)
-	if win32.FAILED(hr) {
-		b.setError(fmt.Errorf("CoInitializeEx failed: 0x%08x", uint32(hr)))
-		return
-	}
+	b.comInit = com.Initialize()
+	b.comScope = com.NewScope()
 	b.comInitialized = true
 	b.runtimeAvailable = true
 
@@ -416,7 +416,11 @@ func (b *windowsBackend) Close() error {
 	b.dxgiSharedHandle = 0
 	b.textureID = 0
 	if b.comInitialized {
-		win32.CoUninitialize()
+		if b.comScope != nil {
+			b.comScope.Leave()
+			b.comScope = nil
+		}
+		b.comInit.Uninitialize()
 		b.comInitialized = false
 	}
 	return b.lastErr
