@@ -44,7 +44,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          racedetector test -tags nogui -count=1 -timeout=10m \
+          go test -toolexec="racedetector toolexec" -tags nogui -count=1 -timeout=10m \
             $(go list -tags nogui ./... | grep -v /vendor_gogpu_wgpu/ | grep -v /uitest)
 
   ui-tests:
