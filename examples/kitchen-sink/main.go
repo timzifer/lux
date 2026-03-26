@@ -64,7 +64,7 @@ var sectionIDs = []string{
 // sectionGroupChildren maps each group to its leaf section IDs.
 var sectionGroupChildren = map[string][]string{
 	"group-basics":       {"typography", "buttons"},
-	"group-input":        {"form-controls", "range-progress", "selection", "validation"},
+	"group-input":        {"form-controls", "range-progress", "selection", "validation", "pickers", "numeric-spinner"},
 	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout", "table-layout"},
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
@@ -124,6 +124,10 @@ func sectionLabel(id string) string {
 		return "Selection"
 	case "validation":
 		return "Validation & Hints"
+	case "pickers":
+		return "Pickers"
+	case "numeric-spinner":
+		return "Numeric & Spinner"
 	case "layout":
 		return "Layout"
 	case "split-view":
@@ -337,6 +341,15 @@ type Model struct {
 	// TextArea
 	TextAreaValue  string
 	TextAreaScroll *ui.ScrollState
+	// Pickers & Numeric
+	DateVal      time.Time
+	DateState    *form.DatePickerState
+	ColorVal     draw.Color
+	ColorState   *form.ColorPickerState
+	TimeHour     int
+	TimeMinute   int
+	TimeState    *form.TimePickerState
+	NumericVal   float64
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -417,6 +430,12 @@ type SetValConfirmMsg struct{ Value string }
 type SetValPwRevealedMsg struct{ Value bool }
 type SetValRoleMsg struct{ Value string }
 type ValidateFormMsg struct{}
+
+// Picker & Numeric messages
+type SetDateMsg struct{ Value time.Time }
+type SetColorMsg struct{ Value draw.Color }
+type SetTimeMsg struct{ Hour, Minute int }
+type SetNumericMsg struct{ Value float64 }
 
 // Accessibility messages
 type BuildA11yTreeMsg struct{}
@@ -748,6 +767,15 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.ValRole = msg.Value
 	case SetSelectValMsg:
 		m.SelectVal = msg.Value
+	case SetDateMsg:
+		m.DateVal = msg.Value
+	case SetColorMsg:
+		m.ColorVal = msg.Value
+	case SetTimeMsg:
+		m.TimeHour = msg.Hour
+		m.TimeMinute = msg.Minute
+	case SetNumericMsg:
+		m.NumericVal = msg.Value
 	case ValidateFormMsg:
 		schema := validation.Schema{
 			"email":    validation.Rules(validation.Required, validation.Email),
@@ -830,6 +858,10 @@ func sectionContent(m Model) ui.Element {
 		return selectionSection(m)
 	case "validation":
 		return validationSection(m)
+	case "pickers":
+		return pickersSection(m)
+	case "numeric-spinner":
+		return numericSpinnerSection(m)
 	case "layout":
 		return layoutSection()
 	case "flex-grid-css":
@@ -1142,6 +1174,56 @@ func selectionSection(m Model) ui.Element {
 		form.NewSelect(m.SelectVal, []string{"Option 1", "Option 2", "Option 3"},
 			form.WithSelectState(m.SelectState),
 			form.WithOnSelect(func(v string) { app.Send(SetSelectValMsg{v}) }),
+		),
+	)
+}
+
+func pickersSection(m Model) ui.Element {
+	return layout.Column(
+		sectionHeader("Pickers"),
+
+		display.Text("DatePicker:"),
+		form.NewDatePicker(m.DateVal,
+			form.WithDatePickerState(m.DateState),
+			form.WithOnDateChange(func(v time.Time) { app.Send(SetDateMsg{v}) }),
+		),
+		display.Spacer(12),
+
+		display.Text("ColorPicker:"),
+		form.NewColorPicker(m.ColorVal,
+			form.WithColorPickerState(m.ColorState),
+			form.WithOnColorChange(func(v draw.Color) { app.Send(SetColorMsg{v}) }),
+		),
+		display.Spacer(12),
+
+		display.Text("TimePicker:"),
+		form.NewTimePicker(m.TimeHour, m.TimeMinute,
+			form.WithTimePickerState(m.TimeState),
+			form.WithOnTimeChange(func(h, min int) { app.Send(SetTimeMsg{h, min}) }),
+		),
+	)
+}
+
+func numericSpinnerSection(m Model) ui.Element {
+	return layout.Column(
+		sectionHeader("Numeric & Spinner"),
+
+		display.Text(fmt.Sprintf("NumericInput (value: %.0f):", m.NumericVal)),
+		form.NewNumericInput(m.NumericVal,
+			form.WithNumericRange(0, 100),
+			form.WithNumericStep(1),
+			form.WithUnit("px"),
+			form.WithOnNumericChange(func(v float64) { app.Send(SetNumericMsg{v}) }),
+		),
+		display.Spacer(12),
+
+		display.Text("Spinner:"),
+		form.NewSpinner(float32(math.Mod(m.AnimTime*1.2, 1.0))),
+		display.Spacer(8),
+
+		display.Text("Large Spinner:"),
+		form.NewSpinner(float32(math.Mod(m.AnimTime*0.8, 1.0)),
+			form.WithSpinnerSize(48),
 		),
 	)
 }
@@ -3851,6 +3933,15 @@ func main() {
 		ImageStore:          luximage.NewStore(),
 		ImageOpacity:        1.0,
 		TextAreaScroll:      &ui.ScrollState{},
+		// Pickers & Numeric defaults
+		DateVal:    time.Now(),
+		DateState:  &form.DatePickerState{},
+		ColorVal:   draw.Color{R: 0.25, G: 0.32, B: 0.71, A: 1}, // Indigo
+		ColorState: &form.ColorPickerState{},
+		TimeHour:   14,
+		TimeMinute: 30,
+		TimeState:  &form.TimePickerState{},
+		NumericVal: 42,
 	}
 	// Generate procedural demo images — each with distinct colors for easy identification.
 	initial.ImgChecker1 = generateColorChecker(initial.ImageStore, 64, 64, 8,
