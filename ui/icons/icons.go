@@ -50,6 +50,11 @@ const (
 	Warning           = "\uE4DA"
 	Info              = "\uE2CC"
 
+	// Date & Time
+	Calendar = "\uE118"
+	Clock    = "\uE196"
+	Palette  = "\uE398"
+
 	// UI / Symbols
 	Star        = "\uE46A"
 	Heart       = "\uE2A8"

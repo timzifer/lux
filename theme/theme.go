@@ -44,6 +44,12 @@ const (
 	WidgetKindDialog
 	WidgetKindFormField
 	WidgetKindTextArea
+	// Tier 4
+	WidgetKindDatePicker
+	WidgetKindColorPicker
+	WidgetKindTimePicker
+	WidgetKindNumericInput
+	WidgetKindSpinner
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).
