@@ -20,6 +20,10 @@ import (
 	"github.com/timzifer/lux/ui"
 )
 
+// msdfReadyMsg is an internal message sent when background MSDF rasterization
+// completes. It triggers a repaint so the atlas picks up the new glyphs.
+type msdfReadyMsg struct{}
+
 // Run starts the application. It blocks until the window is closed (RFC §3.1).
 //
 // The model, update, and view form the Elm architecture triad:
@@ -132,6 +136,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	shaper := text.NewGoTextShaper(fonts.Fallback)
 	shaper.RegisterFamily(fonts.PhosphorFamily)
 	shaper.RegisterFamily(fonts.NotoEmojiFamily)
+
+	// Wire async MSDF completion → repaint via the app loop.
+	atlas.SetMSDFNotify(func() { appLoop.Send(msdfReadyMsg{}) })
 
 	// If the renderer supports atlas-based text, wire it up.
 	type atlasSetter interface{ SetAtlas(*text.GlyphAtlas) }
@@ -676,6 +683,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 			// 4. Tick hover animations (RFC §12.2: AnimationTick before paint).
 			hoverState.Tick(dt)
+
+			// 4b. Drain completed async MSDF glyphs into the atlas.
+			// Newly inserted glyphs will be picked up by BuildScene below,
+			// replacing the temporary bitmap fallbacks with MSDF textures.
+			atlas.DrainMSDFResults()
 
 			// 5. Build scene with hover state.
 			// Reset element UID counter so BuildScene assigns the same UIDs

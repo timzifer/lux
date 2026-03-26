@@ -24,7 +24,15 @@ type SfntShaper struct {
 
 	mu       sync.Mutex
 	faces    map[faceCacheKey]font.Face
-	msdfGens map[msdfCacheKey]*msdf.Msdf
+	msdfGens map[msdfCacheKey]*msdfGenEntry
+}
+
+// msdfGenEntry wraps an MSDF generator with its own mutex so that
+// concurrent goroutines serialise access per font+size combination
+// while different combinations run in parallel.
+type msdfGenEntry struct {
+	mu  sync.Mutex
+	gen *msdf.Msdf
 }
 
 type faceCacheKey struct {
@@ -397,20 +405,27 @@ func (s *SfntShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Font
 	// Get or create the MSDF generator for this font+size combination.
 	s.mu.Lock()
 	cacheKey := msdfCacheKey{fontID: f.ID(), size: atlasSize}
-	gen, ok := s.msdfGens[cacheKey]
+	entry, ok := s.msdfGens[cacheKey]
 	if !ok {
-		gen = msdf.NewFromFont(sf, &msdf.Config{
-			Size:          float64(atlasSize),
-			DistanceField: float64(pxRange),
-		})
-		if s.msdfGens == nil {
-			s.msdfGens = make(map[msdfCacheKey]*msdf.Msdf)
+		entry = &msdfGenEntry{
+			gen: msdf.NewFromFont(sf, &msdf.Config{
+				Size:          float64(atlasSize),
+				DistanceField: float64(pxRange),
+			}),
 		}
-		s.msdfGens[cacheKey] = gen
+		if s.msdfGens == nil {
+			s.msdfGens = make(map[msdfCacheKey]*msdfGenEntry)
+		}
+		s.msdfGens[cacheKey] = entry
 	}
 	s.mu.Unlock()
 
-	glyph, err := gen.Get(hintRune)
+	// Per-generator lock: serialises concurrent access to the same
+	// font+size generator while allowing different generators to run
+	// in parallel.
+	entry.mu.Lock()
+	glyph, err := entry.gen.Get(hintRune)
+	entry.mu.Unlock()
 	if err != nil || glyph == nil || glyph.Canvas == nil {
 		return nil
 	}

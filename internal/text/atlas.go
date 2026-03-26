@@ -2,10 +2,20 @@ package text
 
 import (
 	"image"
+	"sync/atomic"
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
 )
+
+// msdfResult holds a completed MSDF glyph rasterized in a background goroutine.
+type msdfResult struct {
+	Key     GlyphKey
+	Image   *image.NRGBA
+	Bearing draw.Point
+	Advance float32
+	PxRange float32
+}
 
 // GlyphKey uniquely identifies a rasterized glyph in the atlas.
 // It uses the OpenType GlyphID (post-GSUB) so that ligature glyphs
@@ -87,6 +97,12 @@ type GlyphAtlas struct {
 	msdfCursorY   int
 	msdfRowHeight int
 
+	// Async MSDF rasterization state.
+	msdfPending map[GlyphKey]struct{} // keys currently being rasterized in background
+	msdfResults chan msdfResult       // completed MSDF glyphs from goroutines
+	msdfNotify  func()               // callback to trigger repaint (set via SetMSDFNotify)
+	msdfSignal  atomic.Bool          // debounce flag: true while a notify is in flight
+
 	// Color emoji atlas (NRGBA with actual color data).
 	ColorImage     *image.NRGBA
 	ColorWidth     int
@@ -108,6 +124,8 @@ func NewGlyphAtlas(w, h int) *GlyphAtlas {
 		MSDFImage:   image.NewNRGBA(image.Rect(0, 0, 512, 512)),
 		MSDFWidth:   512,
 		MSDFHeight:  512,
+		msdfPending: make(map[GlyphKey]struct{}),
+		msdfResults: make(chan msdfResult, 256),
 		ColorImage:  image.NewNRGBA(image.Rect(0, 0, 512, 512)),
 		ColorWidth:  512,
 		ColorHeight: 512,
@@ -300,6 +318,74 @@ func (a *GlyphAtlas) LookupOrInsertMSDF(key GlyphKey, shaper GlyphRasterizer, f 
 	bearing := draw.Pt(rg.BearingX, rg.BearingY)
 	entry := a.InsertMSDF(key, rg.Image, bearing, rg.Advance, rg.PxRange)
 	return entry, true
+}
+
+// SetMSDFNotify sets a callback that is invoked (at most once per batch) when
+// background MSDF rasterization completes. The callback is called from a
+// goroutine and should be safe to call concurrently (e.g. appLoop.Send).
+func (a *GlyphAtlas) SetMSDFNotify(fn func()) {
+	a.msdfNotify = fn
+}
+
+// RequestMSDFAsync queues an MSDF glyph for background rasterization.
+// If the glyph is already cached or already in flight, this is a no-op.
+// The caller should fall back to bitmap rendering for the current frame.
+func (a *GlyphAtlas) RequestMSDFAsync(key GlyphKey, shaper GlyphRasterizer, f *fonts.Font) {
+	if _, ok := a.Entries[key]; ok {
+		return
+	}
+	if _, ok := a.msdfPending[key]; ok {
+		return
+	}
+	a.msdfPending[key] = struct{}{}
+
+	atlasSize := int(key.SizePx)
+	if atlasSize <= 0 {
+		atlasSize = MSDFAtlasSize
+	}
+
+	resultCh := a.msdfResults
+	notify := a.msdfNotify
+	signal := &a.msdfSignal
+
+	go func() {
+		rg := shaper.RasterizeMSDFGlyph(key.GlyphID, key.Rune, f, atlasSize, MSDFPxRange)
+		if rg != nil {
+			resultCh <- msdfResult{
+				Key:     key,
+				Image:   rg.Image,
+				Bearing: draw.Pt(rg.BearingX, rg.BearingY),
+				Advance: rg.Advance,
+				PxRange: rg.PxRange,
+			}
+		} else {
+			resultCh <- msdfResult{Key: key}
+		}
+		// Debounced notify: only send one repaint signal per batch.
+		if notify != nil && signal.CompareAndSwap(false, true) {
+			notify()
+		}
+	}()
+}
+
+// DrainMSDFResults inserts all completed MSDF glyphs into the atlas.
+// Must be called on the main thread. Returns true if any glyphs were inserted.
+func (a *GlyphAtlas) DrainMSDFResults() bool {
+	anyInserted := false
+	for {
+		select {
+		case r := <-a.msdfResults:
+			delete(a.msdfPending, r.Key)
+			if r.Image != nil {
+				a.InsertMSDF(r.Key, r.Image, r.Bearing, r.Advance, r.PxRange)
+				anyInserted = true
+			}
+		default:
+			// Reset debounce flag so the next batch can signal again.
+			a.msdfSignal.Store(false)
+			return anyInserted
+		}
+	}
 }
 
 // InsertColor inserts a color emoji glyph into the color NRGBA atlas.

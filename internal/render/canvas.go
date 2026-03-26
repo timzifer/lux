@@ -540,8 +540,13 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: sizePx}
 			entry, ok = c.atlas.LookupOrInsertColor(key, shaper, glyphFont, int(sizePx))
 		} else if glyphUseMSDF {
-			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: msdfBucket, MSDF: true}
-			entry, ok = c.atlas.LookupOrInsertMSDF(key, shaper, glyphFont)
+			// Async MSDF: look up only; if not cached, queue background
+			// rasterization and fall through to the bitmap path below.
+			msdfKey := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: msdfBucket, MSDF: true}
+			entry, ok = c.atlas.Lookup(msdfKey)
+			if !ok {
+				c.atlas.RequestMSDFAsync(msdfKey, shaper, glyphFont)
+			}
 		}
 		if !ok && !isColorEmoji {
 			// Bitmap path (or MSDF fallback for ligature glyphs whose
