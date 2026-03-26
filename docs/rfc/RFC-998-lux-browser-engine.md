@@ -3,7 +3,7 @@
 **Repository:** `github.com/timzifer/lux`
 
 **Status:** Very Theoretical — nicht zur Umsetzung vorgesehen
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Datum:** 2026-03-26
 **Zuletzt abgeglichen:** 2026-03-26
 **Abhängigkeiten:** RFC-001 (Core), RFC-002 (Interaction/Layout), RFC-003 (Widget-Katalog), RFC-004 (WebView)
@@ -90,7 +90,7 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 | ScrollView + Kinetic | `ui/nav/scroll.go`, `ui/kinetic_scroll.go` | `overflow:auto/scroll` | Scrolling/Scrollbar/Trägheit bereits gelöst |
 | VirtualList | `ui/data/virtuallist.go` | Viewport-Culling | Direkt nutzbar für große Dokumente |
 | Tree Widget | `ui/data/tree.go` | DOM-Inspector | DevTools-Struktur nahezu direkt |
-| RichText | `ui/display/richtext.go` | Inline Text-Runs | Wichtiger Startpunkt für Inline-Layout |
+| RichText + Inline Widgets | `ui/display/richtext.go` | Inline Text-Runs + Replaced Elements | Inline-Layout mit gemischtem Text-/Widget-Flow; `InlineWidget` mit Baseline-Alignment |
 | Text Shaping | `internal/text/gotext_shaper.go` | `font-*`, Shaping | GSUB/GPOS + Fallback-Ketten vorhanden |
 | Font-Fallback | `fonts/fonts.go` | `font-family` Cascade | Fallback-Mechanik bereits robust |
 | Line Breaking | `internal/text/linebreak.go` | `word-wrap`, `overflow-wrap` | Unicode-konforme Zeilenumbrüche vorhanden |
@@ -103,7 +103,7 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 | Clipping/Transform | `draw/canvas.go` | `overflow:hidden`, `transform` | Clip-Stack + Transform-Stack vorhanden |
 | Image | `ui/display/image.go`, `image/` | `<img>` | Laden/Skalieren bereits umgesetzt |
 | 9-Slice | `draw/canvas.go` | `border-image` | Nützlicher Spezialfall |
-| Form-Controls | `ui/form/*.go` | `<input>`, `<select>`, `<textarea>`, `<progress>` | Viele Controls bereits als native Widgets |
+| Form-Controls | `ui/form/*.go` | `<input>`, `<select>`, `<textarea>`, `<progress>`, `<input type="date/color/time/number">` | Breites Control-Spektrum inkl. DatePicker, ColorPicker, TimePicker, NumericInput, Spinner |
 | Button/Tabs/Dialog/Tooltip/Menu | `ui/button/`, `ui/nav/`, `ui/dialog/`, `ui/menu/` | Browser-UI + HTML-nahe Controls | Wiederverwendung für Browser-Chrome und interaktive Elemente |
 | Hit Testing | `internal/hit/hit.go` | Event-Target-Findung | Essenziell für Pointer-Dispatch |
 | Dispatch/Focus | `ui/dispatch.go`, `ui/focus.go`, `ui/focus_trap.go` | Capture/Bubble + Tab-Navigation | Framework-Grundlage bereits da |
@@ -115,8 +115,11 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 | GPU Renderer | `internal/gpu/wgpu_renderer.go` | Compositing-Backend | Bereits production-naher Rendererpfad |
 | Scene Builder | `internal/render/canvas.go` | Display List / Batching | Fundament für Paint/Composite-Pipeline |
 | Overlay System | `ui/overlay.go` | Popups/Floating UI | Wichtig für Menüs, Selects, Tooltips |
+| SVG Rendering | `image/svg.go`, `image/svgpath.go` | `<svg>` | GPU-beschleunigte Vektorisierung; path/rect/circle/ellipse/line/polygon/polyline/g |
+| Table Layout | `ui/layout/table.go` | CSS `display:table` | HTML-Spec-konformes CSS Table Layout (Fixed + Auto, 1038 LOC) |
+| SplitView | `ui/nav/splitview.go` | Resizable Panes | Kollabierbare/resize-fähige Panel-Trennung |
 
-**Zwischenfazit:** Der „untere“ Teil der Rendering-Pipeline (Text, Paint, Compositor, Input, A11y) ist im Vergleich zu typischen Hobby-Engine-Projekten außergewöhnlich weit.
+**Zwischenfazit:** Der „untere” Teil der Rendering-Pipeline (Text, Paint, Compositor, Input, A11y) ist im Vergleich zu typischen Hobby-Engine-Projekten außergewöhnlich weit. Seit der Erstfassung dieses RFC sind SVG-Rendering, Table Layout, Inline Widgets in RichText und fünf weitere Form-Controls (DatePicker, ColorPicker, TimePicker, NumericInput, Spinner) hinzugekommen — der Reuse-Anteil ist damit nochmals signifikant gestiegen.
 
 ---
 
@@ -124,15 +127,18 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 
 | Lux-Komponente | Status | Browser-Äquivalent | Synergie |
 |---|---|---|---|
-| DataTable / CSS Table Layout | ✅ Table Layout integriert | `<table>` | `ui/layout/table.go` — HTML-Spec-konformes CSS Table Layout (Fixed + Auto); DataTable-Widget darauf aufbauend ausstehend |
-| DatePicker | ⏳ Phase 7.1 | `<input type="date">` | Native Browser-Controls leichter abbildbar |
-| ColorPicker | ⏳ Phase 7.1 | `<input type="color">` | Direktes Control-Mapping |
+| DataTable / CSS Table Layout | ✅ Table Layout integriert | `<table>` | `ui/layout/table.go` (1038 LOC) — HTML-Spec-konformes CSS Table Layout (Fixed + Auto); DataTable-Widget darauf aufbauend ausstehend |
+| DatePicker | ✅ Integriert | `<input type="date">` | `ui/form/datepicker.go` — Kalender-Dropdown mit Monatsnavigation |
+| ColorPicker | ✅ Integriert | `<input type="color">` | `ui/form/colorpicker.go` — 16-Farben-Palette mit Dropdown |
+| TimePicker | ✅ Integriert | `<input type="time">` | `ui/form/timepicker.go` — HH:MM-Auswahl (neu seit v0.1.0) |
+| NumericInput | ✅ Integriert | `<input type="number">` | `ui/form/numericinput.go` — Stepper, Drag-to-Adjust, Unit-Suffix (neu seit v0.1.0) |
+| Spinner | ✅ Integriert | CSS `animation` Spinner | `ui/form/spinner.go` — Animierter Ladeindikator (neu seit v0.1.0) |
 | Toolbar | ⏳ Phase 7.1 | Browser-Chrome | Adressleiste/Navigation/UI-Shell |
 | FilePicker | ⏳ Phase 7.1 | `<input type="file">` | Upload-Flow mit OS-Dialog |
-| RichTextEditor | ⏳ Phase 7.1 | `contenteditable` | Gemeinsame Editier-/Selection-Logik |
-| Inline Widgets in RichText | ⏳ Phase 4.7 | Replaced Elements Inline | Kernstück für gemischten Text-/Widget-Flow |
-| Code Editor | 🔶 RFC-010 | Script/CSS-Editor in DevTools | Reuse für Inspektor-/Source-Views |
-| SVG Support | ⏳ Stub (`image/svg.go`) | `<svg>` | Vektorpfad für Web-Inhalte und Lux |
+| RichTextEditor | ⏳ Phase 7.1 | `contenteditable` | Gemeinsame Editier-/Selection-Logik; RichText-Display bereits vorhanden |
+| Inline Widgets in RichText | ✅ Integriert | Replaced Elements Inline | `ui/display/richtext.go` — `InlineWidget`-Typ mit Baseline-Alignment, `ParagraphContent`-Union (TextSpan \| InlineWidget) |
+| Code Editor | 🔶 RFC-010 | Script/CSS-Editor in DevTools | Reuse für Inspektor-/Source-Views; RFC-Design abgeschlossen, Implementierung ausstehend |
+| SVG Support | ✅ Integriert | `<svg>` | `image/svg.go` (785 LOC) + `svgpath.go` (697 LOC) — GPU-beschleunigte Vektorisierung; Unterstützung für path/rect/circle/ellipse/line/polygon/polyline/g |
 | Inspector/DevTools | ⏳ Phase 6.7 | Browser DevTools | Debug-Protokolle direkt wiederverwertbar |
 | DynamicDataset | ⏳ Phase 6.6 | Infinite/Lazy DOM | Large-Page-Strategien für beide Welten |
 
@@ -321,27 +327,28 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 
 ## 7. Aufwandsmatrix
 
-| Subsystem | Komplexität | Lux-Reuse | Extern | Neubau-Anteil |
-|---|---|---|---|---|
-| HTML Parsing & DOM | Hoch | Niedrig-Mittel | Parser ja | Hoch |
-| CSS Parsing & Cascade | Hoch | Niedrig | optional | Sehr hoch |
-| Layout Core | Sehr hoch | Mittel | nein | Sehr hoch |
-| Painting/Compositing | Mittel-Hoch | Sehr hoch | nein | Mittel |
-| Text/Fonts | Mittel-Hoch | Sehr hoch | nein | Mittel |
-| Networking/Loader | Hoch | Niedrig | stdlib ja | Hoch |
-| JS Runtime Integration | Hoch | Niedrig | JS Engine ja | Hoch |
-| DOM↔JS Bridge | Sehr hoch | Niedrig | nein | Sehr hoch |
-| Events | Mittel | Hoch | nein | Mittel |
-| Accessibility | Mittel-Hoch | Hoch | nein | Mittel |
-| Formular-Semantik | Mittel | Hoch | nein | Mittel |
+| Subsystem | Komplexität | Lux-Reuse | Extern | Neubau-Anteil | Δ seit v0.1.0 |
+|---|---|---|---|---|---|
+| HTML Parsing & DOM | Hoch | Niedrig-Mittel | Parser ja | Hoch | — |
+| CSS Parsing & Cascade | Hoch | Niedrig | optional | Sehr hoch | — |
+| Layout Core | Sehr hoch | **Hoch** | nein | **Hoch** | ⬆ Table Layout (1038 LOC) + Inline Widgets reduzieren Neubau |
+| Painting/Compositing | Mittel-Hoch | Sehr hoch | nein | Mittel | — |
+| Text/Fonts | Mittel-Hoch | Sehr hoch | nein | Mittel | ⬆ Async MSDF-Atlas verbessert Performance |
+| Networking/Loader | Hoch | Niedrig | stdlib ja | Hoch | — |
+| JS Runtime Integration | Hoch | Niedrig | JS Engine ja | Hoch | — |
+| DOM↔JS Bridge | Sehr hoch | Niedrig | nein | Sehr hoch | — |
+| Events | Mittel | Hoch | nein | Mittel | — |
+| Accessibility | Mittel-Hoch | Hoch | nein | Mittel | — |
+| Formular-Semantik | Mittel | **Sehr hoch** | nein | **Niedrig-Mittel** | ⬆ 5 neue Controls (Date/Color/Time/Numeric/Spinner) |
+| SVG / Vektorgrafik | Mittel | **Hoch** | nein | **Mittel** | ⬆ Neu: GPU-beschleunigte SVG-Pipeline |
 
-**Grobe Gesamtordnung:**
+**Grobe Gesamtordnung (aktualisiert):**
 
-- **MVP „statischer HTML/CSS-Viewer“:** ca. 35–70 KLOC
-- **Interaktives DOM + JS-Teilmenge:** ca. 80–160 KLOC
-- **Robust gegen reale Websites:** realistisch >220 KLOC + lange Stabilisierung
+- **MVP „statischer HTML/CSS-Viewer”:** ca. **30–60 KLOC** (↓ gegenüber 35–70 KLOC durch Table Layout, SVG, Form-Controls und Inline-Layout-Reuse)
+- **Interaktives DOM + JS-Teilmenge:** ca. 75–150 KLOC (↓ leicht)
+- **Robust gegen reale Websites:** realistisch >200 KLOC + lange Stabilisierung
 
-(Die Zahlen sind bewusst breit — der Variationsfaktor hängt stark am CSS- und JS-API-Scope.)
+(Die Zahlen sind bewusst breit — der Variationsfaktor hängt stark am CSS- und JS-API-Scope. Die Reduktion für den MVP-Track ist spürbar, die oberen Stufen profitieren weniger, da dort DOM/JS-Bridge/Web-APIs dominieren.)
 
 ---
 
@@ -407,17 +414,19 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 
 ## 11. Synergie-Effekte für Lux
 
-| Browser-Subsystem | Rückfluss in Lux |
-|---|---|
-| CSS Flexbox spec-konform | ✅ Bereits CSS-Spec-konform in `ui/layout/flex.go` |
-| CSS Grid spec-näher | ✅ Bereits CSS-Spec-konform in `ui/layout/grid.go` |
-| Table Layout | ✅ Bereits HTML-Spec-konform in `ui/layout/table.go` |
-| Inline Layout | Basis für Inline Widgets in RichText |
-| contenteditable-nahe Logik | Fundament für RichTextEditor |
-| SVG Pipeline | Vervollständigt `image/svg.go` |
-| DevTools-Protokolle | Stärkung Inspector/Debug-Tooling |
+| Browser-Subsystem | Rückfluss in Lux | Status |
+|---|---|---|
+| CSS Flexbox spec-konform | ✅ Bereits CSS-Spec-konform in `ui/layout/flex.go` | Erledigt |
+| CSS Grid spec-näher | ✅ Bereits CSS-Spec-konform in `ui/layout/grid.go` | Erledigt |
+| Table Layout | ✅ Bereits HTML-Spec-konform in `ui/layout/table.go` | Erledigt |
+| Inline Layout / Replaced Elements | ✅ `InlineWidget` in RichText mit Baseline-Alignment | Erledigt (neu) |
+| SVG Pipeline | ✅ GPU-beschleunigte SVG-Vektorisierung in `image/svg.go` | Erledigt (neu) |
+| Form-Controls für HTML-Inputs | ✅ DatePicker, ColorPicker, TimePicker, NumericInput, Spinner | Erledigt (neu) |
+| contenteditable-nahe Logik | Fundament für RichTextEditor | Ausstehend |
+| DevTools-Protokolle | Stärkung Inspector/Debug-Tooling | Ausstehend |
+| Code Editor (RFC-010) | Syntax-Highlighting, LSP, Multi-Cursor für DevTools-Source-Views | Design fertig, Implementierung ausstehend |
 
-**Strategischer Punkt:** Selbst wenn nie ein vollständiger Browser entsteht, sind zentrale Teilinvestitionen direkt für Lux-Widgets und Entwickler-Tools verwertbar.
+**Strategischer Punkt:** Seit der Erstfassung dieses RFC wurden 6 der 11 identifizierten Synergie-Investitionen realisiert. Die verbleibenden (RichTextEditor, Inspector, Code Editor) sind die architektonisch anspruchsvollsten und bilden den natürlichen nächsten Horizont.
 
 ---
 
@@ -442,5 +451,76 @@ Gleichzeitig bleibt der fehlende obere Stack (DOM/CSSOM/Layout/JS-Bridge/Securit
 
 **Empfohlene Lesart von RFC-998:**
 
-- Nicht als Produkt-Roadmap für „Lux Browser“.
+- Nicht als Produkt-Roadmap für „Lux Browser”.
 - Sondern als Architektur-Kompass für selektive Investitionen mit hohem Rückfluss in Lux selbst (DataTable, RichTextEditor, SVG, Inspector, Layout-Engine-Qualität).
+
+---
+
+## 14. Re-Evaluierung v0.2.0 (2026-03-26)
+
+### Was sich seit der Erstfassung geändert hat
+
+Seit der Erstfassung (v0.1.0, ebenfalls 2026-03-26) wurde in kurzer Zeit erheblich nachgelegt. Die Änderungen betreffen primär den **Reuse-Anteil** — also den Teil des Stacks, den Lux bereits für eine hypothetische Browser-Engine mitbringt.
+
+#### Neu integrierte Komponenten
+
+| Komponente | Dateien | Browser-Relevanz |
+|---|---|---|
+| **SVG-Rendering** | `image/svg.go` (785 LOC), `image/svgpath.go` (697 LOC) | `<svg>` — GPU-beschleunigte Pfad-Vektorisierung; Elementtypen path/rect/circle/ellipse/line/polygon/polyline/g |
+| **Inline Widgets in RichText** | `ui/display/richtext.go` (389 LOC) | Replaced Elements im Inline-Flow — Kernbaustein für gemischten Text-/Widget-Satz (Bilder in Fließtext, Badges, Chips) |
+| **DatePicker** | `ui/form/datepicker.go` (352 LOC) | `<input type=”date”>` |
+| **ColorPicker** | `ui/form/colorpicker.go` (270 LOC) | `<input type=”color”>` |
+| **TimePicker** | `ui/form/timepicker.go` (308 LOC) | `<input type=”time”>` |
+| **NumericInput** | `ui/form/numericinput.go` (273 LOC) | `<input type=”number”>` mit Stepper und Drag-to-Adjust |
+| **Spinner** | `ui/form/spinner.go` (118 LOC) | Animierter Ladeindikator |
+| **Async MSDF-Atlas** | Font-Pipeline | Performance-Verbesserung für Text-Rendering; Bitmap-Fallback |
+| **SplitView** | `ui/nav/splitview.go` | Resizable Panels (DevTools-Layout) |
+
+#### Auswirkung auf die Subsystem-Analyse
+
+1. **Layout (§6.3):** Table Layout (1038 LOC) und Inline Widgets reduzieren den Neubau-Anteil für CSS Formatting Contexts. Reuse-Einstufung steigt von „Mittel” auf „Hoch”. Die Schätzung sinkt leicht auf **~22–50 KLOC**.
+
+2. **Painting/SVG (§6.4):** SVG-Pipeline (1482 LOC) macht `<svg>`-Rendering im MVP realistisch, ohne separaten SVG-Stack aufbauen zu müssen. Painting-Neubau bleibt bei ~10–20 KLOC, aber SVG kommt quasi „gratis” dazu.
+
+3. **Formular-Controls (§6.11):** Mit DatePicker, ColorPicker, TimePicker, NumericInput und Spinner sind nun **fast alle** gängigen HTML-Input-Typen als native Widgets vorhanden. Neubau reduziert sich auf HTML-Form-Semantik (submission, validation, constraint API). Schätzung sinkt auf **~4–10 KLOC**.
+
+4. **Text/Inline (§6.5):** Inline Widgets im RichText schaffen eine reale Grundlage für CSS Inline Formatting Context (replaced elements). Die Brücke zwischen Lux-RichText und Browser-Inline-Layout wird deutlich kürzer.
+
+#### Gesamtbewertung
+
+| Metrik | v0.1.0 | v0.2.0 | Δ |
+|---|---|---|---|
+| Reuse-Komponenten (§3.1) | 27 Einträge | 31 Einträge | +4 (SVG, Table, SplitView, erweiterte Form-Controls) |
+| Synergie-Investitionen realisiert (§11) | 3/11 | **6/11** | +3 (Inline Widgets, SVG, Form-Controls) |
+| MVP-Schätzung | 35–70 KLOC | **30–60 KLOC** | ↓ ~15% |
+| Interaktiv + JS | 80–160 KLOC | 75–150 KLOC | ↓ ~5% |
+| Robust / Full Web | >220 KLOC | >200 KLOC | ↓ marginal |
+
+#### Was sich **nicht** geändert hat
+
+Die Kernaussage von RFC-998 bleibt bestehen:
+
+- **DOM/CSSOM/JS-Bridge/Security** dominieren weiterhin den Aufwand und sind unverändert groß.
+- Der **obere Stack** (>60% des Gesamtaufwands) profitiert kaum von den neuen Lux-Komponenten.
+- Ein vollwertiger Browser bleibt ein **Multi-Jahresprojekt für ein dediziertes Team**.
+
+#### Neue strategische Beobachtungen
+
+1. **RFC-010 (Code Editor)** ist vollständig designed. Bei Umsetzung entsteht ein weiterer hochwertiger Synergie-Baustein für DevTools/Inspector.
+
+2. **RFC-011 (Vellum / Remote Rendering)** eröffnet ein theoretisches Alternativszenario: Statt einer eigenen Browser-Engine könnte ein schlanker „Document Renderer” über Vellum remote gestreamt werden — konzeptuell interessant, aber ebenfalls rein theoretisch.
+
+3. **RFC-004 (WebView)** ist auf Windows (WebView2) integriert. Für den pragmatischen Pfad bleibt Embedding bestehender Engines die empfohlene Strategie für reale Web-Inhalte.
+
+4. **Nächster Hebel für RFC-998:** Die verbleibenden Synergie-Investitionen (RichTextEditor, Inspector/DevTools, Code Editor) sind die architektonisch anspruchsvollsten. Ihre Realisierung würde den MVP-Track weiter senken und gleichzeitig Lux als Framework massiv aufwerten — unabhängig davon, ob je eine Browser-Engine gebaut wird.
+
+#### Empfehlung
+
+Die Empfehlung von v0.1.0 wird **bestätigt und verschärft:**
+
+> RFC-998 als Architektur-Kompass nutzen. Die nächsten drei Synergie-Investitionen priorisieren:
+> 1. **RichTextEditor** — Inline-Editing + Selection-Logik (Fundament für `contenteditable`)
+> 2. **Inspector/DevTools** — Debug-Protokoll + VTree-Streaming (Fundament für Browser-DevTools)
+> 3. **Code Editor (RFC-010)** — Syntax + LSP (Fundament für Source-View in DevTools)
+>
+> Diese drei schaffen den größten Doppelnutzen: Lux-Framework-Wert **und** Browser-Engine-Readiness.
