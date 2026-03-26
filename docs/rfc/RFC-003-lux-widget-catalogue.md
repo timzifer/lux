@@ -21,7 +21,7 @@
 | §1.5 Theme-Wechsel (`SetThemeMsg`) | ✅ Integriert | `app.SetThemeMsg`, `app.SetDarkModeMsg` |
 | §1.6 `theme.Override` | ✅ Integriert | `OverrideSpec` mit Pointer-Feldern |
 | §2 theme.Slate Dark + Light | ✅ Integriert | Alle Token-Werte wie spezifiziert |
-| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | Kern + Locale-Propagation + BiDi vorhanden; fehlt: vollständige l10n |
+| §3 Text-Stack, i18n & Fonts | ✅ Integriert | Kern, Locale-Propagation, BiDi — alle Framework-seitigen Primitiven vorhanden; l10n ist by-design App-Sache (§3.8) |
 | §3.1 CGo-Strategie | ✅ Integriert | wgpu/gogpu (pure Go, Default) + OpenGL+GLFW (CGo, Fallback); native Plattform-Backends via CGo |
 | §3.2 go-text/typesetting | ✅ Integriert | `GoTextShaper` mit vollständigem GSUB/GPOS |
 | §3.3 Shaper-Interface | ✅ Integriert | `Shaper` Interface, `ShapingRun`, `ShapedGlyph` in `internal/text/` |
@@ -29,7 +29,7 @@
 | §3.5 BiDi | ✅ Integriert | `internal/text/bidi.go` — UAX #9-basierte BiDi-Implementierung |
 | §3.6 Unicode Line-Breaking (UAX #14) | ✅ Integriert | `internal/text/linebreak.go` — `UnicodeLineBreaker` via `rivo/uniseg`, UAX #14-konform |
 | §3.7 Grapheme-Cluster & Cursor-Navigation | ✅ Integriert | `internal/text/grapheme.go` — `PrevGraphemeCluster`, `NextGraphemeCluster`, `WordAt`, Cursor-Navigation in TextField/TextArea grapheme-aware; `internal/text/multiline.go` für ↑/↓-Navigation |
-| §3.8 i18n & l10n | 🔶 Teilweise | Locale-Propagation (`WithLocale`, `SetLocaleMsg`, `DirectionFromLocale`) integriert; vollständige l10n ausstehend |
+| §3.8 i18n & l10n | ✅ Integriert | Locale-Propagation (`WithLocale`, `SetLocaleMsg`, `DirectionFromLocale`) integriert; l10n (String-Übersetzung, Plural-Handling) ist by-design App-Sache |
 | §3.9 Package-Name | ✅ Integriert | `github.com/timzifer/lux` |
 | §4 Widget-Katalog | | |
 | §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |
