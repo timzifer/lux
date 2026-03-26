@@ -38,6 +38,7 @@ import (
 	"github.com/timzifer/lux/validation"
 
 	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/richtext"
 )
 
 // ── Section Registry ──────────────────────────────────────────────
@@ -69,7 +70,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
 	"group-overlays":     {"overlays", "dialogs"},
-	"group-text":         {"rich-text", "inline-widgets", "text-shaping", "grapheme-nav", "line-breaking"},
+	"group-text":         {"rich-text", "rich-text-editor", "inline-widgets", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
 	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
@@ -134,6 +135,8 @@ func sectionLabel(id string) string {
 		return "SplitView"
 	case "rich-text":
 		return "RichText"
+	case "rich-text-editor":
+		return "RichTextEditor"
 	case "inline-widgets":
 		return "Inline Widgets"
 	case "virtual-list":
@@ -343,6 +346,12 @@ type Model struct {
 	// TextArea
 	TextAreaValue  string
 	TextAreaScroll *ui.ScrollState
+	// RichTextEditor
+	RichEditorDoc       richtext.Document
+	RichEditorScroll    *ui.ScrollState
+	RichEditorReadOnly  bool
+	RichEditorDoc2      richtext.Document
+	RichEditorScroll2   *ui.ScrollState
 	// Pickers & Numeric
 	DateVal      time.Time
 	DateState    *form.DatePickerState
@@ -426,6 +435,11 @@ type SetImageOpacityMsg struct{ Value float32 }
 // Validation messages
 type SetTextAreaMsg struct{ Value string }
 
+// RichTextEditor messages
+type SetRichEditorDocMsg struct{ Doc richtext.Document }
+type ToggleRichEditorReadOnlyMsg struct{}
+type SetRichEditorDoc2Msg struct{ Doc richtext.Document }
+
 type SetValEmailMsg struct{ Value string }
 type SetValPasswordMsg struct{ Value string }
 type SetValConfirmMsg struct{ Value string }
@@ -490,6 +504,12 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.TextValue = msg.Value
 	case SetTextAreaMsg:
 		m.TextAreaValue = msg.Value
+	case SetRichEditorDocMsg:
+		m.RichEditorDoc = msg.Doc
+	case ToggleRichEditorReadOnlyMsg:
+		m.RichEditorReadOnly = !m.RichEditorReadOnly
+	case SetRichEditorDoc2Msg:
+		m.RichEditorDoc2 = msg.Doc
 	case SelectSectionMsg:
 		m.ActiveSection = msg.Section
 	case SetTabMsg:
@@ -872,6 +892,8 @@ func sectionContent(m Model) ui.Element {
 		return splitViewSection(m)
 	case "rich-text":
 		return richTextSection()
+	case "rich-text-editor":
+		return richTextEditorSection(m)
 	case "inline-widgets":
 		return inlineWidgetsSection()
 	case "virtual-list":
@@ -1616,6 +1638,100 @@ func richTextSection() ui.Element {
 			display.RichParagraph{Spans: []display.Span{
 				{Text: "Second paragraph. Rich text supports per-span styling."},
 			}},
+		),
+	)
+}
+
+func richTextEditorSection(m Model) ui.Element {
+	return layout.Column(
+		sectionHeader("RichTextEditor (RFC-003 §5.6)"),
+
+		// ── Basic editable editor ──────────────────────────────
+		display.Text("Editable rich text editor:"),
+		display.Spacer(4),
+		richtext.New(m.RichEditorDoc,
+			richtext.WithOnChange(func(doc richtext.Document) { app.Send(SetRichEditorDocMsg{doc}) }),
+			richtext.WithFocus(app.Focus()),
+			richtext.WithRows(5),
+			richtext.WithScroll(m.RichEditorScroll),
+			richtext.WithPlaceholder("Start typing..."),
+		),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("Paragraphs: %d | Plain text length: %d",
+			len(m.RichEditorDoc.Paragraphs), len(m.RichEditorDoc.PlainText()))),
+
+		display.Spacer(16),
+
+		// ── Read-only mode toggle ──────────────────────────────
+		display.Text("Read-only mode:"),
+		display.Spacer(4),
+		layout.Row(
+			button.Text(func() string {
+				if m.RichEditorReadOnly {
+					return "Make Editable"
+				}
+				return "Make Read-Only"
+			}(), func() { app.Send(ToggleRichEditorReadOnlyMsg{}) }),
+		),
+		display.Spacer(4),
+		func() ui.Element {
+			opts := []richtext.Option{
+				richtext.WithRows(3),
+				richtext.WithScroll(m.RichEditorScroll2),
+			}
+			if m.RichEditorReadOnly {
+				opts = append(opts, richtext.WithReadOnly())
+			} else {
+				opts = append(opts, richtext.WithOnChange(func(doc richtext.Document) { app.Send(SetRichEditorDoc2Msg{doc}) }))
+				opts = append(opts, richtext.WithFocus(app.Focus()))
+			}
+			return richtext.New(m.RichEditorDoc2, opts...)
+		}(),
+
+		display.Spacer(16),
+
+		// ── Styled content demo ────────────────────────────────
+		display.Text("Pre-styled document (bold, italic, color):"),
+		display.Spacer(4),
+		richtext.New(richtext.Document{Paragraphs: []richtext.Paragraph{
+			{Spans: []richtext.Span{
+				{Text: "Bold text ", Style: richtext.SpanStyle{Bold: true}},
+				{Text: "then italic ", Style: richtext.SpanStyle{Italic: true}},
+				{Text: "then colored", Style: richtext.SpanStyle{Color: draw.Hex("#ef4444")}},
+				{Text: " and "},
+				{Text: "combined", Style: richtext.SpanStyle{Bold: true, Italic: true, Color: draw.Hex("#8b5cf6")}},
+				{Text: "."},
+			}},
+			{Spans: []richtext.Span{
+				{Text: "Second paragraph with "},
+				{Text: "blue text", Style: richtext.SpanStyle{Color: draw.Hex("#3b82f6")}},
+				{Text: " for variety."},
+			}},
+		}},
+			richtext.WithReadOnly(),
+			richtext.WithRows(3),
+		),
+
+		display.Spacer(16),
+
+		// ── Empty editor with placeholder ──────────────────────
+		display.Text("Empty editor with placeholder:"),
+		display.Spacer(4),
+		richtext.New(richtext.Document{Paragraphs: []richtext.Paragraph{{}}},
+			richtext.WithPlaceholder("Enter your thoughts here..."),
+			richtext.WithRows(2),
+			richtext.WithOnChange(func(doc richtext.Document) {}),
+			richtext.WithFocus(app.Focus()),
+		),
+
+		display.Spacer(16),
+
+		// ── Document from plain text ───────────────────────────
+		display.Text("Document created from plain text:"),
+		display.Spacer(4),
+		richtext.New(richtext.NewDocument("Line 1: The quick brown fox\nLine 2: jumps over\nLine 3: the lazy dog"),
+			richtext.WithReadOnly(),
+			richtext.WithRows(3),
 		),
 	)
 }
@@ -4046,6 +4162,30 @@ func main() {
 		ImageStore:          luximage.NewStore(),
 		ImageOpacity:        1.0,
 		TextAreaScroll:      &ui.ScrollState{},
+		// RichTextEditor defaults
+		RichEditorDoc: richtext.Document{Paragraphs: []richtext.Paragraph{
+			{Spans: []richtext.Span{
+				{Text: "Hello ", Style: richtext.SpanStyle{Bold: true}},
+				{Text: "Rich World!"},
+			}},
+			{Spans: []richtext.Span{
+				{Text: "This is a "},
+				{Text: "fully editable", Style: richtext.SpanStyle{Italic: true}},
+				{Text: " rich text editor."},
+			}},
+			{Spans: []richtext.Span{
+				{Text: "Try typing, selecting, and using undo/redo."},
+			}},
+		}},
+		RichEditorScroll:  &ui.ScrollState{},
+		RichEditorDoc2: richtext.Document{Paragraphs: []richtext.Paragraph{
+			{Spans: []richtext.Span{
+				{Text: "Read-only content with "},
+				{Text: "styled spans", Style: richtext.SpanStyle{Bold: true, Color: draw.Hex("#3b82f6")}},
+				{Text: "."},
+			}},
+		}},
+		RichEditorScroll2: &ui.ScrollState{},
 		// Pickers & Numeric defaults
 		DateVal:    time.Now(),
 		DateState:  &form.DatePickerState{},
