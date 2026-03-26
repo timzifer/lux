@@ -15,7 +15,7 @@ type config struct {
 	title        string
 	parentWindow uintptr
 	userDataDir  string
-	renderer     *gpu.WGPURenderer
+	renderer     gpu.Renderer
 }
 
 // WithTitle sets the initial page title metadata.
@@ -34,10 +34,10 @@ func WithUserDataDir(dir string) Option {
 	return func(cfg *config) { cfg.userDataDir = dir }
 }
 
-// WithRenderer connects the WebView to the WGPU renderer for texture capture.
-// When set, the backend renders WebView2 content into a WGPU texture that is
+// WithRenderer connects the WebView to the GPU renderer for texture capture.
+// When set, the backend renders web content into a GPU texture that is
 // blitted into the main swapchain (no popup overlay, full overlay support).
-func WithRenderer(r *gpu.WGPURenderer) Option {
+func WithRenderer(r gpu.Renderer) Option {
 	return func(cfg *config) { cfg.renderer = r }
 }
 

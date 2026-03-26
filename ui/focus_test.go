@@ -304,7 +304,7 @@ func TestResetElementUIDsStabilizesUIDs(t *testing.T) {
 	fm := NewFocusManager()
 
 	// Simulate first BuildScene: assign UIDs to 3 elements.
-	fm.ResetElementUIDs()
+	fm.ResetElementIDs()
 	_ = fm.NextElementUID() // element 1
 	uid2 := fm.NextElementUID() // element 2 (our TextArea)
 	_ = fm.NextElementUID() // element 3
@@ -323,7 +323,7 @@ func TestResetElementUIDsStabilizesUIDs(t *testing.T) {
 	fm.Input.CursorOffset = 3
 
 	// Simulate next BuildScene (idle frame, no ResetOrder).
-	fm.ResetElementUIDs()
+	fm.ResetElementIDs()
 	_ = fm.NextElementUID()
 	uid2again := fm.NextElementUID()
 	_ = fm.NextElementUID()
@@ -352,7 +352,7 @@ func TestResetElementUIDsStabilizesUIDs(t *testing.T) {
 func TestInputSurvivesResetOrder(t *testing.T) {
 	fm := NewFocusManager()
 
-	fm.ResetElementUIDs()
+	fm.ResetElementIDs()
 	uid := fm.NextElementUID()
 	fm.SetFocusedUID(uid)
 	fm.Input = &InputState{
@@ -368,7 +368,7 @@ func TestInputSurvivesResetOrder(t *testing.T) {
 
 	// Simulate modelDirty frame: ResetOrder + ResetElementUIDs + BuildScene.
 	fm.ResetOrder()
-	fm.ResetElementUIDs()
+	fm.ResetElementIDs()
 	uidAfter := fm.NextElementUID()
 
 	if uidAfter != uid {

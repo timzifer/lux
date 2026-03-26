@@ -238,9 +238,10 @@ func TestPlatformShortcut(t *testing.T) {
 	if s.Key != KeyC {
 		t.Errorf("copy shortcut key = %d, want KeyC", s.Key)
 	}
-	// On this platform (Linux), should use Ctrl.
-	if !s.Modifiers.Has(ModCtrl) {
-		t.Error("copy shortcut should have Ctrl on Linux")
+	// Platform modifier: Ctrl on Linux/Windows, Super (Cmd) on macOS.
+	mod := platformModifier()
+	if !s.Modifiers.Has(mod) {
+		t.Errorf("copy shortcut should have platform modifier %d", mod)
 	}
 }
 

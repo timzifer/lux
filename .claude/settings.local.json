@@ -104,7 +104,8 @@
       "Bash(/c/ProgramData/chocolatey/bin/cargo check:*)",
       "Bash(CARGO_NET_GIT_FETCH_WITH_CLI=true /c/ProgramData/chocolatey/bin/cargo check)",
       "Bash(rm -f servo_bridge.dll lux-browser-servo.exe)",
-      "Bash(rm -rf servo-bridge/target/)"
+      "Bash(rm -rf servo-bridge/target/)",
+      "Bash(gh api:*)"
     ]
   }
 }

@@ -374,10 +374,10 @@ func TestSwipeDirection(t *testing.T) {
 		start, end input.GesturePoint
 		want       input.SwipeDirection
 	}{
-		{input.GesturePoint{100, 100}, input.GesturePoint{0, 100}, input.SwipeLeft},
-		{input.GesturePoint{0, 100}, input.GesturePoint{100, 100}, input.SwipeRight},
-		{input.GesturePoint{100, 100}, input.GesturePoint{100, 0}, input.SwipeUp},
-		{input.GesturePoint{100, 0}, input.GesturePoint{100, 100}, input.SwipeDown},
+		{input.GesturePoint{X: 100, Y: 100}, input.GesturePoint{X: 0, Y: 100}, input.SwipeLeft},
+		{input.GesturePoint{X: 0, Y: 100}, input.GesturePoint{X: 100, Y: 100}, input.SwipeRight},
+		{input.GesturePoint{X: 100, Y: 100}, input.GesturePoint{X: 100, Y: 0}, input.SwipeUp},
+		{input.GesturePoint{X: 100, Y: 0}, input.GesturePoint{X: 100, Y: 100}, input.SwipeDown},
 	}
 	for _, tt := range tests {
 		got := swipeDirection(tt.start, tt.end)
@@ -388,7 +388,7 @@ func TestSwipeDirection(t *testing.T) {
 }
 
 func TestDistance(t *testing.T) {
-	d := distance(input.GesturePoint{0, 0}, input.GesturePoint{3, 4})
+	d := distance(input.GesturePoint{X: 0, Y: 0}, input.GesturePoint{X: 3, Y: 4})
 	if d < 4.99 || d > 5.01 {
 		t.Errorf("distance({0,0}, {3,4}) = %v, want 5.0", d)
 	}

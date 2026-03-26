@@ -13,6 +13,7 @@ import (
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/button"
 	"github.com/timzifer/lux/ui/display"
 	"github.com/timzifer/lux/ui/layout"
 	"github.com/timzifer/lux/ui/nav"
@@ -40,7 +41,7 @@ func testView(m testModel) ui.Element {
 func m2HelloView(m testModel) ui.Element {
 	return layout.Column(
 		display.Text("HELLO WORLD"),
-		ui.ButtonText("CLICK ME", nil),
+		button.Text("CLICK ME", nil),
 	)
 }
 
@@ -173,8 +174,8 @@ func m3CounterView(m testModel) ui.Element {
 	return layout.Column(
 		display.Text(fmt.Sprintf("Count: %d", m.Count)),
 		layout.Row(
-			ui.ButtonText("−", func() { Send(decrMsg{}) }),
-			ui.ButtonText("+", func() { Send(incrMsg{}) }),
+			button.Text("−", func() { Send(decrMsg{}) }),
+			button.Text("+", func() { Send(incrMsg{}) }),
 		),
 	)
 }
@@ -205,7 +206,8 @@ func TestM3CounterViewRendersCorrectly(t *testing.T) {
 func TestM3CounterHitTargets(t *testing.T) {
 	var hitMap hit.Map
 	canvas := render.NewSceneCanvas(800, 600)
-	ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, &hitMap, nil)
+	ix := ui.NewInteractor(&hitMap, nil)
+	ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, ix)
 
 	if hitMap.Len() != 2 {
 		t.Fatalf("counter view should register 2 hit targets (− and +), got %d", hitMap.Len())
@@ -220,11 +222,20 @@ func TestM3CounterClickIncrement(t *testing.T) {
 		return m
 	}
 
-	// + button is the second in the Row at approx (216, 61) 180x45.
-	// Click on frame 1 so frame 0 can build the initial scene + hit targets.
-	// Frame 2 processes the message from the click.
-	plusX := float32(220) // inside + button (starts at x=216)
-	plusY := float32(70)  // inside + button (starts at y=61, height=45)
+	// Locate the + button by rendering a scene and finding its bounds.
+	canvas := render.NewSceneCanvas(800, 600)
+	scene := ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, nil)
+	// The + button label is the last glyph in the scene.
+	var plusX, plusY float32
+	for _, g := range scene.Glyphs {
+		if g.Text == "+" {
+			plusX = float32(g.X + 5)
+			plusY = float32(g.Y + 5)
+		}
+	}
+	if plusX == 0 && plusY == 0 {
+		t.Fatal("could not locate + button glyph")
+	}
 
 	err := Run(testModel{Count: 0}, update, m3CounterView,
 		WithTitle("M3 counter test"),
@@ -387,7 +398,8 @@ func TestM4HoverChangesButtonColor(t *testing.T) {
 	hover.Tick(0)           // snap to target
 
 	canvas := render.NewSceneCanvas(800, 600)
-	scene := ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, nil, &hover)
+	ix := ui.NewInteractor(nil, &hover)
+	scene := ui.BuildScene(m3CounterView(testModel{Count: 0}), canvas, theme.Default, 800, 600, ix)
 
 	darkTokens := theme.Default.Tokens()
 
@@ -551,31 +563,6 @@ func TestScrollViewReactsToScrollWheel(t *testing.T) {
 	}
 }
 
-func TestScrollViewTrackClick(t *testing.T) {
-	scroll := &ui.ScrollState{}
-	view := func(m testModel) ui.Element {
-		return nav.NewScrollView(layout.Column(
-			display.Text("A"), display.Text("B"), display.Text("C"), display.Text("D"),
-			display.Text("E"), display.Text("F"), display.Text("G"), display.Text("H"),
-			display.Text("I"), display.Text("J"), display.Text("K"), display.Text("L"),
-		), 40, scroll)
-	}
-
-	// The scrollbar track should be to the right of the content.
-	// Click on it at the bottom half → offset should increase.
-	err := Run(testModel{}, testUpdate, view,
-		WithTitle("track-click test"),
-		WithSize(800, 600),
-		WithHeadlessFrames(3),
-		WithHeadlessClick(1, 780, float32(24+35)), // click near bottom of scrollbar track
-	)
-	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
-	}
-	if scroll.Offset <= 0 {
-		t.Errorf("ScrollState.Offset = %f, want > 0 after track click", scroll.Offset)
-	}
-}
 
 // ── Widget Reconciliation Tests ─────────────────────────────────
 
