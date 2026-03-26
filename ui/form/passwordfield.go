@@ -150,6 +150,10 @@ func (n PasswordField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			ui.DrawFocusRing(canvas, tfRect, tokens.Radii.Input, tokens)
 		}
 
+		// Clip text content to the field's inner area (excluding reveal button).
+		clipRect := draw.R(float32(area.X+textFieldPadX), float32(area.Y), float32(textAreaW-textFieldPadX*2), float32(h))
+		canvas.PushClip(clipRect)
+
 		// Text or placeholder.
 		displayStr := n.displayText()
 		textX := area.X + textFieldPadX
@@ -175,6 +179,8 @@ func (n PasswordField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
 				draw.SolidPaint(tokens.Colors.Text.Primary))
 		}
+
+		canvas.PopClip()
 	}
 
 	// Store input state for framework key handling.
