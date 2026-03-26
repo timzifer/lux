@@ -108,11 +108,14 @@ func TestLoadFromBytes_Empty(t *testing.T) {
 	}
 }
 
-func TestLoadSVG_Stub(t *testing.T) {
+func TestLoadSVG(t *testing.T) {
 	s := NewStore()
-	_, err := s.LoadSVG([]byte("<svg></svg>"))
-	if err == nil {
-		t.Fatal("expected error from SVG stub")
+	id, err := s.LoadSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect x="0" y="0" width="100" height="100" fill="red"/></svg>`))
+	if err != nil {
+		t.Fatalf("LoadSVG: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("LoadSVG returned zero ID")
 	}
 }
 
