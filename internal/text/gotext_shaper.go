@@ -703,6 +703,7 @@ func (s *GoTextShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Fo
 	}
 
 	opts := glyph.Options
+
 	bearingX := float32(opts.PlaneBounds.Left)
 	bearingY := float32(-opts.PlaneBounds.Top)
 	advance := float32(opts.Advance)

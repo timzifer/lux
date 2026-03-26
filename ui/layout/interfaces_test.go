@@ -51,4 +51,39 @@ var (
 	_ ui.TreeEqualizer = layout.GridItem{}
 	_ ui.ChildResolver = layout.GridItem{}
 	_ ui.AccessWalker  = layout.GridItem{}
+
+	_ ui.Layouter      = layout.Table{}
+	_ ui.TreeEqualizer = layout.Table{}
+	_ ui.ChildResolver = layout.Table{}
+	_ ui.AccessWalker  = layout.Table{}
+
+	_ ui.Layouter      = layout.TableSection{}
+	_ ui.TreeEqualizer = layout.TableSection{}
+	_ ui.ChildResolver = layout.TableSection{}
+	_ ui.AccessWalker  = layout.TableSection{}
+
+	_ ui.Layouter      = layout.TableRow{}
+	_ ui.TreeEqualizer = layout.TableRow{}
+	_ ui.ChildResolver = layout.TableRow{}
+	_ ui.AccessWalker  = layout.TableRow{}
+
+	_ ui.Layouter      = layout.TableCell{}
+	_ ui.TreeEqualizer = layout.TableCell{}
+	_ ui.ChildResolver = layout.TableCell{}
+	_ ui.AccessWalker  = layout.TableCell{}
+
+	_ ui.Layouter      = layout.TableCaption{}
+	_ ui.TreeEqualizer = layout.TableCaption{}
+	_ ui.ChildResolver = layout.TableCaption{}
+	_ ui.AccessWalker  = layout.TableCaption{}
+
+	_ ui.Layouter      = layout.TableColGroup{}
+	_ ui.TreeEqualizer = layout.TableColGroup{}
+	_ ui.ChildResolver = layout.TableColGroup{}
+	_ ui.AccessWalker  = layout.TableColGroup{}
+
+	_ ui.Layouter      = layout.TableCol{}
+	_ ui.TreeEqualizer = layout.TableCol{}
+	_ ui.ChildResolver = layout.TableCol{}
+	_ ui.AccessWalker  = layout.TableCol{}
 )

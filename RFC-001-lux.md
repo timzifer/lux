@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.2.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-25
+**Zuletzt abgeglichen:** 2026-03-26
 **Folge-RFCs:** RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme)
 
 ---

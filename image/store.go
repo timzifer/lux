@@ -12,9 +12,10 @@ import (
 // Images are identified by draw.ImageID handles.
 // Thread-safe for concurrent access.
 type Store struct {
-	mu      sync.RWMutex
-	nextID  draw.ImageID
-	entries map[draw.ImageID]*Entry
+	mu        sync.RWMutex
+	nextID    draw.ImageID
+	entries   map[draw.ImageID]*Entry
+	svgImages map[draw.ImageID]*svgDocument
 }
 
 // Entry holds the decoded pixel data for a single image.
@@ -29,8 +30,9 @@ type Entry struct {
 // NewStore creates an empty image store.
 func NewStore() *Store {
 	return &Store{
-		nextID:  1,
-		entries: make(map[draw.ImageID]*Entry),
+		nextID:    1,
+		entries:   make(map[draw.ImageID]*Entry),
+		svgImages: make(map[draw.ImageID]*svgDocument),
 	}
 }
 

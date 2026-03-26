@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-25
+**Zuletzt abgeglichen:** 2026-03-26
 **Abhängig von:** RFC-001, RFC-002
 
 ---
@@ -26,14 +26,14 @@
 | §3.2 go-text/typesetting | ✅ Integriert | `GoTextShaper` mit vollständigem GSUB/GPOS |
 | §3.3 Shaper-Interface | ✅ Integriert | `Shaper` Interface, `ShapingRun`, `ShapedGlyph` in `internal/text/` |
 | §3.4 Font-Loading & Fallback-Chain | ✅ Integriert | `FontFamily` mit `Fallback`-Chain, `FindGlyphFont` pro Glyph |
-| §3.5 BiDi | ⏳ Wartend | |
+| §3.5 BiDi | ✅ Integriert | `internal/text/bidi.go` — UAX #9-basierte BiDi-Implementierung |
 | §3.6 Unicode Line-Breaking (UAX #14) | ✅ Integriert | `internal/text/linebreak.go` — `UnicodeLineBreaker` via `rivo/uniseg`, UAX #14-konform |
 | §3.7 Grapheme-Cluster & Cursor-Navigation | ✅ Integriert | `internal/text/grapheme.go` — `PrevGraphemeCluster`, `NextGraphemeCluster`, `WordAt`, Cursor-Navigation in TextField/TextArea grapheme-aware; `internal/text/multiline.go` für ↑/↓-Navigation |
 | §3.8 i18n & l10n | 🔶 Teilweise | Locale-Propagation (`WithLocale`, `SetLocaleMsg`, `DirectionFromLocale`) integriert; vollständige l10n ausstehend |
 | §3.9 Package-Name | ✅ Integriert | `github.com/timzifer/lux` |
 | §4 Widget-Katalog | | |
 | §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |
-| §4.1 Tier 2 — Formulare | ✅ Integriert | TextField, Checkbox, Radio, Toggle, Slider, ProgressBar, Select |
+| §4.1 Tier 2 — Formulare | ✅ Integriert | TextField, Checkbox, Radio, Toggle, Slider, ProgressBar, Select, FormField-Validation (`ui/form/formfield.go`, `validation/`) |
 | §4.1 Tier 3 — Struktur | ✅ Integriert | Card, Tabs, Accordion, Tooltip, Badge, Chip, MenuBar, ContextMenu |
 | §4.1 Tier 4 — Erweitert | 🔶 Teilweise | SplitView integriert (`ui/nav/splitview.go`); fehlt: DatePicker, ColorPicker, DataTable |
 | §4.2 Widget-Spezifikations-Template | ⏳ Wartend | Detailspezifikationen pro Widget fehlen |

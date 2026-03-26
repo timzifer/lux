@@ -1,5 +1,7 @@
 package draw
 
+import "math"
+
 // FillRule determines how a path interior is computed.
 type FillRule uint8
 
@@ -7,6 +9,33 @@ const (
 	FillRuleNonZero FillRule = iota
 	FillRuleEvenOdd
 )
+
+// PathSegmentKind identifies the type of a path segment.
+type PathSegmentKind uint8
+
+const (
+	SegMoveTo  PathSegmentKind = iota
+	SegLineTo
+	SegQuadTo
+	SegCubicTo
+	SegArcTo
+	SegClose
+)
+
+// ArcParams holds the parameters for an SVG-style elliptical arc.
+type ArcParams struct {
+	RX, RY float32
+	XRot   float32
+	Large  bool
+	Sweep  bool
+}
+
+// PathSegment is an exported path command for iteration via Walk.
+type PathSegment struct {
+	Kind   PathSegmentKind
+	Points [3]Point  // endpoint(s) and control points
+	Arc    ArcParams // valid only when Kind == SegArcTo
+}
 
 // pathCmd is an internal path segment.
 type pathCmd struct {
@@ -99,6 +128,12 @@ func (b *PathBuilder) Build() Path {
 	return out
 }
 
+// SetFillRule sets the fill rule for the path being built.
+func (b *PathBuilder) SetFillRule(r FillRule) *PathBuilder {
+	b.fill = r
+	return b
+}
+
 // PathFromRect creates a rectangular path.
 func PathFromRect(r Rect) Path {
 	return NewPath().
@@ -107,4 +142,82 @@ func PathFromRect(r Rect) Path {
 		LineTo(Pt(r.X+r.W, r.Y+r.H)).
 		LineTo(Pt(r.X, r.Y+r.H)).
 		Close().Build()
+}
+
+// Empty reports whether the path contains no commands.
+func (p Path) Empty() bool { return len(p.cmds) == 0 }
+
+// Walk iterates over each segment of the path, calling fn for each.
+func (p Path) Walk(fn func(PathSegment)) {
+	for _, c := range p.cmds {
+		seg := PathSegment{Points: c.points}
+		switch c.kind {
+		case pathCmdMoveTo:
+			seg.Kind = SegMoveTo
+		case pathCmdLineTo:
+			seg.Kind = SegLineTo
+		case pathCmdQuadTo:
+			seg.Kind = SegQuadTo
+		case pathCmdCubicTo:
+			seg.Kind = SegCubicTo
+		case pathCmdArcTo:
+			seg.Kind = SegArcTo
+			seg.Arc = ArcParams{
+				RX:    c.arcDesc.R.W,
+				RY:    c.arcDesc.R.H,
+				XRot:  c.arcDesc.XRot,
+				Large: c.arcDesc.Large,
+				Sweep: c.arcDesc.Sweep,
+			}
+		case pathCmdClose:
+			seg.Kind = SegClose
+		}
+		fn(seg)
+	}
+}
+
+// Bounds computes the axis-aligned bounding box of the path.
+// For curves, this uses control-point bounds (conservative estimate).
+func (p Path) Bounds() Rect {
+	if len(p.cmds) == 0 {
+		return Rect{}
+	}
+	minX := float32(math.MaxFloat32)
+	minY := float32(math.MaxFloat32)
+	maxX := float32(-math.MaxFloat32)
+	maxY := float32(-math.MaxFloat32)
+
+	update := func(pt Point) {
+		if pt.X < minX {
+			minX = pt.X
+		}
+		if pt.Y < minY {
+			minY = pt.Y
+		}
+		if pt.X > maxX {
+			maxX = pt.X
+		}
+		if pt.Y > maxY {
+			maxY = pt.Y
+		}
+	}
+
+	for _, c := range p.cmds {
+		switch c.kind {
+		case pathCmdMoveTo, pathCmdLineTo, pathCmdArcTo:
+			update(c.points[0])
+		case pathCmdQuadTo:
+			update(c.points[0]) // control
+			update(c.points[1]) // end
+		case pathCmdCubicTo:
+			update(c.points[0]) // control 1
+			update(c.points[1]) // control 2
+			update(c.points[2]) // end
+		}
+	}
+
+	if minX > maxX {
+		return Rect{}
+	}
+	return Rect{X: minX, Y: minY, W: maxX - minX, H: maxY - minY}
 }

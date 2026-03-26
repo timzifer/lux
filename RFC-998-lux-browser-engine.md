@@ -84,8 +84,8 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 
 | Lux-Komponente | Dateipfad | Browser-Äquivalent | Vereinfachung |
 |---|---|---|---|
-| Flexbox Layout | `ui/layout/flex.go`, `ui/layout/expanded.go` | CSS `display:flex` | Deutlich weiter: `flex-basis`, `flex-wrap`, `order` und Grow/Shrink-Bausteine sind bereits in der Layout-API verankert |
-| Grid Layout | `ui/layout/grid.go` | CSS `display:grid` | Vorstufe vorhanden; Track-Sizing, Spanning, Auto-Placement fehlen |
+| Flexbox Layout | `ui/layout/flex.go` | CSS `display:flex` | ✅ CSS-Spec-konform: Direction, Justify, Align, Gap, FlexWrap, FlexBasis, FlexGrow/Shrink, AlignContent, Order |
+| Grid Layout | `ui/layout/grid.go` | CSS `display:grid` | ✅ CSS-Spec-konform: Track-Sizing, fr-Units, Repeat, Gap, Span, Auto-Placement |
 | Stack Layout | `ui/layout/stack.go` | Positioning / Z-Stacking | Basis für absolute Overlays & Stacking |
 | ScrollView + Kinetic | `ui/nav/scroll.go`, `ui/kinetic_scroll.go` | `overflow:auto/scroll` | Scrolling/Scrollbar/Trägheit bereits gelöst |
 | VirtualList | `ui/data/virtuallist.go` | Viewport-Culling | Direkt nutzbar für große Dokumente |
@@ -124,7 +124,7 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 
 | Lux-Komponente | Status | Browser-Äquivalent | Synergie |
 |---|---|---|---|
-| DataTable | ⏳ Phase 7.1 | `<table>` | Nutzt vom Browser-Track profitierende Tabellen-Primitiven; reduziert Doppelarbeit auf Widget-Ebene |
+| DataTable / CSS Table Layout | ✅ Table Layout integriert | `<table>` | `ui/layout/table.go` — HTML-Spec-konformes CSS Table Layout (Fixed + Auto); DataTable-Widget darauf aufbauend ausstehend |
 | DatePicker | ⏳ Phase 7.1 | `<input type="date">` | Native Browser-Controls leichter abbildbar |
 | ColorPicker | ⏳ Phase 7.1 | `<input type="color">` | Direktes Control-Mapping |
 | Toolbar | ⏳ Phase 7.1 | Browser-Chrome | Adressleiste/Navigation/UI-Shell |
@@ -325,8 +325,7 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 |---|---|---|---|---|
 | HTML Parsing & DOM | Hoch | Niedrig-Mittel | Parser ja | Hoch |
 | CSS Parsing & Cascade | Hoch | Niedrig | optional | Sehr hoch |
-| Layout Core (Block/Inline/Positioning/Floats) | Sehr hoch | Mittel | nein | Sehr hoch |
-| Flex/Table (Basis vorhanden) | Mittel | Hoch | nein | Mittel |
+| Layout Core | Sehr hoch | Mittel | nein | Sehr hoch |
 | Painting/Compositing | Mittel-Hoch | Sehr hoch | nein | Mittel |
 | Text/Fonts | Mittel-Hoch | Sehr hoch | nein | Mittel |
 | Networking/Loader | Hoch | Niedrig | stdlib ja | Hoch |
@@ -366,7 +365,6 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 - Ein kontrollierter „Web Document Renderer“ für interne/kuratierte Inhalte
 - Gute Performance in Text-/UI-lastigen Dokumenten durch Lux-Renderer
 - Exzellente Integration in Lux-Apps (Look-and-Feel, A11y, Input)
-- Gegenüber der Erstfassung bessere Ausgangslage im Layout-Stack, da Flex- und Table-Anteile weniger Greenfield sind
 
 ### Was kurzfristig unrealistisch ist
 
@@ -411,9 +409,9 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 
 | Browser-Subsystem | Rückfluss in Lux |
 |---|---|
-| CSS Flexbox spec-konform | Verbesserte `ui/layout/flex.go`-Fähigkeiten |
-| CSS Grid spec-näher | Evolution von `ui/layout/grid.go` |
-| Table Layout | DataTable kann auf vorhandener Tabellen-Logik aufsetzen statt komplett neu zu starten |
+| CSS Flexbox spec-konform | ✅ Bereits CSS-Spec-konform in `ui/layout/flex.go` |
+| CSS Grid spec-näher | ✅ Bereits CSS-Spec-konform in `ui/layout/grid.go` |
+| Table Layout | ✅ Bereits HTML-Spec-konform in `ui/layout/table.go` |
 | Inline Layout | Basis für Inline Widgets in RichText |
 | contenteditable-nahe Logik | Fundament für RichTextEditor |
 | SVG Pipeline | Vervollständigt `image/svg.go` |

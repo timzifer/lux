@@ -65,7 +65,7 @@ var sectionIDs = []string{
 var sectionGroupChildren = map[string][]string{
 	"group-basics":       {"typography", "buttons"},
 	"group-input":        {"form-controls", "range-progress", "selection", "validation"},
-	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout"},
+	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout", "table-layout"},
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
 	"group-overlays":     {"overlays", "dialogs"},
@@ -75,7 +75,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
 	"group-i18n":         {"rtl-layout", "locale", "ime-compose"},
 	"group-platform":     {"platform-info", "window-controls", "clipboard", "gpu-backend", "multi-window"},
-	"group-rendering":    {"canvas-paints", "surfaces"},
+	"group-rendering":    {"canvas-paints", "surfaces", "svg-rendering"},
 	"group-architecture": {"commands", "sub-models"},
 	"group-a11y":         {"a11y-tree", "a11y-focus-trap", "a11y-bridge"},
 }
@@ -176,6 +176,8 @@ func sectionLabel(id string) string {
 		return "Flex & Grid (CSS)"
 	case "custom-layout":
 		return "Custom Layout"
+	case "table-layout":
+		return "Table Layout (CSS)"
 	case "rtl-layout":
 		return "RTL Layout"
 	case "locale":
@@ -192,6 +194,8 @@ func sectionLabel(id string) string {
 		return "GPU Backend"
 	case "surfaces":
 		return "Surfaces"
+	case "svg-rendering":
+		return "SVG Rendering"
 	case "dialogs":
 		return "Dialogs"
 	case "gradients":
@@ -312,6 +316,9 @@ type Model struct {
 	ImgChecker2  draw.ImageID // orange/teal checkerboard (wide, for scale mode demos)
 	ImgChecker3  draw.ImageID // pink/green checkerboard (for opacity demo)
 	ImageOpacity float32
+	// SVG Rendering demo
+	SvgStarID     draw.ImageID // rasterized SVG star
+	SvgCirclesID  draw.ImageID // rasterized SVG circles
 	// Accessibility demos
 	A11yTreeText     string
 	A11yTrapOpen     bool
@@ -876,6 +883,8 @@ func sectionContent(m Model) ui.Element {
 		return animGroupSeqSection(m)
 	case "custom-layout":
 		return customLayoutSection(m)
+	case "table-layout":
+		return tableLayoutSection()
 	// Phase 4b
 	case "rtl-layout":
 		return rtlLayoutSection()
@@ -895,6 +904,8 @@ func sectionContent(m Model) ui.Element {
 	// Phase 6
 	case "surfaces":
 		return surfacesSection(m.Pyramid)
+	case "svg-rendering":
+		return svgRenderingSection(m)
 	// Phase 7
 	case "dialogs":
 		return dialogsSection(m)
@@ -2391,6 +2402,187 @@ func customLayoutSection(m Model) ui.Element {
 	)
 }
 
+// ── Table Layout Section ──────────────────────────────────────────
+
+func tableLayoutSection() ui.Element {
+	return layout.Column(
+		sectionHeader("Table Layout (CSS)"),
+		display.Text("HTML-spec-conformant table layout (CSS 2.1 §17)."),
+		display.Text("Supports auto/fixed layout, colspan/rowspan, border-spacing, and captions."),
+		display.Spacer(12),
+
+		// 1. Basic Table
+		display.Text("1. Basic Table:"),
+		display.Spacer(4),
+		layout.SimpleTable(
+			[]ui.Element{display.Text("Name"), display.Text("Age"), display.Text("City")},
+			[][]ui.Element{
+				{display.Text("Alice"), display.Text("30"), display.Text("Berlin")},
+				{display.Text("Bob"), display.Text("25"), display.Text("Munich")},
+				{display.Text("Carol"), display.Text("35"), display.Text("Hamburg")},
+			},
+			layout.WithBorderSpacing(8, 4),
+		),
+		display.Spacer(16),
+
+		// 2. Table with Header & Footer
+		display.Text("2. Table with Header / Footer:"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.THead(
+				layout.TR(layout.TH(display.Text("Product")), layout.TH(display.Text("Price")), layout.TH(display.Text("Qty"))),
+			),
+			layout.TBody(
+				layout.TR(layout.TD(display.Text("Widget A")), layout.TD(display.Text("9.99")), layout.TD(display.Text("5"))),
+				layout.TR(layout.TD(display.Text("Widget B")), layout.TD(display.Text("14.50")), layout.TD(display.Text("3"))),
+				layout.TR(layout.TD(display.Text("Widget C")), layout.TD(display.Text("7.25")), layout.TD(display.Text("12"))),
+			),
+			layout.TFoot(
+				layout.TR(layout.TD(display.Text("Total")), layout.TD(display.Text("31.74")), layout.TD(display.Text("20"))),
+			),
+		}, layout.WithBorderSpacing(12, 4)),
+		display.Spacer(16),
+
+		// 3. Column Spanning
+		display.Text("3. Column Spanning (colspan):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(
+				layout.TD(display.Text("Spans 2 columns"), layout.WithColSpan(2)),
+				layout.TD(display.Text("Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Col 1")),
+				layout.TD(display.Text("Col 2")),
+				layout.TD(display.Text("Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Col 1")),
+				layout.TD(display.Text("Spans 2 columns"), layout.WithColSpan(2)),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 4. Row Spanning
+		display.Text("4. Row Spanning (rowspan):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(
+				layout.TD(display.Text("Spans 3 rows"), layout.WithRowSpan(3)),
+				layout.TD(display.Text("Row 1, Col 2")),
+				layout.TD(display.Text("Row 1, Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Row 2, Col 2")),
+				layout.TD(display.Text("Row 2, Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Row 3, Col 2")),
+				layout.TD(display.Text("Row 3, Col 3")),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 5. Fixed vs Auto Layout
+		display.Text("5. Fixed Layout (table-layout: fixed):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableColGroup(
+				layout.Col(layout.Px(120)),
+				layout.Col(layout.Px(200)),
+				layout.Col(layout.Px(100)),
+			),
+			layout.TR(layout.TH(display.Text("Fixed 120")), layout.TH(display.Text("Fixed 200")), layout.TH(display.Text("Fixed 100"))),
+			layout.TR(layout.TD(display.Text("A")), layout.TD(display.Text("B")), layout.TD(display.Text("C"))),
+		}, layout.WithTableLayout(layout.TableLayoutFixed), layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 6. Border Spacing
+		display.Text("6. Border Spacing (16px H, 8px V):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(layout.TD(display.Text("A")), layout.TD(display.Text("B")), layout.TD(display.Text("C"))),
+			layout.TR(layout.TD(display.Text("D")), layout.TD(display.Text("E")), layout.TD(display.Text("F"))),
+			layout.TR(layout.TD(display.Text("G")), layout.TD(display.Text("H")), layout.TD(display.Text("I"))),
+		}, layout.WithBorderSpacing(16, 8)),
+		display.Spacer(16),
+
+		// 7. Collapsed Borders
+		display.Text("7. Collapsed Borders (border-collapse: collapse):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(layout.TD(display.Text("A")), layout.TD(display.Text("B")), layout.TD(display.Text("C"))),
+			layout.TR(layout.TD(display.Text("D")), layout.TD(display.Text("E")), layout.TD(display.Text("F"))),
+		}, layout.WithBorderCollapse(layout.BorderCollapsed)),
+		display.Spacer(16),
+
+		// 8. Vertical Alignment
+		display.Text("8. Vertical Alignment in Cells:"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(
+				layout.TD(display.Text("Top"), layout.WithVAlign(layout.VAlignTop)),
+				layout.TD(display.Text("Middle"), layout.WithVAlign(layout.VAlignMiddle)),
+				layout.TD(display.Text("Bottom"), layout.WithVAlign(layout.VAlignBottom)),
+				layout.NewTableCell(layout.Sized(80, 60, nil)),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 9. Caption
+		display.Text("9. Table with Caption (top):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableCaption(display.Text("Table 1: Monthly Sales")),
+			layout.TR(layout.TH(display.Text("Month")), layout.TH(display.Text("Revenue"))),
+			layout.TR(layout.TD(display.Text("January")), layout.TD(display.Text("$12,000"))),
+			layout.TR(layout.TD(display.Text("February")), layout.TD(display.Text("$15,500"))),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(8),
+		display.Text("Caption (bottom):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableCaption(display.Text("Table 2: Quarterly Results")),
+			layout.TR(layout.TH(display.Text("Q1")), layout.TH(display.Text("Q2"))),
+			layout.TR(layout.TD(display.Text("$45k")), layout.TD(display.Text("$52k"))),
+		}, layout.WithCaptionSide(layout.CaptionBottom), layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 10. Complex Example
+		display.Text("10. Complex Table (mixed spans + sections):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableCaption(display.Text("Employee Schedule")),
+			layout.THead(
+				layout.TR(
+					layout.TH(display.Text("Name")),
+					layout.TH(display.Text("Mon")),
+					layout.TH(display.Text("Tue")),
+					layout.TH(display.Text("Wed")),
+					layout.TH(display.Text("Thu")),
+					layout.TH(display.Text("Fri")),
+				),
+			),
+			layout.TBody(
+				layout.TR(
+					layout.TD(display.Text("Alice")),
+					layout.TD(display.Text("9-5"), layout.WithColSpan(3)),
+					layout.TD(display.Text("Off"), layout.WithColSpan(2)),
+				),
+				layout.TR(
+					layout.TD(display.Text("Bob")),
+					layout.TD(display.Text("Off")),
+					layout.TD(display.Text("10-6"), layout.WithColSpan(4)),
+				),
+				layout.TR(
+					layout.TD(display.Text("Carol")),
+					layout.TD(display.Text("8-4"), layout.WithColSpan(5)),
+				),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
+	)
+}
+
 // ── Phase 4b Section Views ────────────────────────────────────────
 
 func rtlLayoutSection() ui.Element {
@@ -3674,6 +3866,10 @@ func main() {
 		80, 200, 80,  // green
 	)
 
+	// SVG demo images — rasterized at load time.
+	initial.SvgStarID = loadDemoSVG(initial.ImageStore, svgStar, 120, 120)
+	initial.SvgCirclesID = loadDemoSVG(initial.ImageStore, svgCircles, 200, 100)
+
 	initial.FadeOpacity.SetImmediate(1.0)
 
 	// Global handler that logs key events (Phase 1: §2.8).
@@ -3764,5 +3960,203 @@ func secondWindowView(m Model) ui.Element {
 				app.Send(app.CloseWindowMsg{ID: 1})
 			}),
 		),
+	)
+}
+
+// ── SVG Rendering Section ─────────────────────────────────────────
+
+// Demo SVG content.
+const svgStar = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <polygon points="60,5 73,40 110,40 80,62 90,97 60,78 30,97 40,62 10,40 47,40" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+</svg>`
+
+const svgCircles = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <circle cx="40" cy="50" r="30" fill="#3b82f6"/>
+  <circle cx="100" cy="50" r="30" fill="#ef4444"/>
+  <circle cx="160" cy="50" r="30" fill="#22c55e"/>
+  <rect x="5" y="5" width="190" height="90" fill="none" stroke="#94a3b8" stroke-width="1"/>
+</svg>`
+
+func loadDemoSVG(store *luximage.Store, svgData string, w, h int) draw.ImageID {
+	svgID, err := store.LoadSVG([]byte(svgData))
+	if err != nil {
+		return 0
+	}
+	rasterID, err := store.RasterizeSVG(svgID, w, h)
+	if err != nil {
+		return 0
+	}
+	return rasterID
+}
+
+// svgPathElement is a custom element that renders a draw.Path using FillPath/StrokePath.
+type svgPathElement struct {
+	ui.BaseElement
+	path      draw.Path
+	fillColor draw.Color
+	hasFill   bool
+	stroke    draw.Stroke
+	hasStroke bool
+	width     float32
+	height    float32
+}
+
+func (n svgPathElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	w := int(n.width)
+	h := int(n.height)
+	if w > ctx.Area.W {
+		w = ctx.Area.W
+	}
+	if h > ctx.Area.H {
+		h = ctx.Area.H
+	}
+
+	// Offset the path to the layout position.
+	ox := float32(ctx.Area.X)
+	oy := float32(ctx.Area.Y)
+	ctx.Canvas.PushOffset(ox, oy)
+
+	if n.hasFill {
+		ctx.Canvas.FillPath(n.path, draw.SolidPaint(n.fillColor))
+	}
+	if n.hasStroke {
+		ctx.Canvas.StrokePath(n.path, n.stroke)
+	}
+
+	ctx.Canvas.PopTransform()
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h, Baseline: h}
+}
+
+func (n svgPathElement) TreeEqual(other ui.Element) bool {
+	_, ok := other.(svgPathElement)
+	return ok
+}
+
+func (n svgPathElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	return n
+}
+
+func (n svgPathElement) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {}
+
+func svgRenderingSection(m Model) ui.Element {
+	// Build demo paths for FillPath/StrokePath showcase.
+	// 1. A filled triangle.
+	triangle := draw.NewPath().
+		MoveTo(draw.Pt(10, 70)).
+		LineTo(draw.Pt(60, 5)).
+		LineTo(draw.Pt(110, 70)).
+		Close().Build()
+
+	// 2. A stroked diamond.
+	diamond := draw.NewPath().
+		MoveTo(draw.Pt(50, 5)).
+		LineTo(draw.Pt(95, 40)).
+		LineTo(draw.Pt(50, 75)).
+		LineTo(draw.Pt(5, 40)).
+		Close().Build()
+
+	// 3. A curved path (quadratic Bezier wave).
+	wave := draw.NewPath().
+		MoveTo(draw.Pt(0, 30)).
+		QuadTo(draw.Pt(30, 0), draw.Pt(60, 30)).
+		QuadTo(draw.Pt(90, 60), draw.Pt(120, 30)).
+		QuadTo(draw.Pt(150, 0), draw.Pt(180, 30)).
+		Build()
+
+	// 4. A filled star using the path builder.
+	star := draw.NewPath()
+	for i := 0; i < 5; i++ {
+		angle := float64(i)*4*math.Pi/5 - math.Pi/2
+		px := float32(50 + 45*math.Cos(angle))
+		py := float32(50 + 45*math.Sin(angle))
+		if i == 0 {
+			star.MoveTo(draw.Pt(px, py))
+		} else {
+			star.LineTo(draw.Pt(px, py))
+		}
+	}
+	starPath := star.Close().Build()
+
+	return layout.Column(
+		sectionHeader("SVG Rendering"),
+		display.Text("GPU-accelerated path rendering via CPU tessellation \u2192 triangle pipeline."),
+		display.Text("SVG loading and rasterization via golang.org/x/image/vector."),
+		display.Spacer(16),
+
+		// ── FillPath / StrokePath demos ──
+		display.TextStyled("FillPath / StrokePath (GPU triangles)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		layout.Row(
+			layout.Column(
+				display.Text("Filled triangle"),
+				svgPathElement{
+					path: triangle, fillColor: draw.Hex("#3b82f6"), hasFill: true,
+					width: 120, height: 80,
+				},
+			),
+			display.Spacer(16),
+			layout.Column(
+				display.Text("Stroked diamond"),
+				svgPathElement{
+					path: diamond, hasStroke: true,
+					stroke: draw.Stroke{
+						Paint: draw.SolidPaint(draw.Hex("#ef4444")),
+						Width: 3,
+					},
+					width: 100, height: 80,
+				},
+			),
+			display.Spacer(16),
+			layout.Column(
+				display.Text("Filled star"),
+				svgPathElement{
+					path: starPath, fillColor: draw.Hex("#f59e0b"), hasFill: true,
+					width: 100, height: 100,
+				},
+			),
+		),
+		display.Spacer(12),
+		layout.Row(
+			layout.Column(
+				display.Text("Bezier wave (stroked)"),
+				svgPathElement{
+					path: wave, hasStroke: true,
+					stroke: draw.Stroke{
+						Paint: draw.SolidPaint(draw.Hex("#8b5cf6")),
+						Width: 2,
+						Cap:   draw.StrokeCapRound,
+					},
+					width: 190, height: 65,
+				},
+			),
+		),
+
+		display.Spacer(24),
+
+		// ── SVG rasterization demos ──
+		display.TextStyled("SVG Rasterization (LoadSVG \u2192 RasterizeSVG \u2192 DrawImage)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("SVGs are parsed from XML, rasterized to bitmaps at target resolution, then rendered as images."),
+		display.Spacer(8),
+		layout.Row(
+			layout.Column(
+				display.Text("Star (polygon)"),
+				display.Image(m.SvgStarID, display.WithImageSize(120, 120)),
+			),
+			display.Spacer(16),
+			layout.Column(
+				display.Text("Circles + rect"),
+				display.Image(m.SvgCirclesID, display.WithImageSize(200, 100)),
+			),
+		),
+
+		display.Spacer(24),
+		display.TextStyled("Supported SVG Elements", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  <path d=\"...\"> \u2014 full SVG path command set (M/L/H/V/C/S/Q/T/A/Z)"),
+		display.Text("  <rect>, <circle>, <ellipse>, <line>, <polygon>, <polyline>"),
+		display.Text("  <g> groups with fill/stroke inheritance"),
+		display.Text("  fill, stroke, stroke-width attributes"),
+		display.Text("  viewBox scaling to target resolution"),
 	)
 }

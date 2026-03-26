@@ -85,3 +85,101 @@ func TestPathBuilderFillRule(t *testing.T) {
 		t.Errorf("default FillRule = %d, want FillRuleNonZero (%d)", p.FillRule, FillRuleNonZero)
 	}
 }
+
+func TestPathEmpty(t *testing.T) {
+	p := NewPath().Build()
+	if !p.Empty() {
+		t.Fatal("expected empty path")
+	}
+	p2 := NewPath().MoveTo(Pt(0, 0)).Build()
+	if p2.Empty() {
+		t.Fatal("expected non-empty path")
+	}
+}
+
+func TestSetFillRule(t *testing.T) {
+	p := NewPath().SetFillRule(FillRuleEvenOdd).
+		MoveTo(Pt(0, 0)).LineTo(Pt(10, 10)).Close().Build()
+	if p.FillRule != FillRuleEvenOdd {
+		t.Fatalf("FillRule = %d, want EvenOdd(%d)", p.FillRule, FillRuleEvenOdd)
+	}
+}
+
+func TestPathWalk(t *testing.T) {
+	p := NewPath().
+		MoveTo(Pt(0, 0)).
+		LineTo(Pt(10, 0)).
+		QuadTo(Pt(15, 5), Pt(10, 10)).
+		CubicTo(Pt(5, 15), Pt(0, 15), Pt(0, 10)).
+		Close().
+		Build()
+
+	var kinds []PathSegmentKind
+	p.Walk(func(seg PathSegment) {
+		kinds = append(kinds, seg.Kind)
+	})
+
+	expected := []PathSegmentKind{SegMoveTo, SegLineTo, SegQuadTo, SegCubicTo, SegClose}
+	if len(kinds) != len(expected) {
+		t.Fatalf("Walk: got %d segments, want %d", len(kinds), len(expected))
+	}
+	for i, k := range kinds {
+		if k != expected[i] {
+			t.Errorf("segment %d: got kind %d, want %d", i, k, expected[i])
+		}
+	}
+}
+
+func TestPathWalkArc(t *testing.T) {
+	p := NewPath().
+		MoveTo(Pt(0, 0)).
+		ArcTo(10, 10, 0, false, true, Pt(20, 0)).
+		Build()
+
+	var arcSeen bool
+	p.Walk(func(seg PathSegment) {
+		if seg.Kind == SegArcTo {
+			arcSeen = true
+			if seg.Arc.RX != 10 || seg.Arc.RY != 10 {
+				t.Errorf("arc: RX=%f, RY=%f, want 10, 10", seg.Arc.RX, seg.Arc.RY)
+			}
+			if seg.Arc.Large {
+				t.Error("arc: expected large=false")
+			}
+			if !seg.Arc.Sweep {
+				t.Error("arc: expected sweep=true")
+			}
+		}
+	})
+	if !arcSeen {
+		t.Fatal("no ArcTo segment found")
+	}
+}
+
+func TestPathBoundsEmpty(t *testing.T) {
+	p := NewPath().Build()
+	b := p.Bounds()
+	if b != (Rect{}) {
+		t.Fatalf("empty path bounds = %v, want zero", b)
+	}
+}
+
+func TestPathBoundsRect(t *testing.T) {
+	p := PathFromRect(R(10, 20, 30, 40))
+	b := p.Bounds()
+	if b.X != 10 || b.Y != 20 || b.W != 30 || b.H != 40 {
+		t.Fatalf("rect path bounds = %v, want {10, 20, 30, 40}", b)
+	}
+}
+
+func TestPathBoundsTriangle(t *testing.T) {
+	p := NewPath().
+		MoveTo(Pt(0, 0)).
+		LineTo(Pt(100, 0)).
+		LineTo(Pt(50, 80)).
+		Close().Build()
+	b := p.Bounds()
+	if b.X != 0 || b.Y != 0 || b.W != 100 || b.H != 80 {
+		t.Fatalf("triangle bounds = %v, want {0, 0, 100, 80}", b)
+	}
+}

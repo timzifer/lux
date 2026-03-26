@@ -56,6 +56,7 @@ func (c *SceneCanvas) emitClipIfChanged() {
 		EmojiIdx:     len(c.scene.EmojiGlyphs),
 		GradientIdx:  len(c.scene.GradientRects),
 		ShadowIdx:    len(c.scene.ShadowRects),
+		PathIdx:      len(c.scene.PathBatches),
 		FullViewport: fullViewport,
 	}
 	if c.overlayMode {
@@ -65,6 +66,7 @@ func (c *SceneCanvas) emitClipIfChanged() {
 		batch.EmojiIdx = len(c.scene.OverlayEmojiGlyphs)
 		batch.GradientIdx = len(c.scene.OverlayGradientRects)
 		batch.ShadowIdx = len(c.scene.OverlayShadowRects)
+		batch.PathIdx = len(c.scene.OverlayPathBatches)
 		c.scene.OverlayClipBatches = append(c.scene.OverlayClipBatches, batch)
 	} else {
 		c.scene.ClipBatches = append(c.scene.ClipBatches, batch)
@@ -361,8 +363,73 @@ func (c *SceneCanvas) StrokeLine(a, b draw.Point, stroke draw.Stroke) {
 
 // ── Paths ────────────────────────────────────────────────────────
 
-func (c *SceneCanvas) FillPath(_ draw.Path, _ draw.Paint)   {}
-func (c *SceneCanvas) StrokePath(_ draw.Path, _ draw.Stroke) {}
+func (c *SceneCanvas) FillPath(p draw.Path, paint draw.Paint) {
+	if p.Empty() {
+		return
+	}
+	bounds := p.Bounds()
+	if c.isClipped(bounds.X, bounds.Y, bounds.W, bounds.H) {
+		return
+	}
+	color := paint.FallbackColor()
+	color.A *= c.effectiveOpacity()
+	if color.A < 0.001 {
+		return
+	}
+	verts := TessellateFill(p)
+	if len(verts) == 0 {
+		return
+	}
+	c.emitClipIfChanged()
+	batch := draw.DrawPathBatch{
+		VertexOffset: len(c.scene.PathVertices),
+		VertexCount:  len(verts),
+		Color:        color,
+	}
+	if c.overlayMode {
+		batch.VertexOffset = len(c.scene.OverlayPathVertices)
+		c.scene.OverlayPathVertices = append(c.scene.OverlayPathVertices, verts...)
+		c.scene.OverlayPathBatches = append(c.scene.OverlayPathBatches, batch)
+	} else {
+		c.scene.PathVertices = append(c.scene.PathVertices, verts...)
+		c.scene.PathBatches = append(c.scene.PathBatches, batch)
+	}
+}
+
+func (c *SceneCanvas) StrokePath(p draw.Path, stroke draw.Stroke) {
+	if p.Empty() {
+		return
+	}
+	bounds := p.Bounds()
+	// Expand bounds by stroke width for clipping check.
+	sw := stroke.Width
+	if c.isClipped(bounds.X-sw, bounds.Y-sw, bounds.W+2*sw, bounds.H+2*sw) {
+		return
+	}
+	color := stroke.Paint.FallbackColor()
+	color.A *= c.effectiveOpacity()
+	if color.A < 0.001 {
+		return
+	}
+	verts := TessellateStroke(p, stroke.Width, stroke.Cap, stroke.Join)
+	if len(verts) == 0 {
+		return
+	}
+	c.emitClipIfChanged()
+	batch := draw.DrawPathBatch{
+		VertexOffset: len(c.scene.PathVertices),
+		VertexCount:  len(verts),
+		Color:        color,
+	}
+	if c.overlayMode {
+		batch.VertexOffset = len(c.scene.OverlayPathVertices)
+		c.scene.OverlayPathVertices = append(c.scene.OverlayPathVertices, verts...)
+		c.scene.OverlayPathBatches = append(c.scene.OverlayPathBatches, batch)
+	} else {
+		c.scene.PathVertices = append(c.scene.PathVertices, verts...)
+		c.scene.PathBatches = append(c.scene.PathBatches, batch)
+	}
+}
 
 // ── Text ─────────────────────────────────────────────────────────
 
@@ -429,9 +496,9 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 	metrics := shaper.Measure(txt, style)
 	baseline := float32(math.Round(float64(origin.Y + metrics.Ascent)))
 
-	// Scale factor for MSDF glyphs: atlas is rendered at MSDFAtlasSize,
-	// we scale to the requested size.
-	msdfScale := float32(sizePx) / float32(text.MSDFAtlasSize)
+	// Adaptive MSDF atlas size: pick a bucket that limits upscaling to ~2x.
+	msdfBucket := text.MSDFBucketSize(sizePx)
+	msdfScale := float32(sizePx) / float32(msdfBucket)
 
 	for _, sg := range shaped {
 		if sg.Rune == ' ' {
@@ -458,7 +525,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: sizePx}
 			entry, ok = c.atlas.LookupOrInsertColor(key, shaper, glyphFont, int(sizePx))
 		} else if glyphUseMSDF {
-			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: uint16(text.MSDFAtlasSize), MSDF: true}
+			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: msdfBucket, MSDF: true}
 			entry, ok = c.atlas.LookupOrInsertMSDF(key, shaper, glyphFont)
 		}
 		if !ok && !isColorEmoji {
@@ -957,8 +1024,11 @@ func (c *SceneCanvas) PushClipRoundRect(r draw.Rect, _ float32) {
 	c.PushClip(r) // approximate as axis-aligned rect
 }
 
-// PushClipPath is a no-op stub (requires GPU path clipping support).
-func (c *SceneCanvas) PushClipPath(_ draw.Path) {}
+// PushClipPath clips to the path's bounding box (approximation).
+// True path clipping requires stencil buffer support.
+func (c *SceneCanvas) PushClipPath(p draw.Path) {
+	c.PushClip(p.Bounds())
+}
 
 func (c *SceneCanvas) PushTransform(_ draw.Transform) {}
 func (c *SceneCanvas) PopTransform()                  {}

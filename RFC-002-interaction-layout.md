@@ -4,7 +4,7 @@
 **Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-25
+**Zuletzt abgeglichen:** 2026-03-26
 **Abhängig von:** RFC-001 (Core Architecture)
 **Folge-RFC:** RFC-003 (Widget Catalogue & Theme)
 
@@ -40,8 +40,9 @@
 | §3.4 ScrollSpec im Theme | ✅ Integriert | Friction, Overscroll, TrackWidth, ThumbRadius |
 | §4 Layout-System | ✅ Integriert | |
 | §4.2 Constraints-Modell | ✅ Integriert | `ui/constraints.go` |
-| §4.4 Flexbox-Layout | ✅ Integriert | `ui/flex.go` — Direction, Justify, Align, Gap |
-| §4.5 Grid-Layout | ✅ Integriert | `ui/grid.go` |
+| §4.4 Flexbox-Layout | ✅ Integriert | `ui/layout/flex.go` — CSS-Spec-konform: Direction, Justify, Align, Gap, FlexWrap, FlexBasis, FlexGrow/Shrink, AlignContent, Order |
+| §4.5 Grid-Layout | ✅ Integriert | `ui/layout/grid.go` — CSS-Spec-konform: Track-Sizing, fr-Units, Repeat, Gap, Span, Auto-Placement |
+| §4.11 CSS Table Layout | ✅ Integriert | `ui/layout/table.go` — HTML-Spec-konformes CSS Table Layout (Fixed + Auto Algorithmus) |
 | §4.5 Stack | ✅ Integriert | |
 | §4.5 Padding/SizedBox/Expanded | ✅ Integriert | |
 | §4.3 Layout-Interface (Custom Layouts) | ✅ Integriert | `ui/layout.go` — `Layout`, `LayoutCtx`, `CustomLayout()`, `Size` |
