@@ -84,8 +84,8 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 
 | Lux-Komponente | Dateipfad | Browser-Äquivalent | Vereinfachung |
 |---|---|---|---|
-| Flexbox Layout | `ui/layout/flex.go` | CSS `display:flex` | Solide Basis; spec-nahe Erweiterungen nötig (`flex-basis`, `flex-wrap`, `order`) |
-| Grid Layout | `ui/layout/grid.go` | CSS `display:grid` | Vorstufe vorhanden; Track-Sizing, Spanning, Auto-Placement fehlen |
+| Flexbox Layout | `ui/layout/flex.go` | CSS `display:flex` | ✅ CSS-Spec-konform: Direction, Justify, Align, Gap, FlexWrap, FlexBasis, FlexGrow/Shrink, AlignContent, Order |
+| Grid Layout | `ui/layout/grid.go` | CSS `display:grid` | ✅ CSS-Spec-konform: Track-Sizing, fr-Units, Repeat, Gap, Span, Auto-Placement |
 | Stack Layout | `ui/layout/stack.go` | Positioning / Z-Stacking | Basis für absolute Overlays & Stacking |
 | ScrollView + Kinetic | `ui/nav/scroll.go`, `ui/kinetic_scroll.go` | `overflow:auto/scroll` | Scrolling/Scrollbar/Trägheit bereits gelöst |
 | VirtualList | `ui/data/virtuallist.go` | Viewport-Culling | Direkt nutzbar für große Dokumente |
@@ -124,7 +124,7 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 
 | Lux-Komponente | Status | Browser-Äquivalent | Synergie |
 |---|---|---|---|
-| DataTable | ⏳ Phase 7.1 | `<table>` | Table-Layout-Algorithmus kann wechselseitig profitieren |
+| DataTable / CSS Table Layout | ✅ Table Layout integriert | `<table>` | `ui/layout/table.go` — HTML-Spec-konformes CSS Table Layout (Fixed + Auto); DataTable-Widget darauf aufbauend ausstehend |
 | DatePicker | ⏳ Phase 7.1 | `<input type="date">` | Native Browser-Controls leichter abbildbar |
 | ColorPicker | ⏳ Phase 7.1 | `<input type="color">` | Direktes Control-Mapping |
 | Toolbar | ⏳ Phase 7.1 | Browser-Chrome | Adressleiste/Navigation/UI-Shell |
@@ -356,9 +356,9 @@ JS Engine <─> DOM/CSSOM Bridge <─> Event Loop / Tasks / Microtasks
 
 | Browser-Subsystem | Rückfluss in Lux |
 |---|---|
-| CSS Flexbox spec-konform | Verbesserte `ui/layout/flex.go`-Fähigkeiten |
-| CSS Grid spec-näher | Evolution von `ui/layout/grid.go` |
-| Table Layout | Direkter Schub für DataTable |
+| CSS Flexbox spec-konform | ✅ Bereits CSS-Spec-konform in `ui/layout/flex.go` |
+| CSS Grid spec-näher | ✅ Bereits CSS-Spec-konform in `ui/layout/grid.go` |
+| Table Layout | ✅ Bereits HTML-Spec-konform in `ui/layout/table.go` |
 | Inline Layout | Basis für Inline Widgets in RichText |
 | contenteditable-nahe Logik | Fundament für RichTextEditor |
 | SVG Pipeline | Vervollständigt `image/svg.go` |

@@ -14,7 +14,7 @@
 |-----------|--------|-----------|
 | §1 Motivation & Scope | — | Kontext, kein Code |
 | §2 Interaction-Profile | ⏳ Wartend | |
-| §3 Gesture-Recognizer | ⏳ Wartend | |
+| §3 Gesture-Recognizer | ✅ Integriert | `input/gesture.go`, `ui/gesture.go` — Tap, LongPress, Pan, Pinch; Arena-basierte Disambiguierung |
 | §4 Touch-Feedback & Bestätigung | ⏳ Wartend | |
 | §5 On-Screen-Keyboard | ⏳ Wartend | |
 | §6 Spezialisierte Input-Widgets | ⏳ Wartend | |
