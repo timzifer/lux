@@ -141,3 +141,29 @@ func TestAtlasDirtyFlag(t *testing.T) {
 		t.Error("clearing dirty flag should work")
 	}
 }
+
+func TestMSDFBucketSize(t *testing.T) {
+	tests := []struct {
+		displayPx uint16
+		want      uint16
+	}{
+		{24, 32},
+		{32, 32},
+		{47, 32},
+		{48, 64},
+		{72, 64},
+		{95, 64},
+		{96, 128},
+		{128, 128},
+		{191, 128},
+		{192, 256},
+		{256, 256},
+		{400, 256},
+	}
+	for _, tt := range tests {
+		got := MSDFBucketSize(tt.displayPx)
+		if got != tt.want {
+			t.Errorf("MSDFBucketSize(%d) = %d; want %d", tt.displayPx, got, tt.want)
+		}
+	}
+}

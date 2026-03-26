@@ -703,6 +703,18 @@ func (s *GoTextShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Fo
 	}
 
 	opts := glyph.Options
+
+	// Chlumsky error correction: detect and fix corner artifacts where
+	// median3(R,G,B) disagrees with the true inside/outside classification.
+	glyphIdx := sfnt.GlyphIndex(id)
+	segments, segErr := sf.LoadGlyph(&buf, glyphIdx, fixed.I(atlasSize), &sfnt.LoadGlyphOptions{})
+	if segErr == nil && len(segments) > 0 {
+		correctMSDFCorners(nrgba, segments,
+			float32(opts.PlaneBounds.Left), float32(opts.PlaneBounds.Top),
+			float32(opts.PlaneBounds.Right), float32(opts.PlaneBounds.Bottom),
+			pxRange)
+	}
+
 	bearingX := float32(opts.PlaneBounds.Left)
 	bearingY := float32(-opts.PlaneBounds.Top)
 	advance := float32(opts.Advance)

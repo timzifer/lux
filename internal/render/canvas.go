@@ -429,9 +429,9 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 	metrics := shaper.Measure(txt, style)
 	baseline := float32(math.Round(float64(origin.Y + metrics.Ascent)))
 
-	// Scale factor for MSDF glyphs: atlas is rendered at MSDFAtlasSize,
-	// we scale to the requested size.
-	msdfScale := float32(sizePx) / float32(text.MSDFAtlasSize)
+	// Adaptive MSDF atlas size: pick a bucket that limits upscaling to ~2x.
+	msdfBucket := text.MSDFBucketSize(sizePx)
+	msdfScale := float32(sizePx) / float32(msdfBucket)
 
 	for _, sg := range shaped {
 		if sg.Rune == ' ' {
@@ -458,7 +458,7 @@ func (c *SceneCanvas) drawTextTextured(txt string, origin draw.Point, style draw
 			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: sizePx}
 			entry, ok = c.atlas.LookupOrInsertColor(key, shaper, glyphFont, int(sizePx))
 		} else if glyphUseMSDF {
-			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: uint16(text.MSDFAtlasSize), MSDF: true}
+			key := text.GlyphKey{FontID: glyphFontID, GlyphID: sg.GlyphID, Rune: sg.Rune, SizePx: msdfBucket, MSDF: true}
 			entry, ok = c.atlas.LookupOrInsertMSDF(key, shaper, glyphFont)
 		}
 		if !ok && !isColorEmoji {
