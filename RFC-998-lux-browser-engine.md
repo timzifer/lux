@@ -176,6 +176,9 @@ JS Engine <─> DOM/CSSOM Bridge <─> Event Loop / Tasks / Microtasks
 
 **Schätzung:** ~8–15 KLOC (ohne vollständige Web-API-Kompatibilität).
 
+**Einordnung zu Go-Libraries:**  
+Es gibt fertige Go-Bausteine wie `golang.org/x/net/html` (Parser) und darauf aufbauende Pakete (`goquery`, `cascadia`) für Query/Selektoren. Diese ersetzen aber in der Regel **nicht** ein browsernahes, lebendes DOM mit Mutation-Semantik, Event-Integration, Live-Collections und JS-exponierten Interfaces.
+
 ### 6.2 CSS Parsing & Cascade
 
 **Extern:** Optional Parser-Libs; oft sinnvoll: eigener schlanker Parser für kontrollierte Teilmenge.  
@@ -184,14 +187,17 @@ JS Engine <─> DOM/CSSOM Bridge <─> Event Loop / Tasks / Microtasks
 
 **Schätzung:** ~12–25 KLOC.
 
+**Einordnung zu Go-Libraries:**  
+Es existieren CSS-Parser/Selector-Libraries in Go (z. B. `tdewolff/parse`, `cascadia` für Selektoren). Für eine Engine helfen sie beim Parsing/Matching, decken aber typischerweise nicht die vollständige Cascade-/Computed-Style- und CSSOM-Semantik ab.
+
 ### 6.3 Layout Engine (Block/Inline/Flex/Grid/Table)
 
-**Reuse:** Teile von `flex.go`, `grid.go`, RichText/Textlayout.  
-**Neubau:** Voller CSS-Formatting-Context (anonymous boxes, line boxes, containing blocks, margin-collapsing, positioning, floats, fragmentation optional).
+**Reuse:** Hoch bei Flex und Table (Flex inkl. Basis/Wrap/Order-Bausteine bereits vorhanden), zusätzlich Teile von `grid.go` sowie RichText/Textlayout.  
+**Neubau:** Weiterhin groß: vollständiger CSS-Formatting-Context (anonymous boxes, line boxes, containing blocks, margin-collapsing, positioning, floats, fragmentation optional), plus spec-nahe Grid-Details.
 
-**Komplexität:** Sehr hoch (kritischer Pfad).
+**Komplexität:** Hoch bis sehr hoch (kritischer Pfad bleibt Block/Inline/Positioning/Floats).
 
-**Schätzung:** ~35–70 KLOC (ohne Print/Paged Media).
+**Schätzung (aktualisiert):** ~25–55 KLOC (ohne Print/Paged Media).
 
 ### 6.4 Painting & Compositing
 
@@ -237,6 +243,16 @@ JS Engine <─> DOM/CSSOM Bridge <─> Event Loop / Tasks / Microtasks
 
 **Schätzung:** ~15–35 KLOC.
 
+**Begriffspräzisierung „JS-Bridge“:**  
+In diesem RFC sind **zwei** Brücken gemeint:
+
+1. **DOM/CSSOM ↔ JS (Engine-intern):**  
+   `document`, `element.style`, Events, DOM-Mutationen aus JS und Rückwirkung ins Layout/Paint.
+2. **Host-/Welt-Bridge ↔ JS (Engine-extern):**  
+   Anbindung von JS an die Laufzeitumgebung (`fetch`, Timer, Storage, Navigation, ggf. App-spezifische Host-APIs).
+
+Die erste Brücke ist Kern jeder Browser-Engine. Die zweite ist der „Web-Platform/Host“-Teil.
+
 ### 6.9 Event-System
 
 **Reuse:** Dispatch, HitTest, Focus sind da.  
@@ -264,6 +280,43 @@ JS Engine <─> DOM/CSSOM Bridge <─> Event Loop / Tasks / Microtasks
 
 **Schätzung:** ~6–14 KLOC.
 
+### 6.12 Teststrategie & Konformität (automatisiert)
+
+Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteht nicht primär durch Code, sondern durch **kontinuierliche Spezifikations-Tests**.
+
+**Testpyramide (empfohlen):**
+
+1. **Unit-Tests (schnell, lokal):**  
+   Parser-Bausteine, CSS-Cascade-Regeln, Layout-Algorithmen, Event-Dispatch, DOM-Mutationen.
+2. **Deterministische Engine-Integrationstests:**  
+   HTML→DOM→Style→Layout→Paint auf künstlichen Fixtures; Snapshot/Pixel- oder Strukturvergleiche.
+3. **Web Platform Tests (WPT):**  
+   Normative API-/Verhaltens-Tests gegen Web-Standards als primäre Kompatibilitätsmetrik.
+4. **Reftests/Visual-Tests:**  
+   Referenz-Rendering-Vergleiche (A/B-Seiten), nützlich für CSS/Layout/painting-Regressions.
+5. **Intermittency/Flake-Monitoring in CI:**  
+   Wiederholte Läufe, Quarantäne, getrennte Erwartungsdateien für known-fail/known-flaky.
+
+**Wie Servo das praktisch macht (als Vorbild):**
+
+- `mach test-unit` für Unit-Tests
+- `mach test-wpt` für WPT-Integration
+- `mach test-tidy`/`mach fmt` für Hygiene
+- Erwartungs-/Manifest-Updates über `mach update-manifest` bzw. WPT-Update-Workflows
+- Optionaler WebDriver-basierter Harness (`servodriver`) für WPT-Ausführung
+
+**Übertrag auf Lux-Browser-Track (Vorschlag):**
+
+- Pro Subsystem einen festen Testordner (`tests/dom`, `tests/css`, `tests/layout`, `tests/wpt`).
+- CI-Gates je PR:
+  - Gate A: Unit + schnelle Integration (Pflicht)
+  - Gate B: gezielte WPT-Sets nach betroffenem Bereich (Pflicht)
+  - Gate C: breiter Nightly-WPT-Lauf inkl. Flake-Analyse (pflichtig vor Release-Milestones)
+- Öffentliche Fortschrittsmetrik:
+  - Passrate nach Subtree (DOM, CSS, HTML, Events, Forms)
+  - Delta je Woche/Monat
+  - Anteil neuer Regressionen vs. behobener Failures
+
 ---
 
 ## 7. Aufwandsmatrix
@@ -284,9 +337,9 @@ JS Engine <─> DOM/CSSOM Bridge <─> Event Loop / Tasks / Microtasks
 
 **Grobe Gesamtordnung:**
 
-- **MVP „statischer HTML/CSS-Viewer“:** ca. 40–80 KLOC
-- **Interaktives DOM + JS-Teilmenge:** ca. 90–180 KLOC
-- **Robust gegen reale Websites:** realistisch >250 KLOC + lange Stabilisierung
+- **MVP „statischer HTML/CSS-Viewer“:** ca. 35–70 KLOC
+- **Interaktives DOM + JS-Teilmenge:** ca. 80–160 KLOC
+- **Robust gegen reale Websites:** realistisch >220 KLOC + lange Stabilisierung
 
 (Die Zahlen sind bewusst breit — der Variationsfaktor hängt stark am CSS- und JS-API-Scope.)
 
