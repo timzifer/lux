@@ -75,7 +75,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
 	"group-i18n":         {"rtl-layout", "locale", "ime-compose"},
 	"group-platform":     {"platform-info", "window-controls", "clipboard", "gpu-backend", "multi-window"},
-	"group-rendering":    {"canvas-paints", "surfaces"},
+	"group-rendering":    {"canvas-paints", "surfaces", "svg-rendering"},
 	"group-architecture": {"commands", "sub-models"},
 	"group-a11y":         {"a11y-tree", "a11y-focus-trap", "a11y-bridge"},
 }
@@ -194,6 +194,8 @@ func sectionLabel(id string) string {
 		return "GPU Backend"
 	case "surfaces":
 		return "Surfaces"
+	case "svg-rendering":
+		return "SVG Rendering"
 	case "dialogs":
 		return "Dialogs"
 	case "gradients":
@@ -314,6 +316,9 @@ type Model struct {
 	ImgChecker2  draw.ImageID // orange/teal checkerboard (wide, for scale mode demos)
 	ImgChecker3  draw.ImageID // pink/green checkerboard (for opacity demo)
 	ImageOpacity float32
+	// SVG Rendering demo
+	SvgStarID     draw.ImageID // rasterized SVG star
+	SvgCirclesID  draw.ImageID // rasterized SVG circles
 	// Accessibility demos
 	A11yTreeText     string
 	A11yTrapOpen     bool
@@ -899,6 +904,8 @@ func sectionContent(m Model) ui.Element {
 	// Phase 6
 	case "surfaces":
 		return surfacesSection(m.Pyramid)
+	case "svg-rendering":
+		return svgRenderingSection(m)
 	// Phase 7
 	case "dialogs":
 		return dialogsSection(m)
@@ -3859,6 +3866,10 @@ func main() {
 		80, 200, 80,  // green
 	)
 
+	// SVG demo images — rasterized at load time.
+	initial.SvgStarID = loadDemoSVG(initial.ImageStore, svgStar, 120, 120)
+	initial.SvgCirclesID = loadDemoSVG(initial.ImageStore, svgCircles, 200, 100)
+
 	initial.FadeOpacity.SetImmediate(1.0)
 
 	// Global handler that logs key events (Phase 1: §2.8).
@@ -3949,5 +3960,203 @@ func secondWindowView(m Model) ui.Element {
 				app.Send(app.CloseWindowMsg{ID: 1})
 			}),
 		),
+	)
+}
+
+// ── SVG Rendering Section ─────────────────────────────────────────
+
+// Demo SVG content.
+const svgStar = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <polygon points="60,5 73,40 110,40 80,62 90,97 60,78 30,97 40,62 10,40 47,40" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+</svg>`
+
+const svgCircles = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <circle cx="40" cy="50" r="30" fill="#3b82f6"/>
+  <circle cx="100" cy="50" r="30" fill="#ef4444"/>
+  <circle cx="160" cy="50" r="30" fill="#22c55e"/>
+  <rect x="5" y="5" width="190" height="90" fill="none" stroke="#94a3b8" stroke-width="1"/>
+</svg>`
+
+func loadDemoSVG(store *luximage.Store, svgData string, w, h int) draw.ImageID {
+	svgID, err := store.LoadSVG([]byte(svgData))
+	if err != nil {
+		return 0
+	}
+	rasterID, err := store.RasterizeSVG(svgID, w, h)
+	if err != nil {
+		return 0
+	}
+	return rasterID
+}
+
+// svgPathElement is a custom element that renders a draw.Path using FillPath/StrokePath.
+type svgPathElement struct {
+	ui.BaseElement
+	path      draw.Path
+	fillColor draw.Color
+	hasFill   bool
+	stroke    draw.Stroke
+	hasStroke bool
+	width     float32
+	height    float32
+}
+
+func (n svgPathElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	w := int(n.width)
+	h := int(n.height)
+	if w > ctx.Area.W {
+		w = ctx.Area.W
+	}
+	if h > ctx.Area.H {
+		h = ctx.Area.H
+	}
+
+	// Offset the path to the layout position.
+	ox := float32(ctx.Area.X)
+	oy := float32(ctx.Area.Y)
+	ctx.Canvas.PushOffset(ox, oy)
+
+	if n.hasFill {
+		ctx.Canvas.FillPath(n.path, draw.SolidPaint(n.fillColor))
+	}
+	if n.hasStroke {
+		ctx.Canvas.StrokePath(n.path, n.stroke)
+	}
+
+	ctx.Canvas.PopTransform()
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h, Baseline: h}
+}
+
+func (n svgPathElement) TreeEqual(other ui.Element) bool {
+	_, ok := other.(svgPathElement)
+	return ok
+}
+
+func (n svgPathElement) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	return n
+}
+
+func (n svgPathElement) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {}
+
+func svgRenderingSection(m Model) ui.Element {
+	// Build demo paths for FillPath/StrokePath showcase.
+	// 1. A filled triangle.
+	triangle := draw.NewPath().
+		MoveTo(draw.Pt(10, 70)).
+		LineTo(draw.Pt(60, 5)).
+		LineTo(draw.Pt(110, 70)).
+		Close().Build()
+
+	// 2. A stroked diamond.
+	diamond := draw.NewPath().
+		MoveTo(draw.Pt(50, 5)).
+		LineTo(draw.Pt(95, 40)).
+		LineTo(draw.Pt(50, 75)).
+		LineTo(draw.Pt(5, 40)).
+		Close().Build()
+
+	// 3. A curved path (quadratic Bezier wave).
+	wave := draw.NewPath().
+		MoveTo(draw.Pt(0, 30)).
+		QuadTo(draw.Pt(30, 0), draw.Pt(60, 30)).
+		QuadTo(draw.Pt(90, 60), draw.Pt(120, 30)).
+		QuadTo(draw.Pt(150, 0), draw.Pt(180, 30)).
+		Build()
+
+	// 4. A filled star using the path builder.
+	star := draw.NewPath()
+	for i := 0; i < 5; i++ {
+		angle := float64(i)*4*math.Pi/5 - math.Pi/2
+		px := float32(50 + 45*math.Cos(angle))
+		py := float32(50 + 45*math.Sin(angle))
+		if i == 0 {
+			star.MoveTo(draw.Pt(px, py))
+		} else {
+			star.LineTo(draw.Pt(px, py))
+		}
+	}
+	starPath := star.Close().Build()
+
+	return layout.Column(
+		sectionHeader("SVG Rendering"),
+		display.Text("GPU-accelerated path rendering via CPU tessellation \u2192 triangle pipeline."),
+		display.Text("SVG loading and rasterization via golang.org/x/image/vector."),
+		display.Spacer(16),
+
+		// ── FillPath / StrokePath demos ──
+		display.TextStyled("FillPath / StrokePath (GPU triangles)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		layout.Row(
+			layout.Column(
+				display.Text("Filled triangle"),
+				svgPathElement{
+					path: triangle, fillColor: draw.Hex("#3b82f6"), hasFill: true,
+					width: 120, height: 80,
+				},
+			),
+			display.Spacer(16),
+			layout.Column(
+				display.Text("Stroked diamond"),
+				svgPathElement{
+					path: diamond, hasStroke: true,
+					stroke: draw.Stroke{
+						Paint: draw.SolidPaint(draw.Hex("#ef4444")),
+						Width: 3,
+					},
+					width: 100, height: 80,
+				},
+			),
+			display.Spacer(16),
+			layout.Column(
+				display.Text("Filled star"),
+				svgPathElement{
+					path: starPath, fillColor: draw.Hex("#f59e0b"), hasFill: true,
+					width: 100, height: 100,
+				},
+			),
+		),
+		display.Spacer(12),
+		layout.Row(
+			layout.Column(
+				display.Text("Bezier wave (stroked)"),
+				svgPathElement{
+					path: wave, hasStroke: true,
+					stroke: draw.Stroke{
+						Paint: draw.SolidPaint(draw.Hex("#8b5cf6")),
+						Width: 2,
+						Cap:   draw.StrokeCapRound,
+					},
+					width: 190, height: 65,
+				},
+			),
+		),
+
+		display.Spacer(24),
+
+		// ── SVG rasterization demos ──
+		display.TextStyled("SVG Rasterization (LoadSVG \u2192 RasterizeSVG \u2192 DrawImage)", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("SVGs are parsed from XML, rasterized to bitmaps at target resolution, then rendered as images."),
+		display.Spacer(8),
+		layout.Row(
+			layout.Column(
+				display.Text("Star (polygon)"),
+				display.Image(m.SvgStarID, display.WithImageSize(120, 120)),
+			),
+			display.Spacer(16),
+			layout.Column(
+				display.Text("Circles + rect"),
+				display.Image(m.SvgCirclesID, display.WithImageSize(200, 100)),
+			),
+		),
+
+		display.Spacer(24),
+		display.TextStyled("Supported SVG Elements", draw.TextStyle{Size: 13, Weight: draw.FontWeightSemiBold}),
+		display.Spacer(4),
+		display.Text("  <path d=\"...\"> \u2014 full SVG path command set (M/L/H/V/C/S/Q/T/A/Z)"),
+		display.Text("  <rect>, <circle>, <ellipse>, <line>, <polygon>, <polyline>"),
+		display.Text("  <g> groups with fill/stroke inheritance"),
+		display.Text("  fill, stroke, stroke-width attributes"),
+		display.Text("  viewBox scaling to target resolution"),
 	)
 }

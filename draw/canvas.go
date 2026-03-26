@@ -215,6 +215,18 @@ type DrawShaderRect struct {
 	ImageID     ImageID    // optional texture input (0 = none)
 }
 
+// PathVertex is a single vertex in a tessellated path triangle mesh.
+type PathVertex struct {
+	X, Y float32
+}
+
+// DrawPathBatch describes a batch of triangles for a filled or stroked path.
+type DrawPathBatch struct {
+	VertexOffset int   // start index in PathVertices[]
+	VertexCount  int   // number of vertices (multiple of 3)
+	Color        Color // fill/stroke color
+}
+
 // ClipBatch groups draw commands that share the same scissor rectangle.
 type ClipBatch struct {
 	Clip         Rect
@@ -226,6 +238,7 @@ type ClipBatch struct {
 	ShadowIdx    int  // start index in ShadowRects[]
 	ImageIdx     int  // start index in ImageRects[]
 	ShaderIdx    int  // start index in ShaderRects[]
+	PathIdx      int  // start index in PathBatches[]
 	FullViewport bool // true = no scissor, full viewport
 }
 
@@ -260,6 +273,10 @@ type Scene struct {
 	// Shader-filled rectangles.
 	ShaderRects []DrawShaderRect
 
+	// Tessellated path triangles (CPU-tessellated, GPU-rendered).
+	PathVertices []PathVertex
+	PathBatches  []DrawPathBatch
+
 	// Overlay draw lists — rendered after main content so overlays
 	// (tooltips, dropdowns, context menus) fully cover underlying text.
 	OverlayRects          []DrawRect
@@ -271,6 +288,8 @@ type Scene struct {
 	OverlayShadowRects    []DrawShadowRect
 	OverlayImageRects     []DrawImageRect
 	OverlayShaderRects    []DrawShaderRect
+	OverlayPathVertices   []PathVertex
+	OverlayPathBatches    []DrawPathBatch
 
 	// Scissor clip batches — each batch specifies a scissor rect and
 	// index ranges into the main/overlay draw lists.

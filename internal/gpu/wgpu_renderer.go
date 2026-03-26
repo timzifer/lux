@@ -118,6 +118,15 @@ type WGPURenderer struct {
 	blurDstView         wgpu.TextureView
 	blurW, blurH        int // current blur texture dimensions
 
+	// Path triangle resources
+	pathPipeline      wgpu.RenderPipeline
+	pathVertBuffer    wgpu.Buffer
+	pathVertBufCap    uint64
+	pathColorBuffer   wgpu.Buffer   // uniform buffer for per-batch path color
+	pathColorLayout   wgpu.BindGroupLayout // group 1: color uniform
+	pathColorBindGroup wgpu.BindGroup
+	pathBuf           []float32 // CPU-side retained vertex data
+
 	// CPU-side retained buffers — grow-only, reset to [:0] each frame.
 	rectBuf  []float32
 	glyphBuf []float32 // unified: [text main|text overlay|msdf main|msdf overlay|emoji main|emoji overlay]
@@ -678,6 +687,67 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout},
 	})
 
+	// --- Path triangle pipeline ---
+
+	pathShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:  "path-shader",
+		Source: wgslPathShader,
+	})
+	defer pathShader.Destroy()
+
+	r.pathColorLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "path-color-layout",
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
+		},
+	})
+
+	r.pathColorBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "path-color-uniform",
+		Size:  16, // vec4<f32> = 16 bytes
+		Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+	})
+
+	r.pathColorBindGroup = device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  "path-color-bind-group",
+		Layout: r.pathColorLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: r.pathColorBuffer, Size: 16},
+		},
+	})
+
+	// Path vertex buffer (grows on demand).
+	r.pathVertBufCap = 256 * 2 * 4 // 256 vertices × 2 floats × 4 bytes
+	r.pathVertBuffer = device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "path-vertices",
+		Size:  r.pathVertBufCap,
+		Usage: wgpu.BufferUsageVertex | wgpu.BufferUsageCopyDst,
+	})
+
+	pathVertLayout := wgpu.VertexBufferLayout{
+		ArrayStride: 8, // 2 floats × 4 bytes
+		StepMode:    wgpu.VertexStepModeVertex,
+		Attributes: []wgpu.VertexAttribute{
+			{Format: wgpu.VertexFormatFloat32x2, Offset: 0, ShaderLocation: 0},
+		},
+	}
+
+	r.pathPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "path-pipeline",
+		Vertex: wgpu.VertexState{
+			Module:     pathShader,
+			EntryPoint: "vs_main",
+			Buffers:    []wgpu.VertexBufferLayout{{}, {}, pathVertLayout},
+		},
+		Fragment: &wgpu.FragmentState{
+			Module:     pathShader,
+			EntryPoint: "fs_main",
+			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm, Blend: blend}},
+		},
+		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.pathColorLayout},
+	})
+
 	// --- Blur pipeline (fragment-shader, 2-pass ping-pong) ---
 
 	blurShader := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
@@ -1036,6 +1106,24 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 	}
 	totalShadowBufSize := uint64((mainShadowCount + overlayShadowCount) * 12 * 4)
 
+	// Path triangles: upload all path vertices.
+	mainPathVerts := len(scene.PathVertices)
+	overlayPathVerts := len(scene.OverlayPathVertices)
+	totalPathVertBufSize := uint64(0)
+	if mainPathVerts+overlayPathVerts > 0 {
+		r.pathBuf = r.pathBuf[:0]
+		for _, v := range scene.PathVertices {
+			r.pathBuf = append(r.pathBuf, v.X, v.Y)
+		}
+		for _, v := range scene.OverlayPathVertices {
+			r.pathBuf = append(r.pathBuf, v.X, v.Y)
+		}
+		needed := uint64(len(r.pathBuf)) * 4
+		r.ensureGPUBuffer(&r.pathVertBuffer, &r.pathVertBufCap, needed, "path-vertices", wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst)
+		r.pathVertBuffer.Write(r.queue, float32SliceToBytes(r.pathBuf))
+		totalPathVertBufSize = needed
+	}
+
 	// Gradients: pre-upload all gradient uniform data and create per-gradient bind groups.
 	// Each gradient occupies 512 bytes (304 data + 208 padding for 256-byte alignment).
 	const gradStride = 512 // bytes
@@ -1121,6 +1209,9 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		scene.GradientRects, 0,
 		vpW, vpH)
 
+	// Draw path triangles for main content.
+	r.drawPaths(renderPass, scene.ClipBatches, scene.PathBatches, 0, totalPathVertBufSize, vpW, vpH)
+
 	// Draw surfaces (between main and overlay).
 	r.drawSurfaces(renderPass, scene.Surfaces, vpW, vpH)
 
@@ -1135,6 +1226,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 			totalRectBufSize, glyphBufSize, totalShadowBufSize,
 			scene.OverlayGradientRects, mainGradCount,
 			vpW, vpH)
+		r.drawPaths(renderPass, scene.OverlayClipBatches, scene.OverlayPathBatches, mainPathVerts, totalPathVertBufSize, vpW, vpH)
 		r.drawImages(renderPass, scene.OverlayImageRects, vpW, vpH)
 	}
 
@@ -1331,7 +1423,8 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		// --- Overlay pass (post-blur): render overlay content on top of blurred surface ---
 		// This enables frosted glass: blurred backdrop + sharp overlay content.
 		hasOverlay := overlayRectCount > 0 || overlayTextGlyphs > 0 || overlayMSDFGlyphs > 0 ||
-			overlayEmojiGlyphs > 0 || len(scene.OverlayGradientRects) > 0 || overlayShadowCount > 0
+			overlayEmojiGlyphs > 0 || len(scene.OverlayGradientRects) > 0 || overlayShadowCount > 0 ||
+			len(scene.OverlayPathBatches) > 0
 		if hasOverlay {
 			overlayPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 				ColorAttachments: []wgpu.RenderPassColorAttachment{{
@@ -1347,6 +1440,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 				totalRectBufSize, glyphBufSize, totalShadowBufSize,
 				scene.OverlayGradientRects, mainGradCount,
 				vpW, vpH)
+			r.drawPaths(overlayPass, scene.OverlayClipBatches, scene.OverlayPathBatches, mainPathVerts, totalPathVertBufSize, vpW, vpH)
 			r.drawImages(overlayPass, scene.OverlayImageRects, vpW, vpH)
 			overlayPass.End()
 		}
@@ -1913,6 +2007,84 @@ func (r *WGPURenderer) drawGradientRect(renderPass wgpu.RenderPass, bindGroupIdx
 	renderPass.SetBindGroup(1, r.gradBindGroups[bindGroupIdx])
 	renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
 	renderPass.Draw(6, 1, 0, 0)
+}
+
+// drawPaths draws tessellated path triangle batches within clip batch regions.
+func (r *WGPURenderer) drawPaths(
+	renderPass wgpu.RenderPass,
+	clipBatches []draw.ClipBatch,
+	pathBatches []draw.DrawPathBatch,
+	gpuVertexOffset int, // offset into pathVertBuffer (in vertices) for this layer
+	pathVertBufSize uint64,
+	vpW, vpH uint32,
+) {
+	if len(pathBatches) == 0 || pathVertBufSize == 0 {
+		return
+	}
+
+	basePathIdx := 0
+	if len(clipBatches) > 0 {
+		basePathIdx = clipBatches[0].PathIdx
+	}
+
+	renderPass.SetPipeline(r.pathPipeline)
+	renderPass.SetBindGroup(0, r.projBindGroup)
+	renderPass.SetBindGroup(1, r.pathColorBindGroup)
+	renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.pathVertBuffer, 0, pathVertBufSize)
+
+	if len(clipBatches) == 0 {
+		// No clip batches — draw all path batches.
+		renderPass.SetScissorRect(0, 0, vpW, vpH)
+		for _, pb := range pathBatches {
+			colorData := []float32{pb.Color.R, pb.Color.G, pb.Color.B, pb.Color.A}
+			r.pathColorBuffer.Write(r.queue, float32SliceToBytes(colorData))
+			vertOffset := uint32(gpuVertexOffset + pb.VertexOffset)
+			renderPass.Draw(uint32(pb.VertexCount), 1, vertOffset, 0)
+		}
+		return
+	}
+
+	for i, batch := range clipBatches {
+		// Determine path batch range for this clip batch.
+		var endPathIdx int
+		if i+1 < len(clipBatches) {
+			endPathIdx = clipBatches[i+1].PathIdx
+		} else {
+			endPathIdx = basePathIdx + len(pathBatches)
+		}
+
+		nPaths := endPathIdx - batch.PathIdx
+		if nPaths <= 0 {
+			continue
+		}
+
+		// Set scissor.
+		if batch.FullViewport {
+			renderPass.SetScissorRect(0, 0, vpW, vpH)
+		} else {
+			sx := uint32(batch.Clip.X)
+			sy := uint32(batch.Clip.Y)
+			sw := uint32(batch.Clip.W)
+			sh := uint32(batch.Clip.H)
+			if sx+sw > vpW {
+				sw = vpW - sx
+			}
+			if sy+sh > vpH {
+				sh = vpH - sy
+			}
+			renderPass.SetScissorRect(sx, sy, sw, sh)
+		}
+
+		// Draw each path batch in this clip region.
+		startIdx := batch.PathIdx - basePathIdx
+		for j := startIdx; j < startIdx+nPaths && j < len(pathBatches); j++ {
+			pb := pathBatches[j]
+			colorData := []float32{pb.Color.R, pb.Color.G, pb.Color.B, pb.Color.A}
+			r.pathColorBuffer.Write(r.queue, float32SliceToBytes(colorData))
+			vertOffset := uint32(gpuVertexOffset + pb.VertexOffset)
+			renderPass.Draw(uint32(pb.VertexCount), 1, vertOffset, 0)
+		}
+	}
 }
 
 // drawSurfaces blits registered surface textures into the render pass.
