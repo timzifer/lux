@@ -1,10 +1,10 @@
 # RFC-007 — lux: WGPU Rendering Pipeline
 
 **Repository:** `github.com/timzifer/lux`
-**Status:** Teilweise integriert
+**Status:** Integriert (nur Phase D — wgpu-native Backend — noch wartend)
 **Version:** 0.1.0
 **Datum:** 2026-03-19
-**Zuletzt abgeglichen:** 2026-03-25
+**Zuletzt abgeglichen:** 2026-03-26
 **Abhängig von:** RFC-001 (Core Architecture)
 
 ---

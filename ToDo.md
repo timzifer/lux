@@ -1,6 +1,6 @@
 # lux — Offene Aufgaben (nach Abhängigkeit geordnet)
 
-**Stand:** 2026-03-20
+**Stand:** 2026-03-26
 **Abgeleitet aus:** RFC-001, RFC-002, RFC-003, RFC-007
 
 Die Aufgaben sind in Phasen gegliedert. Jede Phase baut auf den vorherigen auf — innerhalb einer Phase sind die Aufgaben weitgehend unabhängig und parallelisierbar.
@@ -161,7 +161,7 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ---
 
-## Phase 4 — Text-Stack & Fonts
+## Phase 4 — Text-Stack & Fonts ✅
 
 ### 4.1 go-text/typesetting Integration (RFC-003 §3.2) ✅
 - [x] `GoTextShaper` als Shaper-Implementierung (ersetzt internen sfnt_shaper)
@@ -179,27 +179,27 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] Eingebettetes Noto-Sans Fallback-Font-Subset
 - **Abhängig von:** 4.1
 
-### 4.4 BiDi-Unterstützung (RFC-003 §3.5)
-- [ ] `BidiParagraph()` via `golang.org/x/text/unicode/bidi`
-- [ ] Mixed-Direction-Text korrekt verarbeiten
+### 4.4 BiDi-Unterstützung (RFC-003 §3.5) ✅
+- [x] `BidiParagraph()` via `golang.org/x/text/unicode/bidi`
+- [x] Mixed-Direction-Text korrekt verarbeiten
 - **Abhängig von:** 4.1, 4.2
 
-### 4.5 Unicode Line-Breaking (RFC-003 §3.6)
-- [ ] `LineBreaker`-Interface mit UAX #14-konformer Implementierung
-- [ ] Thai-/CJK-kompatible Umbruchregeln (nicht nur Leerzeichen-basiert)
-- [ ] Integration in TextLayout-Pipeline (RFC-003 §5.3)
+### 4.5 Unicode Line-Breaking (RFC-003 §3.6) ✅
+- [x] `LineBreaker`-Interface mit UAX #14-konformer Implementierung (`internal/text/linebreak.go`)
+- [x] Thai-/CJK-kompatible Umbruchregeln via `rivo/uniseg`
+- [x] Integration in TextLayout-Pipeline (RFC-003 §5.3)
 - **Abhängig von:** 4.1
 
-### 4.6 Grapheme-Cluster-Navigation (RFC-003 §3.7)
-- [ ] `rivo/uniseg`-Integration für Grapheme-Cluster-Segmentierung
-- [ ] Cursor-Bewegung auf Grapheme-Cluster-Grenzen (nicht Rune-Indizes)
-- [ ] Backspace löscht Grapheme-Cluster (Emoji, kombinierte Zeichen)
-- [ ] Doppelklick-Wortauswahl auf UAX#29 Word Boundaries
+### 4.6 Grapheme-Cluster-Navigation (RFC-003 §3.7) ✅
+- [x] `rivo/uniseg`-Integration für Grapheme-Cluster-Segmentierung (`internal/text/grapheme.go`)
+- [x] Cursor-Bewegung auf Grapheme-Cluster-Grenzen (`PrevGraphemeCluster`, `NextGraphemeCluster`)
+- [x] Backspace löscht Grapheme-Cluster (Emoji, kombinierte Zeichen)
+- [x] Doppelklick-Wortauswahl auf UAX#29 Word Boundaries (`WordAt`)
 - **Abhängig von:** nichts
 
-### 4.7 Inline-Widgets in RichText (RFC-003 §5.5)
-- [ ] `InlineWidget` Typ (Widget im Textfluss)
-- [ ] `ParagraphContent` Interface (`TextSpan | InlineWidget`)
+### 4.7 Inline-Widgets in RichText (RFC-003 §5.5) ✅
+- [x] `InlineWidget` Typ (Widget im Textfluss) mit Baseline-Alignment (`ui/display/richtext.go`)
+- [x] `ParagraphContent` sealed Interface (`TextSpan | InlineWidget`)
 - **Abhängig von:** 4.1
 
 ---
@@ -305,7 +305,7 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 ### 6.3 State Persistence (RFC-001 §3.4) ✅
 - [x] `app.WithPersistence(PersistenceConfig[Model])` Option
 - [x] Encode/Decode Hooks
-- [ ] Plattformspezifische Storage-Pfade
+- [x] Plattformspezifische Storage-Pfade (`app/storage.go`: Windows `%APPDATA%`, macOS `~/Library/Application Support`, Linux `XDG_STATE_HOME`)
 - **Abhängig von:** nichts
 
 ### 6.4 Commands (`Cmd`) (RFC-001 §3.6) ✅
@@ -338,11 +338,14 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ## Phase 7 — Post-v1.0
 
-### 7.1 Tier 4 Widgets (RFC-003 §4.1)
-- [ ] DatePicker
-- [ ] ColorPicker
+### 7.1 Tier 4 Widgets (RFC-003 §4.1) 🔶
+- [x] DatePicker (`ui/form/datepicker.go`)
+- [x] ColorPicker (`ui/form/colorpicker.go`)
+- [x] TimePicker (`ui/form/timepicker.go`)
+- [x] NumericInput (`ui/form/numericinput.go`)
+- [x] Spinner (`ui/form/spinner.go`)
+- [x] SplitView (`ui/nav/splitview.go`)
 - [ ] DataTable
-- [ ] SplitView
 - [ ] Toolbar
 - [ ] RichTextEditor (RFC-003 §5.6)
 - [ ] FilePicker (Open/Save)

@@ -14,7 +14,7 @@ column below reflects the current implementation state.
 | 004 | [RFC-004-hmi-touch.md](RFC-004-hmi-touch.md) | Integrated | Touch input, multi-touch gesture recognition, HMI/embedded targets |
 | 004 | [RFC-004-lux-webview.md](RFC-004-lux-webview.md) | Partially integrated | WebView integration as an external surface (WebView2 on Windows) |
 | 006 | [RFC-006-lux-surface-semantics.md](RFC-006-lux-surface-semantics.md) | Integrated | External surface API, zero-copy texture provider, accessibility semantics for surfaces |
-| 007 | [RFC-007-lux-WGPU-rendering.md](RFC-007-lux-WGPU-rendering.md) | Partially integrated | GPU rendering via wgpu/gogpu (Vulkan/Metal/D3D12), geometry batcher, visual effects, OpenGL fallback |
+| 007 | [RFC-007-lux-WGPU-rendering.md](RFC-007-lux-WGPU-rendering.md) | Integrated | GPU rendering via wgpu/gogpu (Vulkan/Metal/D3D12), geometry batcher, visual effects, OpenGL fallback (only wgpu-native backend deferred) |
 | 008 | [RFC-008-lux-default-theme.md](RFC-008-lux-default-theme.md) | Integrated | Lux dark/light theme (design tokens, color system, typography, motion, elevation) |
 | 010 | [RFC-010-lux-code-editor.md](RFC-010-lux-code-editor.md) | Planned | Code editor widget (syntax highlighting, virtual rendering, multi-cursor — not yet implemented) |
 | 011 | [RFC-011-lux-vellum.md](RFC-011-lux-vellum.md) | Theoretical | Remote/network rendering protocol for distributed UI (not scheduled for implementation) |
