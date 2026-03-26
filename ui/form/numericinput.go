@@ -88,6 +88,15 @@ func (n NumericInput) clamp(v float64) float64 {
 	return v
 }
 
+// snapToStep rounds v to the nearest multiple of Step relative to Min,
+// eliminating floating-point drift from repeated increment/decrement.
+func (n NumericInput) snapToStep(v float64) float64 {
+	if n.Step <= 0 {
+		return v
+	}
+	return math.Round((v-n.Min)/n.Step)*n.Step + n.Min
+}
+
 // LayoutSelf implements ui.Layouter.
 func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
@@ -165,7 +174,7 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		var upFn func()
 		if n.OnChange != nil {
 			onChange := n.OnChange
-			val := n.clamp(n.Value + n.Step)
+			val := n.clamp(n.snapToStep(n.Value + n.Step))
 			upFn = func() { onChange(val) }
 		}
 		upHover = ix.RegisterHit(upRect, upFn)
@@ -183,7 +192,7 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		var downFn func()
 		if n.OnChange != nil {
 			onChange := n.OnChange
-			val := n.clamp(n.Value - n.Step)
+			val := n.clamp(n.snapToStep(n.Value - n.Step))
 			downFn = func() { onChange(val) }
 		}
 		downHover = ix.RegisterHit(downRect, downFn)
@@ -211,17 +220,28 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	canvas.DrawText(icons.CaretDown, draw.Pt(arrowCenterX, downArrowY), arrowStyle, arrowColor)
 
 	// Drag on value area for continuous adjustment.
+	// Uses delta from press origin so the initial click doesn't jump the value.
 	valueRect := draw.R(float32(area.X), float32(area.Y), float32(max(w-numericStepperW, 0)), float32(h))
 	if !n.Disabled && n.OnChange != nil {
-		areaX := float32(area.X)
 		valueW := float32(max(w-numericStepperW, 1))
 		onChange := n.OnChange
 		baseVal := n.Value
 		minV := n.Min
 		maxV := n.Max
+		step := n.Step
+		minVal := n.Min
+		pressX := float32(-1) // sentinel: set on first call (press)
 		ix.RegisterDrag(valueRect, func(x, _ float32) {
-			delta := float64((x - areaX - valueW/2) / valueW)
+			if pressX < 0 {
+				// First call is the initial press — record origin, don't change value.
+				pressX = x
+				return
+			}
+			delta := float64((x - pressX) / valueW)
 			newVal := baseVal + delta*(maxV-minV)*0.5
+			if step > 0 {
+				newVal = math.Round((newVal-minVal)/step)*step + minVal
+			}
 			if newVal < minV {
 				newVal = minV
 			}
