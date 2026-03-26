@@ -2,10 +2,12 @@ package uitest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/layout"
 )
 
@@ -139,4 +141,56 @@ func TestGoldenNestedLayout(t *testing.T) {
 		testW, testH,
 	)
 	AssertScene(t, scene, "testdata/nested_layout.golden")
+}
+
+// ── Form Components: Pickers & Numeric ───────────────────────────
+
+func TestGoldenSpinner(t *testing.T) {
+	scene := BuildScene(form.NewSpinner(0.0), testW, testH)
+	AssertScene(t, scene, "testdata/spinner.golden")
+}
+
+func TestGoldenSpinnerMidPhase(t *testing.T) {
+	scene := BuildScene(form.NewSpinner(0.5), testW, testH)
+	AssertScene(t, scene, "testdata/spinner_mid.golden")
+}
+
+func TestGoldenNumericInput(t *testing.T) {
+	scene := BuildScene(
+		form.NewNumericInput(42, form.WithUnit("px")),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/numeric_input.golden")
+}
+
+func TestGoldenNumericInputDisabled(t *testing.T) {
+	scene := BuildScene(
+		form.NumericInputDisabled(10, form.WithUnit("em")),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/numeric_input_disabled.golden")
+}
+
+func TestGoldenColorPicker(t *testing.T) {
+	scene := BuildScene(
+		form.NewColorPicker(draw.Color{R: 0.25, G: 0.32, B: 0.71, A: 1}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/color_picker.golden")
+}
+
+func TestGoldenTimePicker(t *testing.T) {
+	scene := BuildScene(
+		form.NewTimePicker(14, 30),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/time_picker.golden")
+}
+
+func TestGoldenDatePicker(t *testing.T) {
+	scene := BuildScene(
+		form.NewDatePicker(time.Date(2025, 6, 15, 0, 0, 0, 0, time.UTC)),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/date_picker.golden")
 }
