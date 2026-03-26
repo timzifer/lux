@@ -1,0 +1,14 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (1)
+  0: rect(72,24 24x20) color(63,112,199,255) r=10.0
+
+[Glyphs] (3)
+  0: glyph(24,37) scale=1 color(238,242,247,255) "Status: "
+  1: glyph(78,30) scale=1 color(238,242,247,255) "OK"
+  2: glyph(96,37) scale=1 color(238,242,247,255) " — all systems go."
+
+[ClipBatches] (1)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

@@ -194,3 +194,88 @@ func TestGoldenDatePicker(t *testing.T) {
 	)
 	AssertScene(t, scene, "testdata/date_picker.golden")
 }
+
+// ── Inline Widgets (RFC-003 §5.5) ───────────────────────────────
+
+func TestGoldenRichTextInlineWidget(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Status: "},
+				display.InlineElement(display.BadgeText("OK")),
+				display.Span{Text: " — all systems go."},
+			},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_inline_widget.golden")
+}
+
+func TestGoldenRichTextInlineWidgetWrap(t *testing.T) {
+	// Use a narrow width to force the inline widget to wrap.
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "This is a long line that fills the width "},
+				display.InlineElement(display.BadgeText("WRAPPED")),
+				display.Span{Text: " after the badge."},
+			},
+		}),
+		300, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_inline_widget_wrap.golden")
+}
+
+func TestGoldenRichTextInlineWidgetBaseline(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Shifted up: "},
+				display.InlineElementWithBaseline(display.BadgeText("UP"), 4),
+				display.Span{Text: " and default: "},
+				display.InlineElement(display.BadgeText("DEF")),
+			},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_inline_widget_baseline.golden")
+}
+
+func TestGoldenRichTextMixedContent(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Hello "},
+					display.InlineElement(display.BadgeText("1")),
+					display.Span{Text: " world "},
+					display.InlineElement(display.BadgeText("2")),
+					display.Span{Text: " end."},
+				},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Second paragraph with "},
+					display.InlineElement(
+						display.BadgeColor(display.Text("color"), draw.Hex("#ef4444")),
+					),
+					display.Span{Text: " badge."},
+				},
+			},
+		),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_mixed_content.golden")
+}
+
+func TestGoldenRichTextSpansBackcompat(t *testing.T) {
+	// Ensure the old Spans-only API still works unchanged.
+	scene := BuildScene(
+		display.RichTextSpans(
+			display.Span{Text: "Bold ", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Size: 13}}},
+			display.Span{Text: "normal"},
+		),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_spans_backcompat.golden")
+}
