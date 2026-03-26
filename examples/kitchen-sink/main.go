@@ -65,7 +65,7 @@ var sectionIDs = []string{
 var sectionGroupChildren = map[string][]string{
 	"group-basics":       {"typography", "buttons"},
 	"group-input":        {"form-controls", "range-progress", "selection", "validation"},
-	"group-layout":       {"layout", "split-view", "custom-layout"},
+	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout"},
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
 	"group-overlays":     {"overlays", "dialogs"},
@@ -172,6 +172,8 @@ func sectionLabel(id string) string {
 		return "Animation ID"
 	case "anim-group-seq":
 		return "AnimGroup & Seq"
+	case "flex-grid-css":
+		return "Flex & Grid (CSS)"
 	case "custom-layout":
 		return "Custom Layout"
 	case "rtl-layout":
@@ -823,6 +825,8 @@ func sectionContent(m Model) ui.Element {
 		return validationSection(m)
 	case "layout":
 		return layoutSection()
+	case "flex-grid-css":
+		return flexGridCSSSection()
 	case "split-view":
 		return splitViewSection(m)
 	case "rich-text":
@@ -1236,6 +1240,140 @@ func layoutSection() ui.Element {
 		// SizedBox
 		display.Text("SizedBox (100x50):"),
 		layout.Sized(100, 50, display.Text("Sized")),
+	)
+}
+
+// flexGridCSSSection demonstrates CSS-spec-compliant Flex and Grid features.
+func flexGridCSSSection() ui.Element {
+	label := func(text string) ui.Element {
+		return display.TextStyled(text, draw.TextStyle{Size: 13, Weight: draw.FontWeightMedium})
+	}
+	chip := func(text string) ui.Element {
+		return layout.Pad(ui.InlineInsets(12, 6),
+			display.TextStyled(text, draw.TextStyle{Size: 12}))
+	}
+	box := func(text string, w, h float32) ui.Element {
+		return layout.Sized(w, h, display.Text(text))
+	}
+
+	return layout.Column(
+		sectionHeader("Flex & Grid (CSS Compliance)"),
+
+		// ── 1. Flex Wrap ──────────────────────────────────────
+		label("flex-wrap: wrap (8 items in constrained row)"),
+		display.Spacer(4),
+		layout.Sized(0, 80, layout.NewFlex([]ui.Element{
+			chip("Alpha"), chip("Beta"), chip("Gamma"), chip("Delta"),
+			chip("Epsilon"), chip("Zeta"), chip("Eta"), chip("Theta"),
+		},
+			layout.WithWrap(layout.FlexWrapOn),
+			layout.WithGap(8),
+		)),
+		display.Spacer(12),
+
+		// ── 2. Flex Direction Reverse ─────────────────────────
+		label("flex-direction: row-reverse"),
+		display.Spacer(4),
+		layout.NewFlex([]ui.Element{
+			display.Text("1"), display.Text("2"), display.Text("3"),
+		},
+			layout.WithDirection(layout.FlexRowReverse),
+			layout.WithGap(12),
+		),
+		display.Spacer(12),
+
+		// ── 3. Flex Grow & Shrink ─────────────────────────────
+		label("flex-grow: 1 / 2 / 1 (proportional fill)"),
+		display.Spacer(4),
+		layout.NewFlex([]ui.Element{
+			layout.Expand(box("1×", 0, 30), 1),
+			layout.Expand(box("2×", 0, 30), 2),
+			layout.Expand(box("1×", 0, 30), 1),
+		}, layout.WithGap(8)),
+		display.Spacer(12),
+
+		// ── 4. Flex AlignSelf ─────────────────────────────────
+		label("align-self per child (start / center / end / stretch)"),
+		display.Spacer(4),
+		layout.Sized(0, 60, layout.NewFlex([]ui.Element{
+			layout.FlexChild(box("S", 60, 20), layout.WithAlignSelf(layout.AlignSelfStart)),
+			layout.FlexChild(box("C", 60, 20), layout.WithAlignSelf(layout.AlignSelfCenter)),
+			layout.FlexChild(box("E", 60, 20), layout.WithAlignSelf(layout.AlignSelfEnd)),
+			layout.FlexChild(box("X", 60, 20), layout.WithAlignSelf(layout.AlignSelfStretch)),
+		}, layout.WithGap(8))),
+		display.Spacer(12),
+
+		// ── 5. Flex Order ─────────────────────────────────────
+		label("order: visual reordering (source: C A B → visual: A B C)"),
+		display.Spacer(4),
+		layout.NewFlex([]ui.Element{
+			layout.FlexChild(display.Text("C (order=3)"), layout.WithOrder(3)),
+			layout.FlexChild(display.Text("A (order=1)"), layout.WithOrder(1)),
+			layout.FlexChild(display.Text("B (order=2)"), layout.WithOrder(2)),
+		}, layout.WithGap(12)),
+		display.Spacer(12),
+
+		// ── 6. Flex AlignContent ──────────────────────────────
+		label("align-content: space-between (wrapped lines)"),
+		display.Spacer(4),
+		layout.Sized(0, 100, layout.NewFlex([]ui.Element{
+			box("A", 80, 25), box("B", 80, 25), box("C", 80, 25),
+			box("D", 80, 25), box("E", 80, 25), box("F", 80, 25),
+		},
+			layout.WithWrap(layout.FlexWrapOn),
+			layout.WithAlignContent(layout.AlignContentSpaceBetween),
+			layout.WithGap(8),
+		)),
+		display.Spacer(20),
+
+		// ── 7. Grid Template Columns (fr) ─────────────────────
+		label("grid-template-columns: 1fr 2fr 1fr"),
+		display.Spacer(4),
+		layout.NewTemplateGrid(
+			[]layout.TrackSize{layout.Fr(1), layout.Fr(2), layout.Fr(1)},
+			[]ui.Element{
+				display.Text("1fr"), display.Text("2fr"), display.Text("1fr"),
+				display.Text("1fr"), display.Text("2fr"), display.Text("1fr"),
+			},
+			layout.WithColGap(8), layout.WithRowGap(4),
+		),
+		display.Spacer(12),
+
+		// ── 8. Grid Template Mixed ────────────────────────────
+		label("grid-template-columns: 80px 1fr auto"),
+		display.Spacer(4),
+		layout.NewTemplateGrid(
+			[]layout.TrackSize{layout.Px(80), layout.Fr(1), layout.AutoTrack()},
+			[]ui.Element{
+				display.Text("80px"), display.Text("fills"), display.Text("auto"),
+			},
+			layout.WithColGap(12),
+		),
+		display.Spacer(12),
+
+		// ── 9. Grid Item Placement & Span ─────────────────────
+		label("grid: explicit placement (item spans 2 columns)"),
+		display.Spacer(4),
+		layout.NewTemplateGrid(
+			[]layout.TrackSize{layout.Fr(1), layout.Fr(1), layout.Fr(1)},
+			[]ui.Element{
+				layout.PlaceGridItem(display.Text("Span 2 cols"), layout.ColSpan(1, 2)),
+				display.Text("auto"), display.Text("auto"), display.Text("auto"),
+			},
+			layout.WithColGap(8), layout.WithRowGap(4),
+		),
+		display.Spacer(12),
+
+		// ── 10. Grid Auto-Flow Column ─────────────────────────
+		label("grid-auto-flow: column (items fill columns first)"),
+		display.Spacer(4),
+		layout.NewGrid(3, []ui.Element{
+			display.Text("1"), display.Text("2"), display.Text("3"),
+			display.Text("4"), display.Text("5"),
+		},
+			layout.WithAutoFlow(layout.GridFlowColumn),
+			layout.WithColGap(12), layout.WithRowGap(4),
+		),
 	)
 }
 

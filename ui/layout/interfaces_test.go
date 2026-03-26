@@ -46,4 +46,9 @@ var (
 	_ ui.TreeEqualizer = layout.CustomLayout{}
 	_ ui.ChildResolver = layout.CustomLayout{}
 	_ ui.AccessWalker  = layout.CustomLayout{}
+
+	_ ui.Layouter      = layout.GridItem{}
+	_ ui.TreeEqualizer = layout.GridItem{}
+	_ ui.ChildResolver = layout.GridItem{}
+	_ ui.AccessWalker  = layout.GridItem{}
 )
