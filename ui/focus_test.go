@@ -299,3 +299,88 @@ func TestInputStateHasFocusUID(t *testing.T) {
 		t.Errorf("InputState.FocusUID = %d, want %d", fm.Input.FocusUID, uid)
 	}
 }
+
+func TestResetElementUIDsStabilizesUIDs(t *testing.T) {
+	fm := NewFocusManager()
+
+	// Simulate first BuildScene: assign UIDs to 3 elements.
+	fm.ResetElementUIDs()
+	_ = fm.NextElementUID() // element 1
+	uid2 := fm.NextElementUID() // element 2 (our TextArea)
+	_ = fm.NextElementUID() // element 3
+
+	// Focus element 2 and set Input.
+	fm.SetFocusedUID(uid2)
+	fm.Input = &InputState{
+		Value:        "hello\nworld",
+		FocusUID:     uid2,
+		CursorOffset: 5,
+		Multiline:    true,
+		OnChange:     func(string) {},
+	}
+
+	// Simulate arrow key: modify cursor offset.
+	fm.Input.CursorOffset = 3
+
+	// Simulate next BuildScene (idle frame, no ResetOrder).
+	fm.ResetElementUIDs()
+	_ = fm.NextElementUID()
+	uid2again := fm.NextElementUID()
+	_ = fm.NextElementUID()
+
+	// UID must be the same.
+	if uid2again != uid2 {
+		t.Errorf("UID drifted: got %d, want %d", uid2again, uid2)
+	}
+	// Focus check must still pass.
+	if !fm.IsElementFocused(uid2again) {
+		t.Error("IsElementFocused should return true after ResetElementUIDs")
+	}
+	// Input must survive (not nil'd).
+	if fm.Input == nil {
+		t.Fatal("fm.Input should not be nil")
+	}
+	if fm.Input.CursorOffset != 3 {
+		t.Errorf("CursorOffset = %d, want 3", fm.Input.CursorOffset)
+	}
+	// FocusUID match check (used in TextArea to preserve cursor).
+	if fm.Input.FocusUID != uid2again {
+		t.Errorf("Input.FocusUID = %d, want %d", fm.Input.FocusUID, uid2again)
+	}
+}
+
+func TestInputSurvivesResetOrder(t *testing.T) {
+	fm := NewFocusManager()
+
+	fm.ResetElementUIDs()
+	uid := fm.NextElementUID()
+	fm.SetFocusedUID(uid)
+	fm.Input = &InputState{
+		Value:        "test",
+		FocusUID:     uid,
+		CursorOffset: 2,
+		Multiline:    true,
+		OnChange:     func(string) {},
+	}
+
+	// Simulate event: cursor moves.
+	fm.Input.CursorOffset = 1
+
+	// Simulate modelDirty frame: ResetOrder + ResetElementUIDs + BuildScene.
+	fm.ResetOrder()
+	fm.ResetElementUIDs()
+	uidAfter := fm.NextElementUID()
+
+	if uidAfter != uid {
+		t.Errorf("UID changed after ResetOrder: got %d, want %d", uidAfter, uid)
+	}
+	if fm.Input == nil {
+		t.Fatal("fm.Input should survive ResetOrder")
+	}
+	if fm.Input.CursorOffset != 1 {
+		t.Errorf("CursorOffset = %d, want 1", fm.Input.CursorOffset)
+	}
+	if !fm.IsElementFocused(uidAfter) {
+		t.Error("element should still be focused after ResetOrder")
+	}
+}

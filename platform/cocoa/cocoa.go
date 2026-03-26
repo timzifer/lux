@@ -344,11 +344,17 @@ func (p *Platform) processKeyEvent(event uintptr, action int) {
 	}
 
 	// For key-down, also send OnChar if characters are available.
+	// Filter out macOS function-key characters (U+F700–F8FF) that
+	// correspond to arrow keys, Home, End, etc. — these are already
+	// handled via OnKey.
 	if action == 0 && p.callbacks.OnChar != nil {
 		charsPtr := msgSendPtr(event, sel("characters"))
 		if charsPtr != 0 {
 			chars := goString(charsPtr)
 			for _, ch := range chars {
+				if ch >= 0xF700 && ch <= 0xF8FF {
+					continue
+				}
 				p.callbacks.OnChar(ch)
 			}
 		}
@@ -475,13 +481,13 @@ func keyCodeToName(code uint16) string {
 	case 0x3B:
 		return "Control"
 	case 0x7B:
-		return "ArrowLeft"
+		return "Left"
 	case 0x7C:
-		return "ArrowRight"
+		return "Right"
 	case 0x7D:
-		return "ArrowDown"
+		return "Down"
 	case 0x7E:
-		return "ArrowUp"
+		return "Up"
 	case 0x72:
 		return "Help"
 	case 0x73:
