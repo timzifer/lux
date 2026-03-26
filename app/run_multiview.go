@@ -101,6 +101,8 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 	shaper := text.NewGoTextShaper(fonts.Fallback)
 	shaper.RegisterFamily(fonts.PhosphorFamily)
 
+	atlas.SetMSDFNotify(func() { appLoop.Send(msdfReadyMsg{}) })
+
 	type atlasSetter interface{ SetAtlas(*text.GlyphAtlas) }
 	if as, ok := renderer.(atlasSetter); ok {
 		as.SetAtlas(atlas)
@@ -591,6 +593,9 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				mainWC.currentTree, _ = mainWC.reconciler.Reconcile(mainElem, activeTheme, Send, mainWC.dispatcher, fm, currentLocale)
 				fm.SortOrder()
 			}
+
+			// Drain completed async MSDF glyphs into the atlas.
+			atlas.DrainMSDFResults()
 
 			// Main window: hover + scene + render.
 			hoveredIdx := mainWC.hitMap.HitTestIndex(mainWC.mouseX, mainWC.mouseY)

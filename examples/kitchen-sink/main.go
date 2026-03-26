@@ -69,7 +69,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
 	"group-overlays":     {"overlays", "dialogs"},
-	"group-text":         {"rich-text", "text-shaping", "grapheme-nav", "line-breaking"},
+	"group-text":         {"rich-text", "inline-widgets", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
 	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
@@ -134,6 +134,8 @@ func sectionLabel(id string) string {
 		return "SplitView"
 	case "rich-text":
 		return "RichText"
+	case "inline-widgets":
+		return "Inline Widgets"
 	case "virtual-list":
 		return "VirtualList"
 	case "tree":
@@ -870,6 +872,8 @@ func sectionContent(m Model) ui.Element {
 		return splitViewSection(m)
 	case "rich-text":
 		return richTextSection()
+	case "inline-widgets":
+		return inlineWidgetsSection()
 	case "virtual-list":
 		return virtualListSection(m)
 	case "tree":
@@ -1612,6 +1616,115 @@ func richTextSection() ui.Element {
 			display.RichParagraph{Spans: []display.Span{
 				{Text: "Second paragraph. Rich text supports per-span styling."},
 			}},
+		),
+	)
+}
+
+func inlineWidgetsSection() ui.Element {
+	return layout.Column(
+		sectionHeader("Inline Widgets (RFC-003 §5.5)"),
+
+		// ── Basic: text + inline badge ──────────────────────────
+		display.Text("Text with inline badge:"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Build status: "},
+				display.InlineElement(display.BadgeColor(display.Text("passing"), draw.Hex("#22c55e"))),
+				display.Span{Text: " — all checks completed."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Multiple inline widgets ─────────────────────────────
+		display.Text("Multiple inline widgets in one paragraph:"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Tags: "},
+				display.InlineElement(display.BadgeColor(display.Text("Go"), draw.Hex("#00ADD8"))),
+				display.Span{Text: " "},
+				display.InlineElement(display.BadgeColor(display.Text("UI"), draw.Hex("#8B5CF6"))),
+				display.Span{Text: " "},
+				display.InlineElement(display.BadgeColor(display.Text("GPU"), draw.Hex("#F97316"))),
+				display.Span{Text: " — framework tags."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Line wrapping ───────────────────────────────────────
+		display.Text("Line wrapping with inline widgets:"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "This paragraph contains enough text to demonstrate "},
+				display.InlineElement(display.BadgeText("wrap")),
+				display.Span{Text: " behavior when inline widgets are mixed with text spans "},
+				display.InlineElement(display.BadgeColor(display.Text("across"), draw.Hex("#3b82f6"))),
+				display.Span{Text: " multiple lines, just like inline-block elements "},
+				display.InlineElement(display.BadgeColor(display.Text("in CSS"), draw.Hex("#a855f7"))),
+				display.Span{Text: "."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Baseline alignment ──────────────────────────────────
+		display.Text("Baseline alignment (default vs shifted up):"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Default "},
+				display.InlineElement(display.BadgeText("0")),
+				display.Span{Text: " vs shifted "},
+				display.InlineElementWithBaseline(display.BadgeText("+4"), 4),
+				display.Span{Text: " vs more shifted "},
+				display.InlineElementWithBaseline(display.BadgeText("+8"), 8),
+				display.Span{Text: " — notice the vertical offset."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Mixed styled spans + widgets ────────────────────────
+		display.Text("Mixed styled spans and inline widgets:"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Normal text, "},
+				display.Span{Text: "bold text", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Size: 13}}},
+				display.Span{Text: ", "},
+				display.InlineElement(display.BadgeColor(display.Text("info"), draw.Hex("#3b82f6"))),
+				display.Span{Text: ", "},
+				display.Span{Text: "colored text", Style: display.SpanStyle{Color: draw.Hex("#ef4444")}},
+				display.Span{Text: ", "},
+				display.InlineElement(display.BadgeColor(display.Text("warn"), draw.Hex("#f59e0b"))),
+				display.Span{Text: " — all inline."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Multi-paragraph with inline widgets ─────────────────
+		display.Text("Multi-paragraph with inline widgets:"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "First paragraph: version "},
+					display.InlineElement(display.BadgeText("v2.1")),
+					display.Span{Text: " released."},
+				},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Second paragraph: status "},
+					display.InlineElement(display.BadgeColor(display.Text("stable"), draw.Hex("#22c55e"))),
+					display.Span{Text: " confirmed."},
+				},
+			},
 		),
 	)
 }

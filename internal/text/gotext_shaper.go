@@ -30,7 +30,7 @@ type GoTextShaper struct {
 
 	mu       sync.Mutex
 	faces    map[faceCacheKey]font.Face
-	msdfGens map[msdfCacheKey]*msdf.Msdf
+	msdfGens map[msdfCacheKey]*msdfGenEntry
 }
 
 // NewGoTextShaper creates a shaper backed by the given fallback family.
@@ -667,20 +667,24 @@ func (s *GoTextShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Fo
 
 	s.mu.Lock()
 	cacheKey := msdfCacheKey{fontID: f.ID(), size: atlasSize}
-	gen, ok := s.msdfGens[cacheKey]
+	entry, ok := s.msdfGens[cacheKey]
 	if !ok {
-		gen = msdf.NewFromFont(sf, &msdf.Config{
-			Size:          float64(atlasSize),
-			DistanceField: float64(pxRange),
-		})
-		if s.msdfGens == nil {
-			s.msdfGens = make(map[msdfCacheKey]*msdf.Msdf)
+		entry = &msdfGenEntry{
+			gen: msdf.NewFromFont(sf, &msdf.Config{
+				Size:          float64(atlasSize),
+				DistanceField: float64(pxRange),
+			}),
 		}
-		s.msdfGens[cacheKey] = gen
+		if s.msdfGens == nil {
+			s.msdfGens = make(map[msdfCacheKey]*msdfGenEntry)
+		}
+		s.msdfGens[cacheKey] = entry
 	}
 	s.mu.Unlock()
 
-	glyph, err := gen.Get(hintRune)
+	entry.mu.Lock()
+	glyph, err := entry.gen.Get(hintRune)
+	entry.mu.Unlock()
 	if err != nil || glyph == nil || glyph.Canvas == nil {
 		return nil
 	}
