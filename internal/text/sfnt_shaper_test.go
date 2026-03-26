@@ -119,9 +119,11 @@ func TestSfntShaperRasterizeGlyph(t *testing.T) {
 }
 
 func TestMSDFBearingYAlignment(t *testing.T) {
-	// Capital letters share the same cap-height in well-formed fonts.
+	// Flat-top capital letters share the same cap-height in well-formed fonts.
 	// Their MSDF BearingY values must be identical to prevent vertical jitter.
-	capLetters := []rune{'A', 'B', 'H', 'S', 'T'}
+	// Round letters (S, O, C, …) are excluded because they have intentional
+	// typographic overshoots that extend slightly above the cap line.
+	capLetters := []rune{'A', 'B', 'E', 'H', 'T'}
 	const atlasSize = 32
 	const pxRange = float32(MSDFPxRange)
 
