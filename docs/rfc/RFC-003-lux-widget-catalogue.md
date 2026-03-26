@@ -21,7 +21,7 @@
 | §1.5 Theme-Wechsel (`SetThemeMsg`) | ✅ Integriert | `app.SetThemeMsg`, `app.SetDarkModeMsg` |
 | §1.6 `theme.Override` | ✅ Integriert | `OverrideSpec` mit Pointer-Feldern |
 | §2 theme.Slate Dark + Light | ✅ Integriert | Alle Token-Werte wie spezifiziert |
-| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | Kern + Locale-Propagation vorhanden; fehlt: BiDi |
+| §3 Text-Stack, i18n & Fonts | 🔶 Teilweise | Kern + Locale-Propagation + BiDi vorhanden; fehlt: vollständige l10n |
 | §3.1 CGo-Strategie | ✅ Integriert | wgpu/gogpu (pure Go, Default) + OpenGL+GLFW (CGo, Fallback); native Plattform-Backends via CGo |
 | §3.2 go-text/typesetting | ✅ Integriert | `GoTextShaper` mit vollständigem GSUB/GPOS |
 | §3.3 Shaper-Interface | ✅ Integriert | `Shaper` Interface, `ShapingRun`, `ShapedGlyph` in `internal/text/` |
