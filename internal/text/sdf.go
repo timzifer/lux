@@ -34,14 +34,17 @@ func correctMSDFCorners(img *image.NRGBA, segments sfnt.Segments,
 		return
 	}
 
-	scaleX := (planeRight - planeLeft) / float32(w)
-	scaleY := (planeBottom - planeTop) / float32(h)
+	// Use the same pixel-to-outline mapping as pierrec/msdf internally:
+	// pixel (x,y) → (Floor(bounds.Min.X) + x, Floor(bounds.Min.Y) + y)
+	// PlaneBounds are unpackI26_6(bounds.Min/Max), so Floor() aligns exactly.
+	floorLeft := float32(math.Floor(float64(planeLeft)))
+	floorTop := float32(math.Floor(float64(planeTop)))
 
 	for py := 0; py < h; py++ {
 		for px := 0; px < w; px++ {
-			// Map pixel center to outline coordinates.
-			ox := planeLeft + (float32(px)+0.5)*scaleX
-			oy := planeTop + (float32(py)+0.5)*scaleY
+			// Map pixel to outline coordinates matching pierrec/msdf's query points.
+			ox := floorLeft + float32(px)
+			oy := floorTop + float32(py)
 
 			// Read current MSDF channels (normalized to [0,1]).
 			c := img.NRGBAAt(bounds.Min.X+px, bounds.Min.Y+py)

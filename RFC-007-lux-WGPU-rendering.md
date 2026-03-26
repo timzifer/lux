@@ -112,12 +112,11 @@ Lux nutzt wgpu als primären Renderer (`internal/wgpu/`, `internal/gpu/wgpu_rend
   Buchstaben (z.B. "S" tiefer als andere). Ursache vermutlich im Bearing/Baseline-Roundtrip
   zwischen `text.InsertMSDF()` und `canvas.drawTextTextured()`. Muss debuggt werden —
   betrifft alle Renderer, nicht nur gogpu (GDI-Renderer hat kein MSDF).
-- **MSDF Corner-Artefakte:** ⚠️ Offen. Chlumsky-Error-Correction wurde implementiert
-  (`internal/text/sdf.go`), aber deaktiviert: Das Koordinaten-Mapping zwischen
-  pierrec/msdf PlaneBounds und sfnt.LoadGlyph-Segmenten ist nicht präzise genug,
-  wodurch die Winding-Number-Prüfung an falschen Pixeln feuert und sichtbare
-  Artefakte erzeugt. Lösungsansätze: (1) Koordinaten-Mapping korrigieren,
-  (2) MTSDF 4-Kanal mit True SDF im Alpha-Kanal.
+- **MSDF Corner-Artefakte:** ✅ Behoben via Chlumsky-Error-Correction zur Generierungszeit.
+  `correctMSDFCorners()` in `internal/text/sdf.go` verwendet das gleiche Pixel→Outline-
+  Mapping wie pierrec/msdf intern: `floor(PlaneBounds.Min) + pixelIndex`. Prüft per
+  Winding Number ob `median3(R,G,B)` mit dem echten Inside/Outside-Status übereinstimmt
+  und korrigiert Artefakt-Pixel mit dem True Signed Distance.
 - **naga HLSL Backend:** `textureDimensions()` erzeugt undeklarierten Identifier `_dim_w`
   auf DX12. Workaround: Atlas-Größe als Uniform übergeben. Upstream-Bug in gogpu/naga.
 
