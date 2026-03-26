@@ -5,6 +5,7 @@ package ui
 import (
 	"math"
 
+	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/validation"
 )
@@ -38,7 +39,9 @@ func (n TextElement) TreeEqual(other Element) bool {
 }
 
 func (n TextElement) ResolveChildren(resolve func(Element, int) Element) Element { return n }
-func (n TextElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32)          {}
+func (n TextElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32) {
+	b.AddNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: n.Content}, parentIdx, a11y.Rect{})
+}
 
 func Text(content string) Element                            { return TextElement{Content: content} }
 func TextStyled(content string, style draw.TextStyle) Element { return TextElement{Content: content, Style: style} }
@@ -77,7 +80,18 @@ func (n ButtonElement) LayoutSelf(ctx *LayoutContext) Bounds {
 
 func (n ButtonElement) TreeEqual(other Element) bool                                    { _, ok := other.(ButtonElement); return ok }
 func (n ButtonElement) ResolveChildren(resolve func(Element, int) Element) Element      { return n }
-func (n ButtonElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32)                {}
+func (n ButtonElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32) {
+	label := extractButtonLabel(n.Content)
+	node := a11y.AccessNode{Role: a11y.RoleButton, Label: label}
+	if n.Disabled {
+		node.States.Disabled = true
+	}
+	if n.OnClick != nil {
+		node.Actions = []a11y.AccessAction{{Name: "activate", Trigger: n.OnClick}}
+	}
+	idx := b.AddNode(node, parentIdx, a11y.Rect{})
+	b.Walk(n.Content, int32(idx))
+}
 
 func ButtonText(label string, onClick func()) Element {
 	return ButtonElement{Content: TextElement{Content: label}, OnClick: onClick, Variant: ButtonFilled}
@@ -138,6 +152,11 @@ func (n BoxElement) TreeEqual(other Element) bool {
 	if !ok || n.Axis != nb.Axis || len(n.Children) != len(nb.Children) {
 		return false
 	}
+	for i := range n.Children {
+		if !treeEqual(n.Children[i], nb.Children[i]) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -171,7 +190,7 @@ func (n SpacerElement) LayoutSelf(ctx *LayoutContext) Bounds {
 	s := int(n.Size)
 	return Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: s, H: s, Baseline: s}
 }
-func (n SpacerElement) TreeEqual(other Element) bool                               { _, ok := other.(SpacerElement); return ok }
+func (n SpacerElement) TreeEqual(other Element) bool                               { o, ok := other.(SpacerElement); return ok && n.Size == o.Size }
 func (n SpacerElement) ResolveChildren(resolve func(Element, int) Element) Element { return n }
 func (n SpacerElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32)           {}
 
@@ -203,7 +222,7 @@ func (n IconElement) LayoutSelf(ctx *LayoutContext) Bounds {
 	}
 	return Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: s, H: s, Baseline: s}
 }
-func (n IconElement) TreeEqual(other Element) bool                               { _, ok := other.(IconElement); return ok }
+func (n IconElement) TreeEqual(other Element) bool                               { o, ok := other.(IconElement); return ok && n.Name == o.Name && n.Size == o.Size }
 func (n IconElement) ResolveChildren(resolve func(Element, int) Element) Element { return n }
 func (n IconElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32)           {}
 
@@ -332,27 +351,93 @@ func Stack(children ...Element) Element { return StackElement{Children: children
 
 type testLeafElement struct {
 	BaseElement
+	kind string // discriminator for TreeEqual
 	w, h int
+	// Value fields for equality comparison.
+	label   string
+	checked bool
+	value   float32
 }
 
 func (testLeafElement) isElement() {}
 func (n testLeafElement) LayoutSelf(ctx *LayoutContext) Bounds {
 	return Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: n.w, H: n.h}
 }
-func (n testLeafElement) TreeEqual(other Element) bool                               { return false }
+func (n testLeafElement) TreeEqual(other Element) bool {
+	o, ok := other.(testLeafElement)
+	return ok && n.kind == o.kind && n.label == o.label && n.checked == o.checked && n.value == o.value
+}
 func (n testLeafElement) ResolveChildren(resolve func(Element, int) Element) Element { return n }
-func (n testLeafElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32)           {}
+func (n testLeafElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32) {
+	var node a11y.AccessNode
+	switch n.kind {
+	case "checkbox":
+		node = a11y.AccessNode{Role: a11y.RoleCheckbox, Label: n.label, States: a11y.AccessStates{Checked: n.checked}}
+	case "radio":
+		node = a11y.AccessNode{Role: a11y.RoleCheckbox, Label: n.label, States: a11y.AccessStates{Selected: n.checked}}
+	case "toggle":
+		node = a11y.AccessNode{Role: a11y.RoleToggle, States: a11y.AccessStates{Checked: n.checked}}
+	case "slider":
+		node = a11y.AccessNode{Role: a11y.RoleSlider, NumericValue: &a11y.AccessNumericValue{Current: float64(n.value), Min: 0, Max: 1}}
+	case "progress":
+		node = a11y.AccessNode{Role: a11y.RoleProgressBar, NumericValue: &a11y.AccessNumericValue{Current: float64(n.value), Min: 0, Max: 1}}
+	default:
+		return // no a11y node for generic leaves
+	}
+	b.AddNode(node, parentIdx, a11y.Rect{})
+}
 
-func Checkbox(label string, checked bool, onToggle func(bool)) Element   { return testLeafElement{w: 120, h: 20} }
-func Radio(label string, selected bool, onSelect func()) Element         { return testLeafElement{w: 120, h: 20} }
+func Checkbox(label string, checked bool, onToggle func(bool)) Element {
+	return testLeafElement{kind: "checkbox", w: 120, h: 20, label: label, checked: checked}
+}
+func Radio(label string, selected bool, onSelect func()) Element {
+	return testLeafElement{kind: "radio", w: 120, h: 20, label: label, checked: selected}
+}
+
 type ToggleState struct{ Pos float32 }
-func Toggle(on bool, onToggle func(bool), state ...*ToggleState) Element { return testLeafElement{w: 36, h: 20} }
-func Slider(value float32, onChange func(float32)) Element               { return testLeafElement{w: 200, h: 20} }
-func ProgressBar(value float32) Element                                  { return testLeafElement{w: 200, h: 8} }
-func ProgressBarIndeterminate(phase ...float32) Element                   { return testLeafElement{w: 200, h: 8} }
 
-func TextField(value, placeholder string, opts ...func(*testTextFieldCfg)) Element { return testLeafElement{w: 200, h: 36} }
-func Select(value string, options []string, opts ...func(*testSelectCfg)) Element  { return testLeafElement{w: 200, h: 36} }
+func Toggle(on bool, onToggle func(bool), state ...*ToggleState) Element {
+	return testLeafElement{kind: "toggle", w: 36, h: 20, checked: on}
+}
+func Slider(value float32, onChange func(float32)) Element {
+	return testLeafElement{kind: "slider", w: 200, h: 20, value: value}
+}
+func ProgressBar(value float32) Element {
+	return testLeafElement{kind: "progress", w: 200, h: 8, value: value}
+}
+func ProgressBarIndeterminate(phase ...float32) Element { return testLeafElement{kind: "progress-ind", w: 200, h: 8} }
+
+func TextField(value, placeholder string, opts ...func(*testTextFieldCfg)) Element {
+	return testTextFieldElement{value: value, placeholder: placeholder}
+}
+func Select(value string, options []string, opts ...func(*testSelectCfg)) Element { return testLeafElement{kind: "select", w: 200, h: 36, label: value} }
+
+type testTextFieldElement struct {
+	BaseElement
+	value       string
+	placeholder string
+}
+
+func (testTextFieldElement) isElement() {}
+func (n testTextFieldElement) LayoutSelf(ctx *LayoutContext) Bounds {
+	return Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: 200, H: 36}
+}
+func (n testTextFieldElement) TreeEqual(other Element) bool {
+	o, ok := other.(testTextFieldElement)
+	return ok && n.value == o.value && n.placeholder == o.placeholder
+}
+func (n testTextFieldElement) ResolveChildren(resolve func(Element, int) Element) Element { return n }
+func (n testTextFieldElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32) {
+	node := a11y.AccessNode{
+		Role:  a11y.RoleTextInput,
+		Label: n.placeholder,
+		Value: n.value,
+		TextState: &a11y.AccessTextState{
+			Length: len(n.value),
+		},
+	}
+	b.AddNode(node, parentIdx, a11y.Rect{})
+}
 
 type testTextFieldCfg struct{}
 type testSelectCfg struct{}
@@ -462,7 +547,15 @@ func (n FormFieldElement) ResolveChildren(resolve func(Element, int) Element) El
 	n.Child = resolve(n.Child, 0)
 	return n
 }
-func (n FormFieldElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32) { b.Walk(n.Child, parentIdx) }
+func (n FormFieldElement) WalkAccess(b *AccessTreeBuilder, parentIdx int32) {
+	node := a11y.AccessNode{Role: a11y.RoleGroup, Label: n.Label, Description: n.Hint}
+	if n.Result.Error != "" {
+		node.States.Invalid = true
+		node.Description = n.Result.Error
+	}
+	idx := b.AddNode(node, parentIdx, a11y.Rect{})
+	b.Walk(n.Child, int32(idx))
+}
 
 type testFormFieldOpt func(*FormFieldElement)
 func WithFormLabel(label string) testFormFieldOpt       { return func(f *FormFieldElement) { f.Label = label } }
