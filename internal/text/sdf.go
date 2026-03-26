@@ -50,6 +50,16 @@ func correctMSDFCorners(img *image.NRGBA, segments sfnt.Segments,
 			b := float32(c.B) / 255.0
 
 			med := median3f(r, g, b)
+
+			// Only consider pixels where the median is confidently on one side.
+			// Pixels near 0.5 are in the anti-aliasing transition zone — correcting
+			// them would destroy the smooth MSDF gradient that produces grayscale AA.
+			// The threshold is half a texel in SDF space: 0.5 / pxRange.
+			threshold := 0.5 / pxRange
+			if absf(med-0.5) < threshold {
+				continue // In the AA transition zone — leave untouched.
+			}
+
 			medianInside := med >= 0.5
 
 			// Check true inside/outside via winding number.
@@ -396,4 +406,11 @@ func max32(a, b float32) float32 {
 		return a
 	}
 	return b
+}
+
+func absf(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
