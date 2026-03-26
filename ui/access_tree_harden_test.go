@@ -648,3 +648,104 @@ func TestAccessTreeActionTriggerRoundTrip(t *testing.T) {
 		t.Errorf("expected triggered=2, got %d", triggered)
 	}
 }
+
+// ── Stability regression tests ──────────────────────────────────
+// See milestone "Stability: Reconciler / Scene / AccessTree"
+
+// TestAccessTreeFocusTrapPushPopSameFrame verifies that after a focus trap
+// is pushed (hides background) and then popped within the same logical frame,
+// the resulting access tree contains all content. (Issue #93)
+func TestAccessTreeFocusTrapPushPopSameFrame(t *testing.T) {
+	reconciler := NewReconciler()
+	th := theme.LuxLight
+
+	bgContent := ButtonText("Background", func() {})
+	overlayContent := ButtonText("Dialog OK", func() {})
+
+	tree := Column(
+		bgContent,
+		Overlay{
+			ID:        "trap-dialog",
+			Content:   overlayContent,
+			Backdrop:  true,
+			FocusTrap: &FocusTrap{TrapID: "trap-dialog", RestoreFocus: true},
+		},
+	)
+
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+
+	// Phase 1: trap active → background hidden.
+	b1 := AccessTreeBuilder{
+		reconciler:   reconciler,
+		windowBounds: a11y.Rect{Width: 800, Height: 600},
+		ActiveTrapID: "trap-dialog",
+	}
+	root1 := b1.AddNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: "Application"}, -1, b1.windowBounds)
+	b1.Walk(resolved, int32(root1))
+	tree1 := a11y.AccessTree{Nodes: b1.nodes}
+	tree1.EnsureIndex()
+
+	bgInTrap := findByRoleAndLabel(tree1, a11y.RoleButton, "Background")
+	if len(bgInTrap) != 0 {
+		t.Errorf("with trap active: background should be hidden, found %d", len(bgInTrap))
+	}
+	dialogInTrap := findByRoleAndLabel(tree1, a11y.RoleButton, "Dialog OK")
+	if len(dialogInTrap) != 1 {
+		t.Errorf("with trap active: expected 1 dialog button, got %d", len(dialogInTrap))
+	}
+
+	// Phase 2: trap popped (ActiveTrapID="") → everything visible.
+	b2 := AccessTreeBuilder{
+		reconciler:   reconciler,
+		windowBounds: a11y.Rect{Width: 800, Height: 600},
+		ActiveTrapID: "",
+	}
+	root2 := b2.AddNode(a11y.AccessNode{Role: a11y.RoleGroup, Label: "Application"}, -1, b2.windowBounds)
+	b2.Walk(resolved, int32(root2))
+	tree2 := a11y.AccessTree{Nodes: b2.nodes}
+	tree2.EnsureIndex()
+
+	bgAfterPop := findByRoleAndLabel(tree2, a11y.RoleButton, "Background")
+	if len(bgAfterPop) != 1 {
+		t.Errorf("after trap pop: expected 1 background button, got %d", len(bgAfterPop))
+	}
+	dialogAfterPop := findByRoleAndLabel(tree2, a11y.RoleButton, "Dialog OK")
+	if len(dialogAfterPop) != 1 {
+		t.Errorf("after trap pop: expected 1 dialog button, got %d", len(dialogAfterPop))
+	}
+}
+
+// testEmptyAccessWidget returns Empty() but provides accessibility metadata.
+type testEmptyAccessWidget struct {
+	label string
+	role  a11y.AccessRole
+}
+
+func (w testEmptyAccessWidget) Render(_ RenderCtx, state WidgetState) (Element, WidgetState) {
+	return Empty(), state
+}
+
+func (w testEmptyAccessWidget) Accessibility(_ WidgetState) a11y.AccessNode {
+	return a11y.AccessNode{Role: w.role, Label: w.label}
+}
+
+// TestAccessTreeEmptyWidgetWithAccessibility verifies that a widget returning
+// Empty() from Render still produces an accessible node if it implements
+// AccessibleWidget. (Issue #93)
+func TestAccessTreeEmptyWidgetWithAccessibility(t *testing.T) {
+	reconciler := NewReconciler()
+	th := theme.LuxLight
+
+	w := testEmptyAccessWidget{label: "Hidden Control", role: a11y.RoleButton}
+	tree := Component(w)
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
+
+	buttons := accessTree.FindByRole(a11y.RoleButton)
+	if len(buttons) != 1 {
+		t.Fatalf("expected 1 button from empty-rendering widget, got %d", len(buttons))
+	}
+	if buttons[0].Node.Label != "Hidden Control" {
+		t.Errorf("label = %q, want %q", buttons[0].Node.Label, "Hidden Control")
+	}
+}
