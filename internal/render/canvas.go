@@ -29,6 +29,7 @@ type SceneCanvas struct {
 
 	blurStack    []float32
 	opacityStack []float32
+	offsetStack  []draw.Point // cumulative translation offset stack
 }
 
 // SetOverlayMode switches between main and overlay draw lists.
@@ -368,7 +369,8 @@ func (c *SceneCanvas) FillPath(p draw.Path, paint draw.Paint) {
 		return
 	}
 	bounds := p.Bounds()
-	if c.isClipped(bounds.X, bounds.Y, bounds.W, bounds.H) {
+	off := c.currentOffset()
+	if c.isClipped(bounds.X+off.X, bounds.Y+off.Y, bounds.W, bounds.H) {
 		return
 	}
 	color := paint.FallbackColor()
@@ -379,6 +381,12 @@ func (c *SceneCanvas) FillPath(p draw.Path, paint draw.Paint) {
 	verts := TessellateFill(p)
 	if len(verts) == 0 {
 		return
+	}
+	if off.X != 0 || off.Y != 0 {
+		for i := range verts {
+			verts[i].X += off.X
+			verts[i].Y += off.Y
+		}
 	}
 	c.emitClipIfChanged()
 	batch := draw.DrawPathBatch{
@@ -401,9 +409,10 @@ func (c *SceneCanvas) StrokePath(p draw.Path, stroke draw.Stroke) {
 		return
 	}
 	bounds := p.Bounds()
+	off := c.currentOffset()
 	// Expand bounds by stroke width for clipping check.
 	sw := stroke.Width
-	if c.isClipped(bounds.X-sw, bounds.Y-sw, bounds.W+2*sw, bounds.H+2*sw) {
+	if c.isClipped(bounds.X+off.X-sw, bounds.Y+off.Y-sw, bounds.W+2*sw, bounds.H+2*sw) {
 		return
 	}
 	color := stroke.Paint.FallbackColor()
@@ -414,6 +423,12 @@ func (c *SceneCanvas) StrokePath(p draw.Path, stroke draw.Stroke) {
 	verts := TessellateStroke(p, stroke.Width, stroke.Cap, stroke.Join)
 	if len(verts) == 0 {
 		return
+	}
+	if off.X != 0 || off.Y != 0 {
+		for i := range verts {
+			verts[i].X += off.X
+			verts[i].Y += off.Y
+		}
 	}
 	c.emitClipIfChanged()
 	batch := draw.DrawPathBatch{
@@ -1031,9 +1046,27 @@ func (c *SceneCanvas) PushClipPath(p draw.Path) {
 }
 
 func (c *SceneCanvas) PushTransform(_ draw.Transform) {}
-func (c *SceneCanvas) PopTransform()                  {}
-func (c *SceneCanvas) PushOffset(_, _ float32)        {}
-func (c *SceneCanvas) PushScale(_, _ float32)         {}
+
+func (c *SceneCanvas) PopTransform() {
+	if len(c.offsetStack) > 0 {
+		c.offsetStack = c.offsetStack[:len(c.offsetStack)-1]
+	}
+}
+
+func (c *SceneCanvas) PushOffset(dx, dy float32) {
+	cur := c.currentOffset()
+	c.offsetStack = append(c.offsetStack, draw.Point{X: cur.X + dx, Y: cur.Y + dy})
+}
+
+func (c *SceneCanvas) PushScale(_, _ float32) {}
+
+// currentOffset returns the cumulative translation offset.
+func (c *SceneCanvas) currentOffset() draw.Point {
+	if len(c.offsetStack) == 0 {
+		return draw.Point{}
+	}
+	return c.offsetStack[len(c.offsetStack)-1]
+}
 
 // ── Effects ──────────────────────────────────────────────────────
 

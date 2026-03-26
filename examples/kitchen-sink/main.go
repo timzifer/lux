@@ -4064,11 +4064,20 @@ func svgRenderingSection(m Model) ui.Element {
 		Build()
 
 	// 4. A filled star using the path builder.
+	// Built as a 10-vertex concave polygon alternating between outer and
+	// inner radius so the polygon is non-self-intersecting (ear-clipping
+	// cannot triangulate self-intersecting pentagrams).
+	const outerR = 45.0
+	innerR := outerR * math.Cos(2*math.Pi/5) / math.Cos(math.Pi/5)
 	star := draw.NewPath()
-	for i := 0; i < 5; i++ {
-		angle := float64(i)*4*math.Pi/5 - math.Pi/2
-		px := float32(50 + 45*math.Cos(angle))
-		py := float32(50 + 45*math.Sin(angle))
+	for i := 0; i < 10; i++ {
+		a := float64(i)*math.Pi/5 - math.Pi/2
+		r := outerR
+		if i%2 == 1 {
+			r = innerR
+		}
+		px := float32(50 + r*math.Cos(a))
+		py := float32(50 + r*math.Sin(a))
 		if i == 0 {
 			star.MoveTo(draw.Pt(px, py))
 		} else {
