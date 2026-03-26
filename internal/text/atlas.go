@@ -28,7 +28,8 @@ type AtlasEntry struct {
 	PxRange              float32 // MSDF pixel range (0 for bitmap glyphs)
 }
 
-// MSDFAtlasSize is the fixed pixel size at which MSDF glyphs are rasterized.
+// MSDFAtlasSize is the default pixel size at which MSDF glyphs are rasterized.
+// Use MSDFBucketSize to pick an adaptive size based on display size.
 const MSDFAtlasSize = 32
 
 // MSDFPxRange is the SDF distance field range in pixels.
@@ -38,6 +39,29 @@ const MSDFPxRange = 4.0
 // Below this threshold the hinted bitmap rasterizer is used instead,
 // which produces sharper results at small sizes thanks to pixel-grid hinting.
 const MSDFMinSize = 24
+
+// MSDFMaxBucket is the largest atlas bucket size.
+const MSDFMaxBucket = 256
+
+// MSDFBucketSize returns the MSDF atlas rasterization size for a given
+// display size in pixels. The bucket strategy limits upscaling to ~2x:
+//
+//	24-47px  → 32px   (max 1.47x)
+//	48-95px  → 64px   (max 1.48x)
+//	96-191px → 128px  (max 1.49x)
+//	192px+   → 256px  (max ~2x for typical sizes)
+func MSDFBucketSize(displayPx uint16) uint16 {
+	switch {
+	case displayPx >= 192:
+		return MSDFMaxBucket
+	case displayPx >= 96:
+		return 128
+	case displayPx >= 48:
+		return 64
+	default:
+		return MSDFAtlasSize
+	}
+}
 
 // GlyphAtlas caches rasterized glyphs in a grayscale texture atlas.
 // The atlas uses simple row-based packing: glyphs are placed left to right,
@@ -258,12 +282,17 @@ func (a *GlyphAtlas) growMSDF() {
 }
 
 // LookupOrInsertMSDF looks up an MSDF glyph, rasterizing it via the shaper if missing.
+// The atlas size is taken from key.SizePx (set via MSDFBucketSize).
 func (a *GlyphAtlas) LookupOrInsertMSDF(key GlyphKey, shaper GlyphRasterizer, f *fonts.Font) (AtlasEntry, bool) {
 	if entry, ok := a.Lookup(key); ok {
 		return entry, true
 	}
 
-	rg := shaper.RasterizeMSDFGlyph(key.GlyphID, key.Rune, f, MSDFAtlasSize, MSDFPxRange)
+	atlasSize := int(key.SizePx)
+	if atlasSize <= 0 {
+		atlasSize = MSDFAtlasSize
+	}
+	rg := shaper.RasterizeMSDFGlyph(key.GlyphID, key.Rune, f, atlasSize, MSDFPxRange)
 	if rg == nil {
 		return AtlasEntry{}, false
 	}
