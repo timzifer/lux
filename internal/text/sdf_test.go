@@ -153,8 +153,10 @@ func TestCorrectMSDFCorners(t *testing.T) {
 		}
 	}
 
-	// Inject artifact: pixel (1,1) is outside but set to "inside" median.
-	img.SetNRGBA(1, 1, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
+	// Inject corner artifact at pixel (1,1): outside the square but channels
+	// strongly disagree (high spread) with median > 0.5 — classic MSDF corner artifact.
+	// R=220 (inside), G=30 (outside), B=200 (inside) → median=200, spread=190/255≈0.75.
+	img.SetNRGBA(1, 1, color.NRGBA{R: 220, G: 30, B: 200, A: 255})
 
 	correctMSDFCorners(img, outline, 0, 0, 10, 10, pxRange)
 
@@ -162,6 +164,12 @@ func TestCorrectMSDFCorners(t *testing.T) {
 	c := img.NRGBAAt(1, 1)
 	if c.R >= 128 {
 		t.Errorf("after correction, pixel (1,1) R=%d; want < 128 (outside)", c.R)
+	}
+
+	// Verify that a normal outside pixel with agreeing channels was NOT corrected.
+	c = img.NRGBAAt(0, 0)
+	if c.R != 50 {
+		t.Errorf("normal outside pixel (0,0) was modified: R=%d; want 50", c.R)
 	}
 
 	// Verify a known-inside pixel (5,5) was NOT changed.

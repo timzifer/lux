@@ -51,13 +51,19 @@ func correctMSDFCorners(img *image.NRGBA, segments sfnt.Segments,
 
 			med := median3f(r, g, b)
 
-			// Only consider pixels where the median is confidently on one side.
-			// Pixels near 0.5 are in the anti-aliasing transition zone — correcting
-			// them would destroy the smooth MSDF gradient that produces grayscale AA.
-			// The threshold is half a texel in SDF space: 0.5 / pxRange.
+			// Corner artifacts have a unique signature: the three MSDF channels
+			// diverge strongly because the edge-channel assignment changes at
+			// the corner. Normal pixels (even at edges) have channels that
+			// roughly agree. Only correct pixels with high channel spread.
+			spread := max32(max32(r, g), b) - min32(min32(r, g), b)
+			if spread < 0.5 {
+				continue // Channels agree — not a corner artifact.
+			}
+
+			// Skip pixels in the anti-aliasing transition zone.
 			threshold := 0.5 / pxRange
 			if absf(med-0.5) < threshold {
-				continue // In the AA transition zone — leave untouched.
+				continue
 			}
 
 			medianInside := med >= 0.5
