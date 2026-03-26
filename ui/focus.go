@@ -246,6 +246,16 @@ func (fm *FocusManager) advance(dir int) UID {
 // distinguish from widget-level UIDs produced by MakeUID.
 const elementFocusUIDBit = UID(1) << 63
 
+// ResetElementIDs resets the element UID counter without clearing the
+// focus order. Called before each BuildScene so that element UIDs are
+// deterministic across frames (matching the UIDs captured by hit-target
+// callbacks from the previous BuildScene).
+func (fm *FocusManager) ResetElementIDs() {
+	if fm != nil {
+		fm.nextElemID = 0
+	}
+}
+
 // NextElementUID assigns and returns a stable UID for a built-in
 // focusable element (TextField). The UID is deterministic within a
 // layout pass as long as the element order doesn't change.

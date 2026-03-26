@@ -678,6 +678,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			hoverState.Tick(dt)
 
 			// 5. Build scene with hover state.
+			// Reset element UID counter so BuildScene assigns the same UIDs
+			// as the previous frame — hit-target callbacks capture these UIDs,
+			// and they must match across frames for focus to persist.
+			fm.ResetElementIDs()
+
 			w, h := plat.FramebufferSize()
 			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 			hitMap.Reset()

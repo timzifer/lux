@@ -92,7 +92,19 @@
       "Bash(curl -s \"https://api.github.com/repos/lapce/lapce/contents/\")",
       "Bash(curl:*)",
       "WebFetch(domain:deepwiki.com)",
-      "Bash(find /g/golang/lux -name RFC* -o -name rfc*)"
+      "Bash(find /g/golang/lux -name RFC* -o -name rfc*)",
+      "Bash(cargo build:*)",
+      "Read(//g/golang/lux/$USERPROFILE/.cargo/bin/**)",
+      "Read(//c/Users/te/.cargo/bin/**)",
+      "Read(//c/Program Files/Rust/bin/**)",
+      "Bash(/c/ProgramData/chocolatey/bin/cargo build:*)",
+      "WebFetch(domain:doc.servo.org)",
+      "WebFetch(domain:servo.org)",
+      "WebFetch(domain:book.servo.org)",
+      "Bash(/c/ProgramData/chocolatey/bin/cargo check:*)",
+      "Bash(CARGO_NET_GIT_FETCH_WITH_CLI=true /c/ProgramData/chocolatey/bin/cargo check)",
+      "Bash(rm -f servo_bridge.dll lux-browser-servo.exe)",
+      "Bash(rm -rf servo-bridge/target/)"
     ]
   }
 }
