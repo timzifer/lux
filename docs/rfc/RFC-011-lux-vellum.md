@@ -806,7 +806,7 @@ Ein Remote-UI-Protokoll mit integrierter Accessibility ist ein Alleinstellungsme
 Für den HMI-Einsatz (RFC-004-hmi-touch) bedeutet das: Ein Industrie-Panel am Band wird über Vellum von einem Server bedient. Im Leitstand, 200 Meter weiter, sieht der Schichtleiter dasselbe Interface — mit vollem Screenreader-Support, wenn er ihn braucht. EN 301 549-Compliance über Remote-Rendering.
 
 ---
-
+DddA
 ## 10. Sicherheit & Isolation
 
 ### 10.1 Trust-Modell
