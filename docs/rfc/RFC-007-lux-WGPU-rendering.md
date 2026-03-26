@@ -108,10 +108,11 @@ Lux nutzt wgpu als primären Renderer (`internal/wgpu/`, `internal/gpu/wgpu_rend
 - Basis-Rendering verifizieren (Rects + Text + MSDF)
 
 **Phase A – Bekannte Einschränkungen (TODO):**
-- **MSDF Glyph-Alignment:** Große MSDF-Texte zeigen vertikale Verschiebungen einzelner
-  Buchstaben (z.B. "S" tiefer als andere). Ursache vermutlich im Bearing/Baseline-Roundtrip
-  zwischen `text.InsertMSDF()` und `canvas.drawTextTextured()`. Muss debuggt werden —
-  betrifft alle Renderer, nicht nur gogpu (GDI-Renderer hat kein MSDF).
+- **MSDF Glyph-Alignment:** ✅ Behoben. Bearing-Extraktion in `RasterizeMSDFGlyph()` verwendete
+  rohe `PlaneBounds`-Werte (Fließkomma) statt `math.Floor()`, was bei identischer Cap-Height
+  zu unterschiedlichen Rundungsergebnissen pro Glyph führte (z.B. "S" 1px tiefer als "H").
+  Fix: `math.Floor(PlaneBounds.Left/Top)` — konsistent mit dem Pixel→Outline-Mapping in
+  `correctMSDFCorners()` und dem Bitmap-Pfad (`GlyphBounds.Min.Floor()`).
 - **MSDF Corner-Artefakte:** ✅ Behoben via Chlumsky-Error-Correction zur Generierungszeit.
   `correctMSDFCorners()` in `internal/text/sdf.go` verwendet das gleiche Pixel→Outline-
   Mapping wie pierrec/msdf intern: `floor(PlaneBounds.Min) + pixelIndex`. Prüft per

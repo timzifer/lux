@@ -163,6 +163,45 @@ func TestGoTextShaperRegisterFamily(t *testing.T) {
 	}
 }
 
+func TestGoTextMSDFBearingYAlignment(t *testing.T) {
+	// Capital letters share the same cap-height in well-formed fonts.
+	// Their MSDF BearingY values must be identical to prevent vertical jitter.
+	capLetters := []rune{'A', 'B', 'H', 'S', 'T'}
+	const atlasSize = 32
+	const pxRange = float32(MSDFPxRange)
+
+	s := newGoTextTestShaper()
+	f := s.ResolveFont(goTextBodyStyle)
+	if f == nil {
+		t.Fatal("ResolveFont returned nil")
+	}
+	sf := f.SfntFont()
+	if sf == nil {
+		t.Fatal("SfntFont returned nil")
+	}
+
+	var buf sfnt.Buffer
+	var bearings []float32
+	for _, r := range capLetters {
+		glyphIdx, err := sf.GlyphIndex(&buf, r)
+		if err != nil {
+			t.Fatalf("GlyphIndex(%q) failed: %v", r, err)
+		}
+		rg := s.RasterizeMSDFGlyph(GlyphID(glyphIdx), r, f, atlasSize, pxRange)
+		if rg == nil {
+			t.Fatalf("RasterizeMSDFGlyph(%q) returned nil", r)
+		}
+		bearings = append(bearings, rg.BearingY)
+	}
+
+	for i := 1; i < len(bearings); i++ {
+		if bearings[i] != bearings[0] {
+			t.Errorf("BearingY mismatch: %q has %g but %q has %g",
+				capLetters[0], bearings[0], capLetters[i], bearings[i])
+		}
+	}
+}
+
 func TestFontFamilyFindGlyphFont(t *testing.T) {
 	f := fonts.Fallback.FindGlyphFont('A', 400)
 	if f == nil {
