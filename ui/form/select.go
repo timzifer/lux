@@ -120,26 +120,29 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
 			maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(fillColor))
 
-		// Value text
-		textX := area.X + textFieldPadX
-		textY := area.Y + textFieldPadY
-		textColor := tokens.Colors.Text.Primary
-		if n.Disabled {
-			textColor = tokens.Colors.Text.Disabled
-		}
-		if n.Value != "" {
-			canvas.DrawText(n.Value, draw.Pt(float32(textX), float32(textY)), style, textColor)
-		}
-
 		// Down arrow indicator (Phosphor icon for reliable rendering).
 		arrowStyle := tokens.Typography.LabelSmall
 		arrowStyle.FontFamily = "Phosphor"
 		arrowX := area.X + w - textFieldPadX - int(arrowStyle.Size)
+		textX := area.X + textFieldPadX
+		textY := area.Y + textFieldPadY
 		arrowColor := tokens.Colors.Text.Secondary
 		if n.Disabled {
 			arrowColor = tokens.Colors.Text.Disabled
 		}
 		canvas.DrawText(icons.CaretDown, draw.Pt(float32(arrowX), float32(textY)), arrowStyle, arrowColor)
+
+		// Value text — clipped to avoid overlapping the arrow indicator.
+		textColor := tokens.Colors.Text.Primary
+		if n.Disabled {
+			textColor = tokens.Colors.Text.Disabled
+		}
+		if n.Value != "" {
+			valueClip := draw.R(float32(textX), float32(area.Y), float32(arrowX-textX-textFieldPadX), float32(h))
+			canvas.PushClip(valueClip)
+			canvas.DrawText(n.Value, draw.Pt(float32(textX), float32(textY)), style, textColor)
+			canvas.PopClip()
+		}
 
 		// Focus glow (RFC-008 §9.4).
 		if focused || isOpen {
@@ -205,9 +208,12 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 							draw.R(float32(dropX+1), float32(itemY), float32(max(dropW-2, 0)), float32(itemH)),
 							draw.SolidPaint(tokens.Colors.Surface.Hovered))
 					}
+					itemClip := draw.R(float32(dropX+textFieldPadX), float32(itemY), float32(dropW-textFieldPadX*2), float32(itemH))
+					canvas.PushClip(itemClip)
 					canvas.DrawText(opt,
 						draw.Pt(float32(dropX+textFieldPadX), float32(itemY+textFieldPadY)),
 						tokens.Typography.Body, tokens.Colors.Text.Primary)
+					canvas.PopClip()
 				}
 			},
 		})
