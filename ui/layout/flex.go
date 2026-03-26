@@ -1,6 +1,8 @@
 package layout
 
 import (
+	"sort"
+
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 )
@@ -9,8 +11,19 @@ import (
 type FlexDirection int
 
 const (
-	FlexRow    FlexDirection = iota // Left to right (default)
-	FlexColumn                     // Top to bottom
+	FlexRow           FlexDirection = iota // Left to right (default)
+	FlexColumn                            // Top to bottom
+	FlexRowReverse                        // Right to left
+	FlexColumnReverse                     // Bottom to top
+)
+
+// FlexWrap controls whether flex items wrap onto multiple lines.
+type FlexWrap int
+
+const (
+	FlexNoWrap      FlexWrap = iota // Single line (default)
+	FlexWrapOn                      // Wrap onto multiple lines
+	FlexWrapReverse                 // Wrap in reverse order
 )
 
 // Justify controls alignment along the main axis.
@@ -35,17 +48,56 @@ const (
 	AlignStretch
 )
 
+// AlignContent controls distribution of lines along the cross axis when wrapping.
+type AlignContent int
+
+const (
+	AlignContentStart        AlignContent = iota
+	AlignContentEnd
+	AlignContentCenter
+	AlignContentSpaceBetween
+	AlignContentSpaceAround
+	AlignContentStretch
+)
+
+// AlignSelf overrides the container's Align for an individual child.
+type AlignSelf int
+
+const (
+	AlignSelfAuto    AlignSelf = iota // Inherit from container
+	AlignSelfStart
+	AlignSelfEnd
+	AlignSelfCenter
+	AlignSelfStretch
+)
+
+// FlexBasis defines the initial main size of a flex item before grow/shrink.
+type FlexBasis struct {
+	Auto  bool    // Use natural size (default)
+	Value float32 // Fixed dp value when Auto is false
+}
+
+// AutoBasis returns a FlexBasis that uses the item's natural size.
+func AutoBasis() FlexBasis { return FlexBasis{Auto: true} }
+
+// FixedBasis returns a FlexBasis with a fixed dp value.
+func FixedBasis(v float32) FlexBasis { return FlexBasis{Value: v} }
+
 // FlexOption configures a Flex element.
 type FlexOption func(*Flex)
 
-// Flex is a flexible layout container.
+// Flex is a flexible layout container implementing CSS Flexbox semantics.
 type Flex struct {
 	ui.BaseElement
-	Direction FlexDirection
-	Justify   Justify
-	Align     Align
-	Gap       float32
-	Children  []ui.Element
+	Direction    FlexDirection
+	Wrap         FlexWrap
+	Justify      Justify
+	Align        Align
+	AlignContent AlignContent
+	Gap          float32 // Legacy single gap; used when RowGap and ColGap are both 0.
+	RowGap       float32
+	ColGap       float32
+	Children     []ui.Element
 }
 
 // NewFlex creates a Flex layout container.
@@ -77,25 +129,90 @@ func WithAlign(a Align) FlexOption {
 	return func(e *Flex) { e.Align = a }
 }
 
-// WithGap sets the gap between children in dp.
+// WithGap sets the gap between children in dp (shorthand for both row and column gap).
 func WithGap(gap float32) FlexOption {
 	return func(e *Flex) { e.Gap = gap }
 }
 
-// expandedChild extracts the Expanded info from a child.
-type expandedChild struct {
-	child ui.Element
-	grow  float32
+// WithWrap sets the flex wrap mode.
+func WithWrap(w FlexWrap) FlexOption {
+	return func(e *Flex) { e.Wrap = w }
 }
 
-func asExpanded(el ui.Element) (expandedChild, bool) {
+// WithAlignContent sets cross-axis alignment for wrapped lines.
+func WithAlignContent(a AlignContent) FlexOption {
+	return func(e *Flex) { e.AlignContent = a }
+}
+
+// WithFlexRowGap sets the gap between rows (cross-axis gap when wrapping in row direction).
+func WithFlexRowGap(gap float32) FlexOption {
+	return func(e *Flex) { e.RowGap = gap }
+}
+
+// WithFlexColGap sets the gap between columns (main-axis gap in row direction).
+func WithFlexColGap(gap float32) FlexOption {
+	return func(e *Flex) { e.ColGap = gap }
+}
+
+// flexChildInfo holds resolved per-child flex properties.
+type flexChildInfo struct {
+	child     ui.Element // the actual renderable child
+	grow      float32
+	shrink    float32
+	basis     FlexBasis
+	alignSelf AlignSelf
+	order     int
+	origIdx   int // original index before order-sorting
+}
+
+// resolveFlexChild extracts flex properties from a child.
+// Non-Expanded children get default values (grow=0, shrink=1, basis=auto).
+func resolveFlexChild(el ui.Element, idx int) flexChildInfo {
 	if e, ok := el.(Expanded); ok {
-		return expandedChild{child: e.Child, grow: e.Grow}, true
+		return flexChildInfo{
+			child:     e.Child,
+			grow:      e.Grow,
+			shrink:    e.Shrink,
+			basis:     e.Basis,
+			alignSelf: e.AlignSelf,
+			order:     e.Order,
+			origIdx:   idx,
+		}
 	}
-	return expandedChild{}, false
+	return flexChildInfo{
+		child:   el,
+		grow:    0,
+		shrink:  1,
+		basis:   FlexBasis{Auto: true},
+		origIdx: idx,
+	}
 }
 
-// LayoutSelf implements ui.Layouter.
+// resolveGaps returns (mainGap, crossGap) in dp.
+func (n Flex) resolveGaps() (int, int) {
+	rg, cg := int(n.RowGap), int(n.ColGap)
+	if rg == 0 && cg == 0 && n.Gap > 0 {
+		rg = int(n.Gap)
+		cg = int(n.Gap)
+	}
+	isRow := n.Direction == FlexRow || n.Direction == FlexRowReverse
+	if isRow {
+		return cg, rg // main=column-gap, cross=row-gap
+	}
+	return rg, cg // main=row-gap, cross=column-gap
+}
+
+// isRowDirection returns true for FlexRow and FlexRowReverse.
+func (n Flex) isRowDirection() bool {
+	return n.Direction == FlexRow || n.Direction == FlexRowReverse
+}
+
+// isReversed returns true for reverse directions.
+func (n Flex) isReversed() bool {
+	return n.Direction == FlexRowReverse || n.Direction == FlexColumnReverse
+}
+
+// LayoutSelf implements ui.Layouter with full CSS Flexbox semantics.
 func (n Flex) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
 	nn := len(n.Children)
@@ -103,92 +220,97 @@ func (n Flex) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		return ui.Bounds{X: area.X, Y: area.Y}
 	}
 
-	isRow := n.Direction == FlexRow
-	gap := int(n.Gap)
+	isRow := n.isRowDirection()
+	reversed := n.isReversed()
+	mainGap, crossGap := n.resolveGaps()
 
-	// Main axis available space.
 	mainAvail := area.W
+	crossAvail := area.H
 	if !isRow {
 		mainAvail = area.H
+		crossAvail = area.W
 	}
 
-	// Pass 1: measure inflexible children to determine their natural size.
-	type childInfo struct {
-		mainSize  int
-		crossSize int
-		expanded  bool
-		grow      float32
-	}
-	infos := make([]childInfo, nn)
-	totalFixed := 0
-	totalGrow := float32(0)
-
+	// Resolve children and sort by order.
+	items := make([]flexChildInfo, nn)
 	for i, child := range n.Children {
-		if exp, ok := asExpanded(child); ok {
-			infos[i] = childInfo{expanded: true, grow: exp.grow}
-			totalGrow += exp.grow
+		items[i] = resolveFlexChild(child, i)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].order < items[j].order
+	})
+
+	// Reverse visual order if direction is reversed.
+	if reversed {
+		for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+			items[i], items[j] = items[j], items[i]
+		}
+	}
+
+	// Measure natural (hypothetical main) sizes.
+	type measuredItem struct {
+		naturalMain  int
+		naturalCross int
+		basisMain    int // resolved basis size
+	}
+	measured := make([]measuredItem, nn)
+	for i, item := range items {
+		cb := ctx.MeasureChild(item.child, area)
+		if isRow {
+			measured[i] = measuredItem{naturalMain: cb.W, naturalCross: cb.H}
 		} else {
-			// Measure with NullCanvas (no paint).
-			cb := ctx.MeasureChild(child, area)
-			if isRow {
-				infos[i] = childInfo{mainSize: cb.W, crossSize: cb.H}
-			} else {
-				infos[i] = childInfo{mainSize: cb.H, crossSize: cb.W}
-			}
-			totalFixed += infos[i].mainSize
+			measured[i] = measuredItem{naturalMain: cb.H, naturalCross: cb.W}
+		}
+		// Resolve basis.
+		if item.basis.Auto {
+			measured[i].basisMain = measured[i].naturalMain
+		} else {
+			measured[i].basisMain = int(item.basis.Value)
 		}
 	}
 
-	// Gaps between children.
-	totalGaps := 0
-	if nn > 1 {
-		totalGaps = gap * (nn - 1)
+	// Distribute items into flex lines.
+	type flexLine struct {
+		start, end int // indices into items[]
+	}
+	var lines []flexLine
+
+	if n.Wrap == FlexNoWrap {
+		lines = []flexLine{{start: 0, end: nn}}
+	} else {
+		lineStart := 0
+		lineMain := 0
+		for i := range items {
+			itemMain := measured[i].basisMain
+			gapBefore := 0
+			if i > lineStart {
+				gapBefore = mainGap
+			}
+			if i > lineStart && lineMain+gapBefore+itemMain > mainAvail {
+				lines = append(lines, flexLine{start: lineStart, end: i})
+				lineStart = i
+				lineMain = itemMain
+			} else {
+				lineMain += gapBefore + itemMain
+			}
+		}
+		lines = append(lines, flexLine{start: lineStart, end: nn})
 	}
 
-	// Remaining space for expanded children.
-	remaining := mainAvail - totalFixed - totalGaps
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	// Assign main sizes to expanded children.
-	for i := range infos {
-		if infos[i].expanded {
-			if totalGrow > 0 {
-				infos[i].mainSize = int(float32(remaining) * infos[i].grow / totalGrow)
-			}
-			// Measure expanded child to get cross size.
-			exp, _ := asExpanded(n.Children[i])
-			var measureArea ui.Bounds
-			if isRow {
-				measureArea = ui.Bounds{X: 0, Y: 0, W: infos[i].mainSize, H: area.H}
-			} else {
-				measureArea = ui.Bounds{X: 0, Y: 0, W: area.W, H: infos[i].mainSize}
-			}
-			cb := ctx.MeasureChild(exp.child, measureArea)
-			if isRow {
-				infos[i].crossSize = cb.H
-			} else {
-				infos[i].crossSize = cb.W
-			}
+	// Reverse lines for wrap-reverse.
+	if n.Wrap == FlexWrapReverse {
+		for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+			lines[i], lines[j] = lines[j], lines[i]
 		}
 	}
 
-	// Compute max cross size.
-	maxCross := 0
-	totalMain := totalGaps
-	for _, info := range infos {
-		totalMain += info.mainSize
-		if info.crossSize > maxCross {
-			maxCross = info.crossSize
-		}
-	}
-
-	// Resolve logical justify/align for RTL.
-	justify := n.Justify
-	align := n.Align
+	// Resolve RTL logical direction.
 	dir := ui.Direction()
 	rtlRow := isRow && dir == draw.DirRTL
+	rtlColumn := !isRow && dir == draw.DirRTL
+
+	justify := n.Justify
+	align := n.Align
 	if rtlRow {
 		switch justify {
 		case JustifyStart:
@@ -197,7 +319,6 @@ func (n Flex) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			justify = JustifyStart
 		}
 	}
-	rtlColumn := !isRow && dir == draw.DirRTL
 	if rtlColumn {
 		switch align {
 		case AlignStart:
@@ -207,127 +328,312 @@ func (n Flex) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 	}
 
-	// Apply Justify: compute start offset and extra spacing.
-	freeSpace := mainAvail - totalMain
-	if freeSpace < 0 {
-		freeSpace = 0
+	// Layout each line: apply grow/shrink, compute positions.
+	type laidOutItem struct {
+		mainPos   int
+		crossPos  int // relative to line start
+		mainSize  int
+		crossSize int
+		itemIdx   int // index into items[]
 	}
-	startOffset := 0
-	extraGap := 0
-	switch justify {
-	case JustifyEnd:
-		startOffset = freeSpace
-	case JustifyCenter:
-		startOffset = freeSpace / 2
-	case JustifySpaceBetween:
-		if nn > 1 {
-			extraGap = freeSpace / (nn - 1)
+	type laidOutLine struct {
+		items     []laidOutItem
+		crossSize int
+	}
+	laidLines := make([]laidOutLine, len(lines))
+
+	for li, line := range lines {
+		count := line.end - line.start
+		if count == 0 {
+			continue
 		}
-	case JustifySpaceAround:
-		if nn > 0 {
-			extraGap = freeSpace / nn
-			startOffset = extraGap / 2
+
+		// Sum basis sizes and grow/shrink factors for this line.
+		totalBasis := 0
+		totalGrow := float32(0)
+		for i := line.start; i < line.end; i++ {
+			totalBasis += measured[i].basisMain
+			totalGrow += items[i].grow
 		}
-	case JustifySpaceEvenly:
-		if nn > 0 {
-			extraGap = freeSpace / (nn + 1)
-			startOffset = extraGap
+		lineGaps := 0
+		if count > 1 {
+			lineGaps = mainGap * (count - 1)
+		}
+
+		// Compute resolved main sizes with grow/shrink.
+		mainSizes := make([]int, count)
+		freeSpace := mainAvail - totalBasis - lineGaps
+
+		if freeSpace > 0 && totalGrow > 0 {
+			// Grow: distribute positive free space proportionally.
+			for i := line.start; i < line.end; i++ {
+				li := i - line.start
+				mainSizes[li] = measured[i].basisMain + int(float32(freeSpace)*items[i].grow/totalGrow)
+			}
+		} else if freeSpace < 0 {
+			// Shrink: distribute negative overflow proportionally.
+			overflow := -freeSpace
+			totalScaledShrink := float32(0)
+			for i := line.start; i < line.end; i++ {
+				totalScaledShrink += items[i].shrink * float32(measured[i].basisMain)
+			}
+			for i := line.start; i < line.end; i++ {
+				li := i - line.start
+				shrinkAmount := 0
+				if totalScaledShrink > 0 {
+					shrinkAmount = int(float32(overflow) * items[i].shrink * float32(measured[i].basisMain) / totalScaledShrink)
+				}
+				mainSizes[li] = measured[i].basisMain - shrinkAmount
+				if mainSizes[li] < 0 {
+					mainSizes[li] = 0
+				}
+			}
+		} else {
+			// No grow/shrink needed.
+			for i := line.start; i < line.end; i++ {
+				mainSizes[i-line.start] = measured[i].basisMain
+			}
+		}
+
+		// Re-measure cross sizes at final main sizes.
+		crossSizes := make([]int, count)
+		for i := line.start; i < line.end; i++ {
+			li := i - line.start
+			var measureArea ui.Bounds
+			if isRow {
+				measureArea = ui.Bounds{W: mainSizes[li], H: area.H}
+			} else {
+				measureArea = ui.Bounds{W: area.W, H: mainSizes[li]}
+			}
+			cb := ctx.MeasureChild(items[i].child, measureArea)
+			if isRow {
+				crossSizes[li] = cb.H
+			} else {
+				crossSizes[li] = cb.W
+			}
+		}
+
+		// Line cross size = max cross of items in this line.
+		lineCross := 0
+		for _, cs := range crossSizes {
+			if cs > lineCross {
+				lineCross = cs
+			}
+		}
+
+		// Compute main-axis positions with justify.
+		totalMain := lineGaps
+		for _, ms := range mainSizes {
+			totalMain += ms
+		}
+		lineFree := mainAvail - totalMain
+		if lineFree < 0 {
+			lineFree = 0
+		}
+		startOffset := 0
+		extraGap := 0
+		switch justify {
+		case JustifyEnd:
+			startOffset = lineFree
+		case JustifyCenter:
+			startOffset = lineFree / 2
+		case JustifySpaceBetween:
+			if count > 1 {
+				extraGap = lineFree / (count - 1)
+			}
+		case JustifySpaceAround:
+			if count > 0 {
+				extraGap = lineFree / count
+				startOffset = extraGap / 2
+			}
+		case JustifySpaceEvenly:
+			if count > 0 {
+				extraGap = lineFree / (count + 1)
+				startOffset = extraGap
+			}
+		}
+
+		// Build laid-out items for this line.
+		lineItems := make([]laidOutItem, count)
+		mainCursor := startOffset
+		for i := line.start; i < line.end; i++ {
+			li := i - line.start
+
+			// Resolve per-child alignment.
+			childAlign := align
+			if items[i].alignSelf != AlignSelfAuto {
+				switch items[i].alignSelf {
+				case AlignSelfStart:
+					childAlign = AlignStart
+				case AlignSelfEnd:
+					childAlign = AlignEnd
+				case AlignSelfCenter:
+					childAlign = AlignCenter
+				case AlignSelfStretch:
+					childAlign = AlignStretch
+				}
+			}
+
+			cs := crossSizes[li]
+			crossOffset := 0
+			switch childAlign {
+			case AlignEnd:
+				crossOffset = lineCross - cs
+			case AlignCenter:
+				crossOffset = (lineCross - cs) / 2
+			case AlignStretch:
+				cs = lineCross
+			}
+			if crossOffset < 0 {
+				crossOffset = 0
+			}
+
+			lineItems[li] = laidOutItem{
+				mainPos:   mainCursor,
+				crossPos:  crossOffset,
+				mainSize:  mainSizes[li],
+				crossSize: cs,
+				itemIdx:   i,
+			}
+			mainCursor += mainSizes[li] + mainGap + extraGap
+		}
+
+		laidLines[li] = laidOutLine{items: lineItems, crossSize: lineCross}
+	}
+
+	// Compute cross-axis positions for lines (align-content).
+	totalLineCross := 0
+	for i, ll := range laidLines {
+		totalLineCross += ll.crossSize
+		if i > 0 {
+			totalLineCross += crossGap
+		}
+	}
+	crossFree := crossAvail - totalLineCross
+	if crossFree < 0 {
+		crossFree = 0
+	}
+
+	lineOffsets := make([]int, len(laidLines))
+	if len(laidLines) == 1 {
+		// Single line: align-content has no effect.
+		lineOffsets[0] = 0
+	} else {
+		ac := n.AlignContent
+		switch ac {
+		case AlignContentEnd:
+			cursor := crossFree
+			for i, ll := range laidLines {
+				lineOffsets[i] = cursor
+				cursor += ll.crossSize + crossGap
+			}
+		case AlignContentCenter:
+			cursor := crossFree / 2
+			for i, ll := range laidLines {
+				lineOffsets[i] = cursor
+				cursor += ll.crossSize + crossGap
+			}
+		case AlignContentSpaceBetween:
+			extraCross := 0
+			if len(laidLines) > 1 {
+				extraCross = crossFree / (len(laidLines) - 1)
+			}
+			cursor := 0
+			for i, ll := range laidLines {
+				lineOffsets[i] = cursor
+				cursor += ll.crossSize + crossGap + extraCross
+			}
+		case AlignContentSpaceAround:
+			extraCross := 0
+			if len(laidLines) > 0 {
+				extraCross = crossFree / len(laidLines)
+			}
+			cursor := extraCross / 2
+			for i, ll := range laidLines {
+				lineOffsets[i] = cursor
+				cursor += ll.crossSize + crossGap + extraCross
+			}
+		case AlignContentStretch:
+			extra := 0
+			if len(laidLines) > 0 {
+				extra = crossFree / len(laidLines)
+			}
+			cursor := 0
+			for i := range laidLines {
+				lineOffsets[i] = cursor
+				laidLines[i].crossSize += extra
+				cursor += laidLines[i].crossSize + crossGap
+			}
+		default: // AlignContentStart
+			cursor := 0
+			for i, ll := range laidLines {
+				lineOffsets[i] = cursor
+				cursor += ll.crossSize + crossGap
+			}
 		}
 	}
 
-	// For RTL rows, reverse the child order so they flow right-to-left.
-	children := n.Children
-	childInfos := infos
+	// For RTL rows, mirror main-axis positions.
 	if rtlRow {
-		children = make([]ui.Element, nn)
-		childInfos = make([]childInfo, nn)
-		for i := range n.Children {
-			children[i] = n.Children[nn-1-i]
-			childInfos[i] = infos[nn-1-i]
+		for li := range laidLines {
+			for i := range laidLines[li].items {
+				item := &laidLines[li].items[i]
+				item.mainPos = mainAvail - item.mainPos - item.mainSize
+			}
 		}
 	}
 
-	// Pass 2: paint children at computed positions.
-	mainCursor := startOffset
+	// Paint pass: layout all children.
+	maxMainActual := 0
 	maxCrossActual := 0
 
-	for i, child := range children {
-		info := childInfos[i]
+	for li, ll := range laidLines {
+		for _, item := range ll.items {
+			fi := items[item.itemIdx]
 
-		// Compute cross-axis offset based on Align.
-		crossOffset := 0
-		crossAvail := maxCross
-		if isRow {
-			crossAvail = area.H
-		} else {
-			crossAvail = area.W
-		}
-		switch align {
-		case AlignEnd:
-			crossOffset = crossAvail - info.crossSize
-		case AlignCenter:
-			crossOffset = (crossAvail - info.crossSize) / 2
-		case AlignStretch:
-			info.crossSize = crossAvail
-		}
-		if crossOffset < 0 {
-			crossOffset = 0
-		}
-
-		var childArea ui.Bounds
-		if isRow {
-			childArea = ui.Bounds{
-				X: area.X + mainCursor,
-				Y: area.Y + crossOffset,
-				W: info.mainSize,
-				H: info.crossSize,
+			var childArea ui.Bounds
+			if isRow {
+				childArea = ui.Bounds{
+					X: area.X + item.mainPos,
+					Y: area.Y + lineOffsets[li] + item.crossPos,
+					W: item.mainSize,
+					H: item.crossSize,
+				}
+			} else {
+				childArea = ui.Bounds{
+					X: area.X + lineOffsets[li] + item.crossPos,
+					Y: area.Y + item.mainPos,
+					W: item.crossSize,
+					H: item.mainSize,
+				}
 			}
-		} else {
-			childArea = ui.Bounds{
-				X: area.X + crossOffset,
-				Y: area.Y + mainCursor,
-				W: info.crossSize,
-				H: info.mainSize,
+
+			ctx.LayoutChild(fi.child, childArea)
+
+			endMain := item.mainPos + item.mainSize
+			if endMain > maxMainActual {
+				maxMainActual = endMain
 			}
 		}
-
-		// For expanded children, layout the inner child.
-		actualChild := child
-		if info.expanded {
-			if exp, ok := asExpanded(child); ok {
-				actualChild = exp.child
-			}
+		endCross := lineOffsets[li] + ll.crossSize
+		if endCross > maxCrossActual {
+			maxCrossActual = endCross
 		}
-		cb := ctx.LayoutChild(actualChild, childArea)
-
-		if isRow {
-			if cb.H > maxCrossActual {
-				maxCrossActual = cb.H
-			}
-		} else {
-			if cb.W > maxCrossActual {
-				maxCrossActual = cb.W
-			}
-		}
-
-		mainCursor += info.mainSize + gap + extraGap
-	}
-
-	maxMainActual := mainCursor - gap - extraGap
-	if maxMainActual < 0 {
-		maxMainActual = 0
 	}
 
 	if isRow {
-		return ui.Bounds{X: area.X, Y: area.Y, W: maxMainActual, H: max(maxCrossActual, maxCross)}
+		return ui.Bounds{X: area.X, Y: area.Y, W: maxMainActual, H: maxCrossActual}
 	}
-	return ui.Bounds{X: area.X, Y: area.Y, W: max(maxCrossActual, maxCross), H: maxMainActual}
+	return ui.Bounds{X: area.X, Y: area.Y, W: maxCrossActual, H: maxMainActual}
 }
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n Flex) TreeEqual(other ui.Element) bool {
 	o, ok := other.(Flex)
-	return ok && n.Direction == o.Direction && n.Justify == o.Justify && n.Align == o.Align && n.Gap == o.Gap && len(n.Children) == len(o.Children)
+	return ok && n.Direction == o.Direction && n.Wrap == o.Wrap &&
+		n.Justify == o.Justify && n.Align == o.Align && n.AlignContent == o.AlignContent &&
+		n.Gap == o.Gap && n.RowGap == o.RowGap && n.ColGap == o.ColGap &&
+		len(n.Children) == len(o.Children)
 }
 
 // ResolveChildren implements ui.ChildResolver.
