@@ -65,7 +65,7 @@ var sectionIDs = []string{
 var sectionGroupChildren = map[string][]string{
 	"group-basics":       {"typography", "buttons"},
 	"group-input":        {"form-controls", "range-progress", "selection", "validation"},
-	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout"},
+	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout", "table-layout"},
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts"},
 	"group-overlays":     {"overlays", "dialogs"},
@@ -176,6 +176,8 @@ func sectionLabel(id string) string {
 		return "Flex & Grid (CSS)"
 	case "custom-layout":
 		return "Custom Layout"
+	case "table-layout":
+		return "Table Layout (CSS)"
 	case "rtl-layout":
 		return "RTL Layout"
 	case "locale":
@@ -876,6 +878,8 @@ func sectionContent(m Model) ui.Element {
 		return animGroupSeqSection(m)
 	case "custom-layout":
 		return customLayoutSection(m)
+	case "table-layout":
+		return tableLayoutSection()
 	// Phase 4b
 	case "rtl-layout":
 		return rtlLayoutSection()
@@ -2388,6 +2392,187 @@ func customLayoutSection(m Model) ui.Element {
 		display.Text("  LayoutCache stores constraints + size + childRects"),
 		display.Text("  Invalidated when props or constraints change"),
 		display.Text("  O(dirty subtree) re-layout, not O(n)"),
+	)
+}
+
+// ── Table Layout Section ──────────────────────────────────────────
+
+func tableLayoutSection() ui.Element {
+	return layout.Column(
+		sectionHeader("Table Layout (CSS)"),
+		display.Text("HTML-spec-conformant table layout (CSS 2.1 §17)."),
+		display.Text("Supports auto/fixed layout, colspan/rowspan, border-spacing, and captions."),
+		display.Spacer(12),
+
+		// 1. Basic Table
+		display.Text("1. Basic Table:"),
+		display.Spacer(4),
+		layout.SimpleTable(
+			[]ui.Element{display.Text("Name"), display.Text("Age"), display.Text("City")},
+			[][]ui.Element{
+				{display.Text("Alice"), display.Text("30"), display.Text("Berlin")},
+				{display.Text("Bob"), display.Text("25"), display.Text("Munich")},
+				{display.Text("Carol"), display.Text("35"), display.Text("Hamburg")},
+			},
+			layout.WithBorderSpacing(8, 4),
+		),
+		display.Spacer(16),
+
+		// 2. Table with Header & Footer
+		display.Text("2. Table with Header / Footer:"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.THead(
+				layout.TR(layout.TH(display.Text("Product")), layout.TH(display.Text("Price")), layout.TH(display.Text("Qty"))),
+			),
+			layout.TBody(
+				layout.TR(layout.TD(display.Text("Widget A")), layout.TD(display.Text("9.99")), layout.TD(display.Text("5"))),
+				layout.TR(layout.TD(display.Text("Widget B")), layout.TD(display.Text("14.50")), layout.TD(display.Text("3"))),
+				layout.TR(layout.TD(display.Text("Widget C")), layout.TD(display.Text("7.25")), layout.TD(display.Text("12"))),
+			),
+			layout.TFoot(
+				layout.TR(layout.TD(display.Text("Total")), layout.TD(display.Text("31.74")), layout.TD(display.Text("20"))),
+			),
+		}, layout.WithBorderSpacing(12, 4)),
+		display.Spacer(16),
+
+		// 3. Column Spanning
+		display.Text("3. Column Spanning (colspan):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(
+				layout.TD(display.Text("Spans 2 columns"), layout.WithColSpan(2)),
+				layout.TD(display.Text("Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Col 1")),
+				layout.TD(display.Text("Col 2")),
+				layout.TD(display.Text("Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Col 1")),
+				layout.TD(display.Text("Spans 2 columns"), layout.WithColSpan(2)),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 4. Row Spanning
+		display.Text("4. Row Spanning (rowspan):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(
+				layout.TD(display.Text("Spans 3 rows"), layout.WithRowSpan(3)),
+				layout.TD(display.Text("Row 1, Col 2")),
+				layout.TD(display.Text("Row 1, Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Row 2, Col 2")),
+				layout.TD(display.Text("Row 2, Col 3")),
+			),
+			layout.TR(
+				layout.TD(display.Text("Row 3, Col 2")),
+				layout.TD(display.Text("Row 3, Col 3")),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 5. Fixed vs Auto Layout
+		display.Text("5. Fixed Layout (table-layout: fixed):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableColGroup(
+				layout.Col(layout.Px(120)),
+				layout.Col(layout.Px(200)),
+				layout.Col(layout.Px(100)),
+			),
+			layout.TR(layout.TH(display.Text("Fixed 120")), layout.TH(display.Text("Fixed 200")), layout.TH(display.Text("Fixed 100"))),
+			layout.TR(layout.TD(display.Text("A")), layout.TD(display.Text("B")), layout.TD(display.Text("C"))),
+		}, layout.WithTableLayout(layout.TableLayoutFixed), layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 6. Border Spacing
+		display.Text("6. Border Spacing (16px H, 8px V):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(layout.TD(display.Text("A")), layout.TD(display.Text("B")), layout.TD(display.Text("C"))),
+			layout.TR(layout.TD(display.Text("D")), layout.TD(display.Text("E")), layout.TD(display.Text("F"))),
+			layout.TR(layout.TD(display.Text("G")), layout.TD(display.Text("H")), layout.TD(display.Text("I"))),
+		}, layout.WithBorderSpacing(16, 8)),
+		display.Spacer(16),
+
+		// 7. Collapsed Borders
+		display.Text("7. Collapsed Borders (border-collapse: collapse):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(layout.TD(display.Text("A")), layout.TD(display.Text("B")), layout.TD(display.Text("C"))),
+			layout.TR(layout.TD(display.Text("D")), layout.TD(display.Text("E")), layout.TD(display.Text("F"))),
+		}, layout.WithBorderCollapse(layout.BorderCollapsed)),
+		display.Spacer(16),
+
+		// 8. Vertical Alignment
+		display.Text("8. Vertical Alignment in Cells:"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.TR(
+				layout.TD(display.Text("Top"), layout.WithVAlign(layout.VAlignTop)),
+				layout.TD(display.Text("Middle"), layout.WithVAlign(layout.VAlignMiddle)),
+				layout.TD(display.Text("Bottom"), layout.WithVAlign(layout.VAlignBottom)),
+				layout.NewTableCell(layout.Sized(80, 60, nil)),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 9. Caption
+		display.Text("9. Table with Caption (top):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableCaption(display.Text("Table 1: Monthly Sales")),
+			layout.TR(layout.TH(display.Text("Month")), layout.TH(display.Text("Revenue"))),
+			layout.TR(layout.TD(display.Text("January")), layout.TD(display.Text("$12,000"))),
+			layout.TR(layout.TD(display.Text("February")), layout.TD(display.Text("$15,500"))),
+		}, layout.WithBorderSpacing(8, 4)),
+		display.Spacer(8),
+		display.Text("Caption (bottom):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableCaption(display.Text("Table 2: Quarterly Results")),
+			layout.TR(layout.TH(display.Text("Q1")), layout.TH(display.Text("Q2"))),
+			layout.TR(layout.TD(display.Text("$45k")), layout.TD(display.Text("$52k"))),
+		}, layout.WithCaptionSide(layout.CaptionBottom), layout.WithBorderSpacing(8, 4)),
+		display.Spacer(16),
+
+		// 10. Complex Example
+		display.Text("10. Complex Table (mixed spans + sections):"),
+		display.Spacer(4),
+		layout.NewTable([]ui.Element{
+			layout.NewTableCaption(display.Text("Employee Schedule")),
+			layout.THead(
+				layout.TR(
+					layout.TH(display.Text("Name")),
+					layout.TH(display.Text("Mon")),
+					layout.TH(display.Text("Tue")),
+					layout.TH(display.Text("Wed")),
+					layout.TH(display.Text("Thu")),
+					layout.TH(display.Text("Fri")),
+				),
+			),
+			layout.TBody(
+				layout.TR(
+					layout.TD(display.Text("Alice")),
+					layout.TD(display.Text("9-5"), layout.WithColSpan(3)),
+					layout.TD(display.Text("Off"), layout.WithColSpan(2)),
+				),
+				layout.TR(
+					layout.TD(display.Text("Bob")),
+					layout.TD(display.Text("Off")),
+					layout.TD(display.Text("10-6"), layout.WithColSpan(4)),
+				),
+				layout.TR(
+					layout.TD(display.Text("Carol")),
+					layout.TD(display.Text("8-4"), layout.WithColSpan(5)),
+				),
+			),
+		}, layout.WithBorderSpacing(8, 4)),
 	)
 }
 
