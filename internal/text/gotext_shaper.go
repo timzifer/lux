@@ -3,6 +3,7 @@ package text
 import (
 	"image"
 	"image/color"
+	"math"
 	"sync"
 
 	"github.com/go-text/typesetting/di"
@@ -715,8 +716,8 @@ func (s *GoTextShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Fo
 			pxRange)
 	}
 
-	bearingX := float32(opts.PlaneBounds.Left)
-	bearingY := float32(-opts.PlaneBounds.Top)
+	bearingX := float32(math.Floor(float64(opts.PlaneBounds.Left)))
+	bearingY := float32(-math.Floor(float64(opts.PlaneBounds.Top)))
 	advance := float32(opts.Advance)
 
 	return &MSDFRasterizedGlyph{

@@ -451,8 +451,8 @@ func (s *SfntShaper) RasterizeMSDFGlyph(id GlyphID, hintRune rune, f *fonts.Font
 	// (Config.Size). BearingX = left edge offset from cursor.
 	// BearingY = distance from baseline to top of glyph (negate Min.Y/Top
 	// since Min.Y is negative for glyphs above baseline in sfnt coords).
-	bearingX := float32(opts.PlaneBounds.Left)
-	bearingY := float32(-opts.PlaneBounds.Top)
+	bearingX := float32(math.Floor(float64(opts.PlaneBounds.Left)))
+	bearingY := float32(-math.Floor(float64(opts.PlaneBounds.Top)))
 	advance := float32(opts.Advance)
 
 	return &MSDFRasterizedGlyph{
