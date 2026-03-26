@@ -147,16 +147,23 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 	}
 
-	// Dropdown overlay when open.
-	if isOpen && len(n.Options) > 0 {
+	// Dropdown overlay when open (skip during measurement passes where overlays is nil).
+	if isOpen && len(n.Options) > 0 && overlays != nil {
 		dropX := area.X
-		dropY := area.Y + h
 		dropW := w
 		opts := n.Options
 		onSelect := n.OnSelect
 		state := n.State
 		winW := overlays.WindowW
 		winH := overlays.WindowH
+
+		// Flip dropdown above the select if it would overflow the viewport bottom.
+		itemH0 := int(tokens.Typography.Body.Size) + textFieldPadY*2
+		totalH0 := itemH0 * len(opts)
+		dropY := area.Y + h // default: open below
+		if dropY+totalH0 > winH && area.Y-totalH0 >= 0 {
+			dropY = area.Y - totalH0 // flip: open above
+		}
 		overlays.Push(ui.OverlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
 				// Full-screen backdrop: clicking outside the dropdown closes it.

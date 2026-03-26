@@ -61,8 +61,11 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	contentH := childBounds.H
 
-	// Clamp state if provided (ensures offset stays valid after content changes).
-	if n.State != nil {
+	// Only clamp scroll state during actual render passes (ctx.IX != nil),
+	// not during measurement passes. Measurement passes may run with a
+	// different viewport height (e.g. Flex measures children at full area.H
+	// before shrinking), which would incorrectly tighten the scroll bounds.
+	if n.State != nil && ctx.IX != nil {
 		maxScroll := float32(contentH) - float32(viewportH)
 		if maxScroll < 0 {
 			maxScroll = 0
