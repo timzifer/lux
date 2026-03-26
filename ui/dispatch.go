@@ -346,7 +346,7 @@ func (d *EventDispatcher) hitTestWidget(x, y float32) UID {
 				match = uid
 			} else {
 				prev := d.widgetBounds[match]
-				if b.W*b.H < prev.W*prev.H {
+				if b.W*b.H < prev.W*prev.H || (b.W*b.H == prev.W*prev.H && uid > match) {
 					match = uid
 				}
 			}

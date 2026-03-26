@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -628,5 +629,133 @@ func TestReconcileChangedDetectsReplacedElement(t *testing.T) {
 	_, changed := r.Reconcile(Column(Spacer(10)), th, noopSend, nil, nil, "")
 	if !changed {
 		t.Error("replacing element type should report changed")
+	}
+}
+
+// ── Stability regression tests ──────────────────────────────────
+// See milestone "Stability: Reconciler / Scene / AccessTree"
+
+// TestReconcileRapidWidgetTypeSwitchingABA verifies that switching a widget
+// at the same key A→B→A across 3 frames produces fresh state, not stale
+// state leaked from frame 1. (Issue #90)
+func TestReconcileRapidWidgetTypeSwitchingABA(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+	uid := MakeUID(0, "slot", 0)
+
+	// Frame 1: alphaWidget
+	r.Reconcile(ComponentWithKey("slot", alphaWidget{}), th, noopSend, nil, nil, "")
+	s1 := r.StateFor(uid).(*alphaState)
+	if s1.Alpha != 1 {
+		t.Fatalf("frame 1: Alpha = %d, want 1", s1.Alpha)
+	}
+
+	// Frame 2: betaWidget replaces alpha → state must be fresh betaState
+	r.Reconcile(ComponentWithKey("slot", betaWidget{}), th, noopSend, nil, nil, "")
+	s2 := r.StateFor(uid).(*betaState)
+	if s2.Beta != "b" {
+		t.Fatalf("frame 2: Beta = %q, want %q", s2.Beta, "b")
+	}
+
+	// Frame 3: alphaWidget returns → state must be fresh (Alpha == 1, not 2)
+	r.Reconcile(ComponentWithKey("slot", alphaWidget{}), th, noopSend, nil, nil, "")
+	s3, ok := r.StateFor(uid).(*alphaState)
+	if !ok {
+		t.Fatalf("frame 3: expected *alphaState, got %T", r.StateFor(uid))
+	}
+	if s3.Alpha != 1 {
+		t.Errorf("frame 3: Alpha = %d, want 1 (fresh state, not stale from frame 1)", s3.Alpha)
+	}
+}
+
+// ── Equatable + Animator interaction ────────────────────────────
+
+// eqAnimWidget combines Equatable (on widget) and Animator (on state).
+type eqAnimWidget struct{ Label string }
+type eqAnimState struct {
+	pos         float32
+	target      float32
+	renderCount int
+}
+
+func (s *eqAnimState) Tick(dt time.Duration) bool {
+	s.pos += float32(dt.Seconds()) * 100
+	if s.pos >= s.target {
+		s.pos = s.target
+		return false
+	}
+	return true
+}
+
+func (w eqAnimWidget) Render(_ RenderCtx, raw WidgetState) (Element, WidgetState) {
+	s := AdoptState[eqAnimState](raw)
+	s.renderCount++
+	if s.target == 0 {
+		s.target = 100
+	}
+	return Text(w.Label), s
+}
+
+func (w eqAnimWidget) Equal(other Widget) bool {
+	o := other.(eqAnimWidget)
+	return w.Label == o.Label
+}
+
+// TestReconcileEquatableSkipDoesNotBlockAnimator verifies that TickAnimators
+// advances animation state even when Equatable skip prevented re-render.
+// (Issue #91)
+func TestReconcileEquatableSkipDoesNotBlockAnimator(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+
+	tree := ComponentWithKey("ea", eqAnimWidget{Label: "anim"})
+
+	// Frame 1: initial render, animation starts.
+	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	uid := MakeUID(0, "ea", 0)
+	s := r.StateFor(uid).(*eqAnimState)
+	if s.renderCount != 1 {
+		t.Fatalf("renderCount = %d, want 1", s.renderCount)
+	}
+
+	// Frame 2: same props → Equatable skip (Render not called).
+	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	s = r.StateFor(uid).(*eqAnimState)
+	if s.renderCount != 1 {
+		t.Fatalf("renderCount = %d after skip, want 1 (Render should not run)", s.renderCount)
+	}
+
+	// Tick animation — must advance despite Equatable skip.
+	running := r.TickAnimators(100 * time.Millisecond)
+	if !running {
+		t.Error("animation should still be running after 100ms")
+	}
+	if s.pos <= 0 {
+		t.Errorf("pos = %f, want > 0 (animation must advance after Equatable skip)", s.pos)
+	}
+}
+
+// TestReconcileMassOrphanCleanup verifies that removing 100+ widgets in a
+// single frame leaves no stale state entries. (Issue #92)
+func TestReconcileMassOrphanCleanup(t *testing.T) {
+	r := NewReconciler()
+	th := theme.Default
+
+	const n = 100
+	children := make([]Element, n)
+	for i := range children {
+		children[i] = ComponentWithKey(fmt.Sprintf("w%d", i), counterWidget{})
+	}
+
+	// Frame 1: establish all widgets.
+	r.Reconcile(Column(children...), th, noopSend, nil, nil, "")
+	if r.StateCount() != n {
+		t.Fatalf("frame 1: StateCount = %d, want %d", r.StateCount(), n)
+	}
+
+	// Frame 2: replace entire subtree.
+	r.Reconcile(Column(Text("empty")), th, noopSend, nil, nil, "")
+	if r.StateCount() != 0 {
+		t.Errorf("frame 2: StateCount = %d, want 0 (all orphans must be cleaned up)", r.StateCount())
 	}
 }

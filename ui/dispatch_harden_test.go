@@ -383,3 +383,98 @@ func TestDispatchScrollToNestedWidget(t *testing.T) {
 		t.Errorf("parent should get 0 events (child wins hit test), got %d", len(evParent))
 	}
 }
+
+// ── Stability regression tests ──────────────────────────────────
+// See milestone "Stability: Reconciler / Scene / AccessTree"
+
+// TestDispatchHitTestDeterministicWithIdenticalBounds verifies that hit-testing
+// two widgets with identical bounds always returns the same winner, regardless
+// of Go map iteration order. (Issue #94)
+func TestDispatchHitTestDeterministicWithIdenticalBounds(t *testing.T) {
+	fm := NewFocusManager()
+
+	// Run 100 iterations — map order is randomized per Go spec.
+	var firstWinner UID
+	for i := 0; i < 100; i++ {
+		d := NewEventDispatcher(fm)
+		d.RegisterWidgetBounds(UID(1), draw.R(0, 0, 100, 100))
+		d.RegisterWidgetBounds(UID(2), draw.R(0, 0, 100, 100))
+		d.SwapBounds()
+
+		d.Collect(input.MouseMsg{X: 50, Y: 50, Action: input.MousePress})
+		d.Dispatch()
+
+		ev1 := d.EventsFor(UID(1))
+		ev2 := d.EventsFor(UID(2))
+
+		var winner UID
+		if len(ev1) == 1 && len(ev2) == 0 {
+			winner = UID(1)
+		} else if len(ev2) == 1 && len(ev1) == 0 {
+			winner = UID(2)
+		} else {
+			t.Fatalf("iteration %d: expected exactly 1 event to exactly 1 widget, got ev1=%d ev2=%d", i, len(ev1), len(ev2))
+		}
+
+		if i == 0 {
+			firstWinner = winner
+		} else if winner != firstWinner {
+			t.Fatalf("iteration %d: winner=%d but first winner=%d — hit-test is non-deterministic", i, winner, firstWinner)
+		}
+	}
+}
+
+// TestDispatchFocusChangeAndKeyEventSameFrame verifies that a key event
+// collected before a focus change is still routed to the originally focused
+// widget. (Issue #94)
+func TestDispatchFocusChangeAndKeyEventSameFrame(t *testing.T) {
+	fm := NewFocusManager()
+	d := NewEventDispatcher(fm)
+
+	widgetA := UID(100)
+	widgetB := UID(200)
+	fm.SetFocusedUID(widgetA)
+
+	// Collect key event (focus is on A).
+	d.Collect(input.KeyMsg{Key: input.KeyA, Action: input.KeyPress})
+
+	// Queue focus change A→B before Dispatch.
+	d.QueueFocusChange(widgetA, widgetB, FocusSourceTab)
+	d.Dispatch()
+
+	evA := d.EventsFor(widgetA)
+	evB := d.EventsFor(widgetB)
+
+	// Key event should go to A (it was focused at dispatch time).
+	hasKey := false
+	for _, e := range evA {
+		if e.Kind == EventKey {
+			hasKey = true
+		}
+	}
+	if !hasKey {
+		t.Error("widgetA should receive the key event (it was focused at dispatch time)")
+	}
+
+	// A should also get FocusLost.
+	hasFocusLost := false
+	for _, e := range evA {
+		if e.Kind == EventFocusLost {
+			hasFocusLost = true
+		}
+	}
+	if !hasFocusLost {
+		t.Error("widgetA should receive FocusLost event")
+	}
+
+	// B should get FocusGained.
+	hasFocusGained := false
+	for _, e := range evB {
+		if e.Kind == EventFocusGained {
+			hasFocusGained = true
+		}
+	}
+	if !hasFocusGained {
+		t.Error("widgetB should receive FocusGained event")
+	}
+}
