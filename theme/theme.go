@@ -50,6 +50,8 @@ const (
 	WidgetKindTimePicker
 	WidgetKindNumericInput
 	WidgetKindSpinner
+	// Rich Text (RFC-003 §5.6)
+	WidgetKindRichTextEditor
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).

@@ -37,10 +37,10 @@
 | §4.1 Tier 3 — Struktur | ✅ Integriert | Card, Tabs, Accordion, Tooltip, Badge, Chip, MenuBar, ContextMenu |
 | §4.1 Tier 4 — Erweitert | 🔶 Teilweise | SplitView (`ui/nav/splitview.go`), DatePicker (`ui/form/datepicker.go`), ColorPicker (`ui/form/colorpicker.go`), TimePicker (`ui/form/timepicker.go`), NumericInput (`ui/form/numericinput.go`), Spinner (`ui/form/spinner.go`) integriert; fehlt: DataTable, Toolbar, RichTextEditor, FilePicker |
 | §4.2 Widget-Spezifikations-Template | ⏳ Wartend | Detailspezifikationen pro Widget fehlen |
-| §5 Rich Text & Texteditierung | 🔶 Teilweise | Inline-Widgets integriert; RichTextEditor fehlt |
+| §5 Rich Text & Texteditierung | ✅ Integriert | Inline-Widgets + RichTextEditor integriert |
 | §5.2–5.4 RichText (Ebene 2) | ✅ Integriert | `ui/rich_text.go` mit Spans |
 | §5.5 Inline-Widgets | ✅ Integriert | `ui/display/richtext.go` — `InlineWidget`, `ParagraphContent` sealed Interface, Baseline-Alignment |
-| §5.6 RichTextEditor (Ebene 3) | ⏳ Wartend | |
+| §5.6 RichTextEditor (Ebene 3) | ✅ Integriert | `richtext/` — Document, CursorPosition, Selection, Undo/Redo, WidgetKindRichTextEditor |
 
 ---
 
