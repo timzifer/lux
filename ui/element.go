@@ -691,6 +691,18 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 	}
 }
 
+// indexedChild wraps a child element with its index in the parent's
+// children slice.  LayoutChildren implementations pass these opaque
+// values to Measure / Place; the callbacks unwrap them and use the
+// index for placement tracking — avoiding == or treeEqual on
+// potentially uncomparable element types (structs with func fields).
+type indexedChild struct {
+	index int
+	child Element
+}
+
+func (indexedChild) isElement() {}
+
 // layoutCustom implements the custom layout protocol (RFC-002 §4.3).
 // It delegates measurement and placement to the user-provided Layout.
 func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, fs *FocusManager) Bounds {
@@ -707,22 +719,27 @@ func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th 
 	}
 	placements := make([]placement, len(node.Children))
 
-	// Measure callback: layout children with NullCanvas to get their size.
+	// Wrap children so Measure/Place can identify them by index.
+	wrapped := make([]Element, len(node.Children))
+	for i, c := range node.Children {
+		wrapped[i] = indexedChild{index: i, child: c}
+	}
+
+	// Measure callback: unwrap and layout with NullCanvas to get size.
 	measureFn := func(child Element, c Constraints) Size {
+		actual := child
+		if ic, ok := child.(indexedChild); ok {
+			actual = ic.child
+		}
 		measureArea := Bounds{X: 0, Y: 0, W: int(c.MaxWidth), H: int(c.MaxHeight)}
-		cb := layoutElement(child, measureArea, nc, th, tokens, nil, nil)
+		cb := layoutElement(actual, measureArea, nc, th, tokens, nil, nil)
 		return Size{Width: float32(cb.W), Height: float32(cb.H)}
 	}
 
-	// Place callback: record offset for later painting.
-	// We use treeEqual instead of == to avoid panics on uncomparable
-	// element types (e.g. ButtonElement contains func fields).
+	// Place callback: record offset by index — no value comparison needed.
 	placeFn := func(child Element, offset draw.Point) {
-		for i, ch := range node.Children {
-			if treeEqual(ch, child) {
-				placements[i] = placement{offset: offset, placed: true}
-				return
-			}
+		if ic, ok := child.(indexedChild); ok {
+			placements[ic.index] = placement{offset: offset, placed: true}
 		}
 	}
 
@@ -736,7 +753,7 @@ func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th 
 		Theme:   th,
 	}
 
-	size := node.Layout.LayoutChildren(ctx, node.Children)
+	size := node.Layout.LayoutChildren(ctx, wrapped)
 
 	// Paint pass: draw each placed child at its offset.
 	maxW, maxH := 0, 0
