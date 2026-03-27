@@ -105,7 +105,11 @@
       "Bash(CARGO_NET_GIT_FETCH_WITH_CLI=true /c/ProgramData/chocolatey/bin/cargo check)",
       "Bash(rm -f servo_bridge.dll lux-browser-servo.exe)",
       "Bash(rm -rf servo-bridge/target/)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(find G:/golang/lux -name *icker* -type f)",
+      "Bash(find G:golanglux -type f \\\\\\(-name *webview* -o -name *web_view* \\\\\\))",
+      "Bash(rm -rf surface/webview/)",
+      "Bash(rm -rf cmd/lux-browser/)"
     ]
   }
 }

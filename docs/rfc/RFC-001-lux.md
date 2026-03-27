@@ -2110,7 +2110,7 @@ Diese Grenze explizit zu ziehen verhindert Scope-Creep in der ersten Implementie
 
 ---
 
-> **Browser-Engine-Integration:** Siehe [RFC-003 — lux/surface/webview](RFC-003-lux-webview.md) für die vollständige Evaluierung und Spezifikation der Browser-Engine-Integration via Surface-Slots.
+> **Browser-Engine-Integration:** Siehe [RFC-004 — lux/surface/webview](RFC-004-lux-webview.md) für die Spezifikation der Browser-Engine-Integration via Surface-Slots. *Zurückgestellt auf post-V1; Implementierung im Branch `feature/webview` gesichert.*
 
 ---
 

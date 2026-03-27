@@ -38,7 +38,7 @@ github.com/timzifer/lux/
 │   ├── wayland/       Wayland
 │   └── drm/           DRM/KMS (embedded)
 │
-├── surface/           External surface integration (WebView, video, 3D, custom)
+├── surface/           External surface integration (video, 3D, custom) — planned
 ├── input/             Key, ModifierSet, Shortcut, MouseMsg, ScrollMsg,
 │                      TouchMsg, IMEMsg, CursorKind, gesture
 ├── a11y/              AccessTree, A11yBridge interface, platform bridges

@@ -2,11 +2,15 @@
 
 **Repository:** `github.com/timzifer/lux`
 
-**Status:** In Development
+**Status:** Deferred (post-V1)
 **Version:** 0.1.0
 **Datum:** 2026-03-19
-**Zuletzt abgeglichen:** 2026-03-26
+**Zuletzt abgeglichen:** 2026-03-27
 **Abhängigkeit:** RFC-001-lux.md §8 (Surface-Slots)
+
+> **Hinweis:** Die WebView-Integration ist kein Bestandteil von V1 des Frameworks.
+> Die bisherige Implementierung (Windows WebView2) wurde in den Branch `feature/webview`
+> ausgelagert. Dieses RFC bleibt als Spezifikation für die spätere Integration erhalten.
 
 ---
 
@@ -14,12 +18,12 @@
 
 | Abschnitt | Status | Anmerkung |
 |-----------|--------|-----------|
-| §5 Architektur: OS-Shim | 🔶 Teilweise | Gemeinsames Interface + Windows-Implementierung vorhanden |
-| §6 Linux: WPE WebKit | ⏳ Wartend | |
-| §7 Windows: WebView2 | ✅ Integriert | `surface/webview/webview_windows.go`, `cmd/lux-browser/main.go` — COM-basierte WebView2-Integration, lauffähiges Browser-Binary |
-| §8 macOS: Servo | ⏳ Wartend | |
-| §9 Build-Tag `-tags servo` | ⏳ Wartend | |
-| §10 Fallback-Strategie | ⏳ Wartend | |
+| §5 Architektur: OS-Shim | ⏸️ Zurückgestellt | Bisherige Impl. im Branch `feature/webview` gesichert |
+| §6 Linux: WPE WebKit | ⏸️ Zurückgestellt | |
+| §7 Windows: WebView2 | ⏸️ Zurückgestellt | Bisherige Impl. im Branch `feature/webview` gesichert |
+| §8 macOS: Servo | ⏸️ Zurückgestellt | |
+| §9 Build-Tag `-tags servo` | ⏸️ Zurückgestellt | |
+| §10 Fallback-Strategie | ⏸️ Zurückgestellt | |
 
 ---
 
