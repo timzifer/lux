@@ -19,6 +19,7 @@ var allWidgetKinds = []WidgetKind{
 	WidgetKindDatePicker, WidgetKindColorPicker, WidgetKindTimePicker,
 	WidgetKindNumericInput, WidgetKindSpinner,
 	WidgetKindRichTextEditor,
+	WidgetKindToolbar,
 }
 
 // CachedTheme wraps a Theme and caches the resolved TokenSet and DrawFuncs.

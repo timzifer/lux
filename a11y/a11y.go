@@ -36,6 +36,7 @@ const (
 	RoleTextInput
 	RoleToggle
 	RoleTree
+	RoleToolbar
 
 	// RoleCustomBase is the starting point for application-defined roles.
 	// Custom roles should use RoleCustomBase + n.
