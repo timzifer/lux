@@ -54,8 +54,8 @@ import "github.com/timzifer/lux/platform/glfw"
 
 ### Windows — Win32 native (`platform/windows`)
 
-Native Win32 backend with full HiDPI support, per-monitor DPI awareness, and WebView2
-integration. Recommended for production Windows builds.
+Native Win32 backend with full HiDPI support, per-monitor DPI awareness.
+Recommended for production Windows builds.
 
 Build constraint: `GOOS=windows`.
 

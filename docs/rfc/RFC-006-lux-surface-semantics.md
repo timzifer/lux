@@ -402,7 +402,10 @@ SurfaceAccessNode{
 }
 ```
 
-### 8.3 WebView
+### 8.3 WebView *(post-V1)*
+
+> *WebView-Integration ist auf post-V1 zurückgestellt (siehe RFC-004). Die Architektur
+> bleibt hier als Referenz erhalten.*
 
 Für `lux/surface/webview` kann dieselbe Architektur genutzt werden:
 

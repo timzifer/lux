@@ -128,7 +128,7 @@ go run ./examples/fenster/       # window management
 
 | Platform | Backend | GPU | Notes |
 |----------|---------|-----|-------|
-| Windows 10+ | Win32 native / GLFW | Vulkan · D3D12 | WebView2 surface available |
+| Windows 10+ | Win32 native / GLFW | Vulkan · D3D12 | |
 | macOS 11+ | Cocoa / GLFW | Metal | |
 | Linux (X11) | X11 / GLFW | Vulkan · OpenGL | |
 | Linux (Wayland) | Wayland / GLFW | Vulkan · OpenGL | |
