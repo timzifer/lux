@@ -9,6 +9,7 @@ import (
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/icons"
 	"github.com/timzifer/lux/ui/layout"
 )
@@ -58,11 +59,16 @@ type DataTableColumn struct {
 
 // DataTableState holds mutable state (managed by the caller, like ScrollState).
 type DataTableState struct {
-	ScrollOffset float32       // vertical scroll position
-	SortColumn   string        // key of the currently sorted column
-	SortDir      SortDirection // current sort direction
-	FilterText   string        // active filter string
-	CurrentPage  int           // current page for display (paged mode)
+	Scroll     *ui.ScrollState // scroll state for the table body
+	SortColumn string          // key of the currently sorted column
+	SortDir    SortDirection   // current sort direction
+	FilterText string          // active filter string
+	CurrentPage int            // current page for display (paged mode)
+}
+
+// NewDataTableState creates a DataTableState with initialized scroll state.
+func NewDataTableState() *DataTableState {
+	return &DataTableState{Scroll: &ui.ScrollState{}}
 }
 
 // ── Messages ────────────────────────────────────────────────────
@@ -315,11 +321,37 @@ func (n DataTable) resolvedItemCount() int {
 // ── Client-side sort/filter (SliceDataset) ──────────────────────
 
 // buildViewIndices returns the ordered indices to display, applying
-// client-side filtering and sorting for SliceDataset.
+// client-side filtering and sorting for SliceDataset, or page-scoping
+// for PagedDataset.
 func (n DataTable) buildViewIndices() []int {
 	count := n.resolvedItemCount()
 	if count <= 0 {
 		return nil
+	}
+
+	// For PagedDataset: show only the current page's rows.
+	if pd, ok := isPaged(n.Dataset); ok && n.State != nil {
+		page := n.State.CurrentPage
+		start := page * pd.PageSize
+		end := start + pd.PageSize
+		if pd.TotalCount >= 0 && end > pd.TotalCount {
+			end = pd.TotalCount
+		}
+		if start >= count {
+			start = 0
+			end = pd.PageSize
+			if end > count {
+				end = count
+			}
+		}
+		if end > count {
+			end = count
+		}
+		indices := make([]int, 0, end-start)
+		for i := start; i < end; i++ {
+			indices = append(indices, i)
+		}
+		return indices
 	}
 
 	indices := make([]int, count)
@@ -438,8 +470,8 @@ func (n DataTable) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Scroll offset.
 	var offset float32
-	if n.State != nil {
-		offset = n.State.ScrollOffset
+	if n.State != nil && n.State.Scroll != nil {
+		offset = n.State.Scroll.Offset
 	}
 
 	totalH := (headerY - area.Y) + dataTableHeaderH + bodyViewportH
@@ -526,7 +558,6 @@ func (n DataTable) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			idx := dataIdx
 			hoverOp := ctx.IX.RegisterHit(rowRect, func() {
 				n.OnSelectRow(idx)
-				app.Send(DataTableSortMsg{}) // trigger re-render
 			})
 			if hoverOp > 0 {
 				bgColor = ui.LerpColor(bgColor, tokens.Colors.Surface.Hovered, hoverOp)
@@ -576,47 +607,37 @@ func (n DataTable) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Draw scrollbar inside clip.
-	if needsScroll && n.State != nil {
-		ui.DrawScrollbar(canvas, tokens, ctx.IX, &ui.ScrollState{Offset: n.State.ScrollOffset},
+	if needsScroll && n.State != nil && n.State.Scroll != nil {
+		ui.DrawScrollbar(canvas, tokens, ctx.IX, n.State.Scroll,
 			area.X+bodyContentW, bodyY, bodyViewportH, contentH, offset)
 	}
 
 	canvas.PopClip()
 
 	// Clamp scroll state.
-	if n.State != nil {
+	if n.State != nil && n.State.Scroll != nil {
 		maxScroll := contentH - float32(bodyViewportH)
 		if maxScroll < 0 {
 			maxScroll = 0
 		}
-		if n.State.ScrollOffset > maxScroll {
-			n.State.ScrollOffset = maxScroll
+		if n.State.Scroll.Offset > maxScroll {
+			n.State.Scroll.Offset = maxScroll
 		}
-		if n.State.ScrollOffset < 0 {
-			n.State.ScrollOffset = 0
+		if n.State.Scroll.Offset < 0 {
+			n.State.Scroll.Offset = 0
 		}
 	}
 
 	// Register scroll target.
-	if n.State != nil && needsScroll {
-		state := n.State
+	if n.State != nil && n.State.Scroll != nil && needsScroll {
+		scrollState := n.State.Scroll
 		cH := contentH
 		vH := float32(bodyViewportH)
 		ctx.IX.RegisterScroll(
 			draw.R(float32(area.X), float32(bodyY), float32(area.W), float32(bodyViewportH)),
 			cH, vH,
 			func(deltaY float32) {
-				state.ScrollOffset -= deltaY
-				maxScroll := cH - vH
-				if maxScroll < 0 {
-					maxScroll = 0
-				}
-				if state.ScrollOffset < 0 {
-					state.ScrollOffset = 0
-				}
-				if state.ScrollOffset > maxScroll {
-					state.ScrollOffset = maxScroll
-				}
+				scrollState.ScrollBy(deltaY, cH, vH)
 			},
 		)
 	}
@@ -652,20 +673,27 @@ func (n DataTable) layoutFilterBar(ctx *ui.LayoutContext, x, y, w int) {
 	iconY := float32(y) + (float32(dataTableFilterH)-iconStyle.Size)/2
 	canvas.DrawText(icons.MagnifyingGlass, draw.Pt(iconX, iconY), iconStyle, tokens.Colors.Text.Secondary)
 
-	// Filter text.
+	// Interactive text field for filtering.
 	filterText := ""
 	if n.State != nil {
 		filterText = n.State.FilterText
 	}
-	textStyle := tokens.Typography.Body
-	textX := iconX + iconStyle.Size*1.5 + tokens.Spacing.XS
-	textY := float32(y) + (float32(dataTableFilterH)-textStyle.Size)/2
-
-	if filterText == "" {
-		canvas.DrawText("Filter…", draw.Pt(textX, textY), textStyle, tokens.Colors.Text.Disabled)
-	} else {
-		canvas.DrawText(filterText, draw.Pt(textX, textY), textStyle, tokens.Colors.Text.Primary)
+	fieldX := int(iconX + iconStyle.Size*1.5 + tokens.Spacing.XS)
+	fieldW := w - (fieldX - x) - int(tokens.Spacing.S)
+	if fieldW < 40 {
+		fieldW = 40
 	}
+	tf := form.TextField{
+		Value:       filterText,
+		Placeholder: "Filter…",
+		OnChange: func(text string) {
+			app.Send(DataTableFilterMsg{Text: text})
+			if n.OnFilter != nil {
+				n.OnFilter(text)
+			}
+		},
+	}
+	ctx.LayoutChild(tf, ui.Bounds{X: fieldX, Y: y, W: fieldW, H: dataTableFilterH})
 
 	// Divider below filter.
 	divRect := draw.R(float32(x), float32(y+dataTableFilterH-1), float32(w), 1)

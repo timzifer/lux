@@ -11,9 +11,12 @@ import (
 var _ ui.Element = DataTable{}
 
 func TestDataTableStateDefaults(t *testing.T) {
-	s := DataTableState{}
-	if s.ScrollOffset != 0 {
-		t.Fatalf("ScrollOffset = %f, want 0", s.ScrollOffset)
+	s := NewDataTableState()
+	if s.Scroll == nil {
+		t.Fatal("Scroll should be initialized")
+	}
+	if s.Scroll.Offset != 0 {
+		t.Fatalf("Scroll.Offset = %f, want 0", s.Scroll.Offset)
 	}
 	if s.SortColumn != "" {
 		t.Fatalf("SortColumn = %q, want empty", s.SortColumn)
@@ -436,5 +439,71 @@ func TestDataTableResolveChildren(t *testing.T) {
 	resolved := dt.ResolveChildren(func(el ui.Element, i int) ui.Element { return el })
 	if _, ok := resolved.(DataTable); !ok {
 		t.Fatal("ResolveChildren should return DataTable (leaf)")
+	}
+}
+
+func TestDataTablePagedViewIndicesPage0(t *testing.T) {
+	pd := NewPagedDataset[int](5)
+	pd.SetPage(0, []int{10, 20, 30, 40, 50}, 15)
+	state := NewDataTableState()
+	state.CurrentPage = 0
+
+	dt := DataTable{Dataset: pd, State: state}
+	indices := dt.buildViewIndices()
+	if len(indices) != 5 {
+		t.Fatalf("len(indices) = %d, want 5", len(indices))
+	}
+	for i, want := range []int{0, 1, 2, 3, 4} {
+		if indices[i] != want {
+			t.Errorf("indices[%d] = %d, want %d", i, indices[i], want)
+		}
+	}
+}
+
+func TestDataTablePagedViewIndicesPage1(t *testing.T) {
+	pd := NewPagedDataset[int](5)
+	pd.SetPage(0, []int{10, 20, 30, 40, 50}, 15)
+	pd.SetPage(1, []int{60, 70, 80, 90, 100}, -1)
+	state := NewDataTableState()
+	state.CurrentPage = 1
+
+	dt := DataTable{Dataset: pd, State: state}
+	indices := dt.buildViewIndices()
+	if len(indices) != 5 {
+		t.Fatalf("len(indices) = %d, want 5", len(indices))
+	}
+	for i, want := range []int{5, 6, 7, 8, 9} {
+		if indices[i] != want {
+			t.Errorf("indices[%d] = %d, want %d", i, indices[i], want)
+		}
+	}
+}
+
+func TestDataTablePagedViewIndicesLastPage(t *testing.T) {
+	pd := NewPagedDataset[int](5)
+	pd.SetPage(0, []int{10, 20, 30, 40, 50}, 13)
+	pd.SetPage(2, []int{110, 120, 130}, -1) // partial last page
+	state := NewDataTableState()
+	state.CurrentPage = 2
+
+	dt := DataTable{Dataset: pd, State: state}
+	indices := dt.buildViewIndices()
+	if len(indices) != 3 {
+		t.Fatalf("len(indices) = %d, want 3 (partial last page)", len(indices))
+	}
+	for i, want := range []int{10, 11, 12} {
+		if indices[i] != want {
+			t.Errorf("indices[%d] = %d, want %d", i, indices[i], want)
+		}
+	}
+}
+
+func TestDataTableNewDataTableState(t *testing.T) {
+	s := NewDataTableState()
+	if s == nil {
+		t.Fatal("NewDataTableState should return non-nil")
+	}
+	if s.Scroll == nil {
+		t.Fatal("Scroll should be initialized")
 	}
 }
