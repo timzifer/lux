@@ -118,6 +118,19 @@ func TestSfntShaperRasterizeGlyph(t *testing.T) {
 	}
 }
 
+func TestSfntShaperGlyphID(t *testing.T) {
+	s := newTestShaper()
+	glyphs := s.Shape("Aff", bodyStyle)
+	if len(glyphs) != 3 {
+		t.Fatalf("Shape(\"Aff\") returned %d glyphs, want 3", len(glyphs))
+	}
+	for i, g := range glyphs {
+		if g.GlyphID == 0 {
+			t.Errorf("glyph[%d] (%c) GlyphID = 0, want non-zero cmap index", i, g.Rune)
+		}
+	}
+}
+
 func TestMSDFBearingYAlignment(t *testing.T) {
 	// Flat-top capital letters share the same cap-height in well-formed fonts.
 	// Their MSDF BearingY values must be identical to prevent vertical jitter.
