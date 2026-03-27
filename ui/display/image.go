@@ -13,7 +13,7 @@ type ImageElement struct {
 	Height    float32 // dp; 0 = use natural height
 	ScaleMode draw.ImageScaleMode
 	Alt       string  // alt-text for accessibility
-	Opacity   float32 // 0 = default (1.0)
+	Opacity   float32 // 0.0–1.0; default 1.0 (set by Image constructor)
 }
 
 // ImageOption configures an Image element.
@@ -68,12 +68,8 @@ func (n ImageElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	if h > ctx.Area.H {
 		h = ctx.Area.H
 	}
-	opacity := n.Opacity
-	if opacity == 0 {
-		opacity = 1
-	}
 	r := draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(w), float32(h))
-	ctx.Canvas.DrawImage(n.ImageID, r, draw.ImageOptions{Opacity: opacity})
+	ctx.Canvas.DrawImage(n.ImageID, r, draw.ImageOptions{Opacity: n.Opacity})
 	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h, Baseline: h}
 }
 
