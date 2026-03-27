@@ -193,6 +193,13 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		}
 		return ThemedElement{Theme: sub, Children: children}
 
+	case CustomLayoutElement:
+		children := make([]Element, len(node.Children))
+		for i, c := range node.Children {
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm, locale)
+		}
+		return CustomLayoutElement{Layout: node.Layout, Children: children}
+
 	default:
 		// Leaf elements (text, button, divider, virtualList, tree, richText, etc.) pass through unchanged.
 		return el
@@ -222,6 +229,17 @@ func treeEqual(a, b Element) bool {
 	case ThemedElement:
 		nb, ok := b.(ThemedElement)
 		if !ok || na.Theme != nb.Theme || len(na.Children) != len(nb.Children) {
+			return false
+		}
+		for i := range na.Children {
+			if !treeEqual(na.Children[i], nb.Children[i]) {
+				return false
+			}
+		}
+		return true
+	case CustomLayoutElement:
+		nb, ok := b.(CustomLayoutElement)
+		if !ok || len(na.Children) != len(nb.Children) {
 			return false
 		}
 		for i := range na.Children {
