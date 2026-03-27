@@ -164,7 +164,7 @@ func (n VirtualList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			if !loaded {
 				if pd, ok := n.Dataset.(*PagedDataset[int]); ok {
 					pg := pd.PageForIndex(i)
-					if !pd.IsPageLoading(pg) && pd.PageState(pg) != SlotLoaded {
+					if !pd.IsPageLoading(pg) && !pd.IsPageLoaded(pg) {
 						loadPages[pg] = true
 					}
 				}

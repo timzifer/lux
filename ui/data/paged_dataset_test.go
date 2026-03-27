@@ -176,6 +176,56 @@ func TestPagedDatasetErrorThenRetry(t *testing.T) {
 	}
 }
 
+func TestPagedDatasetSlotPendingIsZeroValue(t *testing.T) {
+	// SlotPending must be the zero value so unregistered pages are "pending", not "loaded".
+	if SlotPending != 0 {
+		t.Fatalf("SlotPending = %d, want 0 (must be zero value)", SlotPending)
+	}
+	if SlotLoaded == 0 {
+		t.Fatal("SlotLoaded must NOT be the zero value")
+	}
+}
+
+func TestPagedDatasetUntouchedPageIsPending(t *testing.T) {
+	d := NewPagedDataset[int](10)
+	if d.PageState(0) != SlotPending {
+		t.Fatalf("untouched page state = %d, want SlotPending", d.PageState(0))
+	}
+	if d.IsPageLoaded(0) {
+		t.Fatal("untouched page should not be IsPageLoaded")
+	}
+	if d.IsPageLoading(0) {
+		t.Fatal("untouched page should not be IsPageLoading")
+	}
+}
+
+func TestPagedDatasetIsPageLoaded(t *testing.T) {
+	d := NewPagedDataset[int](5)
+
+	// Initially not loaded
+	if d.IsPageLoaded(0) {
+		t.Fatal("page 0 should not be loaded initially")
+	}
+
+	// After SetLoading — not loaded yet
+	d.SetLoading(0)
+	if d.IsPageLoaded(0) {
+		t.Fatal("page 0 should not be loaded while loading")
+	}
+
+	// After SetPage — loaded
+	d.SetPage(0, []int{1, 2, 3, 4, 5}, 10)
+	if !d.IsPageLoaded(0) {
+		t.Fatal("page 0 should be loaded after SetPage")
+	}
+
+	// After SetError — not loaded
+	d.SetError(1)
+	if d.IsPageLoaded(1) {
+		t.Fatal("page 1 should not be loaded after SetError")
+	}
+}
+
 func TestPagedDatasetLoadedCount(t *testing.T) {
 	d := NewPagedDataset[int](3)
 	if d.LoadedCount() != 0 {
