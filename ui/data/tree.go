@@ -12,8 +12,21 @@ import (
 
 // Tree displays a hierarchical tree widget with expand/collapse
 // and selection support.
+//
+// When DatasetRoots is set, it takes priority over RootIDs.
+// When DatasetChildren is set, it takes priority over Children. (RFC-002 §6.2)
 type Tree struct {
 	ui.BaseElement
+
+	// DatasetRoots provides root IDs with dynamic length support.
+	// Takes priority over RootIDs when set.
+	DatasetRoots Dataset[string]
+
+	// DatasetChildren returns a Dataset of child IDs for a given parent.
+	// Takes priority over Children when set.
+	DatasetChildren func(id string) Dataset[string]
+
+	// Legacy API — used when DatasetRoots/DatasetChildren are nil.
 	RootIDs     []string
 	Children    func(string) []string
 	BuildNode   func(string, int, bool, bool) ui.Element
@@ -38,6 +51,62 @@ func NewTree(config ui.TreeConfig) ui.Element {
 	}
 }
 
+// resolvedRootIDs returns root IDs from DatasetRoots or RootIDs.
+func (n Tree) resolvedRootIDs() []string {
+	if n.DatasetRoots != nil {
+		count := n.DatasetRoots.Len()
+		if count < 0 {
+			// Unknown length — try counter interface (e.g. StreamDataset).
+			type counter interface{ Count() int }
+			if c, ok := n.DatasetRoots.(counter); ok {
+				count = c.Count()
+			} else {
+				count = 0
+			}
+		}
+		ids := make([]string, 0, count)
+		for i := 0; i < count; i++ {
+			id, loaded := n.DatasetRoots.Get(i)
+			if loaded {
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	}
+	return n.RootIDs
+}
+
+// resolvedChildren returns child IDs for a parent from DatasetChildren or Children.
+func (n Tree) resolvedChildren(parentID string) []string {
+	if n.DatasetChildren != nil {
+		ds := n.DatasetChildren(parentID)
+		if ds == nil {
+			return nil
+		}
+		count := ds.Len()
+		if count < 0 {
+			type counter interface{ Count() int }
+			if c, ok := ds.(counter); ok {
+				count = c.Count()
+			} else {
+				count = 0
+			}
+		}
+		ids := make([]string, 0, count)
+		for i := 0; i < count; i++ {
+			id, loaded := ds.Get(i)
+			if loaded {
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	}
+	if n.Children != nil {
+		return n.Children(parentID)
+	}
+	return nil
+}
+
 // flatNode is a node in the flattened visible tree.
 type flatNode struct {
 	ID             string
@@ -50,7 +119,8 @@ type flatNode struct {
 // LayoutSelf implements ui.Layouter.
 func (n Tree) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
-	if len(n.RootIDs) == 0 || n.BuildNode == nil {
+	rootIDs := n.resolvedRootIDs()
+	if len(rootIDs) == 0 || n.BuildNode == nil {
 		return ui.Bounds{X: area.X, Y: area.Y}
 	}
 
@@ -78,10 +148,7 @@ func (n Tree) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	var walk func(ids []string, depth int, parentFraction float32)
 	walk = func(ids []string, depth int, parentFraction float32) {
 		for _, id := range ids {
-			var kids []string
-			if n.Children != nil {
-				kids = n.Children(id)
-			}
+			kids := n.resolvedChildren(id)
 			hasKids := len(kids) > 0
 			expanded := n.State != nil && n.State.IsExpanded(id)
 			flat = append(flat, flatNode{ID: id, Depth: depth, HasKids: hasKids, Expanded: expanded, HeightFraction: parentFraction})
@@ -102,7 +169,7 @@ func (n Tree) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			}
 		}
 	}
-	walk(n.RootIDs, 0, 1.0)
+	walk(rootIDs, 0, 1.0)
 
 	// Compute total content height considering animation fractions.
 	var contentH float32
@@ -301,7 +368,7 @@ func (n Tree) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Eleme
 // WalkAccess implements ui.AccessWalker. Builds a11y tree nodes for Tree.
 func (n Tree) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	treeIdx := b.AddNode(a11y.AccessNode{Role: a11y.RoleTree, Label: "Tree"}, parentIdx, a11y.Rect{})
-	walkTreeNodes(b, n, n.RootIDs, int32(treeIdx), 0)
+	walkTreeNodes(b, n, n.resolvedRootIDs(), int32(treeIdx), 0)
 }
 
 // walkTreeNodes recursively walks tree nodes and adds them to the access tree.
@@ -310,10 +377,7 @@ func walkTreeNodes(b *ui.AccessTreeBuilder, tree Tree, ids []string, parentIdx i
 		expanded := tree.State != nil && tree.State.IsExpanded(id)
 		selected := tree.State != nil && tree.State.Selected == id
 
-		var kids []string
-		if tree.Children != nil {
-			kids = tree.Children(id)
-		}
+		kids := tree.resolvedChildren(id)
 		hasKids := len(kids) > 0
 
 		// Build the display element to extract a label.
