@@ -493,9 +493,6 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 			if run.Style.Bold {
 				style.Weight = draw.FontWeightBold
 			}
-			// Note: Italic is tracked in SpanStyle but draw.TextStyle
-			// does not yet support italic; will be applied when the
-			// text stack gains italic support.
 			if run.Style.Size > 0 {
 				style.Size = run.Style.Size
 			}
@@ -514,6 +511,21 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 			canvas.DrawText(runText, draw.Pt(x, y), style, color)
 
 			m := canvas.MeasureText(runText, style)
+
+			// Synthetic bold: draw text a second time offset by 1dp.
+			// This thickens strokes when no dedicated bold font
+			// face is available in the font family.
+			if run.Style.Bold {
+				canvas.DrawText(runText, draw.Pt(x+1, y), style, color)
+			}
+
+			// Underline: draw a 1dp line below the text baseline.
+			if run.Style.Underline {
+				ulY := y + lineH - 2
+				canvas.FillRect(draw.R(x, ulY, m.Width, 1),
+					draw.SolidPaint(color))
+			}
+
 			x += m.Width
 		}
 	}
