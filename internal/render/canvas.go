@@ -889,11 +889,7 @@ func (c *SceneCanvas) DrawImageSlice(slice draw.ImageSlice, dst draw.Rect, opts 
 		{dst.X + dst.W - right, dst.Y + dst.H - bottom, right, bottom, uR, vB, 1, 1},
 	}
 
-	opacity := opts.Opacity
-	if opacity == 0 {
-		opacity = 1
-	}
-	opacity *= c.effectiveOpacity()
+	opacity := opts.Opacity * c.effectiveOpacity()
 	if opacity < 0.001 {
 		return
 	}
