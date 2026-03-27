@@ -1,0 +1,281 @@
+name: CI
+
+# CI Strategy:
+# - Tests run on Linux, macOS, and Windows (cross-platform GPU library)
+# - Go 1.25+ required (matches go.mod requirement)
+# - Pure Go implementation via goffi (requires CGO_ENABLED=0 on Unix)
+# - Integration tests with Mesa software renderer on Linux
+#
+# Branch Strategy (GitHub Flow):
+# - main branch: Production-ready code
+# - Feature branches: Tested via pull_request trigger
+# - Pull requests: Must pass all checks before merge
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  # goffi requires CGO_ENABLED=0 for pure Go FFI on Unix
+  CGO_ENABLED: 0
+
+jobs:
+  # Build verification - Cross-platform
+  build:
+    name: Build - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.25']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Build all packages
+      run: go build ./...
+
+  # Unit tests - Cross-platform
+  test:
+    name: Test - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.25']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run go vet
+      if: matrix.os == 'ubuntu-latest'
+      # Skip hal/vulkan/vk and hal/gles due to intentional unsafe.Pointer FFI usage
+      run: |
+        go vet $(go list ./... | grep -v '/hal/vulkan/vk$' | grep -v '/hal/gles')
+
+    - name: Install pure-Go race detector
+      run: go install github.com/kolkov/racedetector/cmd/racedetector@v0.7.0
+
+    - name: Run tests with race detector
+      shell: bash
+      run: racedetector test -v -coverprofile=coverage.txt -covermode=atomic ./...
+
+    - name: Verify coverage file
+      if: matrix.os == 'ubuntu-latest'
+      shell: bash
+      run: |
+        if [ -f coverage.txt ]; then
+          echo "coverage.txt found ($(wc -l < coverage.txt) lines)"
+        else
+          echo "coverage.txt not found, generating separately..."
+          go test -coverprofile=coverage.txt -covermode=atomic ./... || true
+        fi
+
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.txt
+        flags: unittests
+        name: codecov-wgpu
+        fail_ci_if_error: true
+
+  # GLES/EGL Integration Test - Linux with Mesa Surfaceless
+  integration-gles:
+    name: Integration - GLES/EGL (Linux + Mesa Surfaceless)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+
+    - name: Install Mesa libraries for headless EGL
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libegl1-mesa-dev \
+          libgbm-dev \
+          libgl1-mesa-dri \
+          mesa-utils
+
+    - name: Verify Mesa installation
+      run: |
+        echo "=== Installed packages ==="
+        dpkg -l | grep -E 'mesa|egl' | head -10
+        echo ""
+        echo "=== Library files ==="
+        ls -la /usr/lib/x86_64-linux-gnu/libEGL* 2>/dev/null || true
+        ls -la /usr/lib/x86_64-linux-gnu/libGL* 2>/dev/null || true
+        echo ""
+        echo "=== Mesa DRI drivers ==="
+        ls -la /usr/lib/x86_64-linux-gnu/dri/ 2>/dev/null | head -10 || true
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build GLES backend
+      run: go build -v ./hal/gles/...
+
+    - name: Run GLES integration test (surfaceless)
+      env:
+        # CRITICAL: Unset display variables to force surfaceless platform
+        DISPLAY: ""
+        WAYLAND_DISPLAY: ""
+        # Force software rendering with llvmpipe
+        LIBGL_ALWAYS_SOFTWARE: "1"
+        MESA_LOADER_DRIVER_OVERRIDE: "llvmpipe"
+      run: |
+        echo "=== Running with surfaceless EGL platform ==="
+        echo "DISPLAY='$DISPLAY'"
+        echo "WAYLAND_DISPLAY='$WAYLAND_DISPLAY'"
+        echo "LIBGL_ALWAYS_SOFTWARE='$LIBGL_ALWAYS_SOFTWARE'"
+        echo ""
+        go test -v -tags integration ./hal/gles/...
+
+    - name: Test EGL library loading
+      run: |
+        # Verify that EGL can be loaded at runtime
+        echo "Testing EGL library availability..."
+        ldconfig -p | grep -E 'libEGL|libGL' | head -5
+        echo "EGL libraries available for runtime loading"
+
+  # Linting
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: latest
+        args: --timeout=5m
+
+  # Code formatting check
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+
+    - name: Check formatting
+      run: |
+        if [ -n "$(gofmt -l .)" ]; then
+          echo "ERROR: The following files are not formatted:"
+          gofmt -l .
+          echo ""
+          echo "Run 'go fmt ./...' to fix formatting issues."
+          exit 1
+        fi
+        echo "All files are properly formatted"
+
+  # Dependency freshness check
+  # Uses go-mod-outdated (https://github.com/psampaz/go-mod-outdated)
+  # Non-blocking: reports outdated deps as warnings
+  deps:
+    name: Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+
+    - name: Install go-mod-outdated
+      run: go install github.com/psampaz/go-mod-outdated@latest
+
+    - name: Check direct dependencies for updates
+      run: |
+        echo "## Direct Dependencies with Updates"
+        OUTDATED=$(go list -u -m -json all 2>/dev/null | go-mod-outdated -update -direct || true)
+        if [ -n "$OUTDATED" ]; then
+          echo "$OUTDATED"
+          echo "::warning::Some direct dependencies have updates available"
+        else
+          echo "All direct dependencies are up to date!"
+        fi
+
+    - name: Check ecosystem dependencies
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        echo "## Ecosystem Dependencies"
+        WARNINGS=0
+
+        check_dep() {
+          local DEP=$1 REPO=$2
+          LOCAL=$(grep "$DEP" go.mod 2>/dev/null | grep -v "^module" | awk '{print $2}')
+          [ -z "$LOCAL" ] && return 0
+
+          LATEST=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || echo "")
+          [ -z "$LATEST" ] && { echo "⚠️  $DEP: $LOCAL (cannot verify)"; return 0; }
+
+          if [ "$LOCAL" = "$LATEST" ]; then
+            echo "✅ $DEP: $LOCAL"
+          else
+            echo "❌ $DEP: $LOCAL → $LATEST available"
+            WARNINGS=$((WARNINGS + 1))
+          fi
+        }
+
+        check_dep "github.com/gogpu/naga" "gogpu/naga"
+        check_dep "github.com/go-webgpu/goffi" "go-webgpu/goffi"
+
+        [ $WARNINGS -gt 0 ] && echo "::warning::$WARNINGS ecosystem dep(s) outdated"
+        exit 0
