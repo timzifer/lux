@@ -65,4 +65,10 @@ const (
 	Moon        = "\uE330"
 	ToggleLeft  = "\uE674"
 	ToggleRight = "\uE676"
+
+	// Text Formatting
+	TextBolder    = "\uE494"
+	TextItalic    = "\uE498"
+	TextUnderline = "\uE49C"
+	ImageSquare   = "\uE2D2"
 )
