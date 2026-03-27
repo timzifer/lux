@@ -180,7 +180,7 @@ func TestCommonSuffixLen(t *testing.T) {
 		want int
 	}{
 		{"Hello", "Hello World", 5, 0},
-		{"Hello World", "Hello Brave World", 6, 6},
+		{"Hello World", "Hello Brave World", 6, 5},
 		{"abc", "abc", 3, 0},
 	}
 	for _, tt := range tests {
