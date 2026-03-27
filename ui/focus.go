@@ -1,6 +1,9 @@
 package ui
 
-import "sort"
+import (
+	"sort"
+	"time"
+)
 
 // ── Focus Messages (RFC-002 §2.3) ────────────────────────────────
 
@@ -72,6 +75,45 @@ type FocusManager struct {
 	// path (e.g. from a click handler). The run loop checks this to force a
 	// re-layout so that fm.Input is created for the newly focused TextField.
 	dirty bool
+
+	// Click-count tracking for double/triple-click in text fields.
+	lastClickTime time.Time
+	lastClickX    float32
+	lastClickY    float32
+	clickCount    int
+}
+
+// doubleClickMaxDist is the max pixel distance between clicks to count as multi-click.
+const doubleClickMaxDist = 4
+
+// doubleClickInterval is the max time between clicks to count as multi-click.
+const doubleClickInterval = 400 * time.Millisecond
+
+// TrackClick updates click-count state and returns the current click count
+// (1 = single, 2 = double, 3+ = triple). Called from text field drag callbacks.
+func (fm *FocusManager) TrackClick(x, y float32) int {
+	if fm == nil {
+		return 1
+	}
+	now := time.Now()
+	dx := x - fm.lastClickX
+	dy := y - fm.lastClickY
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	if now.Sub(fm.lastClickTime) < doubleClickInterval &&
+		dx < doubleClickMaxDist && dy < doubleClickMaxDist {
+		fm.clickCount++
+	} else {
+		fm.clickCount = 1
+	}
+	fm.lastClickTime = now
+	fm.lastClickX = x
+	fm.lastClickY = y
+	return fm.clickCount
 }
 
 type focusEntry struct {

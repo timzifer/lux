@@ -216,25 +216,49 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Hit target for focus acquisition and click-to-position cursor.
+	// Double-click selects the word under the cursor; triple-click selects all.
 	if n.OnChange != nil && focus != nil && !n.Disabled {
 		uid := focusUID
 		fm := focus
 		bXs := boundaryXs
 		bOffs := boundaries
+		val := n.Value
 		dragAnchor := -1
+		multiClickHandled := false
 		ix.RegisterDrag(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
-			func(mx, _ float32) {
+			func(mx, my float32) {
 				fm.SetFocusedUID(uid)
 				off := closestBoundary(bXs, bOffs, mx)
 				if dragAnchor < 0 {
-					dragAnchor = off
-					if fm.Input != nil {
-						fm.Input.CursorOffset = off
-						fm.Input.ClearSelection()
+					clickCount := fm.TrackClick(mx, my)
+					if clickCount >= 3 {
+						// Triple-click: select all.
+						multiClickHandled = true
+						dragAnchor = 0
+						if fm.Input != nil {
+							fm.Input.SelectionStart = 0
+							fm.Input.CursorOffset = len(val)
+						}
+					} else if clickCount == 2 {
+						// Double-click: select word.
+						multiClickHandled = true
+						wStart, wEnd := text.WordAt(val, off)
+						dragAnchor = wStart
+						if fm.Input != nil {
+							fm.Input.SelectionStart = wStart
+							fm.Input.CursorOffset = wEnd
+						}
 					} else {
-						fm.PendingCursorOffset = off
+						multiClickHandled = false
+						dragAnchor = off
+						if fm.Input != nil {
+							fm.Input.CursorOffset = off
+							fm.Input.ClearSelection()
+						} else {
+							fm.PendingCursorOffset = off
+						}
 					}
-				} else {
+				} else if !multiClickHandled {
 					if fm.Input != nil {
 						fm.Input.CursorOffset = off
 						if off != dragAnchor {
