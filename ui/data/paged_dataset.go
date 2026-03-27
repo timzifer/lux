@@ -76,3 +76,14 @@ func (d *PagedDataset[ID]) PageState(pageIndex int) SlotState {
 func (d *PagedDataset[ID]) PageForIndex(index int) int {
 	return index / d.PageSize
 }
+
+// LoadedCount returns the number of items across all loaded pages.
+// Useful when TotalCount is unknown (-1) to determine how many items
+// are currently available for rendering.
+func (d *PagedDataset[ID]) LoadedCount() int {
+	n := 0
+	for _, page := range d.pages {
+		n += len(page)
+	}
+	return n
+}
