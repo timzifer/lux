@@ -54,6 +54,8 @@ const (
 	WidgetKindRichTextEditor
 	// Toolbar
 	WidgetKindToolbar
+	// DataTable
+	WidgetKindDataTable
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).

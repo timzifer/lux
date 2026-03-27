@@ -67,7 +67,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-basics":       {"typography", "buttons"},
 	"group-input":        {"form-controls", "range-progress", "selection", "validation", "pickers", "numeric-spinner"},
 	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout", "table-layout"},
-	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "cards", "tabs", "accordion", "badges-chips"},
+	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "datatable", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts", "toolbar"},
 	"group-overlays":     {"overlays", "dialogs"},
 	"group-text":         {"rich-text", "rich-text-editor", "inline-widgets", "text-shaping", "grapheme-nav", "line-breaking"},
@@ -149,6 +149,8 @@ func sectionLabel(id string) string {
 		return "PagedDataset"
 	case "dataset-stream":
 		return "StreamDataset"
+	case "datatable":
+		return "DataTable"
 	case "cards":
 		return "Cards"
 	case "tabs":
@@ -383,6 +385,14 @@ type Model struct {
 	StreamLog     *data.StreamDataset[int]
 	StreamScroll  *ui.ScrollState
 	StreamCounter int
+	// DataTable demos
+	DTSliceState  *data.DataTableState
+	DTPagedState  *data.DataTableState
+	DTPaged       *data.PagedDataset[int]
+	DTStreamState *data.DataTableState
+	DTStream      *data.StreamDataset[int]
+	DTStreamCtr   int
+	DTSelectedRow int
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -497,6 +507,15 @@ type PagedPageLoadedMsg struct {
 	Total int
 }
 type StreamAddItemMsg struct{}
+// DataTable messages
+type DTPageLoadMsg struct{ Page int }
+type DTPageLoadedMsg struct {
+	Page  int
+	IDs   []int
+	Total int
+}
+type DTStreamAddMsg struct{}
+type DTSelectRowMsg struct{ Row int }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -633,19 +652,30 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 
 	// DynamicDataset demos
 	case data.DatasetLoadRequestMsg:
-		// Simulate paged loading — send a PagedLoadPageMsg
+		// Simulate paged loading for both VirtualList and DataTable demos
 		page := msg.PageIndex
 		if m.PagedContacts != nil && !m.PagedContacts.IsPageLoading(page) {
 			m.PagedContacts.SetLoading(page)
 			pg := page
 			return m, func() app.Msg {
-				// Simulate async I/O
 				pageSize := 20
 				ids := make([]int, pageSize)
 				for i := range ids {
 					ids[i] = pg*pageSize + i
 				}
 				return PagedPageLoadedMsg{Page: pg, IDs: ids, Total: 100}
+			}
+		}
+		if m.DTPaged != nil && !m.DTPaged.IsPageLoading(page) && !m.DTPaged.IsPageLoaded(page) {
+			m.DTPaged.SetLoading(page)
+			pg := page
+			return m, func() app.Msg {
+				pageSize := 20
+				ids := make([]int, pageSize)
+				for i := range ids {
+					ids[i] = pg*pageSize + i
+				}
+				return DTPageLoadedMsg{Page: pg, IDs: ids, Total: 100}
 			}
 		}
 	case PagedPageLoadedMsg:
@@ -657,6 +687,43 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 			m.StreamCounter++
 			m.StreamLog.Append(m.StreamCounter)
 		}
+
+	// DataTable messages
+	case data.DataTableSortMsg:
+		// Update all states that match the sort column.
+		m.DTSliceState.SortColumn = msg.Column
+		m.DTSliceState.SortDir = msg.Direction
+		m.DTPagedState.SortColumn = msg.Column
+		m.DTPagedState.SortDir = msg.Direction
+	case data.DataTableFilterMsg:
+		m.DTSliceState.FilterText = msg.Text
+	case data.DataTablePageMsg:
+		m.DTPagedState.CurrentPage = msg.Page
+		if m.DTPaged != nil {
+			page := msg.Page
+			if !m.DTPaged.IsPageLoaded(page) && !m.DTPaged.IsPageLoading(page) {
+				m.DTPaged.SetLoading(page)
+				return m, func() app.Msg {
+					pageSize := 20
+					ids := make([]int, pageSize)
+					for i := range ids {
+						ids[i] = page*pageSize + i
+					}
+					return DTPageLoadedMsg{Page: page, IDs: ids, Total: 100}
+				}
+			}
+		}
+	case DTPageLoadedMsg:
+		if m.DTPaged != nil {
+			m.DTPaged.SetPage(msg.Page, msg.IDs, msg.Total)
+		}
+	case DTStreamAddMsg:
+		if m.DTStream != nil {
+			m.DTStreamCtr++
+			m.DTStream.Append(m.DTStreamCtr)
+		}
+	case DTSelectRowMsg:
+		m.DTSelectedRow = msg.Row
 
 	// Phase 2: Spring Animation
 	case SetSpringPresetMsg:
@@ -975,6 +1042,8 @@ func sectionContent(m Model) ui.Element {
 		return datasetPagedSection(m)
 	case "dataset-stream":
 		return datasetStreamSection(m)
+	case "datatable":
+		return dataTableSection(m)
 	case "cards":
 		return cardsSection()
 	case "tabs":
@@ -2081,6 +2150,163 @@ func datasetStreamSection(m Model) ui.Element {
 				return display.Text(fmt.Sprintf("  [stream] Log entry #%d", id))
 			},
 		},
+	)
+}
+
+// ── DataTable Section ────────────────────────────────────────────
+
+func dataTableSection(m Model) ui.Element {
+	// --- Demo data for static table ---
+	type person struct {
+		Name string
+		Age  int
+		City string
+	}
+	people := []person{
+		{"Alice", 32, "Berlin"}, {"Bob", 28, "Munich"}, {"Charlie", 45, "Hamburg"},
+		{"Diana", 36, "Frankfurt"}, {"Eve", 29, "Cologne"}, {"Frank", 51, "Stuttgart"},
+		{"Grace", 27, "Düsseldorf"}, {"Hank", 39, "Leipzig"}, {"Ivy", 33, "Dresden"},
+		{"Jack", 44, "Hannover"}, {"Karen", 30, "Nuremberg"}, {"Leo", 55, "Bremen"},
+		{"Mia", 26, "Essen"}, {"Nick", 48, "Dortmund"}, {"Olivia", 35, "Bonn"},
+		{"Paul", 41, "Mannheim"}, {"Quinn", 31, "Karlsruhe"}, {"Rita", 37, "Augsburg"},
+		{"Sam", 43, "Wiesbaden"}, {"Tina", 29, "Freiburg"}, {"Ulrich", 50, "Münster"},
+		{"Vera", 34, "Aachen"}, {"Walter", 46, "Kiel"}, {"Xena", 28, "Lübeck"},
+		{"Yves", 38, "Rostock"}, {"Zara", 42, "Mainz"}, {"Anton", 25, "Potsdam"},
+		{"Berta", 53, "Erfurt"}, {"Claus", 33, "Weimar"}, {"Doris", 40, "Jena"},
+	}
+	sliceIDs := make([]int, len(people))
+	for i := range sliceIDs {
+		sliceIDs[i] = i
+	}
+	sliceDS := data.NewSliceDataset(sliceIDs)
+
+	staticCols := []data.DataTableColumn{
+		{
+			Key: "name", Header: "Name", Width: layout.Fr(2), Sortable: true,
+			Build: func(id int, loaded bool) ui.Element {
+				return display.Text(people[id].Name)
+			},
+			FilterValue: func(id int) string { return people[id].Name },
+			SortLess: func(i, j int) bool {
+				return people[i].Name < people[j].Name
+			},
+		},
+		{
+			Key: "age", Header: "Age", Width: layout.Px(80), Sortable: true,
+			Build: func(id int, loaded bool) ui.Element {
+				return display.Text(fmt.Sprintf("%d", people[id].Age))
+			},
+			FilterValue: func(id int) string { return fmt.Sprintf("%d", people[id].Age) },
+			SortLess: func(i, j int) bool {
+				return people[i].Age < people[j].Age
+			},
+		},
+		{
+			Key: "city", Header: "City", Width: layout.Fr(2), Sortable: true,
+			Build: func(id int, loaded bool) ui.Element {
+				return display.Text(people[id].City)
+			},
+			FilterValue: func(id int) string { return people[id].City },
+			SortLess: func(i, j int) bool {
+				return people[i].City < people[j].City
+			},
+		},
+	}
+
+	// --- Paged table columns ---
+	pagedCols := []data.DataTableColumn{
+		{
+			Key: "id", Header: "ID", Width: layout.Px(60),
+			Build: func(id int, loaded bool) ui.Element {
+				if !loaded {
+					return display.Text("…")
+				}
+				v, _ := m.DTPaged.Get(id)
+				return display.Text(fmt.Sprintf("%d", v))
+			},
+		},
+		{
+			Key: "contact", Header: "Contact", Width: layout.Fr(1),
+			Build: func(id int, loaded bool) ui.Element {
+				if !loaded {
+					return display.Text("Loading…")
+				}
+				v, _ := m.DTPaged.Get(id)
+				return display.Text(fmt.Sprintf("Contact #%d", v))
+			},
+		},
+		{
+			Key: "page", Header: "Page", Width: layout.Px(80),
+			Build: func(id int, loaded bool) ui.Element {
+				if !loaded {
+					return display.Text("—")
+				}
+				return display.Text(fmt.Sprintf("%d", m.DTPaged.PageForIndex(id)))
+			},
+		},
+	}
+
+	// --- Stream table columns ---
+	streamCols := []data.DataTableColumn{
+		{
+			Key: "idx", Header: "#", Width: layout.Px(50),
+			Build: func(id int, loaded bool) ui.Element {
+				return display.Text(fmt.Sprintf("%d", id+1))
+			},
+		},
+		{
+			Key: "entry", Header: "Log Entry", Width: layout.Fr(1),
+			Build: func(id int, loaded bool) ui.Element {
+				if !loaded {
+					return display.Text("…")
+				}
+				v, _ := m.DTStream.Get(id)
+				return display.Text(fmt.Sprintf("Log message #%d", v))
+			},
+		},
+	}
+
+	return layout.Column(
+		sectionHeader("DataTable"),
+		display.Text("Data-driven table with sorting, filtering, and auto-detected pagination."),
+		display.Spacer(12),
+
+		// 1. Static table with SliceDataset
+		display.TextStyled("Static Table (SliceDataset)", theme.Default.Tokens().Typography.H3),
+		display.Spacer(4),
+		display.Text("30 rows, sortable columns, filterable. Click headers to sort."),
+		display.Spacer(4),
+		data.NewDataTable(sliceDS, staticCols, m.DTSliceState,
+			data.WithDTMaxHeight(280),
+			data.WithDTFilterable(true),
+			data.WithDTSelectedRow(m.DTSelectedRow, func(idx int) {
+				app.Send(DTSelectRowMsg{Row: idx})
+			}),
+		),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("Selected row: %d", m.DTSelectedRow)),
+		display.Spacer(16),
+
+		// 2. Paged table with PagedDataset
+		display.TextStyled("Paged Table (PagedDataset)", theme.Default.Tokens().Typography.H3),
+		display.Spacer(4),
+		display.Text("Server-paginated contacts. Pagination toolbar auto-detected."),
+		display.Spacer(4),
+		data.NewDataTable(m.DTPaged, pagedCols, m.DTPagedState,
+			data.WithDTMaxHeight(250),
+		),
+		display.Spacer(16),
+
+		// 3. Stream table with StreamDataset
+		display.TextStyled("Stream Table (StreamDataset)", theme.Default.Tokens().Typography.H3),
+		display.Spacer(4),
+		display.Text("Append-only log. Toolbar shows item count."),
+		display.Spacer(4),
+		button.Text("Add Log Entry", func() { app.Send(DTStreamAddMsg{}) }),
+		display.Spacer(4),
+		data.NewDataTable(m.DTStream, streamCols, m.DTStreamState,
+			data.WithDTMaxHeight(200),
+		),
 	)
 }
 
@@ -4380,6 +4606,13 @@ func main() {
 		PagedScroll:        &ui.ScrollState{},
 		StreamLog:          data.NewStreamDataset[int](data.StreamAppend),
 		StreamScroll:       &ui.ScrollState{},
+		// DataTable demos
+		DTSliceState:  &data.DataTableState{},
+		DTPagedState:  &data.DataTableState{},
+		DTPaged:       data.NewPagedDataset[int](20),
+		DTStreamState: &data.DataTableState{},
+		DTStream:      data.NewStreamDataset[int](data.StreamAppend),
+		DTSelectedRow: -1,
 		AccordionState:     nav.NewAccordionState(),
 		MenuBarState:       menu.NewMenuBarState(),
 		KineticScroll:      ui.NewKineticScroll(theme.Default.Tokens().Scroll),
