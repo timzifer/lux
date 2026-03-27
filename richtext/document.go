@@ -4,26 +4,30 @@ import (
 	"github.com/timzifer/lux/draw"
 )
 
-// ── Document Model (user-facing, serializable) ─────────────────
+// ── AttributedString (user-facing, serializable) ────────────────
 
-// Document is the serializable document content.
-// It lives in the user model and can be persisted (RFC-003 §5.6).
-type Document struct {
-	Paragraphs []Paragraph
+// AttributedString is the serializable document content (RFC-003 §5.6).
+// It stores plain text and a parallel run-length-encoded list of style
+// attributes. Inspired by Apple's NSAttributedString.
+//
+// Runs are contiguous and non-overlapping:
+//
+//	Run[0] covers bytes [0, Run[0].End)
+//	Run[i] covers bytes [Run[i-1].End, Run[i].End)
+//
+// The last run's End equals len(Text).
+type AttributedString struct {
+	Text  string    // complete plain text including \n for paragraphs
+	Attrs []AttrRun // run-length-encoded, ascending by End
 }
 
-// Paragraph is a block-level unit containing styled text spans.
-type Paragraph struct {
-	Spans []Span
+// AttrRun describes formatting up to a byte offset (exclusive).
+type AttrRun struct {
+	End   int       // exclusive byte offset
+	Style SpanStyle // formatting for this run
 }
 
-// Span is a styled run of text within a Paragraph.
-type Span struct {
-	Text  string
-	Style SpanStyle
-}
-
-// SpanStyle overrides text style for a Span.
+// SpanStyle overrides text style for a run.
 // Zero values inherit from the theme's Body style.
 type SpanStyle struct {
 	Bold      bool
@@ -33,104 +37,297 @@ type SpanStyle struct {
 	Size      float32    // zero = inherit from theme Body
 }
 
-// DocumentChangedMsg is sent when the user edits the document.
-// The user model should replace its Document value with this.
-type DocumentChangedMsg struct {
-	Document Document
-}
+// ── Constructors ────────────────────────────────────────────────
 
-// ── Document helpers ────────────────────────────────────────────
-
-// NewDocument creates a Document from plain text, splitting on newlines.
-func NewDocument(text string) Document {
+// NewAttributedString creates an AttributedString from plain text
+// with default (unstyled) formatting.
+func NewAttributedString(text string) AttributedString {
 	if text == "" {
-		return Document{Paragraphs: []Paragraph{{}}}
+		return AttributedString{}
 	}
-	var paragraphs []Paragraph
-	start := 0
-	for i := 0; i <= len(text); i++ {
-		if i == len(text) || text[i] == '\n' {
-			paragraphs = append(paragraphs, Paragraph{
-				Spans: []Span{{Text: text[start:i]}},
-			})
-			start = i + 1
-		}
+	return AttributedString{
+		Text:  text,
+		Attrs: []AttrRun{{End: len(text)}},
 	}
-	return Document{Paragraphs: paragraphs}
 }
 
-// PlainText returns the concatenated plain text of the document.
-func (d Document) PlainText() string {
-	if len(d.Paragraphs) == 0 {
-		return ""
+// Styled creates a single-run AttributedString with the given style.
+func Styled(text string, style SpanStyle) AttributedString {
+	if text == "" {
+		return AttributedString{}
 	}
-	var buf []byte
-	for i, p := range d.Paragraphs {
-		if i > 0 {
-			buf = append(buf, '\n')
-		}
-		for _, s := range p.Spans {
-			buf = append(buf, s.Text...)
-		}
+	return AttributedString{
+		Text:  text,
+		Attrs: []AttrRun{{End: len(text), Style: style}},
 	}
-	return string(buf)
 }
 
-// paragraphText returns the plain text of a single paragraph.
-func paragraphText(p Paragraph) string {
-	if len(p.Spans) == 1 {
-		return p.Spans[0].Text
+// Build constructs an AttributedString from styled segments,
+// similar to how one would build an NSAttributedString.
+//
+//	richtext.Build(
+//	    richtext.S("Hello ", richtext.SpanStyle{Bold: true}),
+//	    richtext.S("World"),
+//	)
+func Build(segments ...Segment) AttributedString {
+	if len(segments) == 0 {
+		return AttributedString{}
 	}
 	var buf []byte
-	for _, s := range p.Spans {
-		buf = append(buf, s.Text...)
+	var runs []AttrRun
+	for _, seg := range segments {
+		buf = append(buf, seg.Text...)
+		runs = append(runs, AttrRun{End: len(buf), Style: seg.Style})
 	}
-	return string(buf)
+	return AttributedString{Text: string(buf), Attrs: runs}
 }
 
-// paragraphLen returns the byte length of the paragraph's text.
-func paragraphLen(p Paragraph) int {
-	n := 0
-	for _, s := range p.Spans {
-		n += len(s.Text)
+// Segment is a text+style pair used by Build.
+type Segment struct {
+	Text  string
+	Style SpanStyle
+}
+
+// S creates a Segment for use with Build.
+func S(text string, style ...SpanStyle) Segment {
+	seg := Segment{Text: text}
+	if len(style) > 0 {
+		seg.Style = style[0]
 	}
-	return n
+	return seg
 }
 
-// ── Cursor & Selection ──────────────────────────────────────────
+// ── Accessors ───────────────────────────────────────────────────
 
-// CursorPosition addresses a byte offset within a paragraph.
-type CursorPosition struct {
-	Paragraph int // index into Document.Paragraphs
-	Offset    int // byte offset within the paragraph's plain text
+// PlainText returns the plain text content.
+func (as AttributedString) PlainText() string {
+	return as.Text
 }
 
-// Selection represents a text selection via anchor and focus positions.
-// When nil / zero, no selection is active.
-type Selection struct {
-	Anchor CursorPosition
-	Focus  CursorPosition
+// Len returns the byte length of the text.
+func (as AttributedString) Len() int {
+	return len(as.Text)
 }
 
-// HasSelection returns true if the selection covers a non-empty range.
-func (s Selection) HasSelection() bool {
-	return s.Anchor != s.Focus
+// IsEmpty returns true if the attributed string has no text.
+func (as AttributedString) IsEmpty() bool {
+	return len(as.Text) == 0
 }
 
-// Ordered returns (start, end) with start <= end.
-func (s Selection) Ordered() (CursorPosition, CursorPosition) {
-	if s.Anchor.Paragraph < s.Focus.Paragraph ||
-		(s.Anchor.Paragraph == s.Focus.Paragraph && s.Anchor.Offset <= s.Focus.Offset) {
-		return s.Anchor, s.Focus
+// RunAt returns the style at the given byte offset.
+// Returns the zero SpanStyle if offset is out of range.
+func (as AttributedString) RunAt(offset int) SpanStyle {
+	if offset < 0 || len(as.Attrs) == 0 {
+		return SpanStyle{}
 	}
-	return s.Focus, s.Anchor
+	for _, r := range as.Attrs {
+		if offset < r.End {
+			return r.Style
+		}
+	}
+	// Past end — return last run's style.
+	return as.Attrs[len(as.Attrs)-1].Style
 }
 
-// ── Undo / Redo ─────────────────────────────────────────────────
+// ── Mutation ────────────────────────────────────────────────────
 
-// DocumentEdit captures a reversible editing operation.
-type DocumentEdit struct {
-	Before Document
-	After  Document
-	Cursor CursorPosition // cursor position after the edit
+// InsertText inserts text at the given byte offset, inheriting the
+// style of the character before the insertion point. Returns a new
+// AttributedString (immutable semantics).
+func (as AttributedString) InsertText(offset int, text string) AttributedString {
+	if len(text) == 0 {
+		return as
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(as.Text) {
+		offset = len(as.Text)
+	}
+
+	newText := as.Text[:offset] + text + as.Text[offset:]
+	ins := len(text)
+
+	if len(as.Attrs) == 0 {
+		return AttributedString{
+			Text:  newText,
+			Attrs: []AttrRun{{End: len(newText)}},
+		}
+	}
+
+	newAttrs := make([]AttrRun, len(as.Attrs))
+	for i, r := range as.Attrs {
+		newAttrs[i] = r
+		if r.End > offset {
+			newAttrs[i].End = r.End + ins
+		} else if r.End == offset {
+			// Insertion at run boundary: extend this run.
+			newAttrs[i].End = r.End + ins
+		}
+	}
+
+	return AttributedString{Text: newText, Attrs: newAttrs}.Normalized()
+}
+
+// DeleteRange removes bytes [start, end) and adjusts attribute runs.
+// Returns a new AttributedString.
+func (as AttributedString) DeleteRange(start, end int) AttributedString {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(as.Text) {
+		end = len(as.Text)
+	}
+	if start >= end {
+		return as
+	}
+
+	deleted := end - start
+	newText := as.Text[:start] + as.Text[end:]
+
+	if len(as.Attrs) == 0 {
+		if newText == "" {
+			return AttributedString{}
+		}
+		return AttributedString{
+			Text:  newText,
+			Attrs: []AttrRun{{End: len(newText)}},
+		}
+	}
+
+	var newAttrs []AttrRun
+	for _, r := range as.Attrs {
+		nr := r
+		if r.End <= start {
+			// Run entirely before deletion — unchanged.
+			newAttrs = append(newAttrs, nr)
+		} else if r.End <= end {
+			// Run ends within or at deletion boundary.
+			nr.End = start
+			if len(newAttrs) == 0 || nr.End > 0 {
+				if nr.End > start {
+					newAttrs = append(newAttrs, nr)
+				} else if nr.End == start && (len(newAttrs) == 0 || newAttrs[len(newAttrs)-1].End < start) {
+					// Preserve run that ends exactly at start.
+					newAttrs = append(newAttrs, nr)
+				}
+			}
+		} else {
+			// Run extends past deletion.
+			nr.End = r.End - deleted
+			newAttrs = append(newAttrs, nr)
+		}
+	}
+
+	if newText == "" {
+		return AttributedString{}
+	}
+
+	// Ensure runs cover the full text.
+	if len(newAttrs) == 0 {
+		newAttrs = []AttrRun{{End: len(newText)}}
+	} else if newAttrs[len(newAttrs)-1].End < len(newText) {
+		newAttrs[len(newAttrs)-1].End = len(newText)
+	}
+
+	return AttributedString{Text: newText, Attrs: newAttrs}.Normalized()
+}
+
+// ApplyStyle sets the style for the byte range [start, end).
+// Returns a new AttributedString.
+func (as AttributedString) ApplyStyle(start, end int, style SpanStyle) AttributedString {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(as.Text) {
+		end = len(as.Text)
+	}
+	if start >= end || len(as.Attrs) == 0 {
+		return as
+	}
+
+	var newAttrs []AttrRun
+	prevEnd := 0
+
+	for _, r := range as.Attrs {
+		runStart := prevEnd
+		runEnd := r.End
+		prevEnd = runEnd
+
+		if runEnd <= start || runStart >= end {
+			// Run entirely outside the styled range — keep as-is.
+			newAttrs = append(newAttrs, r)
+			continue
+		}
+
+		// Split: part before styled range.
+		if runStart < start {
+			newAttrs = append(newAttrs, AttrRun{End: start, Style: r.Style})
+		}
+
+		// The styled part of this run.
+		styledStart := runStart
+		if styledStart < start {
+			styledStart = start
+		}
+		styledEnd := runEnd
+		if styledEnd > end {
+			styledEnd = end
+		}
+		newAttrs = append(newAttrs, AttrRun{End: styledEnd, Style: style})
+
+		// Split: part after styled range.
+		if runEnd > end {
+			newAttrs = append(newAttrs, AttrRun{End: runEnd, Style: r.Style})
+		}
+	}
+
+	return AttributedString{Text: as.Text, Attrs: newAttrs}.Normalized()
+}
+
+// Normalized merges adjacent runs with identical styles.
+func (as AttributedString) Normalized() AttributedString {
+	if len(as.Attrs) <= 1 {
+		return as
+	}
+
+	merged := make([]AttrRun, 0, len(as.Attrs))
+	for _, r := range as.Attrs {
+		if len(merged) > 0 && merged[len(merged)-1].Style == r.Style {
+			merged[len(merged)-1].End = r.End
+		} else if r.End > 0 && (len(merged) == 0 || r.End > merged[len(merged)-1].End) {
+			merged = append(merged, r)
+		}
+	}
+
+	if len(merged) == len(as.Attrs) {
+		return as
+	}
+	return AttributedString{Text: as.Text, Attrs: merged}
+}
+
+// ── Equality ────────────────────────────────────────────────────
+
+// Equal reports whether two AttributedStrings are structurally equal.
+func (as AttributedString) Equal(other AttributedString) bool {
+	if as.Text != other.Text {
+		return false
+	}
+	if len(as.Attrs) != len(other.Attrs) {
+		return false
+	}
+	for i, a := range as.Attrs {
+		b := other.Attrs[i]
+		if a.End != b.End || a.Style != b.Style {
+			return false
+		}
+	}
+	return true
+}
+
+// ── Legacy interop (DocumentChangedMsg) ─────────────────────────
+
+// DocumentChangedMsg is sent when the user edits the document.
+type DocumentChangedMsg struct {
+	Value AttributedString
 }

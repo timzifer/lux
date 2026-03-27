@@ -7,193 +7,370 @@ import (
 	"github.com/timzifer/lux/ui"
 )
 
-// ── NewDocument ─────────────────────────────────────────────────
+// ── NewAttributedString ─────────────────────────────────────────
 
-func TestNewDocument_Empty(t *testing.T) {
-	doc := NewDocument("")
-	if len(doc.Paragraphs) != 1 {
-		t.Fatalf("expected 1 paragraph, got %d", len(doc.Paragraphs))
+func TestNewAttributedString_Empty(t *testing.T) {
+	as := NewAttributedString("")
+	if !as.IsEmpty() {
+		t.Fatal("expected empty")
+	}
+	if len(as.Attrs) != 0 {
+		t.Fatalf("expected 0 attrs, got %d", len(as.Attrs))
 	}
 }
 
-func TestNewDocument_SingleLine(t *testing.T) {
-	doc := NewDocument("Hello World")
-	if len(doc.Paragraphs) != 1 {
-		t.Fatalf("expected 1 paragraph, got %d", len(doc.Paragraphs))
+func TestNewAttributedString_Plain(t *testing.T) {
+	as := NewAttributedString("Hello World")
+	if as.Text != "Hello World" {
+		t.Fatalf("unexpected text: %q", as.Text)
 	}
-	if doc.Paragraphs[0].Spans[0].Text != "Hello World" {
-		t.Fatalf("unexpected text: %q", doc.Paragraphs[0].Spans[0].Text)
+	if len(as.Attrs) != 1 {
+		t.Fatalf("expected 1 run, got %d", len(as.Attrs))
 	}
-}
-
-func TestNewDocument_MultiLine(t *testing.T) {
-	doc := NewDocument("Hello\nWorld\nFoo")
-	if len(doc.Paragraphs) != 3 {
-		t.Fatalf("expected 3 paragraphs, got %d", len(doc.Paragraphs))
-	}
-	expected := []string{"Hello", "World", "Foo"}
-	for i, want := range expected {
-		got := doc.Paragraphs[i].Spans[0].Text
-		if got != want {
-			t.Errorf("paragraph %d: want %q, got %q", i, want, got)
-		}
+	if as.Attrs[0].End != 11 {
+		t.Fatalf("expected End=11, got %d", as.Attrs[0].End)
 	}
 }
 
-func TestNewDocument_TrailingNewline(t *testing.T) {
-	doc := NewDocument("Hello\n")
-	if len(doc.Paragraphs) != 2 {
-		t.Fatalf("expected 2 paragraphs, got %d", len(doc.Paragraphs))
+func TestNewAttributedString_Multiline(t *testing.T) {
+	as := NewAttributedString("Hello\nWorld\nFoo")
+	if as.Text != "Hello\nWorld\nFoo" {
+		t.Fatalf("unexpected text: %q", as.Text)
 	}
-	if doc.Paragraphs[1].Spans[0].Text != "" {
-		t.Fatalf("expected empty trailing paragraph, got %q", doc.Paragraphs[1].Spans[0].Text)
+	if as.Attrs[0].End != len(as.Text) {
+		t.Fatalf("run should cover full text")
 	}
 }
 
 // ── PlainText ───────────────────────────────────────────────────
 
 func TestPlainText_Empty(t *testing.T) {
-	doc := Document{}
-	if got := doc.PlainText(); got != "" {
-		t.Fatalf("expected empty string, got %q", got)
-	}
-}
-
-func TestPlainText_SingleParagraph(t *testing.T) {
-	doc := Document{Paragraphs: []Paragraph{
-		{Spans: []Span{{Text: "Hello World"}}},
-	}}
-	if got := doc.PlainText(); got != "Hello World" {
-		t.Fatalf("expected %q, got %q", "Hello World", got)
-	}
-}
-
-func TestPlainText_MultiParagraph(t *testing.T) {
-	doc := Document{Paragraphs: []Paragraph{
-		{Spans: []Span{{Text: "Hello"}}},
-		{Spans: []Span{{Text: "World"}}},
-	}}
-	if got := doc.PlainText(); got != "Hello\nWorld" {
-		t.Fatalf("expected %q, got %q", "Hello\nWorld", got)
-	}
-}
-
-func TestPlainText_MultiSpan(t *testing.T) {
-	doc := Document{Paragraphs: []Paragraph{
-		{Spans: []Span{{Text: "Hello "}, {Text: "World"}}},
-	}}
-	if got := doc.PlainText(); got != "Hello World" {
-		t.Fatalf("expected %q, got %q", "Hello World", got)
+	as := AttributedString{}
+	if got := as.PlainText(); got != "" {
+		t.Fatalf("expected empty, got %q", got)
 	}
 }
 
 func TestPlainText_Roundtrip(t *testing.T) {
 	original := "Line one\nLine two\nLine three"
-	doc := NewDocument(original)
-	if got := doc.PlainText(); got != original {
+	as := NewAttributedString(original)
+	if got := as.PlainText(); got != original {
 		t.Fatalf("roundtrip failed: expected %q, got %q", original, got)
 	}
 }
 
-// ── paragraphText / paragraphLen ────────────────────────────────
+// ── Len / IsEmpty ───────────────────────────────────────────────
 
-func TestParagraphText(t *testing.T) {
-	p := Paragraph{Spans: []Span{{Text: "Hello "}, {Text: "World"}}}
-	if got := paragraphText(p); got != "Hello World" {
-		t.Fatalf("expected %q, got %q", "Hello World", got)
+func TestLen(t *testing.T) {
+	as := NewAttributedString("Hello")
+	if as.Len() != 5 {
+		t.Fatalf("expected 5, got %d", as.Len())
 	}
 }
 
-func TestParagraphLen(t *testing.T) {
-	p := Paragraph{Spans: []Span{{Text: "Hello "}, {Text: "World"}}}
-	if got := paragraphLen(p); got != 11 {
-		t.Fatalf("expected 11, got %d", got)
+func TestIsEmpty(t *testing.T) {
+	if !NewAttributedString("").IsEmpty() {
+		t.Fatal("expected empty")
+	}
+	if NewAttributedString("x").IsEmpty() {
+		t.Fatal("expected not empty")
 	}
 }
 
-func TestParagraphLen_Empty(t *testing.T) {
-	p := Paragraph{}
-	if got := paragraphLen(p); got != 0 {
-		t.Fatalf("expected 0, got %d", got)
+// ── Styled / Build / S ─────────────────────────────────────────
+
+func TestStyled(t *testing.T) {
+	as := Styled("Bold", SpanStyle{Bold: true})
+	if as.Text != "Bold" {
+		t.Fatalf("unexpected text: %q", as.Text)
+	}
+	if !as.Attrs[0].Style.Bold {
+		t.Fatal("expected Bold style")
 	}
 }
 
-// ── CursorPosition & Selection ──────────────────────────────────
-
-func TestSelection_HasSelection(t *testing.T) {
-	sel := Selection{
-		Anchor: CursorPosition{Paragraph: 0, Offset: 0},
-		Focus:  CursorPosition{Paragraph: 0, Offset: 5},
+func TestBuild(t *testing.T) {
+	as := Build(
+		S("Hello ", SpanStyle{Bold: true}),
+		S("World"),
+	)
+	if as.Text != "Hello World" {
+		t.Fatalf("unexpected text: %q", as.Text)
 	}
-	if !sel.HasSelection() {
-		t.Fatal("expected HasSelection to be true")
+	if len(as.Attrs) != 2 {
+		t.Fatalf("expected 2 runs, got %d", len(as.Attrs))
 	}
-}
-
-func TestSelection_NoSelection(t *testing.T) {
-	sel := Selection{
-		Anchor: CursorPosition{Paragraph: 0, Offset: 3},
-		Focus:  CursorPosition{Paragraph: 0, Offset: 3},
+	if as.Attrs[0].End != 6 || !as.Attrs[0].Style.Bold {
+		t.Fatalf("first run: End=%d Bold=%v", as.Attrs[0].End, as.Attrs[0].Style.Bold)
 	}
-	if sel.HasSelection() {
-		t.Fatal("expected HasSelection to be false")
+	if as.Attrs[1].End != 11 || as.Attrs[1].Style.Bold {
+		t.Fatalf("second run: End=%d Bold=%v", as.Attrs[1].End, as.Attrs[1].Style.Bold)
 	}
 }
 
-func TestSelection_Ordered_Forward(t *testing.T) {
-	sel := Selection{
-		Anchor: CursorPosition{Paragraph: 0, Offset: 2},
-		Focus:  CursorPosition{Paragraph: 1, Offset: 3},
-	}
-	start, end := sel.Ordered()
-	if start.Paragraph != 0 || start.Offset != 2 {
-		t.Fatalf("unexpected start: %+v", start)
-	}
-	if end.Paragraph != 1 || end.Offset != 3 {
-		t.Fatalf("unexpected end: %+v", end)
+func TestBuild_Empty(t *testing.T) {
+	as := Build()
+	if !as.IsEmpty() {
+		t.Fatal("expected empty from Build()")
 	}
 }
 
-func TestSelection_Ordered_Backward(t *testing.T) {
-	sel := Selection{
-		Anchor: CursorPosition{Paragraph: 1, Offset: 3},
-		Focus:  CursorPosition{Paragraph: 0, Offset: 2},
-	}
-	start, end := sel.Ordered()
-	if start.Paragraph != 0 || start.Offset != 2 {
-		t.Fatalf("unexpected start: %+v", start)
-	}
-	if end.Paragraph != 1 || end.Offset != 3 {
-		t.Fatalf("unexpected end: %+v", end)
+// ── RunAt ───────────────────────────────────────────────────────
+
+func TestRunAt_SingleRun(t *testing.T) {
+	as := Styled("Hello", SpanStyle{Italic: true})
+	s := as.RunAt(2)
+	if !s.Italic {
+		t.Fatal("expected Italic at offset 2")
 	}
 }
 
-func TestSelection_Ordered_SameParagraph_Backward(t *testing.T) {
-	sel := Selection{
-		Anchor: CursorPosition{Paragraph: 0, Offset: 5},
-		Focus:  CursorPosition{Paragraph: 0, Offset: 2},
+func TestRunAt_MultiRun(t *testing.T) {
+	as := Build(
+		S("AAA", SpanStyle{Bold: true}),
+		S("BBB", SpanStyle{Italic: true}),
+	)
+	if !as.RunAt(0).Bold {
+		t.Fatal("expected Bold at offset 0")
 	}
-	start, end := sel.Ordered()
-	if start.Offset != 2 || end.Offset != 5 {
-		t.Fatalf("unexpected order: start=%d, end=%d", start.Offset, end.Offset)
+	if !as.RunAt(2).Bold {
+		t.Fatal("expected Bold at offset 2")
+	}
+	if !as.RunAt(3).Italic {
+		t.Fatal("expected Italic at offset 3")
+	}
+	if !as.RunAt(5).Italic {
+		t.Fatal("expected Italic at offset 5")
 	}
 }
 
-// ── DocumentEdit ────────────────────────────────────────────────
+func TestRunAt_OutOfRange(t *testing.T) {
+	as := NewAttributedString("Hi")
+	s := as.RunAt(-1)
+	if s.Bold || s.Italic {
+		t.Fatal("out-of-range should return zero style")
+	}
+}
 
-func TestDocumentEdit_UndoRedo(t *testing.T) {
-	before := NewDocument("Hello")
-	after := NewDocument("Hello World")
-	edit := DocumentEdit{
-		Before: before,
-		After:  after,
-		Cursor: CursorPosition{Paragraph: 0, Offset: 11},
+func TestRunAt_PastEnd(t *testing.T) {
+	as := Styled("Hi", SpanStyle{Bold: true})
+	s := as.RunAt(100)
+	if !s.Bold {
+		t.Fatal("past-end should return last run style")
 	}
-	if edit.After.PlainText() != "Hello World" {
-		t.Fatalf("unexpected after text: %q", edit.After.PlainText())
+}
+
+// ── InsertText ──────────────────────────────────────────────────
+
+func TestInsertText_Middle(t *testing.T) {
+	as := NewAttributedString("HelloWorld")
+	as2 := as.InsertText(5, " ")
+	if as2.Text != "Hello World" {
+		t.Fatalf("unexpected text: %q", as2.Text)
 	}
-	if edit.Before.PlainText() != "Hello" {
-		t.Fatalf("unexpected before text: %q", edit.Before.PlainText())
+	if as2.Attrs[len(as2.Attrs)-1].End != 11 {
+		t.Fatal("attrs should cover full text after insert")
+	}
+}
+
+func TestInsertText_PreservesStyle(t *testing.T) {
+	as := Build(
+		S("AAA", SpanStyle{Bold: true}),
+		S("BBB", SpanStyle{Italic: true}),
+	)
+	// Insert at boundary of first run — should inherit bold.
+	as2 := as.InsertText(3, "X")
+	if as2.Text != "AAAXBBB" {
+		t.Fatalf("unexpected text: %q", as2.Text)
+	}
+	if !as2.RunAt(3).Bold {
+		t.Fatal("inserted char should inherit Bold from preceding run")
+	}
+}
+
+func TestInsertText_AtStart(t *testing.T) {
+	as := Styled("Hello", SpanStyle{Bold: true})
+	as2 := as.InsertText(0, "XX")
+	if as2.Text != "XXHello" {
+		t.Fatalf("unexpected text: %q", as2.Text)
+	}
+}
+
+func TestInsertText_AtEnd(t *testing.T) {
+	as := NewAttributedString("Hello")
+	as2 := as.InsertText(5, "!")
+	if as2.Text != "Hello!" {
+		t.Fatalf("unexpected text: %q", as2.Text)
+	}
+}
+
+func TestInsertText_Empty(t *testing.T) {
+	as := NewAttributedString("Hello")
+	as2 := as.InsertText(2, "")
+	if as2.Text != "Hello" {
+		t.Fatal("inserting empty should be no-op")
+	}
+}
+
+// ── DeleteRange ─────────────────────────────────────────────────
+
+func TestDeleteRange_Middle(t *testing.T) {
+	as := NewAttributedString("Hello World")
+	as2 := as.DeleteRange(5, 6)
+	if as2.Text != "HelloWorld" {
+		t.Fatalf("unexpected text: %q", as2.Text)
+	}
+}
+
+func TestDeleteRange_PreservesStyle(t *testing.T) {
+	as := Build(
+		S("AAA", SpanStyle{Bold: true}),
+		S("BBB", SpanStyle{Italic: true}),
+	)
+	// Delete middle of first run.
+	as2 := as.DeleteRange(1, 2)
+	if as2.Text != "AABBB" {
+		t.Fatalf("unexpected text: %q", as2.Text)
+	}
+	if !as2.RunAt(0).Bold {
+		t.Fatal("first char should still be Bold")
+	}
+	if !as2.RunAt(2).Italic {
+		t.Fatal("char at offset 2 should be Italic")
+	}
+}
+
+func TestDeleteRange_All(t *testing.T) {
+	as := NewAttributedString("Hello")
+	as2 := as.DeleteRange(0, 5)
+	if !as2.IsEmpty() {
+		t.Fatal("deleting all should yield empty")
+	}
+}
+
+func TestDeleteRange_NoOp(t *testing.T) {
+	as := NewAttributedString("Hello")
+	as2 := as.DeleteRange(3, 3)
+	if as2.Text != "Hello" {
+		t.Fatal("empty range should be no-op")
+	}
+}
+
+func TestDeleteRange_CrossRun(t *testing.T) {
+	as := Build(
+		S("AAA", SpanStyle{Bold: true}),
+		S("BBB", SpanStyle{Italic: true}),
+		S("CCC"),
+	)
+	// Delete across first two runs.
+	as2 := as.DeleteRange(2, 5)
+	if as2.Text != "AABCCC" {
+		t.Fatalf("unexpected text: %q", as2.Text)
+	}
+	if !as2.RunAt(0).Bold {
+		t.Fatal("start should be Bold")
+	}
+}
+
+// ── ApplyStyle ──────────────────────────────────────────────────
+
+func TestApplyStyle_SubRange(t *testing.T) {
+	as := NewAttributedString("Hello World")
+	as2 := as.ApplyStyle(0, 5, SpanStyle{Bold: true})
+	if !as2.RunAt(0).Bold {
+		t.Fatal("expected Bold at offset 0")
+	}
+	if as2.RunAt(5).Bold {
+		t.Fatal("offset 5 should not be Bold")
+	}
+}
+
+func TestApplyStyle_Overlapping(t *testing.T) {
+	as := Styled("Hello World", SpanStyle{Bold: true})
+	as2 := as.ApplyStyle(6, 11, SpanStyle{Italic: true})
+	if !as2.RunAt(0).Bold {
+		t.Fatal("first part should remain Bold")
+	}
+	if !as2.RunAt(6).Italic {
+		t.Fatal("second part should be Italic")
+	}
+	if as2.RunAt(6).Bold {
+		t.Fatal("ApplyStyle replaces, not merges")
+	}
+}
+
+func TestApplyStyle_Full(t *testing.T) {
+	as := NewAttributedString("Hello")
+	as2 := as.ApplyStyle(0, 5, SpanStyle{Underline: true})
+	if len(as2.Attrs) != 1 {
+		t.Fatalf("expected 1 run after full ApplyStyle, got %d", len(as2.Attrs))
+	}
+	if !as2.Attrs[0].Style.Underline {
+		t.Fatal("expected Underline")
+	}
+}
+
+// ── Normalized ──────────────────────────────────────────────────
+
+func TestNormalized_MergesAdjacentSameStyle(t *testing.T) {
+	as := AttributedString{
+		Text: "Hello World",
+		Attrs: []AttrRun{
+			{End: 5, Style: SpanStyle{Bold: true}},
+			{End: 11, Style: SpanStyle{Bold: true}},
+		},
+	}
+	n := as.Normalized()
+	if len(n.Attrs) != 1 {
+		t.Fatalf("expected 1 run after normalize, got %d", len(n.Attrs))
+	}
+	if n.Attrs[0].End != 11 {
+		t.Fatalf("expected End=11, got %d", n.Attrs[0].End)
+	}
+}
+
+func TestNormalized_KeepsDifferentStyles(t *testing.T) {
+	as := Build(
+		S("AAA", SpanStyle{Bold: true}),
+		S("BBB", SpanStyle{Italic: true}),
+	)
+	n := as.Normalized()
+	if len(n.Attrs) != 2 {
+		t.Fatalf("expected 2 runs, got %d", len(n.Attrs))
+	}
+}
+
+// ── Equal ───────────────────────────────────────────────────────
+
+func TestEqual_Identical(t *testing.T) {
+	a := NewAttributedString("Hello")
+	b := NewAttributedString("Hello")
+	if !a.Equal(b) {
+		t.Fatal("identical should be Equal")
+	}
+}
+
+func TestEqual_DifferentText(t *testing.T) {
+	a := NewAttributedString("Hello")
+	b := NewAttributedString("World")
+	if a.Equal(b) {
+		t.Fatal("different text should not be Equal")
+	}
+}
+
+func TestEqual_DifferentStyles(t *testing.T) {
+	a := Styled("Hello", SpanStyle{Bold: true})
+	b := NewAttributedString("Hello")
+	if a.Equal(b) {
+		t.Fatal("different styles should not be Equal")
+	}
+}
+
+func TestEqual_DifferentRunCount(t *testing.T) {
+	a := NewAttributedString("Hello")
+	b := Build(S("Hel", SpanStyle{Bold: true}), S("lo"))
+	if a.Equal(b) {
+		t.Fatal("different run count should not be Equal")
 	}
 }
 
@@ -223,44 +400,6 @@ func TestSpanStyle_WithColor(t *testing.T) {
 	s := SpanStyle{Color: draw.Color{R: 1, G: 0, B: 0, A: 1}}
 	if s.Color.R != 1 || s.Color.A != 1 {
 		t.Fatal("unexpected color")
-	}
-}
-
-// ── documentsEqual ──────────────────────────────────────────────
-
-func TestDocumentsEqual_Identical(t *testing.T) {
-	a := NewDocument("Hello\nWorld")
-	b := NewDocument("Hello\nWorld")
-	if !documentsEqual(a, b) {
-		t.Fatal("identical documents should be equal")
-	}
-}
-
-func TestDocumentsEqual_Different(t *testing.T) {
-	a := NewDocument("Hello")
-	b := NewDocument("World")
-	if documentsEqual(a, b) {
-		t.Fatal("different documents should not be equal")
-	}
-}
-
-func TestDocumentsEqual_DifferentParagraphCount(t *testing.T) {
-	a := NewDocument("Hello")
-	b := NewDocument("Hello\nWorld")
-	if documentsEqual(a, b) {
-		t.Fatal("documents with different paragraph counts should not be equal")
-	}
-}
-
-func TestDocumentsEqual_DifferentStyles(t *testing.T) {
-	a := Document{Paragraphs: []Paragraph{
-		{Spans: []Span{{Text: "Hello", Style: SpanStyle{Bold: true}}}},
-	}}
-	b := Document{Paragraphs: []Paragraph{
-		{Spans: []Span{{Text: "Hello", Style: SpanStyle{Bold: false}}}},
-	}}
-	if documentsEqual(a, b) {
-		t.Fatal("documents with different styles should not be equal")
 	}
 }
 
@@ -312,7 +451,7 @@ func TestClosestBoundary_Empty(t *testing.T) {
 // ── Constructor & Options ───────────────────────────────────────
 
 func TestNew_DefaultRows(t *testing.T) {
-	el := New(NewDocument("test"))
+	el := New(NewAttributedString("test"))
 	editor, ok := el.(RichTextEditor)
 	if !ok {
 		t.Fatal("expected RichTextEditor")
@@ -324,11 +463,11 @@ func TestNew_DefaultRows(t *testing.T) {
 
 func TestNew_WithOptions(t *testing.T) {
 	called := false
-	el := New(NewDocument("test"),
+	el := New(NewAttributedString("test"),
 		WithRows(8),
 		WithReadOnly(),
 		WithPlaceholder("Type here..."),
-		WithOnChange(func(Document) { called = true }),
+		WithOnChange(func(AttributedString) { called = true }),
 		WithToolbar(&EditorToolbar{Bold: true, Italic: true}),
 	)
 	editor, ok := el.(RichTextEditor)
@@ -350,8 +489,7 @@ func TestNew_WithOptions(t *testing.T) {
 	if editor.OnChange == nil {
 		t.Fatal("expected OnChange to be set")
 	}
-	// Call the OnChange to verify it works.
-	editor.OnChange(NewDocument("new"))
+	editor.OnChange(NewAttributedString("new"))
 	if !called {
 		t.Fatal("OnChange was not called")
 	}
@@ -360,8 +498,8 @@ func TestNew_WithOptions(t *testing.T) {
 // ── TreeEqual ───────────────────────────────────────────────────
 
 func TestTreeEqual_Same(t *testing.T) {
-	a := New(NewDocument("Hello"))
-	b := New(NewDocument("Hello"))
+	a := New(NewAttributedString("Hello"))
+	b := New(NewAttributedString("Hello"))
 	ea := a.(RichTextEditor)
 	if !ea.TreeEqual(b) {
 		t.Fatal("same editors should be TreeEqual")
@@ -369,8 +507,8 @@ func TestTreeEqual_Same(t *testing.T) {
 }
 
 func TestTreeEqual_DifferentDoc(t *testing.T) {
-	a := New(NewDocument("Hello"))
-	b := New(NewDocument("World"))
+	a := New(NewAttributedString("Hello"))
+	b := New(NewAttributedString("World"))
 	ea := a.(RichTextEditor)
 	if ea.TreeEqual(b) {
 		t.Fatal("different docs should not be TreeEqual")
@@ -378,8 +516,8 @@ func TestTreeEqual_DifferentDoc(t *testing.T) {
 }
 
 func TestTreeEqual_DifferentReadOnly(t *testing.T) {
-	a := New(NewDocument("Hello"))
-	b := New(NewDocument("Hello"), WithReadOnly())
+	a := New(NewAttributedString("Hello"))
+	b := New(NewAttributedString("Hello"), WithReadOnly())
 	ea := a.(RichTextEditor)
 	if ea.TreeEqual(b) {
 		t.Fatal("different ReadOnly should not be TreeEqual")
@@ -387,8 +525,8 @@ func TestTreeEqual_DifferentReadOnly(t *testing.T) {
 }
 
 func TestTreeEqual_DifferentRows(t *testing.T) {
-	a := New(NewDocument("Hello"), WithRows(4))
-	b := New(NewDocument("Hello"), WithRows(8))
+	a := New(NewAttributedString("Hello"), WithRows(4))
+	b := New(NewAttributedString("Hello"), WithRows(8))
 	ea := a.(RichTextEditor)
 	if ea.TreeEqual(b) {
 		t.Fatal("different Rows should not be TreeEqual")
@@ -398,33 +536,41 @@ func TestTreeEqual_DifferentRows(t *testing.T) {
 // ── ResolveChildren ─────────────────────────────────────────────
 
 func TestResolveChildren_IsLeaf(t *testing.T) {
-	el := New(NewDocument("Hello"))
+	el := New(NewAttributedString("Hello"))
 	editor := el.(RichTextEditor)
 	resolved := editor.ResolveChildren(func(e ui.Element, i int) ui.Element {
 		t.Fatal("should not be called on leaf")
 		return e
 	})
-	if resolved.(RichTextEditor).Value.PlainText() != editor.Value.PlainText() {
+	if resolved.(RichTextEditor).Value.Text != editor.Value.Text {
 		t.Fatal("leaf should return self")
 	}
 }
 
 // ── Unicode Content ─────────────────────────────────────────────
 
-func TestNewDocument_Unicode(t *testing.T) {
-	doc := NewDocument("Hëllo Wörld 🌍")
-	if got := doc.PlainText(); got != "Hëllo Wörld 🌍" {
+func TestNewAttributedString_Unicode(t *testing.T) {
+	as := NewAttributedString("Hëllo Wörld 🌍")
+	if got := as.PlainText(); got != "Hëllo Wörld 🌍" {
 		t.Fatalf("unicode roundtrip failed: %q", got)
 	}
 }
 
-func TestNewDocument_MultilineUnicode(t *testing.T) {
+func TestNewAttributedString_MultilineUnicode(t *testing.T) {
 	text := "日本語\nالعربية\nDeutsch"
-	doc := NewDocument(text)
-	if len(doc.Paragraphs) != 3 {
-		t.Fatalf("expected 3 paragraphs, got %d", len(doc.Paragraphs))
-	}
-	if got := doc.PlainText(); got != text {
+	as := NewAttributedString(text)
+	if got := as.PlainText(); got != text {
 		t.Fatalf("roundtrip failed: %q", got)
+	}
+}
+
+// ── DocumentChangedMsg ──────────────────────────────────────────
+
+func TestDocumentChangedMsg(t *testing.T) {
+	msg := DocumentChangedMsg{
+		Value: NewAttributedString("Hello World"),
+	}
+	if msg.Value.PlainText() != "Hello World" {
+		t.Fatal("unexpected document text")
 	}
 }

@@ -6,6 +6,11 @@
 // heavier than core widgets and its dependencies (clipboard, IME, undo stack)
 // should not burden the framework core.
 //
-// The Document type is the serializable user-model value; the editor's
-// internal state (cursor, selection, undo stack) lives in WidgetState.
+// The document model is based on AttributedString — a plain text string
+// paired with run-length-encoded style attributes (inspired by Apple's
+// NSAttributedString). This design aligns naturally with byte-offset-based
+// InputState and enables lossless style preservation across edits.
+//
+// The editor's internal state (cursor, selection, undo stack) lives in
+// the framework's WidgetState; the AttributedString is user-model owned.
 package richtext

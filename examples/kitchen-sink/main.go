@@ -347,10 +347,10 @@ type Model struct {
 	TextAreaValue  string
 	TextAreaScroll *ui.ScrollState
 	// RichTextEditor
-	RichEditorDoc       richtext.Document
+	RichEditorDoc       richtext.AttributedString
 	RichEditorScroll    *ui.ScrollState
 	RichEditorReadOnly  bool
-	RichEditorDoc2      richtext.Document
+	RichEditorDoc2      richtext.AttributedString
 	RichEditorScroll2   *ui.ScrollState
 	// Pickers & Numeric
 	DateVal      time.Time
@@ -436,9 +436,9 @@ type SetImageOpacityMsg struct{ Value float32 }
 type SetTextAreaMsg struct{ Value string }
 
 // RichTextEditor messages
-type SetRichEditorDocMsg struct{ Doc richtext.Document }
+type SetRichEditorDocMsg struct{ Doc richtext.AttributedString }
 type ToggleRichEditorReadOnlyMsg struct{}
-type SetRichEditorDoc2Msg struct{ Doc richtext.Document }
+type SetRichEditorDoc2Msg struct{ Doc richtext.AttributedString }
 
 type SetValEmailMsg struct{ Value string }
 type SetValPasswordMsg struct{ Value string }
@@ -1650,15 +1650,15 @@ func richTextEditorSection(m Model) ui.Element {
 		display.Text("Editable rich text editor:"),
 		display.Spacer(4),
 		richtext.New(m.RichEditorDoc,
-			richtext.WithOnChange(func(doc richtext.Document) { app.Send(SetRichEditorDocMsg{doc}) }),
+			richtext.WithOnChange(func(as richtext.AttributedString) { app.Send(SetRichEditorDocMsg{as}) }),
 			richtext.WithFocus(app.Focus()),
 			richtext.WithRows(5),
 			richtext.WithScroll(m.RichEditorScroll),
 			richtext.WithPlaceholder("Start typing..."),
 		),
 		display.Spacer(4),
-		display.Text(fmt.Sprintf("Paragraphs: %d | Plain text length: %d",
-			len(m.RichEditorDoc.Paragraphs), len(m.RichEditorDoc.PlainText()))),
+		display.Text(fmt.Sprintf("Runs: %d | Plain text length: %d",
+			len(m.RichEditorDoc.Attrs), m.RichEditorDoc.Len())),
 
 		display.Spacer(16),
 
@@ -1682,7 +1682,7 @@ func richTextEditorSection(m Model) ui.Element {
 			if m.RichEditorReadOnly {
 				opts = append(opts, richtext.WithReadOnly())
 			} else {
-				opts = append(opts, richtext.WithOnChange(func(doc richtext.Document) { app.Send(SetRichEditorDoc2Msg{doc}) }))
+				opts = append(opts, richtext.WithOnChange(func(as richtext.AttributedString) { app.Send(SetRichEditorDoc2Msg{as}) }))
 				opts = append(opts, richtext.WithFocus(app.Focus()))
 			}
 			return richtext.New(m.RichEditorDoc2, opts...)
@@ -1693,21 +1693,16 @@ func richTextEditorSection(m Model) ui.Element {
 		// ── Styled content demo ────────────────────────────────
 		display.Text("Pre-styled document (bold, italic, color):"),
 		display.Spacer(4),
-		richtext.New(richtext.Document{Paragraphs: []richtext.Paragraph{
-			{Spans: []richtext.Span{
-				{Text: "Bold text ", Style: richtext.SpanStyle{Bold: true}},
-				{Text: "then italic ", Style: richtext.SpanStyle{Italic: true}},
-				{Text: "then colored", Style: richtext.SpanStyle{Color: draw.Hex("#ef4444")}},
-				{Text: " and "},
-				{Text: "combined", Style: richtext.SpanStyle{Bold: true, Italic: true, Color: draw.Hex("#8b5cf6")}},
-				{Text: "."},
-			}},
-			{Spans: []richtext.Span{
-				{Text: "Second paragraph with "},
-				{Text: "blue text", Style: richtext.SpanStyle{Color: draw.Hex("#3b82f6")}},
-				{Text: " for variety."},
-			}},
-		}},
+		richtext.New(richtext.Build(
+			richtext.S("Bold text ", richtext.SpanStyle{Bold: true}),
+			richtext.S("then italic ", richtext.SpanStyle{Italic: true}),
+			richtext.S("then colored", richtext.SpanStyle{Color: draw.Hex("#ef4444")}),
+			richtext.S(" and "),
+			richtext.S("combined", richtext.SpanStyle{Bold: true, Italic: true, Color: draw.Hex("#8b5cf6")}),
+			richtext.S(".\nSecond paragraph with "),
+			richtext.S("blue text", richtext.SpanStyle{Color: draw.Hex("#3b82f6")}),
+			richtext.S(" for variety."),
+		),
 			richtext.WithReadOnly(),
 			richtext.WithRows(3),
 		),
@@ -1717,10 +1712,10 @@ func richTextEditorSection(m Model) ui.Element {
 		// ── Empty editor with placeholder ──────────────────────
 		display.Text("Empty editor with placeholder:"),
 		display.Spacer(4),
-		richtext.New(richtext.Document{Paragraphs: []richtext.Paragraph{{}}},
+		richtext.New(richtext.NewAttributedString(""),
 			richtext.WithPlaceholder("Enter your thoughts here..."),
 			richtext.WithRows(2),
-			richtext.WithOnChange(func(doc richtext.Document) {}),
+			richtext.WithOnChange(func(richtext.AttributedString) {}),
 			richtext.WithFocus(app.Focus()),
 		),
 
@@ -1729,7 +1724,7 @@ func richTextEditorSection(m Model) ui.Element {
 		// ── Document from plain text ───────────────────────────
 		display.Text("Document created from plain text:"),
 		display.Spacer(4),
-		richtext.New(richtext.NewDocument("Line 1: The quick brown fox\nLine 2: jumps over\nLine 3: the lazy dog"),
+		richtext.New(richtext.NewAttributedString("Line 1: The quick brown fox\nLine 2: jumps over\nLine 3: the lazy dog"),
 			richtext.WithReadOnly(),
 			richtext.WithRows(3),
 		),
@@ -4163,28 +4158,18 @@ func main() {
 		ImageOpacity:        1.0,
 		TextAreaScroll:      &ui.ScrollState{},
 		// RichTextEditor defaults
-		RichEditorDoc: richtext.Document{Paragraphs: []richtext.Paragraph{
-			{Spans: []richtext.Span{
-				{Text: "Hello ", Style: richtext.SpanStyle{Bold: true}},
-				{Text: "Rich World!"},
-			}},
-			{Spans: []richtext.Span{
-				{Text: "This is a "},
-				{Text: "fully editable", Style: richtext.SpanStyle{Italic: true}},
-				{Text: " rich text editor."},
-			}},
-			{Spans: []richtext.Span{
-				{Text: "Try typing, selecting, and using undo/redo."},
-			}},
-		}},
+		RichEditorDoc: richtext.Build(
+			richtext.S("Hello ", richtext.SpanStyle{Bold: true}),
+			richtext.S("Rich World!\nThis is a "),
+			richtext.S("fully editable", richtext.SpanStyle{Italic: true}),
+			richtext.S(" rich text editor.\nTry typing, selecting, and using undo/redo."),
+		),
 		RichEditorScroll:  &ui.ScrollState{},
-		RichEditorDoc2: richtext.Document{Paragraphs: []richtext.Paragraph{
-			{Spans: []richtext.Span{
-				{Text: "Read-only content with "},
-				{Text: "styled spans", Style: richtext.SpanStyle{Bold: true, Color: draw.Hex("#3b82f6")}},
-				{Text: "."},
-			}},
-		}},
+		RichEditorDoc2: richtext.Build(
+			richtext.S("Read-only content with "),
+			richtext.S("styled spans", richtext.SpanStyle{Bold: true, Color: draw.Hex("#3b82f6")}),
+			richtext.S("."),
+		),
 		RichEditorScroll2: &ui.ScrollState{},
 		// Pickers & Numeric defaults
 		DateVal:    time.Now(),

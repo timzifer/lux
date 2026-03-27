@@ -9,89 +9,94 @@ import (
 // ── makeOnChange ────────────────────────────────────────────────
 
 func TestMakeOnChange_PreservesStyles(t *testing.T) {
-	var received Document
+	var received AttributedString
 	editor := RichTextEditor{
-		Value: Document{Paragraphs: []Paragraph{
-			{Spans: []Span{{Text: "Hello", Style: SpanStyle{Bold: true}}}},
-			{Spans: []Span{{Text: "World", Style: SpanStyle{Italic: true}}}},
-		}},
-		OnChange: func(doc Document) { received = doc },
+		Value: Build(
+			S("Hello\n", SpanStyle{Bold: true}),
+			S("World", SpanStyle{Italic: true}),
+		),
+		OnChange: func(as AttributedString) { received = as },
 	}
 	fn := editor.makeOnChange()
 	fn("Hello!\nWorld")
 
-	if len(received.Paragraphs) != 2 {
-		t.Fatalf("expected 2 paragraphs, got %d", len(received.Paragraphs))
+	if received.Text != "Hello!\nWorld" {
+		t.Fatalf("unexpected text: %q", received.Text)
 	}
-	// First paragraph should keep Bold style.
-	if !received.Paragraphs[0].Spans[0].Style.Bold {
-		t.Error("expected first paragraph to preserve Bold style")
+	// "Hello" part should still be Bold.
+	if !received.RunAt(0).Bold {
+		t.Error("expected Bold to be preserved at start")
 	}
-	// Second paragraph should keep Italic style.
-	if !received.Paragraphs[1].Spans[0].Style.Italic {
-		t.Error("expected second paragraph to preserve Italic style")
+	// "World" part should still be Italic.
+	if !received.RunAt(received.Len() - 1).Italic {
+		t.Error("expected Italic to be preserved at end")
 	}
 }
 
 func TestMakeOnChange_MultiSpanPreservesStyles(t *testing.T) {
-	var received Document
+	var received AttributedString
 	editor := RichTextEditor{
-		Value: Document{Paragraphs: []Paragraph{
-			{Spans: []Span{
-				{Text: "Hello ", Style: SpanStyle{Bold: true}},
-				{Text: "World", Style: SpanStyle{Italic: true}},
-			}},
-		}},
-		OnChange: func(doc Document) { received = doc },
+		Value: Build(
+			S("Hello ", SpanStyle{Bold: true}),
+			S("World", SpanStyle{Italic: true}),
+		),
+		OnChange: func(as AttributedString) { received = as },
 	}
 	fn := editor.makeOnChange()
 	// Type "beautiful " inside the bold span (after "Hello ").
 	fn("Hello beautiful World")
 
-	if received.PlainText() != "Hello beautiful World" {
-		t.Fatalf("unexpected text: %q", received.PlainText())
+	if received.Text != "Hello beautiful World" {
+		t.Fatalf("unexpected text: %q", received.Text)
 	}
-	// "Hello beautiful " should be bold, "World" should be italic.
-	spans := received.Paragraphs[0].Spans
-	if len(spans) != 2 {
-		t.Fatalf("expected 2 spans, got %d: %+v", len(spans), spans)
+	// "Hello beautiful " should be bold (inserted text inherits preceding style).
+	if !received.RunAt(0).Bold {
+		t.Error("expected Bold at start")
 	}
-	if spans[0].Text != "Hello beautiful " || !spans[0].Style.Bold {
-		t.Errorf("first span: got %q bold=%v, want %q bold=true",
-			spans[0].Text, spans[0].Style.Bold, "Hello beautiful ")
+	if !received.RunAt(10).Bold {
+		t.Error("expected Bold at 'beautiful' offset")
 	}
-	if spans[1].Text != "World" || !spans[1].Style.Italic {
-		t.Errorf("second span: got %q italic=%v, want %q italic=true",
-			spans[1].Text, spans[1].Style.Italic, "World")
+	// "World" should still be italic.
+	if !received.RunAt(received.Len() - 1).Italic {
+		t.Error("expected Italic at end")
 	}
 }
 
 func TestMakeOnChange_NewParagraphs(t *testing.T) {
-	var received Document
+	var received AttributedString
 	editor := RichTextEditor{
-		Value: Document{Paragraphs: []Paragraph{
-			{Spans: []Span{{Text: "Hello"}}},
-		}},
-		OnChange: func(doc Document) { received = doc },
+		Value:    NewAttributedString("Hello"),
+		OnChange: func(as AttributedString) { received = as },
 	}
 	fn := editor.makeOnChange()
 	fn("Hello\nNew line\nAnother")
 
-	if len(received.Paragraphs) != 3 {
-		t.Fatalf("expected 3 paragraphs, got %d", len(received.Paragraphs))
-	}
-	if received.PlainText() != "Hello\nNew line\nAnother" {
-		t.Fatalf("unexpected text: %q", received.PlainText())
+	if received.Text != "Hello\nNew line\nAnother" {
+		t.Fatalf("unexpected text: %q", received.Text)
 	}
 }
 
 func TestMakeOnChange_NilOnChange(t *testing.T) {
 	editor := RichTextEditor{
-		Value: NewDocument("Hello"),
+		Value: NewAttributedString("Hello"),
 	}
 	fn := editor.makeOnChange()
 	if fn != nil {
 		t.Fatal("expected nil when OnChange is nil")
+	}
+}
+
+func TestMakeOnChange_NoChange(t *testing.T) {
+	callCount := 0
+	orig := Styled("Hello", SpanStyle{Bold: true})
+	editor := RichTextEditor{
+		Value:    orig,
+		OnChange: func(as AttributedString) { callCount++ },
+	}
+	fn := editor.makeOnChange()
+	fn("Hello") // same text
+	if callCount != 1 {
+		t.Fatalf("expected 1 call, got %d", callCount)
 	}
 }
 
@@ -118,54 +123,70 @@ func TestEditorToolbar(t *testing.T) {
 	}
 }
 
-// ── Complex Document Scenarios ──────────────────────────────────
+// ── Complex AttributedString Scenarios ──────────────────────────
 
-func TestDocument_MultiSpanParagraphs(t *testing.T) {
-	doc := Document{Paragraphs: []Paragraph{
-		{Spans: []Span{
-			{Text: "Hello ", Style: SpanStyle{Bold: true}},
-			{Text: "beautiful ", Style: SpanStyle{Italic: true}},
-			{Text: "World", Style: SpanStyle{Color: draw.Color{R: 1, A: 1}}},
-		}},
-		{Spans: []Span{
-			{Text: "Second paragraph"},
-		}},
-	}}
+func TestAttributedString_MultipleStyles(t *testing.T) {
+	as := Build(
+		S("Hello ", SpanStyle{Bold: true}),
+		S("beautiful ", SpanStyle{Italic: true}),
+		S("World", SpanStyle{Color: draw.Color{R: 1, A: 1}}),
+	)
 
-	if got := doc.PlainText(); got != "Hello beautiful World\nSecond paragraph" {
-		t.Fatalf("unexpected plain text: %q", got)
+	if as.Text != "Hello beautiful World" {
+		t.Fatalf("unexpected text: %q", as.Text)
 	}
-
-	if len(doc.Paragraphs[0].Spans) != 3 {
-		t.Fatalf("expected 3 spans in first paragraph")
+	if len(as.Attrs) != 3 {
+		t.Fatalf("expected 3 runs, got %d", len(as.Attrs))
 	}
 }
 
-func TestDocument_EmptyParagraphs(t *testing.T) {
-	doc := Document{Paragraphs: []Paragraph{
-		{Spans: []Span{{Text: "First"}}},
-		{}, // empty paragraph (no spans)
-		{Spans: []Span{{Text: "Third"}}},
-	}}
-	if got := doc.PlainText(); got != "First\n\nThird" {
-		t.Fatalf("expected %q, got %q", "First\n\nThird", got)
+func TestAttributedString_InsertDeleteRoundtrip(t *testing.T) {
+	as := Build(
+		S("AAA", SpanStyle{Bold: true}),
+		S("BBB", SpanStyle{Italic: true}),
+	)
+	// Insert then delete should restore original.
+	as2 := as.InsertText(3, "XXX")
+	as3 := as2.DeleteRange(3, 6)
+	if as3.Text != "AAABBB" {
+		t.Fatalf("roundtrip failed: %q", as3.Text)
 	}
 }
 
-func TestParagraphText_SingleSpan(t *testing.T) {
-	p := Paragraph{Spans: []Span{{Text: "Hello"}}}
-	if got := paragraphText(p); got != "Hello" {
-		t.Fatalf("expected %q, got %q", "Hello", got)
+// ── commonPrefixLen / commonSuffixLen ───────────────────────────
+
+func TestCommonPrefixLen(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"Hello", "Hello World", 5},
+		{"abc", "xyz", 0},
+		{"", "Hello", 0},
+		{"same", "same", 4},
+	}
+	for _, tt := range tests {
+		got := commonPrefixLen(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("commonPrefixLen(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
 	}
 }
 
-// ── DocumentChangedMsg ──────────────────────────────────────────
-
-func TestDocumentChangedMsg(t *testing.T) {
-	msg := DocumentChangedMsg{
-		Document: NewDocument("Hello World"),
+func TestCommonSuffixLen(t *testing.T) {
+	tests := []struct {
+		a, b string
+		pfx  int
+		want int
+	}{
+		{"Hello", "Hello World", 5, 0},
+		{"Hello World", "Hello Brave World", 6, 6},
+		{"abc", "abc", 3, 0},
 	}
-	if msg.Document.PlainText() != "Hello World" {
-		t.Fatal("unexpected document text")
+	for _, tt := range tests {
+		got := commonSuffixLen(tt.a, tt.b, tt.pfx)
+		if got != tt.want {
+			t.Errorf("commonSuffixLen(%q, %q, %d) = %d, want %d", tt.a, tt.b, tt.pfx, got, tt.want)
+		}
 	}
 }

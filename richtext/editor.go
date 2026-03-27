@@ -21,16 +21,16 @@ const (
 // ── RichTextEditor ──────────────────────────────────────────────
 
 // RichTextEditor is an editable rich-text widget (RFC-003 §5.6).
-// The Document lives in the user model; internal state (cursor,
-// selection, undo/redo) lives in the framework's WidgetState.
+// The AttributedString lives in the user model; internal state
+// (cursor, selection, undo/redo) lives in the framework's WidgetState.
 type RichTextEditor struct {
 	ui.BaseElement
 
-	// Value is the current document content (user-model owned).
-	Value Document
+	// Value is the current content (user-model owned).
+	Value AttributedString
 
-	// OnChange is called when the user edits the document.
-	OnChange func(Document)
+	// OnChange is called when the user edits the content.
+	OnChange func(AttributedString)
 
 	// ReadOnly accepts no input but allows selection and copy.
 	ReadOnly bool
@@ -44,7 +44,7 @@ type RichTextEditor struct {
 	// Scroll links the editor to a ScrollState for internal scrolling.
 	Scroll *ui.ScrollState
 
-	// Placeholder is shown when the document is empty.
+	// Placeholder is shown when the content is empty.
 	Placeholder string
 
 	// Toolbar is an optional formatting toolbar configuration.
@@ -61,8 +61,8 @@ type EditorToolbar struct {
 // Option configures a RichTextEditor.
 type Option func(*RichTextEditor)
 
-// WithOnChange sets the document change callback.
-func WithOnChange(fn func(Document)) Option {
+// WithOnChange sets the change callback.
+func WithOnChange(fn func(AttributedString)) Option {
 	return func(e *RichTextEditor) { e.OnChange = fn }
 }
 
@@ -96,8 +96,8 @@ func WithToolbar(tb *EditorToolbar) Option {
 	return func(e *RichTextEditor) { e.Toolbar = tb }
 }
 
-// New creates a RichTextEditor with the given document and options.
-func New(doc Document, opts ...Option) ui.Element {
+// New creates a RichTextEditor with the given content and options.
+func New(doc AttributedString, opts ...Option) ui.Element {
 	e := RichTextEditor{
 		Value: doc,
 		Rows:  editorMinRows,
@@ -157,8 +157,8 @@ func (n RichTextEditor) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		scrollOff = n.Scroll.Offset
 	}
 
-	// Flatten document to plain text for cursor/selection operations.
-	plainText := n.Value.PlainText()
+	// Plain text and lines for layout (direct from AttributedString).
+	plainText := n.Value.Text
 	lines := text.Lines(plainText)
 
 	// Custom theme DrawFunc dispatch.
@@ -382,13 +382,13 @@ func (n RichTextEditor) drawDefault(ctx *ui.LayoutContext, area ui.Bounds, w, h 
 			contentX, contentY, contentH, scrollOff, focus.Input)
 	}
 
-	// Draw rich text content with per-span styling.
+	// Draw rich text content with per-run styling.
 	textColor := tokens.Colors.Text.Primary
 	if n.ReadOnly {
 		textColor = tokens.Colors.Text.Disabled
 	}
-	if len(n.Value.Paragraphs) > 0 && plainText != "" {
-		n.drawRichContent(canvas, &tokens, lines, lineH, bodyStyle, textColor,
+	if len(plainText) > 0 {
+		n.drawRichContent(canvas, plainText, lines, lineH, bodyStyle, textColor,
 			contentX, contentY, contentH, scrollOff)
 	} else if n.Placeholder != "" {
 		canvas.DrawText(n.Placeholder, draw.Pt(contentX, contentY), bodyStyle, tokens.Colors.Text.Disabled)
@@ -457,37 +457,14 @@ func (n RichTextEditor) drawSelection(canvas draw.Canvas, tokens *theme.TokenSet
 	}
 }
 
-// drawRichContent renders paragraphs with per-span styling.
-func (n RichTextEditor) drawRichContent(canvas draw.Canvas, tokens *theme.TokenSet,
-	lines []text.LineSpan, lineH float32, bodyStyle draw.TextStyle, defaultColor draw.Color,
+// drawRichContent renders text with per-run styling directly from
+// the AttributedString's Attrs — no intermediate conversion needed.
+func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
+	plainText string, lines []text.LineSpan, lineH float32,
+	bodyStyle draw.TextStyle, defaultColor draw.Color,
 	contentX, contentY, contentH, scrollOff float32) {
 
-	// Build a flat list of styled runs from paragraphs, accounting for \n separators.
-	type styledRun struct {
-		start int // byte offset in plain text
-		end   int
-		style SpanStyle
-	}
-	var runs []styledRun
-	offset := 0
-	for i, p := range n.Value.Paragraphs {
-		if i > 0 {
-			offset++ // \n separator
-		}
-		for _, s := range p.Spans {
-			runs = append(runs, styledRun{
-				start: offset,
-				end:   offset + len(s.Text),
-				style: s.Style,
-			})
-			offset += len(s.Text)
-		}
-		if len(p.Spans) == 0 {
-			// Empty paragraph — no runs to add.
-		}
-	}
-
-	plainText := n.Value.PlainText()
+	attrs := n.Value.Attrs
 
 	for i, span := range lines {
 		y := contentY + lineH*float32(i) - scrollOff
@@ -495,15 +472,27 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas, tokens *theme.TokenS
 			continue // skip lines outside viewport
 		}
 
-		// Find styled runs that overlap this line.
+		if len(attrs) == 0 {
+			// No attrs — draw with body style.
+			lineText := plainText[span.Start:span.End]
+			canvas.DrawText(lineText, draw.Pt(contentX, y), bodyStyle, defaultColor)
+			continue
+		}
+
+		// Walk attribute runs that overlap this line.
 		x := contentX
-		for _, run := range runs {
-			// Compute overlap of this run with the line.
-			rStart := run.start
+		prevEnd := 0
+		for _, run := range attrs {
+			runStart := prevEnd
+			runEnd := run.End
+			prevEnd = runEnd
+
+			// Clip to line bounds.
+			rStart := runStart
 			if rStart < span.Start {
 				rStart = span.Start
 			}
-			rEnd := run.end
+			rEnd := runEnd
 			if rEnd > span.End {
 				rEnd = span.End
 			}
@@ -516,17 +505,17 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas, tokens *theme.TokenS
 			// Resolve style.
 			style := bodyStyle
 			color := defaultColor
-			if run.style.Bold {
+			if run.Style.Bold {
 				style.Weight = draw.FontWeightBold
 			}
 			// Note: Italic is tracked in SpanStyle but draw.TextStyle
-			// does not yet support italic; style will be applied when
-			// the text stack gains italic support.
-			if run.style.Size > 0 {
-				style.Size = run.style.Size
+			// does not yet support italic; will be applied when the
+			// text stack gains italic support.
+			if run.Style.Size > 0 {
+				style.Size = run.Style.Size
 			}
-			if run.style.Color.A > 0 {
-				color = run.style.Color
+			if run.Style.Color.A > 0 {
+				color = run.Style.Color
 			}
 
 			// Measure prefix to get correct X position.
@@ -542,17 +531,13 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas, tokens *theme.TokenS
 			m := canvas.MeasureText(runText, style)
 			x += m.Width
 		}
-
-		// If no runs covered this line (e.g. all default), draw with body style.
-		if len(runs) == 0 {
-			lineText := plainText[span.Start:span.End]
-			canvas.DrawText(lineText, draw.Pt(contentX, y), bodyStyle, defaultColor)
-		}
 	}
 }
 
-// makeOnChange wraps the Document-based OnChange into a string-based callback
-// compatible with InputState.
+// makeOnChange wraps the AttributedString-based OnChange into a
+// string-based callback compatible with InputState. The key advantage
+// of AttributedString: we diff the text edit and use InsertText /
+// DeleteRange to update runs — no information is lost.
 func (n RichTextEditor) makeOnChange() func(string) {
 	onChange := n.OnChange
 	if onChange == nil {
@@ -560,104 +545,30 @@ func (n RichTextEditor) makeOnChange() func(string) {
 	}
 	return func(newText string) {
 		orig := n.Value
-		oldText := orig.PlainText()
+		oldText := orig.Text
 		if oldText == newText {
 			onChange(orig)
 			return
 		}
-		onChange(applyTextEdit(orig, oldText, newText))
-	}
-}
 
-// applyTextEdit applies a plain-text edit to a styled Document, preserving
-// span styles. It diffs oldText vs newText to locate the changed region,
-// then splices the edit into the original span structure.
-func applyTextEdit(orig Document, oldText, newText string) Document {
-	if len(orig.Paragraphs) == 0 {
-		return NewDocument(newText)
-	}
+		// Find edit region via common prefix/suffix.
+		pfx := commonPrefixLen(oldText, newText)
+		sfx := commonSuffixLen(oldText, newText, pfx)
+		delStart := pfx
+		delEnd := len(oldText) - sfx
+		ins := newText[pfx : len(newText)-sfx]
 
-	// Find edit region via common prefix/suffix.
-	pfx := commonPrefixLen(oldText, newText)
-	sfx := commonSuffixLen(oldText, newText, pfx)
-	delEnd := len(oldText) - sfx
-	ins := newText[pfx : len(newText)-sfx]
-
-	// Build a per-byte style map for oldText.
-	styles := make([]SpanStyle, len(oldText))
-	off := 0
-	for i, p := range orig.Paragraphs {
-		if i > 0 {
-			// Newline separator inherits style from previous character.
-			if off > 0 {
-				styles[off] = styles[off-1]
-			}
-			off++
+		// Apply the edit: delete then insert.
+		result := orig
+		if delEnd > delStart {
+			result = result.DeleteRange(delStart, delEnd)
 		}
-		for _, s := range p.Spans {
-			for j := 0; j < len(s.Text); j++ {
-				if off+j < len(styles) {
-					styles[off+j] = s.Style
-				}
-			}
-			off += len(s.Text)
+		if len(ins) > 0 {
+			result = result.InsertText(delStart, ins)
 		}
-	}
 
-	// Determine style for inserted text: inherit from the byte before the cursor.
-	insStyle := SpanStyle{}
-	if pfx > 0 {
-		insStyle = styles[pfx-1]
-	} else if len(styles) > 0 {
-		insStyle = styles[0]
+		onChange(result)
 	}
-
-	// Build the new per-byte style map.
-	newStyles := make([]SpanStyle, len(newText))
-	copy(newStyles[:pfx], styles[:pfx])
-	for i := 0; i < len(ins); i++ {
-		newStyles[pfx+i] = insStyle
-	}
-	if sfx > 0 {
-		copy(newStyles[len(newText)-sfx:], styles[delEnd:])
-	}
-
-	return buildStyledDocument(newText, newStyles)
-}
-
-// buildStyledDocument creates a Document from text and a parallel style array,
-// grouping consecutive bytes with the same SpanStyle into Spans.
-func buildStyledDocument(text string, styles []SpanStyle) Document {
-	if text == "" {
-		return Document{Paragraphs: []Paragraph{{}}}
-	}
-	var paragraphs []Paragraph
-	start := 0
-	for i := 0; i <= len(text); i++ {
-		if i == len(text) || text[i] == '\n' {
-			paraText := text[start:i]
-			paraStyles := styles[start:i]
-			var spans []Span
-			if len(paraText) > 0 {
-				runStart := 0
-				for j := 1; j <= len(paraText); j++ {
-					if j == len(paraText) || paraStyles[j] != paraStyles[runStart] {
-						spans = append(spans, Span{
-							Text:  paraText[runStart:j],
-							Style: paraStyles[runStart],
-						})
-						runStart = j
-					}
-				}
-			}
-			if len(spans) == 0 {
-				spans = []Span{{Text: ""}}
-			}
-			paragraphs = append(paragraphs, Paragraph{Spans: spans})
-			start = i + 1
-		}
-	}
-	return Document{Paragraphs: paragraphs}
 }
 
 func commonPrefixLen(a, b string) int {
@@ -690,7 +601,7 @@ func (n RichTextEditor) TreeEqual(other ui.Element) bool {
 	if !ok {
 		return false
 	}
-	return documentsEqual(n.Value, nb.Value) &&
+	return n.Value.Equal(nb.Value) &&
 		n.ReadOnly == nb.ReadOnly &&
 		n.Rows == nb.Rows &&
 		n.Placeholder == nb.Placeholder
@@ -707,15 +618,16 @@ func (n RichTextEditor) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	if label == "" {
 		label = "Rich text editor"
 	}
+	plainText := n.Value.Text
 	an := a11y.AccessNode{
 		Role:  a11y.RoleTextInput,
 		Label: label,
-		Value: n.Value.PlainText(),
+		Value: plainText,
 		States: a11y.AccessStates{
 			Disabled: n.ReadOnly,
 		},
 		TextState: &a11y.AccessTextState{
-			Length:      len([]rune(n.Value.PlainText())),
+			Length:      len([]rune(plainText)),
 			CaretOffset: -1,
 		},
 	}
@@ -723,25 +635,6 @@ func (n RichTextEditor) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
-
-func documentsEqual(a, b Document) bool {
-	if len(a.Paragraphs) != len(b.Paragraphs) {
-		return false
-	}
-	for i, pa := range a.Paragraphs {
-		pb := b.Paragraphs[i]
-		if len(pa.Spans) != len(pb.Spans) {
-			return false
-		}
-		for j, sa := range pa.Spans {
-			sb := pb.Spans[j]
-			if sa.Text != sb.Text || sa.Style != sb.Style {
-				return false
-			}
-		}
-	}
-	return true
-}
 
 func closestBoundary(xs []float32, offsets []int, mx float32) int {
 	best := 0
