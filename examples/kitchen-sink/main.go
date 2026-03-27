@@ -372,6 +372,11 @@ type Model struct {
 	TimeMinute   int
 	TimeState    *form.TimePickerState
 	NumericVal   float64
+	// FilePicker
+	FilePickerVal      string
+	FilePickerState    *form.FilePickerState
+	FilePickerDirVal   string
+	FilePickerDirState *form.FilePickerState
 	// DynamicDataset demos (RFC-002 §6)
 	PagedContacts *data.PagedDataset[int]
 	PagedScroll   *ui.ScrollState
@@ -472,6 +477,8 @@ type SetDateMsg struct{ Value time.Time }
 type SetColorMsg struct{ Value draw.Color }
 type SetTimeMsg struct{ Hour, Minute int }
 type SetNumericMsg struct{ Value float64 }
+type SetFilePickerMsg struct{ Value string }
+type SetDirPickerMsg struct{ Value string }
 
 // Accessibility messages
 type BuildA11yTreeMsg struct{}
@@ -856,6 +863,10 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.TimeMinute = msg.Minute
 	case SetNumericMsg:
 		m.NumericVal = msg.Value
+	case SetFilePickerMsg:
+		m.FilePickerVal = msg.Value
+	case SetDirPickerMsg:
+		m.FilePickerDirVal = msg.Value
 	case ValidateFormMsg:
 		schema := validation.Schema{
 			"email":    validation.Rules(validation.Required, validation.Email),
@@ -1292,6 +1303,25 @@ func pickersSection(m Model) ui.Element {
 		form.NewTimePicker(m.TimeHour, m.TimeMinute,
 			form.WithTimePickerState(m.TimeState),
 			form.WithOnTimeChange(func(h, min int) { app.Send(SetTimeMsg{h, min}) }),
+		),
+		display.Spacer(12),
+
+		display.Text(fmt.Sprintf("FilePicker (Open): %s", m.FilePickerVal)),
+		form.NewFilePicker(m.FilePickerVal,
+			form.WithFilePickerState(m.FilePickerState),
+			form.WithOnFileSelect(func(v string) { app.Send(SetFilePickerMsg{v}) }),
+			form.WithFileFilters(
+				form.FileFilter{Label: "Go Files", Extensions: []string{".go"}},
+				form.FileFilter{Label: "All Files", Extensions: []string{"*"}},
+			),
+		),
+		display.Spacer(12),
+
+		display.Text(fmt.Sprintf("FilePicker (Directory): %s", m.FilePickerDirVal)),
+		form.NewFilePicker(m.FilePickerDirVal,
+			form.WithFilePickerState(m.FilePickerDirState),
+			form.WithOnFileSelect(func(v string) { app.Send(SetDirPickerMsg{v}) }),
+			form.WithFilePickerMode(form.FilePickerDirectory),
 		),
 	)
 }
@@ -4401,7 +4431,9 @@ func main() {
 		TimeHour:   14,
 		TimeMinute: 30,
 		TimeState:  &form.TimePickerState{},
-		NumericVal: 42,
+		NumericVal:         42,
+		FilePickerState:    form.NewFilePickerState(""),
+		FilePickerDirState: form.NewFilePickerState(""),
 	}
 	// Generate procedural demo images — each with distinct colors for easy identification.
 	initial.ImgChecker1 = generateColorChecker(initial.ImageStore, 64, 64, 8,
