@@ -3,12 +3,16 @@ package data
 
 import (
 	"math"
+	"time"
 
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/icons"
 )
+
+// doubleClickInterval is the max time between clicks to count as a double-click.
+const doubleClickInterval = 400 * time.Millisecond
 
 // Tree displays a hierarchical tree widget with expand/collapse
 // and selection support.
@@ -240,7 +244,7 @@ func (n Tree) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			if fn.HasKids {
 				ctx.IX.RegisterHit(draw.Rect{}, nil)
 			}
-			if n.OnSelect != nil {
+			if n.OnSelect != nil || n.State != nil {
 				ctx.IX.RegisterHit(draw.Rect{}, nil)
 			}
 			continue
@@ -297,8 +301,8 @@ func (n Tree) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		nodeOffsetY := (nodeH - cb.H) / 2
 		ctx.LayoutChild(nodeContent, ui.Bounds{X: nodeX, Y: int(rowY) + nodeOffsetY, W: nodeW, H: nodeH})
 
-		// Row hit target for selection.
-		if n.OnSelect != nil {
+		// Row hit target for selection and double-click expand/collapse.
+		if n.OnSelect != nil || n.State != nil {
 			id := fn.ID
 			onSelect := n.OnSelect
 			ts := n.State
@@ -307,8 +311,16 @@ func (n Tree) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				func() {
 					if ts != nil {
 						ts.SetSelected(id)
+						// Double-click: toggle expand/collapse.
+						now := time.Now()
+						if id == ts.LastClickID() && now.Sub(ts.LastClickTime()) < doubleClickInterval {
+							ts.Toggle(id)
+						}
+						ts.RecordClick(id, now)
 					}
-					onSelect(id)
+					if onSelect != nil {
+						onSelect(id)
+					}
 				},
 			)
 		}

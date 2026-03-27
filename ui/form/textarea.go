@@ -369,6 +369,7 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		dragAnchor := -1
+		multiClickHandled := false
 		ix.RegisterDrag(draw.R(float32(area.X), float32(area.Y), float32(w), float32(h)),
 			func(mx, my float32) {
 				fm.SetFocusedUID(uid)
@@ -387,15 +388,42 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				lb := lineBoundsArr[line]
 				off := closestBoundary(lb.xs, lb.offs, mx)
 				if dragAnchor < 0 {
-					// Initial press — set anchor, clear selection.
-					dragAnchor = off
-					if fm.Input != nil {
-						fm.Input.CursorOffset = off
-						fm.Input.ClearSelection()
+					clickCount := fm.TrackClick(mx, my)
+					if clickCount >= 3 {
+						// Triple-click: select entire line.
+						multiClickHandled = true
+						span := ls[line]
+						dragAnchor = span.Start
+						lineEnd := span.End
+						// Include the newline if not the last line.
+						if line < len(ls)-1 && lineEnd < len(val) {
+							lineEnd++ // include '\n'
+						}
+						if fm.Input != nil {
+							fm.Input.SelectionStart = span.Start
+							fm.Input.CursorOffset = lineEnd
+						}
+					} else if clickCount == 2 {
+						// Double-click: select word.
+						multiClickHandled = true
+						wStart, wEnd := text.WordAt(val, off)
+						dragAnchor = wStart
+						if fm.Input != nil {
+							fm.Input.SelectionStart = wStart
+							fm.Input.CursorOffset = wEnd
+						}
 					} else {
-						fm.PendingCursorOffset = off
+						// Single click — set anchor, clear selection.
+						multiClickHandled = false
+						dragAnchor = off
+						if fm.Input != nil {
+							fm.Input.CursorOffset = off
+							fm.Input.ClearSelection()
+						} else {
+							fm.PendingCursorOffset = off
+						}
 					}
-				} else {
+				} else if !multiClickHandled {
 					// Drag move — extend selection from anchor.
 					if fm.Input != nil {
 						fm.Input.CursorOffset = off

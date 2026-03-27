@@ -18,6 +18,10 @@ type TreeState struct {
 	expandAnim map[string]*anim.Anim[float32] // per-node expand animation (0=collapsed, 1=expanded)
 	motionDur  time.Duration                  // cached from theme tokens during layout
 	motionEase anim.EasingFunc                // cached from theme tokens during layout
+
+	// Double-click tracking for expand-on-double-click.
+	lastClickID   string
+	lastClickTime time.Time
 }
 
 // NewTreeState creates a ready-to-use TreeState.
@@ -128,6 +132,30 @@ func (ts *TreeState) CacheMotion(dur time.Duration, easing anim.EasingFunc) {
 func (ts *TreeState) SetSelected(id string) {
 	if ts != nil {
 		ts.Selected = id
+	}
+}
+
+// LastClickID returns the ID of the last clicked node.
+func (ts *TreeState) LastClickID() string {
+	if ts == nil {
+		return ""
+	}
+	return ts.lastClickID
+}
+
+// LastClickTime returns the time of the last click.
+func (ts *TreeState) LastClickTime() time.Time {
+	if ts == nil {
+		return time.Time{}
+	}
+	return ts.lastClickTime
+}
+
+// RecordClick records a click on a node for double-click detection.
+func (ts *TreeState) RecordClick(id string, t time.Time) {
+	if ts != nil {
+		ts.lastClickID = id
+		ts.lastClickTime = t
 	}
 }
 
