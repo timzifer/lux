@@ -4607,10 +4607,10 @@ func main() {
 		StreamLog:          data.NewStreamDataset[int](data.StreamAppend),
 		StreamScroll:       &ui.ScrollState{},
 		// DataTable demos
-		DTSliceState:  &data.DataTableState{},
-		DTPagedState:  &data.DataTableState{},
+		DTSliceState:  data.NewDataTableState(),
+		DTPagedState:  data.NewDataTableState(),
 		DTPaged:       data.NewPagedDataset[int](20),
-		DTStreamState: &data.DataTableState{},
+		DTStreamState: data.NewDataTableState(),
 		DTStream:      data.NewStreamDataset[int](data.StreamAppend),
 		DTSelectedRow: -1,
 		AccordionState:     nav.NewAccordionState(),
