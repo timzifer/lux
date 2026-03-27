@@ -346,7 +346,7 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] NumericInput (`ui/form/numericinput.go`)
 - [x] Spinner (`ui/form/spinner.go`)
 - [x] SplitView (`ui/nav/splitview.go`)
-- [ ] DataTable
+- [x] DataTable (`ui/data/datatable.go`)
 - [x] Toolbar
 - [x] RichTextEditor (`richtext/` — Editor, Widget, Commands, AttributedString)
 - [ ] FilePicker (Open/Save)
