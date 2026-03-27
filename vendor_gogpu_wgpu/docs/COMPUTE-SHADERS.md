@@ -1,0 +1,392 @@
+# Compute Shaders in wgpu
+
+This guide covers how to use compute shaders with the `gogpu/wgpu` Pure Go WebGPU implementation.
+
+## Overview
+
+Compute shaders are GPU programs that run outside the graphics pipeline. They are used for general-purpose GPU computing (GPGPU): physics simulations, image processing, data transformations, machine learning inference, and more.
+
+In WebGPU, compute shaders are written in WGSL and dispatched as workgroups. Each workgroup contains a fixed number of invocations (threads) defined by `@workgroup_size`.
+
+## Writing WGSL Compute Shaders
+
+A minimal compute shader that doubles every element in a buffer:
+
+```wgsl
+@group(0) @binding(0)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(1)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let i = id.x;
+    if (i < arrayLength(&input)) {
+        output[i] = input[i] * 2.0;
+    }
+}
+```
+
+Key concepts:
+- `@compute` marks the function as a compute shader entry point.
+- `@workgroup_size(64)` means each workgroup has 64 invocations (threads).
+- `@builtin(global_invocation_id)` is the unique ID for each invocation across all workgroups.
+- `var<storage, read>` declares a read-only storage buffer.
+- `var<storage, read_write>` declares a read-write storage buffer.
+- `arrayLength(&input)` returns the runtime size of the storage buffer array.
+
+### Workgroup Size Guidelines
+
+- `@workgroup_size(64)` is a safe default for most GPUs.
+- `@workgroup_size(256)` may be faster for large data sets on discrete GPUs.
+- Maximum workgroup size varies by backend (see [Backend Differences](COMPUTE-BACKENDS.md)).
+- The total invocations per workgroup (x * y * z) must not exceed the device limit.
+
+## Creating a Compute Pipeline
+
+The compute pipeline binds a shader module to a pipeline layout.
+
+### Step 1: Create a Shader Module
+
+Compile WGSL source code (or SPIR-V bytecode) into a shader module:
+
+```go
+shaderModule, err := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+    Label: "Compute Shader",
+    WGSL:  wgslSource,
+})
+if err != nil {
+    log.Fatal("failed to create shader module:", err)
+}
+defer shaderModule.Release()
+```
+
+The `naga` shader compiler translates WGSL to the backend's native format:
+- Vulkan: WGSL -> SPIR-V
+- DX12: WGSL -> HLSL -> DXBC
+- Metal: WGSL -> MSL
+- GLES: WGSL -> GLSL
+
+### Step 2: Create a Bind Group Layout
+
+Define the resource binding structure:
+
+```go
+bindGroupLayout, err := device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+    Label: "Compute Bind Group Layout",
+    Entries: []wgpu.BindGroupLayoutEntry{
+        {
+            Binding:    0,
+            Visibility: wgpu.ShaderStageCompute,
+            Buffer: &gputypes.BufferBindingLayout{
+                Type: gputypes.BufferBindingTypeReadOnlyStorage,
+            },
+        },
+        {
+            Binding:    1,
+            Visibility: wgpu.ShaderStageCompute,
+            Buffer: &gputypes.BufferBindingLayout{
+                Type: gputypes.BufferBindingTypeStorage,
+            },
+        },
+    },
+})
+if err != nil {
+    log.Fatal("failed to create bind group layout:", err)
+}
+defer bindGroupLayout.Release()
+```
+
+### Step 3: Create a Pipeline Layout
+
+```go
+pipelineLayout, err := device.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+    Label:            "Compute Pipeline Layout",
+    BindGroupLayouts: []*wgpu.BindGroupLayout{bindGroupLayout},
+})
+if err != nil {
+    log.Fatal("failed to create pipeline layout:", err)
+}
+defer pipelineLayout.Release()
+```
+
+### Step 4: Create the Compute Pipeline
+
+```go
+pipeline, err := device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+    Label:      "Compute Pipeline",
+    Layout:     pipelineLayout,
+    Module:     shaderModule,
+    EntryPoint: "main",
+})
+if err != nil {
+    log.Fatal("failed to create compute pipeline:", err)
+}
+defer pipeline.Release()
+```
+
+## Creating Buffers
+
+Compute shaders read from and write to GPU buffers.
+
+### Storage Buffers
+
+Storage buffers are the primary way to pass data to and from compute shaders:
+
+```go
+// Input buffer: written by CPU, read by shader
+inputBuffer, err := device.CreateBuffer(&wgpu.BufferDescriptor{
+    Label: "Input Buffer",
+    Size:  uint64(len(inputData)) * 4, // f32 = 4 bytes
+    Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst,
+})
+defer inputBuffer.Release()
+
+// Output buffer: written by shader, read back by CPU
+outputBuffer, err := device.CreateBuffer(&wgpu.BufferDescriptor{
+    Label: "Output Buffer",
+    Size:  uint64(len(inputData)) * 4,
+    Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
+})
+defer outputBuffer.Release()
+
+// Readback buffer: CPU-readable staging buffer
+readbackBuffer, err := device.CreateBuffer(&wgpu.BufferDescriptor{
+    Label: "Readback Buffer",
+    Size:  uint64(len(inputData)) * 4,
+    Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
+})
+defer readbackBuffer.Release()
+```
+
+### Uniform Buffers
+
+For small, frequently updated data (e.g., parameters, dimensions):
+
+```go
+uniformBuffer, err := device.CreateBuffer(&wgpu.BufferDescriptor{
+    Label: "Uniform Buffer",
+    Size:  16, // e.g., vec4<f32>
+    Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst,
+})
+defer uniformBuffer.Release()
+```
+
+### Writing Data to Buffers
+
+Use `Queue().WriteBuffer` to upload data from CPU to GPU:
+
+```go
+// Convert float32 slice to bytes
+data := []float32{1.0, 2.0, 3.0, 4.0}
+byteData := unsafe.Slice((*byte)(unsafe.Pointer(&data[0])), len(data)*4)
+device.Queue().WriteBuffer(inputBuffer, 0, byteData)
+```
+
+## Creating Bind Groups
+
+Bind groups connect actual GPU resources to the layout:
+
+```go
+bindGroup, err := device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+    Label:  "Compute Bind Group",
+    Layout: bindGroupLayout,
+    Entries: []wgpu.BindGroupEntry{
+        {
+            Binding: 0,
+            Buffer:  inputBuffer,
+            Size:    inputBufferSize,
+        },
+        {
+            Binding: 1,
+            Buffer:  outputBuffer,
+            Size:    outputBufferSize,
+        },
+    },
+})
+if err != nil {
+    log.Fatal("failed to create bind group:", err)
+}
+defer bindGroup.Release()
+```
+
+## Dispatching Workgroups
+
+### Recording Commands
+
+```go
+encoder, err := device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{
+    Label: "Compute Encoder",
+})
+if err != nil {
+    log.Fatal("failed to create encoder:", err)
+}
+
+// Begin compute pass
+computePass, err := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{
+    Label: "Compute Pass",
+})
+if err != nil {
+    log.Fatal("failed to begin compute pass:", err)
+}
+
+// Bind pipeline and resources
+computePass.SetPipeline(pipeline)
+computePass.SetBindGroup(0, bindGroup, nil)
+
+// Dispatch workgroups
+// If data has 1024 elements and workgroup_size is 64:
+// we need ceil(1024/64) = 16 workgroups
+numWorkgroups := (numElements + 63) / 64
+computePass.Dispatch(numWorkgroups, 1, 1)
+
+// End compute pass
+computePass.End()
+```
+
+### Indirect Dispatch
+
+For GPU-driven workload sizes, use `DispatchIndirect`:
+
+```go
+// Buffer contains: { x: u32, y: u32, z: u32 }
+computePass.DispatchIndirect(indirectBuffer, 0)
+```
+
+## Reading Back Results
+
+After the compute shader writes to the output buffer, copy the results to a CPU-readable buffer and read them back.
+
+### Step 1: Copy Output to Readback Buffer
+
+```go
+// Copy output buffer to readback buffer
+encoder.CopyBufferToBuffer(outputBuffer, 0, readbackBuffer, 0, outputBufferSize)
+
+// Finish encoding
+cmdBuffer, err := encoder.Finish()
+if err != nil {
+    log.Fatal("failed to finish encoding:", err)
+}
+```
+
+### Step 2: Submit and Wait
+
+```go
+// Queue.Submit() handles fencing internally — blocks until GPU is done
+err = device.Queue().Submit(cmdBuffer)
+if err != nil {
+    log.Fatal("failed to submit:", err)
+}
+```
+
+### Step 3: Read Back Data
+
+```go
+resultBytes := make([]byte, outputBufferSize)
+err = device.Queue().ReadBuffer(readbackBuffer, 0, resultBytes)
+if err != nil {
+    log.Fatal("failed to read buffer:", err)
+}
+
+// Convert bytes back to float32 slice
+results := unsafe.Slice((*float32)(unsafe.Pointer(&resultBytes[0])), numElements)
+```
+
+## Timestamp Queries for Profiling
+
+> **Note:** Timestamp queries use the `hal/` package directly — they are not yet exposed
+> in the high-level `wgpu` root package. Import `"github.com/gogpu/wgpu/hal"` for this functionality.
+> Access HAL device/queue from wgpu types via `device.HalDevice()` and `device.HalQueue()`.
+
+You can measure GPU execution time of compute passes using timestamp queries.
+
+### Creating a Query Set
+
+```go
+import "github.com/gogpu/wgpu/hal"
+
+querySet, err := halDevice.CreateQuerySet(&hal.QuerySetDescriptor{
+    Label: "Timestamp Queries",
+    Type:  hal.QueryTypeTimestamp,
+    Count: 2, // begin + end
+})
+if err != nil {
+    // Backend may not support timestamps
+    log.Println("timestamps not supported:", err)
+}
+defer halDevice.DestroyQuerySet(querySet)
+```
+
+### Using Timestamps in a Compute Pass
+
+```go
+beginIdx := uint32(0)
+endIdx := uint32(1)
+
+computePass := halEncoder.BeginComputePass(&hal.ComputePassDescriptor{
+    Label: "Timed Compute Pass",
+    TimestampWrites: &hal.ComputePassTimestampWrites{
+        QuerySet:                  querySet,
+        BeginningOfPassWriteIndex: &beginIdx,
+        EndOfPassWriteIndex:       &endIdx,
+    },
+})
+
+// ... dispatch work ...
+computePass.End()
+```
+
+### Reading Timestamp Results
+
+```go
+// Create a buffer for timestamp results (2 * uint64 = 16 bytes)
+timestampBuffer, _ := halDevice.CreateBuffer(&hal.BufferDescriptor{
+    Label: "Timestamp Buffer",
+    Size:  16,
+    Usage: gputypes.BufferUsageCopyDst | gputypes.BufferUsageMapRead,
+})
+
+// Resolve timestamps into the buffer
+halEncoder.ResolveQuerySet(querySet, 0, 2, timestampBuffer, 0)
+
+// After submit + wait, read back and compute elapsed time
+timestampBytes := make([]byte, 16)
+halQueue.ReadBuffer(timestampBuffer, 0, timestampBytes)
+
+timestamps := unsafe.Slice((*uint64)(unsafe.Pointer(&timestampBytes[0])), 2)
+begin := timestamps[0]
+end := timestamps[1]
+
+// Convert to nanoseconds using the timestamp period
+period := halQueue.GetTimestampPeriod()
+elapsedNs := float64(end-begin) * float64(period)
+fmt.Printf("Compute pass took %.3f ms\n", elapsedNs/1e6)
+```
+
+## Error Handling
+
+### Checking Errors
+
+```go
+import "github.com/gogpu/wgpu"
+
+pipeline, err := device.CreateComputePipeline(desc)
+if err != nil {
+    if errors.Is(err, wgpu.ErrOutOfMemory) {
+        // Reduce buffer sizes or batch work
+    }
+    log.Fatal("pipeline creation failed:", err)
+}
+```
+
+## Complete Example
+
+See `examples/compute-sum/` for a working example of a compute shader that sums array elements.
+
+## Further Reading
+
+- [Backend Differences](COMPUTE-BACKENDS.md) -- per-backend capabilities and limits
+- [WebGPU Compute Specification](https://www.w3.org/TR/webgpu/#compute-passes)
+- [WGSL Specification](https://www.w3.org/TR/WGSL/)

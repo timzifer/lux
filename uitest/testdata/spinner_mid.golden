@@ -1,0 +1,16 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (8)
+  0: rect(34,24 4x4) color(76,141,255,38) r=2.0
+  1: rect(41,26 4x4) color(76,141,255,64) r=2.0
+  2: rect(44,34 4x4) color(76,141,255,128) r=2.0
+  3: rect(41,41 4x4) color(76,141,255,191) r=2.0
+  4: rect(34,44 4x4) color(76,141,255,255) r=2.0
+  5: rect(26,41 4x4) color(76,141,255,191) r=2.0
+  6: rect(24,34 4x4) color(76,141,255,128) r=2.0
+  7: rect(26,26 4x4) color(76,141,255,64) r=2.0
+
+[ClipBatches] (1)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

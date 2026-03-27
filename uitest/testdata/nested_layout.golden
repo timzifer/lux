@@ -1,0 +1,9 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (4)
+  0: glyph(24,24) scale=1 color(238,242,247,255) "Header"
+  1: glyph(24,47) scale=1 color(238,242,247,255) "Left"
+  2: glyph(60,47) scale=1 color(238,242,247,255) "Right"
+  3: glyph(24,70) scale=1 color(238,242,247,255) "Footer"
+
