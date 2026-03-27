@@ -114,12 +114,12 @@ func TestMaxf(t *testing.T) {
 	}
 }
 
-// ── EditorToolbar ───────────────────────────────────────────────
+// ── DefaultCommands ─────────────────────────────────────────────
 
-func TestEditorToolbar(t *testing.T) {
-	tb := &EditorToolbar{Bold: true, Italic: true, Underline: false}
-	if !tb.Bold || !tb.Italic || tb.Underline {
-		t.Fatal("unexpected toolbar state")
+func TestDefaultCommands(t *testing.T) {
+	cmds := DefaultCommands()
+	if len(cmds) != 3 {
+		t.Fatalf("expected 3 default commands, got %d", len(cmds))
 	}
 }
 

@@ -285,6 +285,89 @@ func (as AttributedString) ApplyStyle(start, end int, style SpanStyle) Attribute
 	return AttributedString{Text: as.Text, Attrs: newAttrs}.Normalized()
 }
 
+// ToggleStyleFunc transforms the style of each run overlapping [start, end)
+// using fn. Unlike ApplyStyle, it preserves attributes that fn does not
+// modify — e.g. toggling Bold without losing Italic.
+func (as AttributedString) ToggleStyleFunc(start, end int, fn func(SpanStyle) SpanStyle) AttributedString {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(as.Text) {
+		end = len(as.Text)
+	}
+	if start >= end || len(as.Attrs) == 0 {
+		return as
+	}
+
+	var newAttrs []AttrRun
+	prevEnd := 0
+
+	for _, r := range as.Attrs {
+		runStart := prevEnd
+		runEnd := r.End
+		prevEnd = runEnd
+
+		if runEnd <= start || runStart >= end {
+			newAttrs = append(newAttrs, r)
+			continue
+		}
+
+		// Split: part before the transformed range.
+		if runStart < start {
+			newAttrs = append(newAttrs, AttrRun{End: start, Style: r.Style})
+		}
+
+		// The transformed part of this run.
+		styledEnd := runEnd
+		if styledEnd > end {
+			styledEnd = end
+		}
+		newAttrs = append(newAttrs, AttrRun{End: styledEnd, Style: fn(r.Style)})
+
+		// Split: part after the transformed range.
+		if runEnd > end {
+			newAttrs = append(newAttrs, AttrRun{End: runEnd, Style: r.Style})
+		}
+	}
+
+	return AttributedString{Text: as.Text, Attrs: newAttrs}.Normalized()
+}
+
+// AllMatch reports whether fn returns true for every attribute run
+// overlapping [start, end). Returns true for empty ranges.
+func (as AttributedString) AllMatch(start, end int, fn func(SpanStyle) bool) bool {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(as.Text) {
+		end = len(as.Text)
+	}
+	if start >= end {
+		return true
+	}
+	if len(as.Attrs) == 0 {
+		return fn(SpanStyle{})
+	}
+
+	prevEnd := 0
+	for _, r := range as.Attrs {
+		runStart := prevEnd
+		runEnd := r.End
+		prevEnd = runEnd
+
+		if runEnd <= start {
+			continue
+		}
+		if runStart >= end {
+			break
+		}
+		if !fn(r.Style) {
+			return false
+		}
+	}
+	return true
+}
+
 // Normalized merges adjacent runs with identical styles.
 func (as AttributedString) Normalized() AttributedString {
 	if len(as.Attrs) <= 1 {

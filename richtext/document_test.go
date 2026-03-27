@@ -468,7 +468,6 @@ func TestNew_WithOptions(t *testing.T) {
 		WithReadOnly(),
 		WithPlaceholder("Type here..."),
 		WithOnChange(func(AttributedString) { called = true }),
-		WithToolbar(&EditorToolbar{Bold: true, Italic: true}),
 	)
 	editor, ok := el.(RichTextEditor)
 	if !ok {
@@ -482,9 +481,6 @@ func TestNew_WithOptions(t *testing.T) {
 	}
 	if editor.Placeholder != "Type here..." {
 		t.Fatalf("unexpected placeholder: %q", editor.Placeholder)
-	}
-	if editor.Toolbar == nil || !editor.Toolbar.Bold || !editor.Toolbar.Italic {
-		t.Fatal("unexpected toolbar state")
 	}
 	if editor.OnChange == nil {
 		t.Fatal("expected OnChange to be set")

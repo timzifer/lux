@@ -46,16 +46,6 @@ type RichTextEditor struct {
 
 	// Placeholder is shown when the content is empty.
 	Placeholder string
-
-	// Toolbar is an optional formatting toolbar configuration.
-	Toolbar *EditorToolbar
-}
-
-// EditorToolbar configures the optional formatting toolbar.
-type EditorToolbar struct {
-	Bold      bool // show bold toggle
-	Italic    bool // show italic toggle
-	Underline bool // show underline toggle
 }
 
 // Option configures a RichTextEditor.
@@ -89,11 +79,6 @@ func WithScroll(s *ui.ScrollState) Option {
 // WithPlaceholder sets the placeholder text.
 func WithPlaceholder(p string) Option {
 	return func(e *RichTextEditor) { e.Placeholder = p }
-}
-
-// WithToolbar enables the formatting toolbar.
-func WithToolbar(tb *EditorToolbar) Option {
-	return func(e *RichTextEditor) { e.Toolbar = tb }
 }
 
 // New creates a RichTextEditor with the given content and options.
