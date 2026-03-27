@@ -68,7 +68,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-input":        {"form-controls", "range-progress", "selection", "validation", "pickers", "numeric-spinner"},
 	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout", "table-layout"},
 	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
-	"group-navigation":   {"menus", "shortcuts"},
+	"group-navigation":   {"menus", "shortcuts", "toolbar"},
 	"group-overlays":     {"overlays", "dialogs"},
 	"group-text":         {"rich-text", "rich-text-editor", "inline-widgets", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
@@ -155,6 +155,8 @@ func sectionLabel(id string) string {
 		return "Menus"
 	case "shortcuts":
 		return "Shortcuts"
+	case "toolbar":
+		return "Toolbar"
 	case "overlays":
 		return "Overlays"
 	case "canvas-paints":
@@ -352,6 +354,12 @@ type Model struct {
 	RichEditorReadOnly  bool
 	RichEditorDoc2      richtext.AttributedString
 	RichEditorScroll2   *ui.ScrollState
+	// Toolbar demo
+	ToolbarBold      bool
+	ToolbarItalic    bool
+	ToolbarUnderline bool
+	ToolbarDoc       richtext.AttributedString
+	ToolbarDocScroll *ui.ScrollState
 	// Pickers & Numeric
 	DateVal      time.Time
 	DateState    *form.DatePickerState
@@ -440,6 +448,12 @@ type SetRichEditorDocMsg struct{ Doc richtext.AttributedString }
 type ToggleRichEditorReadOnlyMsg struct{}
 type SetRichEditorDoc2Msg struct{ Doc richtext.AttributedString }
 
+// Toolbar messages
+type ToggleToolbarBoldMsg struct{}
+type ToggleToolbarItalicMsg struct{}
+type ToggleToolbarUnderlineMsg struct{}
+type SetToolbarDocMsg struct{ Doc richtext.AttributedString }
+
 type SetValEmailMsg struct{ Value string }
 type SetValPasswordMsg struct{ Value string }
 type SetValConfirmMsg struct{ Value string }
@@ -510,6 +524,14 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.RichEditorReadOnly = !m.RichEditorReadOnly
 	case SetRichEditorDoc2Msg:
 		m.RichEditorDoc2 = msg.Doc
+	case ToggleToolbarBoldMsg:
+		m.ToolbarBold = !m.ToolbarBold
+	case ToggleToolbarItalicMsg:
+		m.ToolbarItalic = !m.ToolbarItalic
+	case ToggleToolbarUnderlineMsg:
+		m.ToolbarUnderline = !m.ToolbarUnderline
+	case SetToolbarDocMsg:
+		m.ToolbarDoc = msg.Doc
 	case SelectSectionMsg:
 		m.ActiveSection = msg.Section
 	case SetTabMsg:
@@ -912,6 +934,8 @@ func sectionContent(m Model) ui.Element {
 		return menusSection(m)
 	case "shortcuts":
 		return shortcutsSection(m)
+	case "toolbar":
+		return toolbarSection(m)
 	case "overlays":
 		return overlaysSection(m)
 	case "canvas-paints":
@@ -2112,6 +2136,80 @@ func shortcutsSection(m Model) ui.Element {
 	}
 
 	return layout.Column(children...)
+}
+
+func toolbarSection(m Model) ui.Element {
+	return layout.Column(
+		sectionHeader("Toolbar (RFC-003 §4.1)"),
+
+		// ── Demo 1: Basic toolbar ────────────────────────────
+		display.Text("Basic toolbar with action buttons:"),
+		display.Spacer(4),
+		nav.NewToolbar([]nav.ToolbarItem{
+			{Element: display.Text("Cut"), OnClick: func() {}},
+			{Element: display.Text("Copy"), OnClick: func() {}},
+			{Element: display.Text("Paste"), OnClick: func() {}},
+		}),
+
+		display.Spacer(16),
+
+		// ── Demo 2: Toolbar with separators ──────────────────
+		display.Text("Toolbar with separators and icon buttons:"),
+		display.Spacer(4),
+		nav.NewToolbar([]nav.ToolbarItem{
+			{Element: display.Text("New"), OnClick: func() {}},
+			{Element: display.Text("Open"), OnClick: func() {}},
+			{Element: display.Text("Save"), OnClick: func() {}},
+			nav.ToolbarSeparator(),
+			{Element: display.Text("Undo"), OnClick: func() {}},
+			{Element: display.Text("Redo"), OnClick: func() {}},
+			nav.ToolbarSeparator(),
+			{Element: display.Icon(icons.Gear), OnClick: func() {}},
+		}),
+
+		display.Spacer(16),
+
+		// ── Demo 3: Formatting toolbar + RichTextEditor ──────
+		display.Text("Formatting toolbar above RichTextEditor:"),
+		display.Spacer(4),
+		nav.NewToolbar([]nav.ToolbarItem{
+			{Element: display.Text("Paragraph"), OnClick: func() {}},
+			nav.ToolbarSeparator(),
+			{Element: display.TextStyled("B", draw.TextStyle{Weight: draw.FontWeightBold}),
+				OnClick: func() { app.Send(ToggleToolbarBoldMsg{}) },
+				Toggle: true, Active: m.ToolbarBold},
+			{Element: display.Text("I"),
+				OnClick: func() { app.Send(ToggleToolbarItalicMsg{}) },
+				Toggle: true, Active: m.ToolbarItalic},
+			{Element: display.Text("U"),
+				OnClick: func() { app.Send(ToggleToolbarUnderlineMsg{}) },
+				Toggle: true, Active: m.ToolbarUnderline},
+			nav.ToolbarSeparator(),
+			{Element: display.Text("Link"), OnClick: func() {}},
+			{Element: display.Text("Image"), OnClick: func() {}},
+		}),
+		richtext.New(m.ToolbarDoc,
+			richtext.WithOnChange(func(as richtext.AttributedString) { app.Send(SetToolbarDocMsg{as}) }),
+			richtext.WithFocus(app.Focus()),
+			richtext.WithRows(6),
+			richtext.WithScroll(m.ToolbarDocScroll),
+			richtext.WithPlaceholder("Start typing..."),
+		),
+		display.Spacer(4),
+		display.Text(fmt.Sprintf("Bold: %v | Italic: %v | Underline: %v",
+			m.ToolbarBold, m.ToolbarItalic, m.ToolbarUnderline)),
+
+		display.Spacer(16),
+
+		// ── Demo 4: Toolbar with custom gap ──────────────────
+		display.Text("Toolbar with larger gap (8px):"),
+		display.Spacer(4),
+		nav.NewToolbarWithGap([]nav.ToolbarItem{
+			{Element: display.Text("Zoom In"), OnClick: func() {}},
+			{Element: display.Text("Zoom Out"), OnClick: func() {}},
+			{Element: display.Text("100%"), OnClick: func() {}},
+		}, 8),
+	)
 }
 
 func overlaysSection(m Model) ui.Element {
@@ -4171,6 +4269,16 @@ func main() {
 			richtext.S("."),
 		),
 		RichEditorScroll2: &ui.ScrollState{},
+		// Toolbar demo defaults
+		ToolbarDoc: richtext.Build(
+			richtext.S("Format this text using the toolbar above.\n"),
+			richtext.S("Try toggling "),
+			richtext.S("Bold", richtext.SpanStyle{Bold: true}),
+			richtext.S(", "),
+			richtext.S("Italic", richtext.SpanStyle{Italic: true}),
+			richtext.S(", and Underline."),
+		),
+		ToolbarDocScroll: &ui.ScrollState{},
 		// Pickers & Numeric defaults
 		DateVal:    time.Now(),
 		DateState:  &form.DatePickerState{},

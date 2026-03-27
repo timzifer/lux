@@ -1,0 +1,17 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (3)
+  0: rect(24,24 752x36) color(23,26,32,255)
+  1: rect(24,59 752x1) color(255,255,255,26)
+  2: rect(94,30 1x24) color(255,255,255,15)
+
+[Glyphs] (4)
+  0: glyph(30,38) scale=1 color(238,242,247,255) "New"
+  1: glyph(62,38) scale=1 color(238,242,247,255) "Open"
+  2: glyph(101,38) scale=1 color(238,242,247,255) "Undo"
+  3: glyph(139,38) scale=1 color(238,242,247,255) "Redo"
+
+[ClipBatches] (1)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

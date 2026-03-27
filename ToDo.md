@@ -346,7 +346,7 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] Spinner (`ui/form/spinner.go`)
 - [x] SplitView (`ui/nav/splitview.go`)
 - [ ] DataTable
-- [ ] Toolbar
+- [x] Toolbar
 - [ ] RichTextEditor (RFC-003 §5.6)
 - [ ] FilePicker (Open/Save)
 - **Abhängig von:** Phase 0–2 vollständig abgeschlossen

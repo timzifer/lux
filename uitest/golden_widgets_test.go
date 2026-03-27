@@ -9,6 +9,7 @@ import (
 	"github.com/timzifer/lux/ui/display"
 	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/layout"
+	"github.com/timzifer/lux/ui/nav"
 )
 
 const (
@@ -278,4 +279,44 @@ func TestGoldenRichTextSpansBackcompat(t *testing.T) {
 		testW, testH,
 	)
 	AssertScene(t, scene, "testdata/richtext_spans_backcompat.golden")
+}
+
+// ── Toolbar ──────────────────────────────────────────────────────
+
+func TestGoldenToolbar(t *testing.T) {
+	scene := BuildScene(
+		nav.NewToolbar([]nav.ToolbarItem{
+			{Element: display.Text("Cut"), OnClick: func() {}},
+			{Element: display.Text("Copy"), OnClick: func() {}},
+			{Element: display.Text("Paste"), OnClick: func() {}},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/toolbar.golden")
+}
+
+func TestGoldenToolbarSeparator(t *testing.T) {
+	scene := BuildScene(
+		nav.NewToolbar([]nav.ToolbarItem{
+			{Element: display.Text("New"), OnClick: func() {}},
+			{Element: display.Text("Open"), OnClick: func() {}},
+			nav.ToolbarSeparator(),
+			{Element: display.Text("Undo"), OnClick: func() {}},
+			{Element: display.Text("Redo"), OnClick: func() {}},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/toolbar_separator.golden")
+}
+
+func TestGoldenToolbarToggle(t *testing.T) {
+	scene := BuildScene(
+		nav.NewToolbar([]nav.ToolbarItem{
+			{Element: display.Text("B"), OnClick: func() {}, Toggle: true, Active: true},
+			{Element: display.Text("I"), OnClick: func() {}, Toggle: true, Active: false},
+			{Element: display.Text("U"), OnClick: func() {}, Toggle: true, Active: true},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/toolbar_toggle.golden")
 }
