@@ -67,7 +67,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-basics":       {"typography", "buttons"},
 	"group-input":        {"form-controls", "range-progress", "selection", "validation", "pickers", "numeric-spinner"},
 	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout", "table-layout"},
-	"group-data":         {"virtual-list", "tree", "cards", "tabs", "accordion", "badges-chips"},
+	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts", "toolbar"},
 	"group-overlays":     {"overlays", "dialogs"},
 	"group-text":         {"rich-text", "rich-text-editor", "inline-widgets", "text-shaping", "grapheme-nav", "line-breaking"},
@@ -143,6 +143,12 @@ func sectionLabel(id string) string {
 		return "VirtualList"
 	case "tree":
 		return "Tree"
+	case "dataset-slice":
+		return "SliceDataset"
+	case "dataset-paged":
+		return "PagedDataset"
+	case "dataset-stream":
+		return "StreamDataset"
 	case "cards":
 		return "Cards"
 	case "tabs":
@@ -369,6 +375,12 @@ type Model struct {
 	TimeMinute   int
 	TimeState    *form.TimePickerState
 	NumericVal   float64
+	// DynamicDataset demos (RFC-002 §6)
+	PagedContacts *data.PagedDataset[int]
+	PagedScroll   *ui.ScrollState
+	StreamLog     *data.StreamDataset[int]
+	StreamScroll  *ui.ScrollState
+	StreamCounter int
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -475,6 +487,15 @@ type A11yTrapConfirmMsg struct{}
 type SetA11yTrapCheckAMsg struct{ Value bool }
 type SetA11yTrapCheckBMsg struct{ Value bool }
 type SetA11yTrapTextMsg struct{ Value string }
+
+// DynamicDataset demo messages
+type PagedLoadPageMsg struct{ Page int }
+type PagedPageLoadedMsg struct {
+	Page  int
+	IDs   []int
+	Total int
+}
+type StreamAddItemMsg struct{}
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -614,6 +635,33 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.A11yTrapCheckB = msg.Value
 	case SetA11yTrapTextMsg:
 		m.A11yTrapText = msg.Value
+
+	// DynamicDataset demos
+	case data.DatasetLoadRequestMsg:
+		// Simulate paged loading — send a PagedLoadPageMsg
+		page := msg.PageIndex
+		if m.PagedContacts != nil && !m.PagedContacts.IsPageLoading(page) {
+			m.PagedContacts.SetLoading(page)
+			pg := page
+			return m, func() app.Msg {
+				// Simulate async I/O
+				pageSize := 20
+				ids := make([]int, pageSize)
+				for i := range ids {
+					ids[i] = pg*pageSize + i
+				}
+				return PagedPageLoadedMsg{Page: pg, IDs: ids, Total: 100}
+			}
+		}
+	case PagedPageLoadedMsg:
+		if m.PagedContacts != nil {
+			m.PagedContacts.SetPage(msg.Page, msg.IDs, msg.Total)
+		}
+	case StreamAddItemMsg:
+		if m.StreamLog != nil {
+			m.StreamCounter++
+			m.StreamLog.Append(m.StreamCounter)
+		}
 
 	// Phase 2: Spring Animation
 	case SetSpringPresetMsg:
@@ -922,6 +970,12 @@ func sectionContent(m Model) ui.Element {
 		return virtualListSection(m)
 	case "tree":
 		return treeSection(m)
+	case "dataset-slice":
+		return datasetSliceSection(m)
+	case "dataset-paged":
+		return datasetPagedSection(m)
+	case "dataset-stream":
+		return datasetStreamSection(m)
 	case "cards":
 		return cardsSection()
 	case "tabs":
@@ -1922,6 +1976,93 @@ func treeSection(m Model) ui.Element {
 			MaxHeight:  200,
 			State:      m.DemoTree,
 		}),
+	)
+}
+
+// ── DynamicDataset Demos (RFC-002 §6) ────────────────────────────
+
+func datasetSliceSection(m Model) ui.Element {
+	// SliceDataset — static, known length. Drop-in replacement for old ItemCount.
+	items := make([]int, 200)
+	for i := range items {
+		items[i] = i
+	}
+	ds := data.NewSliceDataset(items)
+
+	return layout.Column(
+		sectionHeader("SliceDataset"),
+		display.Text("Drop-in replacement for the old ItemCount API."),
+		display.Text("All 200 items are immediately available (loaded=true)."),
+		display.Spacer(8),
+		data.VirtualList{
+			Dataset:    ds,
+			ItemHeight: 24,
+			MaxHeight:  200,
+			State:      m.VListScroll,
+			BuildItemDS: func(i int, loaded bool) ui.Element {
+				id, _ := ds.Get(i)
+				status := "loaded"
+				if !loaded {
+					status = "loading..."
+				}
+				return display.Text(fmt.Sprintf("  SliceDataset[%d] = %d (%s)", i, id, status))
+			},
+		},
+	)
+}
+
+func datasetPagedSection(m Model) ui.Element {
+	// PagedDataset — paginated, loads on demand.
+	totalInfo := "unknown"
+	if m.PagedContacts.Len() >= 0 {
+		totalInfo = fmt.Sprintf("%d", m.PagedContacts.Len())
+	}
+
+	return layout.Column(
+		sectionHeader("PagedDataset"),
+		display.Text("Paginated dataset — pages load on demand when scrolled into view."),
+		display.Text(fmt.Sprintf("Total: %s  |  PageSize: %d", totalInfo, m.PagedContacts.PageSize)),
+		display.Spacer(8),
+		data.VirtualList{
+			Dataset:    m.PagedContacts,
+			ItemHeight: 28,
+			MaxHeight:  250,
+			State:      m.PagedScroll,
+			BuildItemDS: func(i int, loaded bool) ui.Element {
+				if !loaded {
+					return display.Text(fmt.Sprintf("  [%d] Loading...", i))
+				}
+				id, _ := m.PagedContacts.Get(i)
+				return display.Text(fmt.Sprintf("  Contact #%d  (page %d)", id, m.PagedContacts.PageForIndex(i)))
+			},
+		},
+		display.Spacer(8),
+		display.Text("Scroll down to trigger automatic page loading via DatasetLoadRequestMsg."),
+	)
+}
+
+func datasetStreamSection(m Model) ui.Element {
+	// StreamDataset — append-only, unknown total length.
+	return layout.Column(
+		sectionHeader("StreamDataset"),
+		display.Text("Append-only stream (chat, log). Total length is always unknown (Len()=-1)."),
+		display.Text(fmt.Sprintf("Items: %d  |  Len(): %d", m.StreamLog.Count(), m.StreamLog.Len())),
+		display.Spacer(8),
+		button.Text("Add Log Entry", func() { app.Send(StreamAddItemMsg{}) }),
+		display.Spacer(8),
+		data.VirtualList{
+			Dataset:    m.StreamLog,
+			ItemHeight: 24,
+			MaxHeight:  200,
+			State:      m.StreamScroll,
+			BuildItemDS: func(i int, loaded bool) ui.Element {
+				if !loaded {
+					return display.Text("  ...")
+				}
+				id, _ := m.StreamLog.Get(i)
+				return display.Text(fmt.Sprintf("  [stream] Log entry #%d", id))
+			},
+		},
 	)
 }
 
@@ -4236,6 +4377,10 @@ func main() {
 		ActiveSection:      "typography",
 		VListScroll:        &ui.ScrollState{},
 		DemoTree:           ui.NewTreeState(),
+		PagedContacts:      data.NewPagedDataset[int](20),
+		PagedScroll:        &ui.ScrollState{},
+		StreamLog:          data.NewStreamDataset[int](data.StreamAppend),
+		StreamScroll:       &ui.ScrollState{},
 		AccordionState:     nav.NewAccordionState(),
 		MenuBarState:       menu.NewMenuBarState(),
 		KineticScroll:      ui.NewKineticScroll(theme.Default.Tokens().Scroll),

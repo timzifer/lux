@@ -321,10 +321,11 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] `SubModelWithCmd` / `DelegateWithCmd` Variante
 - **Abhängig von:** nichts
 
-### 6.6 DynamicDataset (RFC-002 §6)
-- [ ] `Dataset[ID]`-Interface
-- [ ] `SliceDataset`, `PagedDataset`, `StreamDataset`
-- [ ] Integration mit VirtualList und Tree
+### 6.6 DynamicDataset (RFC-002 §6) ✅
+- [x] `Dataset[ID]`-Interface
+- [x] `SliceDataset`, `PagedDataset`, `StreamDataset`
+- [x] Integration mit VirtualList und Tree
+- [x] Kitchen-Sink Demos (SliceDataset, PagedDataset, StreamDataset)
 - **Abhängig von:** nichts
 
 ### 6.7 Inspector & Debugging (RFC-001 §12)
