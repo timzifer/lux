@@ -175,3 +175,18 @@ func TestPagedDatasetErrorThenRetry(t *testing.T) {
 		t.Fatalf("after retry: Get(0) = (%d, %v), want (42, true)", id, loaded)
 	}
 }
+
+func TestPagedDatasetLoadedCount(t *testing.T) {
+	d := NewPagedDataset[int](3)
+	if d.LoadedCount() != 0 {
+		t.Fatalf("LoadedCount() = %d, want 0", d.LoadedCount())
+	}
+	d.SetPage(0, []int{1, 2, 3}, -1)
+	if d.LoadedCount() != 3 {
+		t.Fatalf("LoadedCount() = %d, want 3", d.LoadedCount())
+	}
+	d.SetPage(1, []int{4, 5}, -1) // partial page
+	if d.LoadedCount() != 5 {
+		t.Fatalf("LoadedCount() = %d, want 5", d.LoadedCount())
+	}
+}
