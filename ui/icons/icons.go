@@ -67,8 +67,8 @@ const (
 	ToggleRight = "\uE676"
 
 	// Text Formatting
-	TextBolder    = "\uE494"
-	TextItalic    = "\uE498"
-	TextUnderline = "\uE49C"
-	ImageSquare   = "\uE2D2"
+	TextBolder    = "\uE5BE"
+	TextItalic    = "\uE5C0"
+	TextUnderline = "\uE5C4"
+	ImageSquare   = "\uE2CA"
 )

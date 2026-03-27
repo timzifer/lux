@@ -67,6 +67,12 @@ func (d *PagedDataset[ID]) IsPageLoading(pageIndex int) bool {
 	return d.pageState[pageIndex] == SlotLoading
 }
 
+// IsPageLoaded reports whether a page has been successfully loaded (data available).
+func (d *PagedDataset[ID]) IsPageLoaded(pageIndex int) bool {
+	_, hasData := d.pages[pageIndex]
+	return hasData && d.pageState[pageIndex] == SlotLoaded
+}
+
 // PageState returns the SlotState for a page.
 func (d *PagedDataset[ID]) PageState(pageIndex int) SlotState {
 	return d.pageState[pageIndex]
