@@ -27,8 +27,9 @@ type DatasetSlot[ID comparable] struct {
 type SlotState uint8
 
 const (
-	SlotLoaded  SlotState = iota // ID is available
+	SlotPending SlotState = iota // Not yet requested (zero value)
 	SlotLoading                  // Request in progress
+	SlotLoaded                   // ID is available
 	SlotError                    // Loading failed
 )
 
