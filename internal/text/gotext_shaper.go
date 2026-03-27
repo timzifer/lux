@@ -509,10 +509,13 @@ func (s *GoTextShaper) shapeSfnt(text string, style draw.TextStyle, f *fonts.Fon
 		return BitmapShaper{}.Shape(text, style)
 	}
 
+	sf := f.SfntFont()
+
 	runes := []rune(text)
 	out := make([]ShapedGlyph, 0, len(runes))
 	prev := rune(-1)
 
+	var buf sfnt.Buffer
 	for i, r := range runes {
 		var kern fixed.Int26_6
 		if prev >= 0 {
@@ -533,8 +536,16 @@ func (s *GoTextShaper) shapeSfnt(text string, style draw.TextStyle, f *fonts.Fon
 			gh = fixedToFloat(bounds.Max.Y - bounds.Min.Y)
 		}
 
+		var gid GlyphID
+		if sf != nil {
+			if idx, err := sf.GlyphIndex(&buf, r); err == nil {
+				gid = GlyphID(idx)
+			}
+		}
+
 		out = append(out, ShapedGlyph{
 			Rune:     r,
+			GlyphID:  gid,
 			Advance:  fixedToFloat(adv + kern),
 			BearingX: bearingX,
 			BearingY: bearingY,
