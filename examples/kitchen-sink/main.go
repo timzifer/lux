@@ -355,9 +355,6 @@ type Model struct {
 	RichEditorDoc2      richtext.AttributedString
 	RichEditorScroll2   *ui.ScrollState
 	// Toolbar demo
-	ToolbarBold      bool
-	ToolbarItalic    bool
-	ToolbarUnderline bool
 	ToolbarDoc       richtext.AttributedString
 	ToolbarDocScroll *ui.ScrollState
 	// Pickers & Numeric
@@ -449,9 +446,6 @@ type ToggleRichEditorReadOnlyMsg struct{}
 type SetRichEditorDoc2Msg struct{ Doc richtext.AttributedString }
 
 // Toolbar messages
-type ToggleToolbarBoldMsg struct{}
-type ToggleToolbarItalicMsg struct{}
-type ToggleToolbarUnderlineMsg struct{}
 type SetToolbarDocMsg struct{ Doc richtext.AttributedString }
 
 type SetValEmailMsg struct{ Value string }
@@ -524,12 +518,6 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.RichEditorReadOnly = !m.RichEditorReadOnly
 	case SetRichEditorDoc2Msg:
 		m.RichEditorDoc2 = msg.Doc
-	case ToggleToolbarBoldMsg:
-		m.ToolbarBold = !m.ToolbarBold
-	case ToggleToolbarItalicMsg:
-		m.ToolbarItalic = !m.ToolbarItalic
-	case ToggleToolbarUnderlineMsg:
-		m.ToolbarUnderline = !m.ToolbarUnderline
 	case SetToolbarDocMsg:
 		m.ToolbarDoc = msg.Doc
 	case SelectSectionMsg:
@@ -2170,34 +2158,15 @@ func toolbarSection(m Model) ui.Element {
 		display.Spacer(16),
 
 		// ── Demo 3: Formatting toolbar + RichTextEditor ──────
-		display.Text("Formatting toolbar above RichTextEditor:"),
+		display.Text("Integrated RichTextEditor with pluggable toolbar:"),
 		display.Spacer(4),
-		nav.NewToolbar([]nav.ToolbarItem{
-			{Element: display.Text("Paragraph"), OnClick: func() {}},
-			nav.ToolbarSeparator(),
-			{Element: display.TextStyled("B", draw.TextStyle{Weight: draw.FontWeightBold}),
-				OnClick: func() { app.Send(ToggleToolbarBoldMsg{}) },
-				Toggle: true, Active: m.ToolbarBold},
-			{Element: display.Text("I"),
-				OnClick: func() { app.Send(ToggleToolbarItalicMsg{}) },
-				Toggle: true, Active: m.ToolbarItalic},
-			{Element: display.Text("U"),
-				OnClick: func() { app.Send(ToggleToolbarUnderlineMsg{}) },
-				Toggle: true, Active: m.ToolbarUnderline},
-			nav.ToolbarSeparator(),
-			{Element: display.Text("Link"), OnClick: func() {}},
-			{Element: display.Text("Image"), OnClick: func() {}},
-		}),
-		richtext.New(m.ToolbarDoc,
-			richtext.WithOnChange(func(as richtext.AttributedString) { app.Send(SetToolbarDocMsg{as}) }),
-			richtext.WithFocus(app.Focus()),
-			richtext.WithRows(6),
-			richtext.WithScroll(m.ToolbarDocScroll),
-			richtext.WithPlaceholder("Start typing..."),
+		richtext.NewEditorWithToolbar(m.ToolbarDoc,
+			richtext.WithWidgetOnChange(func(as richtext.AttributedString) { app.Send(SetToolbarDocMsg{as}) }),
+			richtext.WithWidgetFocus(app.Focus()),
+			richtext.WithWidgetRows(6),
+			richtext.WithWidgetScroll(m.ToolbarDocScroll),
+			richtext.WithWidgetPlaceholder("Select text and click Bold / Italic / Underline..."),
 		),
-		display.Spacer(4),
-		display.Text(fmt.Sprintf("Bold: %v | Italic: %v | Underline: %v",
-			m.ToolbarBold, m.ToolbarItalic, m.ToolbarUnderline)),
 
 		display.Spacer(16),
 

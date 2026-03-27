@@ -64,6 +64,15 @@ func (w RichTextEditorWidget) Render(ctx ui.RenderCtx, rawState ui.WidgetState) 
 	// Read selection from the previous frame's FocusManager state.
 	selStart, selEnd := w.selectionRange()
 
+	// Capture the editor's focus UID so toolbar clicks can restore it.
+	// The app loop calls fm.Blur() on every mouse-down before dispatching
+	// hit targets, so without this the editor would lose focus when the
+	// user clicks a toolbar button.
+	var editorFocusUID ui.UID
+	if w.Focus != nil {
+		editorFocusUID = w.Focus.FocusedUID()
+	}
+
 	// Build toolbar items from commands.
 	items := make([]nav.ToolbarItem, len(w.Commands))
 	for i, cmd := range w.Commands {
@@ -74,7 +83,7 @@ func (w RichTextEditorWidget) Render(ctx ui.RenderCtx, rawState ui.WidgetState) 
 			Element: cmd.Icon(),
 			Toggle:  true,
 			Active:  active,
-			OnClick: w.makeCommandHandler(cmd, selStart, selEnd, state),
+			OnClick: w.makeCommandHandler(cmd, selStart, selEnd, state, editorFocusUID),
 		}
 	}
 
@@ -125,8 +134,18 @@ func (w RichTextEditorWidget) selectionRange() (int, int) {
 // makeCommandHandler returns an OnClick handler for a toolbar command.
 // When the command produces a new document, OnChange is called. When it
 // produces a pending modifier (no selection), the mod is stored in state.
-func (w RichTextEditorWidget) makeCommandHandler(cmd ToolbarCommand, selStart, selEnd int, state *editorState) func() {
+//
+// The handler restores the editor's focus UID after execution because
+// the app loop calls fm.Blur() on every mouse-down before hit targets
+// fire. Without the restore, clicking a toolbar button would defocus
+// the editor and lose the selection.
+func (w RichTextEditorWidget) makeCommandHandler(cmd ToolbarCommand, selStart, selEnd int, state *editorState, editorFocusUID ui.UID) func() {
 	return func() {
+		// Restore editor focus (blurred by the app loop's mouse-down handler).
+		if w.Focus != nil && editorFocusUID != 0 {
+			w.Focus.SetFocusedUID(editorFocusUID)
+		}
+
 		newDoc, pendingMod := cmd.Execute(w.Value, selStart, selEnd)
 		if pendingMod != nil {
 			state.PendingMods = append(state.PendingMods, pendingMod)
