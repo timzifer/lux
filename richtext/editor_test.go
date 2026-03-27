@@ -33,6 +33,39 @@ func TestMakeOnChange_PreservesStyles(t *testing.T) {
 	}
 }
 
+func TestMakeOnChange_MultiSpanPreservesStyles(t *testing.T) {
+	var received Document
+	editor := RichTextEditor{
+		Value: Document{Paragraphs: []Paragraph{
+			{Spans: []Span{
+				{Text: "Hello ", Style: SpanStyle{Bold: true}},
+				{Text: "World", Style: SpanStyle{Italic: true}},
+			}},
+		}},
+		OnChange: func(doc Document) { received = doc },
+	}
+	fn := editor.makeOnChange()
+	// Type "beautiful " inside the bold span (after "Hello ").
+	fn("Hello beautiful World")
+
+	if received.PlainText() != "Hello beautiful World" {
+		t.Fatalf("unexpected text: %q", received.PlainText())
+	}
+	// "Hello beautiful " should be bold, "World" should be italic.
+	spans := received.Paragraphs[0].Spans
+	if len(spans) != 2 {
+		t.Fatalf("expected 2 spans, got %d: %+v", len(spans), spans)
+	}
+	if spans[0].Text != "Hello beautiful " || !spans[0].Style.Bold {
+		t.Errorf("first span: got %q bold=%v, want %q bold=true",
+			spans[0].Text, spans[0].Style.Bold, "Hello beautiful ")
+	}
+	if spans[1].Text != "World" || !spans[1].Style.Italic {
+		t.Errorf("second span: got %q italic=%v, want %q italic=true",
+			spans[1].Text, spans[1].Style.Italic, "World")
+	}
+}
+
 func TestMakeOnChange_NewParagraphs(t *testing.T) {
 	var received Document
 	editor := RichTextEditor{

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/ui"
 )
 
 // ── NewDocument ─────────────────────────────────────────────────
@@ -403,7 +404,7 @@ func TestResolveChildren_IsLeaf(t *testing.T) {
 		t.Fatal("should not be called on leaf")
 		return e
 	})
-	if resolved != editor {
+	if resolved.(RichTextEditor).Value.PlainText() != editor.Value.PlainText() {
 		t.Fatal("leaf should return self")
 	}
 }

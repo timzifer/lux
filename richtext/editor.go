@@ -378,7 +378,7 @@ func (n RichTextEditor) drawDefault(ctx *ui.LayoutContext, area ui.Bounds, w, h 
 
 	// Draw selection highlight.
 	if focused && focus != nil && focus.Input != nil && focus.Input.HasSelection() {
-		n.drawSelection(canvas, tokens, plainText, lines, lineH, bodyStyle,
+		n.drawSelection(canvas, &tokens, plainText, lines, lineH, bodyStyle,
 			contentX, contentY, contentH, scrollOff, focus.Input)
 	}
 
@@ -388,7 +388,7 @@ func (n RichTextEditor) drawDefault(ctx *ui.LayoutContext, area ui.Bounds, w, h 
 		textColor = tokens.Colors.Text.Disabled
 	}
 	if len(n.Value.Paragraphs) > 0 && plainText != "" {
-		n.drawRichContent(canvas, tokens, lines, lineH, bodyStyle, textColor,
+		n.drawRichContent(canvas, &tokens, lines, lineH, bodyStyle, textColor,
 			contentX, contentY, contentH, scrollOff)
 	} else if n.Placeholder != "" {
 		canvas.DrawText(n.Placeholder, draw.Pt(contentX, contentY), bodyStyle, tokens.Colors.Text.Disabled)
@@ -559,21 +559,127 @@ func (n RichTextEditor) makeOnChange() func(string) {
 		return nil
 	}
 	return func(newText string) {
-		doc := NewDocument(newText)
-		// Preserve span styles from the original document where possible.
-		// For simple edits, we copy styles from corresponding original paragraphs.
 		orig := n.Value
-		for i := range doc.Paragraphs {
-			if i < len(orig.Paragraphs) && len(orig.Paragraphs[i].Spans) > 0 {
-				// If the original had styled spans, apply the first span's style
-				// to the new single-span paragraph as a best-effort preservation.
-				if len(doc.Paragraphs[i].Spans) == 1 && len(orig.Paragraphs[i].Spans) == 1 {
-					doc.Paragraphs[i].Spans[0].Style = orig.Paragraphs[i].Spans[0].Style
+		oldText := orig.PlainText()
+		if oldText == newText {
+			onChange(orig)
+			return
+		}
+		onChange(applyTextEdit(orig, oldText, newText))
+	}
+}
+
+// applyTextEdit applies a plain-text edit to a styled Document, preserving
+// span styles. It diffs oldText vs newText to locate the changed region,
+// then splices the edit into the original span structure.
+func applyTextEdit(orig Document, oldText, newText string) Document {
+	if len(orig.Paragraphs) == 0 {
+		return NewDocument(newText)
+	}
+
+	// Find edit region via common prefix/suffix.
+	pfx := commonPrefixLen(oldText, newText)
+	sfx := commonSuffixLen(oldText, newText, pfx)
+	delEnd := len(oldText) - sfx
+	ins := newText[pfx : len(newText)-sfx]
+
+	// Build a per-byte style map for oldText.
+	styles := make([]SpanStyle, len(oldText))
+	off := 0
+	for i, p := range orig.Paragraphs {
+		if i > 0 {
+			// Newline separator inherits style from previous character.
+			if off > 0 {
+				styles[off] = styles[off-1]
+			}
+			off++
+		}
+		for _, s := range p.Spans {
+			for j := 0; j < len(s.Text); j++ {
+				if off+j < len(styles) {
+					styles[off+j] = s.Style
 				}
 			}
+			off += len(s.Text)
 		}
-		onChange(doc)
 	}
+
+	// Determine style for inserted text: inherit from the byte before the cursor.
+	insStyle := SpanStyle{}
+	if pfx > 0 {
+		insStyle = styles[pfx-1]
+	} else if len(styles) > 0 {
+		insStyle = styles[0]
+	}
+
+	// Build the new per-byte style map.
+	newStyles := make([]SpanStyle, len(newText))
+	copy(newStyles[:pfx], styles[:pfx])
+	for i := 0; i < len(ins); i++ {
+		newStyles[pfx+i] = insStyle
+	}
+	if sfx > 0 {
+		copy(newStyles[len(newText)-sfx:], styles[delEnd:])
+	}
+
+	return buildStyledDocument(newText, newStyles)
+}
+
+// buildStyledDocument creates a Document from text and a parallel style array,
+// grouping consecutive bytes with the same SpanStyle into Spans.
+func buildStyledDocument(text string, styles []SpanStyle) Document {
+	if text == "" {
+		return Document{Paragraphs: []Paragraph{{}}}
+	}
+	var paragraphs []Paragraph
+	start := 0
+	for i := 0; i <= len(text); i++ {
+		if i == len(text) || text[i] == '\n' {
+			paraText := text[start:i]
+			paraStyles := styles[start:i]
+			var spans []Span
+			if len(paraText) > 0 {
+				runStart := 0
+				for j := 1; j <= len(paraText); j++ {
+					if j == len(paraText) || paraStyles[j] != paraStyles[runStart] {
+						spans = append(spans, Span{
+							Text:  paraText[runStart:j],
+							Style: paraStyles[runStart],
+						})
+						runStart = j
+					}
+				}
+			}
+			if len(spans) == 0 {
+				spans = []Span{{Text: ""}}
+			}
+			paragraphs = append(paragraphs, Paragraph{Spans: spans})
+			start = i + 1
+		}
+	}
+	return Document{Paragraphs: paragraphs}
+}
+
+func commonPrefixLen(a, b string) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+func commonSuffixLen(a, b string, pfx int) int {
+	n := 0
+	for n < len(a)-pfx && n < len(b)-pfx &&
+		a[len(a)-1-n] == b[len(b)-1-n] {
+		n++
+	}
+	return n
 }
 
 // ── Interface implementations ───────────────────────────────────
