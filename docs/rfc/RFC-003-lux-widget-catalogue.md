@@ -23,7 +23,7 @@
 | §2 theme.Slate Dark + Light | ✅ Integriert | Alle Token-Werte wie spezifiziert |
 | §3 Text-Stack, i18n & Fonts | ✅ Integriert | Kern, Locale-Propagation, BiDi — alle Framework-seitigen Primitiven vorhanden; l10n ist by-design App-Sache (§3.8) |
 | §3.1 CGo-Strategie | ✅ Integriert | wgpu/gogpu (pure Go, Default) + OpenGL+GLFW (CGo, Fallback); native Plattform-Backends via CGo |
-| §3.2 go-text/typesetting | ✅ Integriert | `GoTextShaper` mit vollständigem GSUB/GPOS |
+| §3.2 go-text/typesetting | ✅ Integriert | `GoTextShaper` mit vollständigem GSUB/GPOS; Ligaturen (ff, fi, fl etc.) korrekt via GlyphID-basiertem Atlas |
 | §3.3 Shaper-Interface | ✅ Integriert | `Shaper` Interface, `ShapingRun`, `ShapedGlyph` in `internal/text/` |
 | §3.4 Font-Loading & Fallback-Chain | ✅ Integriert | `FontFamily` mit `Fallback`-Chain, `FindGlyphFont` pro Glyph |
 | §3.5 BiDi | ✅ Integriert | `internal/text/bidi.go` — UAX #9-basierte BiDi-Implementierung |

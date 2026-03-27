@@ -127,6 +127,29 @@ func TestGoTextShaperGlyphID(t *testing.T) {
 	}
 }
 
+func TestGoTextShaperLigature(t *testing.T) {
+	s := newGoTextTestShaper()
+	glyphs := s.Shape("ff", goTextBodyStyle)
+	if len(glyphs) == 0 {
+		t.Fatal("Shape(\"ff\") returned no glyphs")
+	}
+	// Whether the font produces a ligature or two separate glyphs,
+	// every shaped glyph must have a non-zero GlyphID.
+	for i, g := range glyphs {
+		if g.GlyphID == 0 {
+			t.Errorf("glyph[%d] GlyphID = 0, want non-zero", i)
+		}
+	}
+	// If the font merged "ff" into a single ligature glyph, verify
+	// that its GlyphID differs from a standalone 'f'.
+	if len(glyphs) == 1 {
+		single := s.Shape("f", goTextBodyStyle)
+		if len(single) == 1 && single[0].GlyphID == glyphs[0].GlyphID {
+			t.Error("ligature \"ff\" GlyphID should differ from standalone 'f'")
+		}
+	}
+}
+
 func TestGoTextShaperCluster(t *testing.T) {
 	s := newGoTextTestShaper()
 	glyphs := s.Shape("Hello", goTextBodyStyle)
