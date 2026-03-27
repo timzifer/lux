@@ -51,9 +51,14 @@ func (n VirtualList) resolvedItemCount() int {
 		if l >= 0 {
 			return l
 		}
-		// Unknown length: use currently known items.
-		// StreamDataset implements Count(); PagedDataset uses TotalCount.
-		// For truly unknown lengths, return a large estimate to enable overscan loading.
+		// Unknown length (-1): show loaded items plus one extra page of
+		// placeholder slots so scrolling triggers the next load request.
+		if pd, ok := n.Dataset.(*PagedDataset[int]); ok {
+			loaded := pd.LoadedCount()
+			// Always expose at least one page so the initial load is triggered.
+			return loaded + pd.PageSize
+		}
+		// StreamDataset implements Count().
 		type counter interface{ Count() int }
 		if c, ok := n.Dataset.(counter); ok {
 			return c.Count()

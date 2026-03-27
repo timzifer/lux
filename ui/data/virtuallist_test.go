@@ -35,10 +35,31 @@ func TestVirtualListResolvedItemCountPagedDataset(t *testing.T) {
 
 func TestVirtualListResolvedItemCountPagedUnknown(t *testing.T) {
 	ds := NewPagedDataset[int](10)
-	// TotalCount is -1, no Count() method on PagedDataset
+	// TotalCount is -1, no pages loaded yet.
+	// Should return PageSize (10) to show placeholder slots and trigger page 0 load.
 	vl := VirtualList{Dataset: ds}
-	if got := vl.resolvedItemCount(); got != 0 {
-		t.Fatalf("resolvedItemCount() = %d, want 0 (unknown length, no counter)", got)
+	if got := vl.resolvedItemCount(); got != 10 {
+		t.Fatalf("resolvedItemCount() = %d, want 10 (one page of placeholders)", got)
+	}
+}
+
+func TestVirtualListResolvedItemCountPagedPartiallyLoaded(t *testing.T) {
+	ds := NewPagedDataset[int](5)
+	ds.SetPage(0, []int{1, 2, 3, 4, 5}, -1) // TotalCount still unknown
+	vl := VirtualList{Dataset: ds}
+	// Loaded: 5 items + one extra page (5) = 10 placeholder slots
+	if got := vl.resolvedItemCount(); got != 10 {
+		t.Fatalf("resolvedItemCount() = %d, want 10 (loaded + one page ahead)", got)
+	}
+}
+
+func TestVirtualListResolvedItemCountPagedTotalKnown(t *testing.T) {
+	ds := NewPagedDataset[int](5)
+	ds.SetPage(0, []int{1, 2, 3, 4, 5}, 12) // TotalCount = 12
+	vl := VirtualList{Dataset: ds}
+	// Once total is known, use it directly.
+	if got := vl.resolvedItemCount(); got != 12 {
+		t.Fatalf("resolvedItemCount() = %d, want 12 (known total)", got)
 	}
 }
 
