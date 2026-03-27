@@ -115,7 +115,11 @@ func (w RichTextEditorWidget) Render(ctx ui.RenderCtx, rawState ui.WidgetState) 
 
 	editor := New(w.Value, editorOpts...)
 
-	return layout.Column(toolbar, editor), state
+	return layout.NewFlex(
+		[]ui.Element{toolbar, editor},
+		layout.WithDirection(layout.FlexColumn),
+		layout.WithGap(0),
+	), state
 }
 
 // selectionRange returns the current selection (or cursor position) from
