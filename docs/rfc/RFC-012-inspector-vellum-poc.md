@@ -16,7 +16,16 @@
 
 | Abschnitt | Status |
 |-----------|--------|
-| Alle Abschnitte | ⏳ Draft — Umsetzung geplant |
+| §3 Architektur | ✅ Implementiert |
+| §4 Debug-Extensions | ✅ Implementiert |
+| §5 Server-Seite | ✅ Implementiert |
+| §6 Client-Seite (Inspector-Binary) | ✅ Implementiert (Basis-UI) |
+| §7 Serialisierungsformat | ✅ Implementiert |
+| §8 Phase A (Scene-Serialisierung) | ✅ Implementiert + Tests |
+| §8 Phase B (Unix-Socket-Transport) | ✅ Implementiert + Tests |
+| §8 Phase C (Debug-Extensions) | ✅ Implementiert + Tests |
+| §8 Phase D (Inspector-UI) | ✅ Implementiert (Basis-Panels) |
+| §9 Verifikation | ✅ 20 Tests bestanden |
 
 ---
 
