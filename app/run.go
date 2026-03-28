@@ -15,6 +15,7 @@ import (
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/internal/vellum"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
@@ -146,6 +147,19 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		as.SetAtlas(atlas)
 	}
 
+	// Inspector: start Vellum server if configured (RFC-012 §5.1).
+	var inspectorServer *vellum.Server
+	var inspectorCollector *vellum.DebugExtensionCollector
+	if cfg.inspectorAddr != "" {
+		var err error
+		inspectorServer, err = vellum.NewServer(cfg.inspectorAddr)
+		if err != nil {
+			return fmt.Errorf("vellum inspector: %w", err)
+		}
+		defer inspectorServer.Close()
+		inspectorCollector = vellum.NewDebugExtensionCollector()
+	}
+
 	// Apply initial locale → layout direction (RFC-003 §3.8).
 	if cfg.locale != "" {
 		applyLocale(cfg.locale)
@@ -232,6 +246,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var hitMap hit.Map
 	var hoverState ui.HoverState
 	var mouseX, mouseY float32
+	var frameCounter uint64
 	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
 	var dragRelease func(x, y float32)  // called once when drag ends
 	var currentCursor input.CursorKind
@@ -696,10 +711,37 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			fm.ResetElementIDs()
 
 			w, h := plat.FramebufferSize()
-			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
+			sceneCanvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
+
+			// Inspector: wrap canvas with CanvasEncoder if active (RFC-012 §5.3).
+			var encoder *vellum.CanvasEncoder
+			var frameBuf *vellum.FrameBuffer
+			var canvas draw.Canvas = sceneCanvas
+			if inspectorServer != nil && inspectorServer.HasClient() {
+				frameBuf = vellum.NewFrameBuffer()
+				encoder = vellum.NewCanvasEncoder(sceneCanvas, frameBuf)
+				encoder.BeginFrame(frameCounter, draw.R(0, 0, float32(w), float32(h)), sceneCanvas.DPR())
+				canvas = encoder
+			}
+			frameCounter++
+
 			hitMap.Reset()
 			ix := ui.NewInteractor(&hitMap, &hoverState)
+
+			paintStart := time.Now()
 			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
+			paintTime := time.Since(paintStart)
+
+			// Inspector: finalize frame and send to client.
+			if encoder != nil && inspectorServer != nil && inspectorCollector != nil {
+				info := inspectorCollector.CollectFrameInfo(
+					vellum.FrameTimings{PaintTime: paintTime},
+					uint32(reconciler.StateCount()),
+					reconciler.DirtyUIDs(),
+				)
+				encoder.EndFrame(info)
+				inspectorServer.SendCanvas(frameBuf.Bytes())
+			}
 
 			// Sync dirty images from the image store to the renderer.
 			syncImages(cfg.imageStore, renderer)

@@ -21,6 +21,8 @@ type Reconciler struct {
 	resolvedSub map[UID]Element // previous resolved subtree per UID (for Equatable skip)
 	prevTree    Element
 	themeCache  map[theme.Theme]*theme.CachedTheme // reuse CachedTheme across frames
+
+	lastDirtyUIDs []uint64 // UIDs of widgets that were dirty in the last CheckDirtyTrackers call
 }
 
 // NewReconciler creates a ready-to-use Reconciler.
@@ -89,16 +91,24 @@ func (r *Reconciler) TickAnimators(dt time.Duration) bool {
 // (RFC-001 §6.4). Dirty flags are cleared after being consumed so that
 // the next frame starts clean.
 func (r *Reconciler) CheckDirtyTrackers() bool {
+	r.lastDirtyUIDs = r.lastDirtyUIDs[:0]
 	anyDirty := false
-	for _, state := range r.states {
+	for uid, state := range r.states {
 		if dt, ok := state.(DirtyTracker); ok {
 			if dt.IsDirty() {
 				anyDirty = true
+				r.lastDirtyUIDs = append(r.lastDirtyUIDs, uint64(uid))
 				dt.ClearDirty()
 			}
 		}
 	}
 	return anyDirty
+}
+
+// DirtyUIDs returns the UIDs of widgets that were dirty in the most recent
+// CheckDirtyTrackers call. Used by the Inspector to highlight repainted widgets.
+func (r *Reconciler) DirtyUIDs() []uint64 {
+	return r.lastDirtyUIDs
 }
 
 // MakeUID computes a deterministic UID from parent, key, and child index.
