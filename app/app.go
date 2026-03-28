@@ -112,6 +112,7 @@ type options struct {
 	storagePath     string
 	fullscreen      bool
 	imageStore      *luximage.Store
+	inspectorAddr   string // Vellum inspector socket address (empty = disabled)
 }
 
 // Batch combines multiple Cmds into a single Cmd.
@@ -244,6 +245,15 @@ type SetFullscreenMsg struct{ Fullscreen bool }
 func WithFullscreen(fullscreen bool) Option {
 	return func(o *options) { o.fullscreen = fullscreen }
 }
+
+// WithInspector activates the Vellum Inspector server on the given address
+// (RFC-012 §5.1). The address format is "unix:///path/to/socket".
+func WithInspector(addr string) Option {
+	return func(o *options) { o.inspectorAddr = addr }
+}
+
+// InspectorAddr returns the configured inspector address (empty if disabled).
+func (o *options) InspectorAddr() string { return o.inspectorAddr }
 
 // activePlatform holds the platform for clipboard access from package-level functions.
 var activePlatform platform.Platform
