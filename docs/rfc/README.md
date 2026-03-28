@@ -18,6 +18,7 @@ column below reflects the current implementation state.
 | 008 | [RFC-008-lux-default-theme.md](RFC-008-lux-default-theme.md) | Integrated | Lux dark/light theme (design tokens, color system, typography, motion, elevation) |
 | 010 | [RFC-010-lux-code-editor.md](RFC-010-lux-code-editor.md) | Planned | Code editor widget (syntax highlighting, virtual rendering, multi-cursor — not yet implemented) |
 | 011 | [RFC-011-lux-vellum.md](RFC-011-lux-vellum.md) | Theoretical | Remote/network rendering protocol for distributed UI (not scheduled for implementation) |
+| 012 | [RFC-012-inspector-vellum-poc.md](RFC-012-inspector-vellum-poc.md) | Draft | Widget-Inspector as Vellum client — PoC merging ToDo 6.7 + RFC-011 §12.2 |
 | 998 | [RFC-998-lux-browser-engine.md](RFC-998-lux-browser-engine.md) | Theoretical | Custom browser engine integration (exploratory, not planned) |
 | 999 | [RFC-999-lux-sim.md](RFC-999-lux-sim.md) | Integrated | Testing infrastructure: headless simulation, golden-file scene tests |
 
@@ -30,3 +31,4 @@ column below reflects the current implementation state.
 | **Planned** | Design is approved; implementation has not started yet |
 | **Deferred (post-V1)** | Design work exists; implementation removed from V1 scope |
 | **Theoretical** | Exploratory document; not on the implementation roadmap |
+| **Draft** | Design approved as PoC; implementation planned but not started |
