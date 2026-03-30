@@ -70,7 +70,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "datatable", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts", "toolbar"},
 	"group-overlays":     {"overlays", "dialogs"},
-	"group-text":         {"rich-text", "rich-text-editor", "inline-widgets", "text-shaping", "grapheme-nav", "line-breaking"},
+	"group-text":         {"rich-text", "rich-text-editor", "inline-widgets", "rich-text-images", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
 	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
@@ -139,6 +139,8 @@ func sectionLabel(id string) string {
 		return "RichTextEditor"
 	case "inline-widgets":
 		return "Inline Widgets"
+	case "rich-text-images":
+		return "RichText Images"
 	case "virtual-list":
 		return "VirtualList"
 	case "tree":
@@ -1032,6 +1034,8 @@ func sectionContent(m Model) ui.Element {
 		return richTextEditorSection(m)
 	case "inline-widgets":
 		return inlineWidgetsSection()
+	case "rich-text-images":
+		return richTextImagesSection(m)
 	case "virtual-list":
 		return virtualListSection(m)
 	case "tree":
@@ -2002,6 +2006,172 @@ func inlineWidgetsSection() ui.Element {
 				},
 			},
 		),
+	)
+}
+
+func richTextImagesSection(m Model) ui.Element {
+	return layout.Column(
+		sectionHeader("RichText Images (HTML §4.8.3)"),
+
+		// ── Inline image in text flow ──────────────────────────────
+		display.Text("Inline image in text flow:"),
+		display.Spacer(4),
+		display.RichTextContent(
+			display.Span{Text: "Server status: "},
+			display.InlineImage(m.ImgChecker1,
+				display.WithImageSpanSize(20, 20),
+				display.WithImageSpanAlt("status icon"),
+			),
+			display.Span{Text: " — system operational."},
+		),
+
+		display.Spacer(12),
+
+		// ── Inline images of different sizes ──────────────────────
+		display.Text("Inline images at different sizes:"),
+		display.Spacer(4),
+		display.RichTextContent(
+			display.Span{Text: "Small "},
+			display.InlineImage(m.ImgChecker1, display.WithImageSpanSize(16, 16), display.WithImageSpanAlt("16px")),
+			display.Span{Text: " medium "},
+			display.InlineImage(m.ImgChecker2, display.WithImageSpanSize(28, 28), display.WithImageSpanAlt("28px")),
+			display.Span{Text: " large "},
+			display.InlineImage(m.ImgChecker3, display.WithImageSpanSize(40, 40), display.WithImageSpanAlt("40px")),
+			display.Span{Text: " — all inline."},
+		),
+
+		display.Spacer(12),
+
+		// ── Scale modes ───────────────────────────────────────────
+		display.Text("Scale modes — Fit / Fill / Stretch:"),
+		display.Spacer(4),
+		display.RichTextContent(
+			display.Span{Text: "Fit "},
+			display.InlineImage(m.ImgChecker2,
+				display.WithImageSpanSize(48, 32),
+				display.WithImageSpanScaleMode(draw.ImageScaleFit),
+				display.WithImageSpanAlt("Fit"),
+			),
+			display.Span{Text: "  Fill "},
+			display.InlineImage(m.ImgChecker2,
+				display.WithImageSpanSize(48, 32),
+				display.WithImageSpanScaleMode(draw.ImageScaleFill),
+				display.WithImageSpanAlt("Fill"),
+			),
+			display.Span{Text: "  Stretch "},
+			display.InlineImage(m.ImgChecker2,
+				display.WithImageSpanSize(48, 32),
+				display.WithImageSpanScaleMode(draw.ImageScaleStretch),
+				display.WithImageSpanAlt("Stretch"),
+			),
+		),
+
+		display.Spacer(12),
+
+		// ── Opacity ───────────────────────────────────────────────
+		display.Text("Opacity — 100% / 60% / 25%:"),
+		display.Spacer(4),
+		display.RichTextContent(
+			display.InlineImage(m.ImgChecker3,
+				display.WithImageSpanSize(40, 40),
+				display.WithImageSpanOpacity(1.0),
+				display.WithImageSpanAlt("100%"),
+			),
+			display.Span{Text: "  "},
+			display.InlineImage(m.ImgChecker3,
+				display.WithImageSpanSize(40, 40),
+				display.WithImageSpanOpacity(0.6),
+				display.WithImageSpanAlt("60%"),
+			),
+			display.Span{Text: "  "},
+			display.InlineImage(m.ImgChecker3,
+				display.WithImageSpanSize(40, 40),
+				display.WithImageSpanOpacity(0.25),
+				display.WithImageSpanAlt("25%"),
+			),
+		),
+
+		display.Spacer(12),
+
+		// ── Float-left ────────────────────────────────────────────
+		display.Text("Float left — text wraps on the right:"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.FloatLeftImage(m.ImgChecker1,
+					display.WithImageSpanSize(72, 72),
+					display.WithImageSpanAlt("float left"),
+				),
+				display.Span{Text: "This paragraph has a float-left image. The text flows on the right side of the image. A longer sentence demonstrates the wrapping behaviour across multiple lines."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Float-right ───────────────────────────────────────────
+		display.Text("Float right — text wraps on the left:"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.FloatRightImage(m.ImgChecker2,
+					display.WithImageSpanSize(72, 72),
+					display.WithImageSpanAlt("float right"),
+				),
+				display.Span{Text: "This paragraph has a float-right image. Text flows on the left of the image, wrapping naturally when the line is too long for the reduced available width."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Block image ───────────────────────────────────────────
+		display.Text("Block image — full paragraph width (use separate paragraphs for captions):"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Caption above the image."},
+				},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.BlockImage(m.ImgChecker3,
+						display.WithImageSpanSize(0, 80),
+						display.WithImageSpanScaleMode(draw.ImageScaleFit),
+						display.WithImageSpanAlt("full-width block image"),
+					),
+				},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Caption below the image."},
+				},
+			},
+		),
+
+		display.Spacer(12),
+
+		// ── Editor with inline image ───────────────────────────────
+		display.Text("RichText editor with inline image:"),
+		display.Spacer(4),
+		func() ui.Element {
+			doc := richtext.Build(
+				richtext.S("Image: "),
+				richtext.S("\uFFFC", richtext.SpanStyle{
+					Image: richtext.ImageAttachment{
+						ImageID:   m.ImgChecker1,
+						Alt:       "sample",
+						Width:     24,
+						Height:    24,
+						ScaleMode: draw.ImageScaleStretch,
+					},
+				}),
+				richtext.S(" — followed by more text."),
+			)
+			return richtext.New(doc,
+				richtext.WithReadOnly(),
+				richtext.WithRows(2),
+			)
+		}(),
 	)
 }
 
