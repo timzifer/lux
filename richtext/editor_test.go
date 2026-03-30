@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/ui"
 )
 
 // ── makeOnChange ────────────────────────────────────────────────
@@ -188,5 +189,76 @@ func TestCommonSuffixLen(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("commonSuffixLen(%q, %q, %d) = %d, want %d", tt.a, tt.b, tt.pfx, got, tt.want)
 		}
+	}
+}
+
+// ── Image support ────────────────────────────────────────────────
+
+func TestEditorWithImage_ElementCreation(t *testing.T) {
+	// Build a document with an inline image using InsertImage.
+	doc := NewAttributedString("before after")
+	img := ImageAttachment{
+		ImageID: 42,
+		Alt:     "test image",
+		Width:   24,
+		Height:  24,
+	}
+	doc = doc.InsertImage(len("before "), img)
+
+	el := New(doc, WithReadOnly(), WithRows(3))
+	if el == nil {
+		t.Fatal("expected non-nil element")
+	}
+	// Should be a RichTextEditor.
+	if _, ok := el.(RichTextEditor); !ok {
+		t.Fatalf("expected RichTextEditor, got %T", el)
+	}
+}
+
+func TestEditorWithImage_RunAt(t *testing.T) {
+	doc := NewAttributedString("hello")
+	img := ImageAttachment{ImageID: 7, Width: 32, Height: 32, ScaleMode: draw.ImageScaleStretch}
+	doc = doc.InsertImage(5, img)
+
+	// The run at the placeholder should contain the image.
+	s := doc.RunAt(5)
+	if s.Image.ImageID != 7 {
+		t.Errorf("ImageID = %d, want 7", s.Image.ImageID)
+	}
+	if s.Image.Width != 32 {
+		t.Errorf("Width = %g, want 32", s.Image.Width)
+	}
+	if s.Image.ScaleMode != draw.ImageScaleStretch {
+		t.Errorf("ScaleMode = %d, want Stretch", s.Image.ScaleMode)
+	}
+}
+
+func TestEditorWithImage_OnlyImageDoc(t *testing.T) {
+	// Document consisting solely of an image placeholder.
+	doc := AttributedString{}
+	img := ImageAttachment{ImageID: 1, Width: 48, Height: 48}
+	doc = doc.InsertImage(0, img)
+
+	el := New(doc, WithReadOnly())
+	if _, ok := el.(RichTextEditor); !ok {
+		t.Fatalf("expected RichTextEditor, got %T", el)
+	}
+	// Verify the editor holds the image data.
+	editor := el.(RichTextEditor)
+	s := editor.Value.RunAt(0)
+	if s.Image.ImageID != 1 {
+		t.Errorf("ImageID = %d, want 1", s.Image.ImageID)
+	}
+}
+
+func TestEditorWithImage_WithToolbar(t *testing.T) {
+	doc := Build(
+		S("Hello "),
+		S("\uFFFC", SpanStyle{Image: ImageAttachment{ImageID: 99, Width: 20, Height: 20}}),
+		S(" World"),
+	)
+	el := NewEditorWithToolbar(doc)
+	if _, ok := el.(ui.WidgetElement); !ok {
+		t.Fatalf("expected WidgetElement, got %T", el)
 	}
 }
