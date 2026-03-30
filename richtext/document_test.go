@@ -570,3 +570,128 @@ func TestDocumentChangedMsg(t *testing.T) {
 		t.Fatal("unexpected document text")
 	}
 }
+
+// ── InsertImage ─────────────────────────────────────────────────
+
+func TestInsertImage_AtStart(t *testing.T) {
+	as := NewAttributedString("hello")
+	img := ImageAttachment{ImageID: 42, Alt: "icon", Width: 16, Height: 16}
+	result := as.InsertImage(0, img)
+
+	const placeholder = "\uFFFC"
+	want := placeholder + "hello"
+	if result.Text != want {
+		t.Fatalf("text = %q, want %q", result.Text, want)
+	}
+	// First run (placeholder) should have the image style.
+	s := result.RunAt(0)
+	if s.Image.ImageID != 42 {
+		t.Errorf("ImageID = %d, want 42", s.Image.ImageID)
+	}
+	if s.Image.Alt != "icon" {
+		t.Errorf("Alt = %q, want %q", s.Image.Alt, "icon")
+	}
+	// Remainder should have default style.
+	if result.RunAt(len(placeholder)).Image.ImageID != 0 {
+		t.Error("expected no image on text portion")
+	}
+}
+
+func TestInsertImage_InMiddle(t *testing.T) {
+	as := Build(
+		S("before", SpanStyle{Bold: true}),
+		S("after", SpanStyle{Italic: true}),
+	)
+	img := ImageAttachment{ImageID: 7, Width: 24, Height: 24}
+	result := as.InsertImage(len("before"), img)
+
+	const placeholder = "\uFFFC"
+	want := "before" + placeholder + "after"
+	if result.Text != want {
+		t.Fatalf("text = %q, want %q", result.Text, want)
+	}
+	// Bold style before the image.
+	if !result.RunAt(0).Bold {
+		t.Error("expected Bold before image")
+	}
+	// Image run.
+	mid := len("before")
+	if result.RunAt(mid).Image.ImageID != 7 {
+		t.Errorf("image run: ImageID = %d, want 7", result.RunAt(mid).Image.ImageID)
+	}
+	// Italic style after the image.
+	if !result.RunAt(mid + len(placeholder)).Italic {
+		t.Error("expected Italic after image")
+	}
+}
+
+func TestInsertImage_AtEnd(t *testing.T) {
+	as := NewAttributedString("hello")
+	img := ImageAttachment{ImageID: 99}
+	result := as.InsertImage(len("hello"), img)
+
+	const placeholder = "\uFFFC"
+	want := "hello" + placeholder
+	if result.Text != want {
+		t.Fatalf("text = %q, want %q", result.Text, want)
+	}
+	if result.RunAt(len("hello")).Image.ImageID != 99 {
+		t.Errorf("expected image at end")
+	}
+}
+
+func TestInsertImage_StylePreservation(t *testing.T) {
+	as := Build(
+		S("red text", SpanStyle{Color: draw.Hex("#ff0000")}),
+	)
+	img := ImageAttachment{ImageID: 5}
+	result := as.InsertImage(4, img) // "red " + image + "text"
+
+	// "red " keeps red color.
+	if result.RunAt(0).Color != draw.Hex("#ff0000") {
+		t.Error("color before image should be preserved")
+	}
+	// "text" keeps red color.
+	endOff := len("red ") + len("\uFFFC")
+	if result.RunAt(endOff).Color != draw.Hex("#ff0000") {
+		t.Error("color after image should be preserved")
+	}
+}
+
+func TestInsertImage_TwoImagesNotMerged(t *testing.T) {
+	as := NewAttributedString("")
+	img1 := ImageAttachment{ImageID: 1, Width: 16, Height: 16}
+	img2 := ImageAttachment{ImageID: 2, Width: 32, Height: 32}
+	const placeholder = "\uFFFC"
+
+	as = as.InsertImage(0, img1)
+	as = as.InsertImage(len(placeholder), img2)
+
+	// Two separate runs.
+	if as.RunAt(0).Image.ImageID != 1 {
+		t.Errorf("first image ImageID = %d, want 1", as.RunAt(0).Image.ImageID)
+	}
+	if as.RunAt(len(placeholder)).Image.ImageID != 2 {
+		t.Errorf("second image ImageID = %d, want 2", as.RunAt(len(placeholder)).Image.ImageID)
+	}
+	// Should NOT be merged (different ImageIDs ⇒ different styles).
+	if len(as.Attrs) < 2 {
+		t.Errorf("expected at least 2 runs, got %d (images with different IDs must not be merged)", len(as.Attrs))
+	}
+}
+
+func TestInsertImage_DeleteRemovesPlaceholder(t *testing.T) {
+	as := NewAttributedString("hello")
+	img := ImageAttachment{ImageID: 42}
+	const placeholder = "\uFFFC"
+	as = as.InsertImage(5, img)
+
+	// Delete the placeholder (last 3 bytes).
+	as = as.DeleteRange(5, 5+len(placeholder))
+	if as.Text != "hello" {
+		t.Fatalf("after delete: text = %q, want %q", as.Text, "hello")
+	}
+	if as.RunAt(0).Image.ImageID != 0 {
+		t.Error("expected no image after placeholder deleted")
+	}
+}

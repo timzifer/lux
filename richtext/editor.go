@@ -493,6 +493,10 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 		}
 
 		// Walk attribute runs that overlap this line.
+		// x is tracked cumulatively so image widths are accounted for
+		// correctly — prefix-measurement alone cannot handle inline images
+		// because MeasureText returns the U+FFFC glyph width, not the
+		// image width.
 		x := contentX
 		prevEnd := 0
 		for _, run := range attrs {
@@ -513,6 +517,32 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 				continue
 			}
 
+			// ── Image run ──────────────────────────────────────────
+			if run.Style.Image.ImageID != 0 {
+				img := run.Style.Image
+				imgH := img.Height
+				if imgH == 0 {
+					imgH = lineH
+				}
+				imgW := img.Width
+				if imgW == 0 {
+					imgW = imgH
+				}
+				op := img.Opacity
+				if op == 0 {
+					op = 1.0
+				}
+				// Vertically centre the image on the line.
+				imgY := y + (lineH-imgH)/2
+				canvas.DrawImageScaled(img.ImageID,
+					draw.R(x, imgY, imgW, imgH),
+					img.ScaleMode,
+					draw.ImageOptions{Opacity: op})
+				x += imgW
+				continue
+			}
+
+			// ── Text run ───────────────────────────────────────────
 			runText := plainText[rStart:rEnd]
 
 			// Resolve style.
@@ -526,14 +556,6 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 			}
 			if run.Style.Color.A > 0 {
 				color = run.Style.Color
-			}
-
-			// Measure prefix to get correct X position.
-			lineText := plainText[span.Start:span.End]
-			prefixLen := rStart - span.Start
-			if prefixLen > 0 {
-				m := canvas.MeasureText(lineText[:prefixLen], bodyStyle)
-				x = contentX + m.Width
 			}
 
 			canvas.DrawText(runText, draw.Pt(x, y), style, color)

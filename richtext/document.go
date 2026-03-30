@@ -27,14 +27,31 @@ type AttrRun struct {
 	Style SpanStyle // formatting for this run
 }
 
+// ImageAttachment describes an image embedded inline in the document.
+// An ImageID of 0 means "no image" (zero value is safe to embed in SpanStyle).
+// The in-text placeholder is U+FFFC (OBJECT REPLACEMENT CHARACTER, 3 UTF-8 bytes).
+//
+// Use InsertImage to add an image to an AttributedString.
+type ImageAttachment struct {
+	ImageID   draw.ImageID        // 0 = no image (zero value)
+	Alt       string              // accessibility / alt text
+	Width     float32             // dp; 0 = use Height; both 0 = use line height
+	Height    float32             // dp; 0 = use Width; both 0 = use line height
+	ScaleMode draw.ImageScaleMode // default ImageScaleStretch
+	Opacity   float32             // 0 = 1.0 (fully opaque)
+}
+
 // SpanStyle overrides text style for a run.
 // Zero values inherit from the theme's Body style.
+// When Image.ImageID != 0 the run represents an embedded image; Bold/Italic/
+// Underline/Color/Size are ignored for that run.
 type SpanStyle struct {
 	Bold      bool
 	Italic    bool
 	Underline bool
-	Color     draw.Color // zero = theme Text.Primary
-	Size      float32    // zero = inherit from theme Body
+	Color     draw.Color      // zero = theme Text.Primary
+	Size      float32         // zero = inherit from theme Body
+	Image     ImageAttachment // zero value = no image (ImageID == 0)
 }
 
 // ── Constructors ────────────────────────────────────────────────
@@ -130,6 +147,18 @@ func (as AttributedString) RunAt(offset int) SpanStyle {
 }
 
 // ── Mutation ────────────────────────────────────────────────────
+
+// InsertImage inserts an image at the given byte offset.
+//
+// The image is represented in the text by a U+FFFC (OBJECT REPLACEMENT
+// CHARACTER) placeholder (3 UTF-8 bytes). The returned AttributedString has
+// an attribute run at [offset, offset+3) carrying SpanStyle{Image: img}.
+// Surrounding styles are preserved.
+func (as AttributedString) InsertImage(offset int, img ImageAttachment) AttributedString {
+	const placeholder = "\uFFFC" // 3 bytes in UTF-8
+	as = as.InsertText(offset, placeholder)
+	return as.ApplyStyle(offset, offset+len(placeholder), SpanStyle{Image: img})
+}
 
 // InsertText inserts text at the given byte offset, inheriting the
 // style of the character before the insertion point. Returns a new
