@@ -1,0 +1,13 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (2)
+  0: glyph(24,37) scale=1 color(238,242,247,255) "Icon: "
+  1: glyph(80,37) scale=1 color(238,242,247,255) " — end."
+
+[ImageRects] (1)
+  0: image(60,24 20x20) id=1 opacity=1.00 uv(0.00,0.00→1.00,1.00)
+
+[ClipBatches] (1)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

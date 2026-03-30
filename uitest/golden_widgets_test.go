@@ -269,6 +269,67 @@ func TestGoldenRichTextMixedContent(t *testing.T) {
 	AssertScene(t, scene, "testdata/richtext_mixed_content.golden")
 }
 
+// ── RichText Images ─────────────────────────────────────────────
+
+func TestGoldenRichTextInlineImage(t *testing.T) {
+	// Use a fixed ImageID so the golden output is deterministic.
+	const imgID = draw.ImageID(1)
+	scene := BuildScene(
+		display.RichTextContent(
+			display.Span{Text: "Icon: "},
+			display.InlineImage(imgID, display.WithImageSpanSize(20, 20), display.WithImageSpanAlt("icon")),
+			display.Span{Text: " — end."},
+		),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_image_inline.golden")
+}
+
+func TestGoldenRichTextFloatLeftImage(t *testing.T) {
+	const imgID = draw.ImageID(2)
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.FloatLeftImage(imgID, display.WithImageSpanSize(48, 48), display.WithImageSpanAlt("float")),
+				display.Span{Text: "Text wraps on the right side of the float-left image."},
+			},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_image_float_left.golden")
+}
+
+func TestGoldenRichTextBlockImage(t *testing.T) {
+	const imgID = draw.ImageID(3)
+	// Block images are rendered after all inline content in their paragraph.
+	// Use separate paragraphs for above/below captions around a block image.
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Caption above."},
+				},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.BlockImage(imgID,
+						display.WithImageSpanSize(0, 40),
+						display.WithImageSpanScaleMode(draw.ImageScaleFit),
+						display.WithImageSpanAlt("block"),
+					),
+				},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Caption below."},
+				},
+			},
+		),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_image_block.golden")
+}
+
 func TestGoldenRichTextSpansBackcompat(t *testing.T) {
 	// Ensure the old Spans-only API still works unchanged.
 	scene := BuildScene(
