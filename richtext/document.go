@@ -41,17 +41,49 @@ type ImageAttachment struct {
 	Opacity   float32             // 0 = 1.0 (fully opaque)
 }
 
+// WhiteSpace controls how whitespace is handled within a run (CSS white-space).
+type WhiteSpace uint8
+
+const (
+	// WhiteSpaceNormal collapses whitespace sequences into a single space
+	// and allows wrapping at soft wrap opportunities (CSS: normal).
+	WhiteSpaceNormal WhiteSpace = iota
+
+	// WhiteSpacePre preserves all whitespace and only breaks at preserved
+	// newline characters (CSS: pre).
+	WhiteSpacePre
+
+	// WhiteSpaceNoWrap collapses whitespace like Normal but suppresses
+	// line breaks within the text (CSS: nowrap).
+	WhiteSpaceNoWrap
+
+	// WhiteSpacePreWrap preserves whitespace sequences and wraps at soft
+	// wrap opportunities and preserved newlines (CSS: pre-wrap).
+	WhiteSpacePreWrap
+
+	// WhiteSpacePreLine collapses whitespace sequences into a single space
+	// but preserves newline characters for line breaking (CSS: pre-line).
+	WhiteSpacePreLine
+)
+
 // SpanStyle overrides text style for a run.
 // Zero values inherit from the theme's Body style.
-// When Image.ImageID != 0 the run represents an embedded image; Bold/Italic/
-// Underline/Color/Size are ignored for that run.
+// When Image.ImageID != 0 the run represents an embedded image; formatting
+// fields (Bold/Italic/Underline/…) are ignored for that run.
 type SpanStyle struct {
-	Bold      bool
-	Italic    bool
-	Underline bool
-	Color     draw.Color      // zero = theme Text.Primary
-	Size      float32         // zero = inherit from theme Body
-	Image     ImageAttachment // zero value = no image (ImageID == 0)
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Strikethrough bool
+	FontFamily    string          // empty = inherit from theme
+	Weight        draw.FontWeight // 0 = inherit (Bold flag overrides to 700)
+	Color         draw.Color      // zero = theme Text.Primary
+	BgColor       draw.Color      // zero = transparent (no highlight)
+	Size          float32         // zero = inherit from theme Body
+	Tracking      float32         // letter-spacing in em; 0 = inherit
+	LineHeight    float32         // multiplier; 0 = inherit
+	WhiteSpace    WhiteSpace      // 0 = WhiteSpaceNormal
+	Image         ImageAttachment // zero value = no image (ImageID == 0)
 }
 
 // ── Constructors ────────────────────────────────────────────────

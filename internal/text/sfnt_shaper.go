@@ -56,6 +56,18 @@ func (s *SfntShaper) RegisterFamily(family *fonts.FontFamily) {
 	}
 }
 
+// drawFontStyleToFonts converts draw.FontStyle to fonts.FontStyle.
+func drawFontStyleToFonts(s draw.FontStyle) fonts.FontStyle {
+	switch s {
+	case draw.FontStyleItalic:
+		return fonts.StyleItalic
+	case draw.FontStyleOblique:
+		return fonts.StyleOblique
+	default:
+		return fonts.StyleNormal
+	}
+}
+
 // resolveFont picks the best font for the given style.
 // If style.FontFamily matches a registered family, that family is used;
 // otherwise the default fallback family is used.
@@ -69,13 +81,27 @@ func (s *SfntShaper) resolveFont(style draw.TextStyle) *fonts.Font {
 	if family == nil {
 		return nil
 	}
-	// Try exact weight match.
-	key := fonts.FontFaceKey{Weight: int(style.Weight), Style: fonts.StyleNormal}
+	fontStyle := drawFontStyleToFonts(style.Style)
+
+	// Try exact weight + style match.
+	key := fonts.FontFaceKey{Weight: int(style.Weight), Style: fontStyle}
 	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
 		return f
 	}
-	// Fall back to Regular.
-	key.Weight = 400
+	// Fall back: try requested weight with normal style.
+	if fontStyle != fonts.StyleNormal {
+		key.Style = fonts.StyleNormal
+		if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
+			return f
+		}
+	}
+	// Fall back to Regular weight + requested style.
+	key = fonts.FontFaceKey{Weight: 400, Style: fontStyle}
+	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
+		return f
+	}
+	// Fall back to Regular weight + normal style.
+	key.Style = fonts.StyleNormal
 	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
 		return f
 	}

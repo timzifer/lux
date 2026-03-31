@@ -70,7 +70,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "datatable", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts", "toolbar"},
 	"group-overlays":     {"overlays", "dialogs"},
-	"group-text":         {"rich-text", "rich-text-editor", "inline-widgets", "rich-text-images", "text-shaping", "grapheme-nav", "line-breaking"},
+	"group-text":         {"rich-text", "rich-text-editor", "font-formatting", "inline-widgets", "rich-text-images", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
 	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
@@ -137,6 +137,8 @@ func sectionLabel(id string) string {
 		return "RichText"
 	case "rich-text-editor":
 		return "RichTextEditor"
+	case "font-formatting":
+		return "Font Formatting"
 	case "inline-widgets":
 		return "Inline Widgets"
 	case "rich-text-images":
@@ -1032,6 +1034,8 @@ func sectionContent(m Model) ui.Element {
 		return richTextSection()
 	case "rich-text-editor":
 		return richTextEditorSection(m)
+	case "font-formatting":
+		return fontFormattingSection()
 	case "inline-widgets":
 		return inlineWidgetsSection()
 	case "rich-text-images":
@@ -1896,6 +1900,149 @@ func richTextEditorSection(m Model) ui.Element {
 		richtext.New(richtext.NewAttributedString("Line 1: The quick brown fox\nLine 2: jumps over\nLine 3: the lazy dog"),
 			richtext.WithReadOnly(),
 			richtext.WithRows(3),
+		),
+	)
+}
+
+func fontFormattingSection() ui.Element {
+	return layout.Column(
+		sectionHeader("Font Formatting (CSS Inline)"),
+
+		// ── Strikethrough ──────────────────────────────────────
+		display.Text("Strikethrough:"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("Normal text, "),
+			richtext.S("strikethrough text", richtext.SpanStyle{Strikethrough: true}),
+			richtext.S(", and "),
+			richtext.S("bold + strikethrough", richtext.SpanStyle{Bold: true, Strikethrough: true}),
+			richtext.S("."),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── Font Weights (CSS font-weight 100–900) ─────────────
+		display.Text("Font weights (100–900):"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("Thin ", richtext.SpanStyle{Weight: draw.FontWeightThin}),
+			richtext.S("Light ", richtext.SpanStyle{Weight: draw.FontWeightLight}),
+			richtext.S("Regular ", richtext.SpanStyle{Weight: draw.FontWeightRegular}),
+			richtext.S("Medium ", richtext.SpanStyle{Weight: draw.FontWeightMedium}),
+			richtext.S("SemiBold ", richtext.SpanStyle{Weight: draw.FontWeightSemiBold}),
+			richtext.S("Bold ", richtext.SpanStyle{Weight: draw.FontWeightBold}),
+			richtext.S("Black", richtext.SpanStyle{Weight: draw.FontWeightBlack}),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── Combined Decorations ───────────────────────────────
+		display.Text("Combined text decorations:"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("Bold+Italic", richtext.SpanStyle{Bold: true, Italic: true}),
+			richtext.S(" | "),
+			richtext.S("Underline+Strike", richtext.SpanStyle{Underline: true, Strikethrough: true}),
+			richtext.S(" | "),
+			richtext.S("All four", richtext.SpanStyle{Bold: true, Italic: true, Underline: true, Strikethrough: true}),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── Background Highlight ───────────────────────────────
+		display.Text("Background highlight (inline box):"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("Normal text with "),
+			richtext.S("yellow highlight", richtext.SpanStyle{BgColor: draw.Hex("#fef08a")}),
+			richtext.S(" and "),
+			richtext.S("blue highlight", richtext.SpanStyle{BgColor: draw.Hex("#bfdbfe"), Color: draw.Hex("#1e40af")}),
+			richtext.S(" inline."),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── Letter-spacing / Tracking ──────────────────────────
+		display.Text("Letter-spacing (CSS letter-spacing / tracking):"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("Condensed ", richtext.SpanStyle{Tracking: -0.05}),
+			richtext.S("Normal "),
+			richtext.S("Expanded ", richtext.SpanStyle{Tracking: 0.1}),
+			richtext.S("Very Expanded", richtext.SpanStyle{Tracking: 0.25}),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── Font Size Variations ───────────────────────────────
+		display.Text("Mixed font sizes in one line:"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("Small ", richtext.SpanStyle{Size: 10}),
+			richtext.S("Normal ", richtext.SpanStyle{Size: 13}),
+			richtext.S("Large ", richtext.SpanStyle{Size: 18}),
+			richtext.S("XL", richtext.SpanStyle{Size: 24}),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── White-Space Pre ────────────────────────────────────
+		display.Text("White-space: pre (preserves spaces):"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("column1    column2    column3", richtext.SpanStyle{WhiteSpace: richtext.WhiteSpacePre}),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── Colored text with decorations ──────────────────────
+		display.Text("Colored decorations:"),
+		display.Spacer(4),
+		richtext.New(richtext.Build(
+			richtext.S("Red underline", richtext.SpanStyle{Underline: true, Color: draw.Hex("#ef4444")}),
+			richtext.S(" | "),
+			richtext.S("Blue strikethrough", richtext.SpanStyle{Strikethrough: true, Color: draw.Hex("#3b82f6")}),
+			richtext.S(" | "),
+			richtext.S("Purple all", richtext.SpanStyle{
+				Bold: true, Italic: true, Underline: true, Strikethrough: true,
+				Color: draw.Hex("#8b5cf6"),
+			}),
+		),
+			richtext.WithReadOnly(),
+			richtext.WithRows(2),
+		),
+
+		display.Spacer(16),
+
+		// ── Display-layer RichText with italic + tracking ──────
+		display.Text("Display-layer RichText with italic + tracking:"),
+		display.Spacer(4),
+		display.RichTextSpans(
+			display.Span{Text: "Normal "},
+			display.Span{Text: "Italic ", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightRegular, Style: draw.FontStyleItalic}}},
+			display.Span{Text: "Bold+Italic ", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Style: draw.FontStyleItalic}}},
+			display.Span{Text: "Tracked", Style: display.SpanStyle{Style: draw.TextStyle{Tracking: 0.15}}},
 		),
 	)
 }

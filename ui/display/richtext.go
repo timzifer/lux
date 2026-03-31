@@ -512,6 +512,7 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 }
 
 // resolveSpanStyle merges a SpanStyle with the theme body style.
+// Non-zero fields in ss.Style override the corresponding body defaults.
 func resolveSpanStyle(body draw.TextStyle, ss SpanStyle) draw.TextStyle {
 	if ss.Style.Size > 0 {
 		return ss.Style
@@ -522,6 +523,15 @@ func resolveSpanStyle(body draw.TextStyle, ss SpanStyle) draw.TextStyle {
 	}
 	if ss.Style.FontFamily != "" {
 		style.FontFamily = ss.Style.FontFamily
+	}
+	if ss.Style.Style != draw.FontStyleNormal {
+		style.Style = ss.Style.Style
+	}
+	if ss.Style.Tracking != 0 {
+		style.Tracking = ss.Style.Tracking
+	}
+	if ss.Style.LineHeight > 0 {
+		style.LineHeight = ss.Style.LineHeight
 	}
 	return style
 }
