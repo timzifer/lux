@@ -108,6 +108,7 @@ const (
 	TextAlignLeft TextAlign = iota
 	TextAlignCenter
 	TextAlignRight
+	TextAlignJustify
 )
 
 // TextLayout describes a block of text with layout constraints.
@@ -115,7 +116,7 @@ type TextLayout struct {
 	Text      string
 	Style     TextStyle
 	MaxWidth  float32   // 0 = unbounded
-	Alignment TextAlign // Left, Center, Right
+	Alignment TextAlign // Left, Center, Right, Justify
 }
 
 // ImageID is a handle to a loaded image/texture.

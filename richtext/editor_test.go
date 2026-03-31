@@ -119,8 +119,8 @@ func TestMaxf(t *testing.T) {
 
 func TestDefaultCommands(t *testing.T) {
 	cmds := DefaultCommands()
-	if len(cmds) != 3 {
-		t.Fatalf("expected 3 default commands, got %d", len(cmds))
+	if len(cmds) != 4 {
+		t.Fatalf("expected 4 default commands, got %d", len(cmds))
 	}
 }
 

@@ -1,75 +1,95 @@
 package richtext
 
 import (
+	"sort"
+	"strings"
+
 	"github.com/timzifer/lux/draw"
 )
 
-// ── AttributedString (user-facing, serializable) ────────────────
+// ── Attribute Interface (sealed) ───────────────────────────────
+
+// attrTag is an unexported marker so only types in this package
+// can implement Attribute.
+type attrTag uint8
+
+// Attribute is the sealed interface for typed attribute values.
+// Each concrete type represents a single CSS-like property.
+type Attribute interface {
+	attrTag() attrTag
+}
+
+// ── Concrete Attribute Types ───────────────────────────────────
+
+// Span-level attributes (inline text formatting).
+
+type BoldAttr bool                  // CSS font-weight: bold
+type ItalicAttr bool                // CSS font-style: italic
+type UnderlineAttr bool             // CSS text-decoration: underline
+type StrikethroughAttr bool         // CSS text-decoration: line-through
+type FontFamilyAttr string          // CSS font-family
+type WeightAttr draw.FontWeight     // CSS font-weight (100–900)
+type ColorAttr draw.Color           // CSS color
+type BgColorAttr draw.Color         // CSS background-color
+type SizeAttr float32               // CSS font-size (dp)
+type TrackingAttr float32           // CSS letter-spacing (em)
+type LineHeightAttr float32         // CSS line-height (multiplier)
+type WhiteSpaceAttr WhiteSpace      // CSS white-space
+type ImageAttr ImageAttachment      // Inline image (U+FFFC placeholder)
+
+// Paragraph-level attributes (block formatting).
+
+type AlignAttr draw.TextAlign // CSS text-align
+type IndentAttr float32       // CSS text-indent (dp)
+type ParaSpacingAttr float32  // Paragraph spacing (dp)
+
+// attrTag implementations (sealed marker).
+
+func (BoldAttr) attrTag() attrTag          { return 0 }
+func (ItalicAttr) attrTag() attrTag        { return 1 }
+func (UnderlineAttr) attrTag() attrTag     { return 2 }
+func (StrikethroughAttr) attrTag() attrTag { return 3 }
+func (FontFamilyAttr) attrTag() attrTag    { return 4 }
+func (WeightAttr) attrTag() attrTag        { return 5 }
+func (ColorAttr) attrTag() attrTag         { return 6 }
+func (BgColorAttr) attrTag() attrTag       { return 7 }
+func (SizeAttr) attrTag() attrTag          { return 8 }
+func (TrackingAttr) attrTag() attrTag      { return 9 }
+func (LineHeightAttr) attrTag() attrTag    { return 10 }
+func (WhiteSpaceAttr) attrTag() attrTag    { return 11 }
+func (ImageAttr) attrTag() attrTag         { return 12 }
+func (AlignAttr) attrTag() attrTag         { return 13 }
+func (IndentAttr) attrTag() attrTag        { return 14 }
+func (ParaSpacingAttr) attrTag() attrTag   { return 15 }
+
+// ── Attr (Tagged Range) ────────────────────────────────────────
+
+// Attr is a typed attribute applied to a byte range [Start, End).
+// Multiple Attrs of different types can overlap on the same text.
+// Later Attrs in the slice take precedence over earlier ones for
+// the same attribute type (last-writer-wins).
+type Attr struct {
+	Start int       // inclusive byte offset
+	End   int       // exclusive byte offset
+	Value Attribute // typed attribute value
+}
+
+// ── AttributedString ───────────────────────────────────────────
 
 // AttributedString is the serializable document content (RFC-003 §5.6).
-// It stores plain text and a parallel run-length-encoded list of style
-// attributes. Inspired by Apple's NSAttributedString.
-//
-// Runs are contiguous and non-overlapping:
-//
-//	Run[0] covers bytes [0, Run[0].End)
-//	Run[i] covers bytes [Run[i-1].End, Run[i].End)
-//
-// The last run's End equals len(Text).
+// It stores plain text and a list of typed, potentially overlapping
+// attribute ranges. Inspired by Apple's NSAttributedString but using
+// tagged ranges instead of run-length encoding.
 type AttributedString struct {
-	Text  string    // complete plain text including \n for paragraphs
-	Attrs []AttrRun // run-length-encoded, ascending by End
+	Text  string // complete plain text including \n for paragraphs
+	Attrs []Attr // typed attribute ranges (order matters: last wins)
 }
 
-// AttrRun describes formatting up to a byte offset (exclusive).
-type AttrRun struct {
-	End   int       // exclusive byte offset
-	Style SpanStyle // formatting for this run
-}
+// ── SpanStyle (Resolved Output) ────────────────────────────────
 
-// ImageAttachment describes an image embedded inline in the document.
-// An ImageID of 0 means "no image" (zero value is safe to embed in SpanStyle).
-// The in-text placeholder is U+FFFC (OBJECT REPLACEMENT CHARACTER, 3 UTF-8 bytes).
-//
-// Use InsertImage to add an image to an AttributedString.
-type ImageAttachment struct {
-	ImageID   draw.ImageID        // 0 = no image (zero value)
-	Alt       string              // accessibility / alt text
-	Width     float32             // dp; 0 = use Height; both 0 = use line height
-	Height    float32             // dp; 0 = use Width; both 0 = use line height
-	ScaleMode draw.ImageScaleMode // default ImageScaleStretch
-	Opacity   float32             // 0 = 1.0 (fully opaque)
-}
-
-// WhiteSpace controls how whitespace is handled within a run (CSS white-space).
-type WhiteSpace uint8
-
-const (
-	// WhiteSpaceNormal collapses whitespace sequences into a single space
-	// and allows wrapping at soft wrap opportunities (CSS: normal).
-	WhiteSpaceNormal WhiteSpace = iota
-
-	// WhiteSpacePre preserves all whitespace and only breaks at preserved
-	// newline characters (CSS: pre).
-	WhiteSpacePre
-
-	// WhiteSpaceNoWrap collapses whitespace like Normal but suppresses
-	// line breaks within the text (CSS: nowrap).
-	WhiteSpaceNoWrap
-
-	// WhiteSpacePreWrap preserves whitespace sequences and wraps at soft
-	// wrap opportunities and preserved newlines (CSS: pre-wrap).
-	WhiteSpacePreWrap
-
-	// WhiteSpacePreLine collapses whitespace sequences into a single space
-	// but preserves newline characters for line breaking (CSS: pre-line).
-	WhiteSpacePreLine
-)
-
-// SpanStyle overrides text style for a run.
-// Zero values inherit from the theme's Body style.
-// When Image.ImageID != 0 the run represents an embedded image; formatting
-// fields (Bold/Italic/Underline/…) are ignored for that run.
+// SpanStyle is the fully resolved style at a given byte offset.
+// It is the output of ResolveAt() — NOT used for storage.
+// Zero values mean "inherit from theme defaults".
 type SpanStyle struct {
 	Bold          bool
 	Italic        bool
@@ -84,51 +104,186 @@ type SpanStyle struct {
 	LineHeight    float32         // multiplier; 0 = inherit
 	WhiteSpace    WhiteSpace      // 0 = WhiteSpaceNormal
 	Image         ImageAttachment // zero value = no image (ImageID == 0)
+	// Paragraph-level properties (CSS text-align, text-indent).
+	Align       draw.TextAlign // 0 = TextAlignLeft (default)
+	Indent      float32        // dp first-line indent; 0 = none
+	ParaSpacing float32        // dp between paragraphs; 0 = theme default
 }
 
-// ── Constructors ────────────────────────────────────────────────
+// ImageAttachment describes an image embedded inline in the document.
+// An ImageID of 0 means "no image" (zero value is safe to embed).
+// The in-text placeholder is U+FFFC (OBJECT REPLACEMENT CHARACTER, 3 UTF-8 bytes).
+type ImageAttachment struct {
+	ImageID   draw.ImageID        // 0 = no image (zero value)
+	Alt       string              // accessibility / alt text
+	Width     float32             // dp; 0 = use Height; both 0 = use line height
+	Height    float32             // dp; 0 = use Width; both 0 = use line height
+	ScaleMode draw.ImageScaleMode // default ImageScaleStretch
+	Opacity   float32             // 0 = 1.0 (fully opaque)
+}
+
+// WhiteSpace controls how whitespace is handled within a run (CSS white-space).
+type WhiteSpace uint8
+
+const (
+	WhiteSpaceNormal  WhiteSpace = iota // collapses whitespace, allows wrapping
+	WhiteSpacePre                       // preserves all whitespace, breaks only at \n
+	WhiteSpaceNoWrap                    // collapses whitespace, suppresses line breaks
+	WhiteSpacePreWrap                   // preserves whitespace, allows soft wrapping
+	WhiteSpacePreLine                   // collapses to single space, preserves \n
+)
+
+// ── Resolution ─────────────────────────────────────────────────
+
+// ResolveAt returns the composed style at a byte offset.
+// Later Attrs override earlier ones for the same attribute type.
+func (as AttributedString) ResolveAt(offset int) SpanStyle {
+	var s SpanStyle
+	for _, a := range as.Attrs {
+		if offset >= a.Start && offset < a.End {
+			applyAttr(&s, a.Value)
+		}
+	}
+	return s
+}
+
+// RunAt returns the style at the given byte offset.
+// Alias for ResolveAt (backward compatibility).
+func (as AttributedString) RunAt(offset int) SpanStyle {
+	if offset < 0 || len(as.Attrs) == 0 {
+		return SpanStyle{}
+	}
+	if offset >= len(as.Text) && len(as.Text) > 0 {
+		// Past end — resolve at last valid offset.
+		return as.ResolveAt(len(as.Text) - 1)
+	}
+	return as.ResolveAt(offset)
+}
+
+// ResolvedRun is a resolved style segment for efficient rendering.
+type ResolvedRun struct {
+	Start int
+	End   int
+	Style SpanStyle
+}
+
+// StyleRuns returns sorted, non-overlapping resolved style segments
+// for the byte range [start, end). Each segment has a uniform style.
+func (as AttributedString) StyleRuns(start, end int) []ResolvedRun {
+	if start >= end {
+		return nil
+	}
+	points := as.transitionsIn(start, end)
+	if len(points) == 0 {
+		return []ResolvedRun{{Start: start, End: end, Style: as.ResolveAt(start)}}
+	}
+
+	var runs []ResolvedRun
+	for i := 0; i < len(points)-1; i++ {
+		s := as.ResolveAt(points[i])
+		run := ResolvedRun{Start: points[i], End: points[i+1], Style: s}
+		// Merge with previous run if style is identical.
+		if len(runs) > 0 && runs[len(runs)-1].Style == s {
+			runs[len(runs)-1].End = run.End
+		} else {
+			runs = append(runs, run)
+		}
+	}
+	return runs
+}
+
+// transitionsIn returns sorted unique transition points within [start, end).
+// Transition points are all Attr Start/End offsets clipped to the range,
+// plus start and end themselves.
+func (as AttributedString) transitionsIn(start, end int) []int {
+	seen := make(map[int]struct{})
+	seen[start] = struct{}{}
+	seen[end] = struct{}{}
+	for _, a := range as.Attrs {
+		if a.Start > start && a.Start < end {
+			seen[a.Start] = struct{}{}
+		}
+		if a.End > start && a.End < end {
+			seen[a.End] = struct{}{}
+		}
+	}
+	points := make([]int, 0, len(seen))
+	for p := range seen {
+		points = append(points, p)
+	}
+	sort.Ints(points)
+	return points
+}
+
+// applyAttr merges a single Attribute value into a SpanStyle.
+func applyAttr(s *SpanStyle, v Attribute) {
+	switch a := v.(type) {
+	case BoldAttr:
+		s.Bold = bool(a)
+	case ItalicAttr:
+		s.Italic = bool(a)
+	case UnderlineAttr:
+		s.Underline = bool(a)
+	case StrikethroughAttr:
+		s.Strikethrough = bool(a)
+	case FontFamilyAttr:
+		s.FontFamily = string(a)
+	case WeightAttr:
+		s.Weight = draw.FontWeight(a)
+	case ColorAttr:
+		s.Color = draw.Color(a)
+	case BgColorAttr:
+		s.BgColor = draw.Color(a)
+	case SizeAttr:
+		s.Size = float32(a)
+	case TrackingAttr:
+		s.Tracking = float32(a)
+	case LineHeightAttr:
+		s.LineHeight = float32(a)
+	case WhiteSpaceAttr:
+		s.WhiteSpace = WhiteSpace(a)
+	case ImageAttr:
+		s.Image = ImageAttachment(a)
+	case AlignAttr:
+		s.Align = draw.TextAlign(a)
+	case IndentAttr:
+		s.Indent = float32(a)
+	case ParaSpacingAttr:
+		s.ParaSpacing = float32(a)
+	}
+}
+
+// ── Constructors ───────────────────────────────────────────────
 
 // NewAttributedString creates an AttributedString from plain text
 // with default (unstyled) formatting.
 func NewAttributedString(text string) AttributedString {
-	if text == "" {
-		return AttributedString{}
-	}
-	return AttributedString{
-		Text:  text,
-		Attrs: []AttrRun{{End: len(text)}},
-	}
+	return AttributedString{Text: text}
 }
 
-// Styled creates a single-run AttributedString with the given style.
+// Styled creates a single-range AttributedString with the given style.
 func Styled(text string, style SpanStyle) AttributedString {
 	if text == "" {
 		return AttributedString{}
 	}
-	return AttributedString{
-		Text:  text,
-		Attrs: []AttrRun{{End: len(text), Style: style}},
-	}
+	attrs := spanStyleToAttrs(0, len(text), style)
+	return AttributedString{Text: text, Attrs: attrs}
 }
 
-// Build constructs an AttributedString from styled segments,
-// similar to how one would build an NSAttributedString.
-//
-//	richtext.Build(
-//	    richtext.S("Hello ", richtext.SpanStyle{Bold: true}),
-//	    richtext.S("World"),
-//	)
+// Build constructs an AttributedString from styled segments.
 func Build(segments ...Segment) AttributedString {
 	if len(segments) == 0 {
 		return AttributedString{}
 	}
 	var buf []byte
-	var runs []AttrRun
+	var attrs []Attr
 	for _, seg := range segments {
+		start := len(buf)
 		buf = append(buf, seg.Text...)
-		runs = append(runs, AttrRun{End: len(buf), Style: seg.Style})
+		end := len(buf)
+		attrs = append(attrs, spanStyleToAttrs(start, end, seg.Style)...)
 	}
-	return AttributedString{Text: string(buf), Attrs: runs}
+	return AttributedString{Text: string(buf), Attrs: attrs}
 }
 
 // Segment is a text+style pair used by Build.
@@ -146,55 +301,51 @@ func S(text string, style ...SpanStyle) Segment {
 	return seg
 }
 
-// ── Accessors ───────────────────────────────────────────────────
+// ── Accessors ──────────────────────────────────────────────────
 
 // PlainText returns the plain text content.
-func (as AttributedString) PlainText() string {
-	return as.Text
-}
+func (as AttributedString) PlainText() string { return as.Text }
 
 // Len returns the byte length of the text.
-func (as AttributedString) Len() int {
-	return len(as.Text)
-}
+func (as AttributedString) Len() int { return len(as.Text) }
 
 // IsEmpty returns true if the attributed string has no text.
-func (as AttributedString) IsEmpty() bool {
-	return len(as.Text) == 0
-}
+func (as AttributedString) IsEmpty() bool { return len(as.Text) == 0 }
 
-// RunAt returns the style at the given byte offset.
-// Returns the zero SpanStyle if offset is out of range.
-func (as AttributedString) RunAt(offset int) SpanStyle {
-	if offset < 0 || len(as.Attrs) == 0 {
-		return SpanStyle{}
+// ── Mutation ───────────────────────────────────────────────────
+
+// Apply adds a single typed attribute to the given byte range.
+// This never splits or modifies existing attributes.
+func (as AttributedString) Apply(start, end int, attr Attribute) AttributedString {
+	if start >= end {
+		return as
 	}
-	for _, r := range as.Attrs {
-		if offset < r.End {
-			return r.Style
-		}
+	newAttrs := make([]Attr, len(as.Attrs), len(as.Attrs)+1)
+	copy(newAttrs, as.Attrs)
+	newAttrs = append(newAttrs, Attr{Start: start, End: end, Value: attr})
+	return AttributedString{Text: as.Text, Attrs: newAttrs}
+}
+
+// ApplyStyle sets the style for the byte range [start, end).
+// Non-zero fields in style are converted to individual Attrs.
+// Returns a new AttributedString.
+func (as AttributedString) ApplyStyle(start, end int, style SpanStyle) AttributedString {
+	if start >= end {
+		return as
 	}
-	// Past end — return last run's style.
-	return as.Attrs[len(as.Attrs)-1].Style
+	newAttrs := spanStyleToAttrs(start, end, style)
+	if len(newAttrs) == 0 {
+		return as
+	}
+	result := make([]Attr, len(as.Attrs), len(as.Attrs)+len(newAttrs))
+	copy(result, as.Attrs)
+	result = append(result, newAttrs...)
+	return AttributedString{Text: as.Text, Attrs: result}
 }
 
-// ── Mutation ────────────────────────────────────────────────────
-
-// InsertImage inserts an image at the given byte offset.
-//
-// The image is represented in the text by a U+FFFC (OBJECT REPLACEMENT
-// CHARACTER) placeholder (3 UTF-8 bytes). The returned AttributedString has
-// an attribute run at [offset, offset+3) carrying SpanStyle{Image: img}.
-// Surrounding styles are preserved.
-func (as AttributedString) InsertImage(offset int, img ImageAttachment) AttributedString {
-	const placeholder = "\uFFFC" // 3 bytes in UTF-8
-	as = as.InsertText(offset, placeholder)
-	return as.ApplyStyle(offset, offset+len(placeholder), SpanStyle{Image: img})
-}
-
-// InsertText inserts text at the given byte offset, inheriting the
-// style of the character before the insertion point. Returns a new
-// AttributedString (immutable semantics).
+// InsertText inserts text at the given byte offset.
+// Attrs that contain the offset are extended to cover the insertion.
+// Attrs that start at or after the offset are shifted forward.
 func (as AttributedString) InsertText(offset int, text string) AttributedString {
 	if len(text) == 0 {
 		return as
@@ -206,32 +357,32 @@ func (as AttributedString) InsertText(offset int, text string) AttributedString 
 		offset = len(as.Text)
 	}
 
-	newText := as.Text[:offset] + text + as.Text[offset:]
 	ins := len(text)
+	newText := as.Text[:offset] + text + as.Text[offset:]
 
-	if len(as.Attrs) == 0 {
-		return AttributedString{
-			Text:  newText,
-			Attrs: []AttrRun{{End: len(newText)}},
+	newAttrs := make([]Attr, len(as.Attrs))
+	for i, a := range as.Attrs {
+		na := a
+		if na.End <= offset {
+			// Attr entirely before insertion — extend if at boundary.
+			if na.End == offset {
+				na.End += ins
+			}
+		} else if na.Start >= offset {
+			// Attr entirely after insertion — shift.
+			na.Start += ins
+			na.End += ins
+		} else {
+			// Attr straddles the insertion point — extend End.
+			na.End += ins
 		}
+		newAttrs[i] = na
 	}
 
-	newAttrs := make([]AttrRun, len(as.Attrs))
-	for i, r := range as.Attrs {
-		newAttrs[i] = r
-		if r.End > offset {
-			newAttrs[i].End = r.End + ins
-		} else if r.End == offset {
-			// Insertion at run boundary: extend this run.
-			newAttrs[i].End = r.End + ins
-		}
-	}
-
-	return AttributedString{Text: newText, Attrs: newAttrs}.Normalized()
+	return AttributedString{Text: newText, Attrs: newAttrs}
 }
 
-// DeleteRange removes bytes [start, end) and adjusts attribute runs.
-// Returns a new AttributedString.
+// DeleteRange removes bytes [start, end) and adjusts attributes.
 func (as AttributedString) DeleteRange(start, end int) AttributedString {
 	if start < 0 {
 		start = 0
@@ -246,109 +397,57 @@ func (as AttributedString) DeleteRange(start, end int) AttributedString {
 	deleted := end - start
 	newText := as.Text[:start] + as.Text[end:]
 
-	if len(as.Attrs) == 0 {
-		if newText == "" {
-			return AttributedString{}
-		}
-		return AttributedString{
-			Text:  newText,
-			Attrs: []AttrRun{{End: len(newText)}},
-		}
-	}
-
-	var newAttrs []AttrRun
-	for _, r := range as.Attrs {
-		nr := r
-		if r.End <= start {
-			// Run entirely before deletion — unchanged.
-			newAttrs = append(newAttrs, nr)
-		} else if r.End <= end {
-			// Run ends within or at deletion boundary.
-			nr.End = start
-			if len(newAttrs) == 0 || nr.End > 0 {
-				if nr.End > start {
-					newAttrs = append(newAttrs, nr)
-				} else if nr.End == start && (len(newAttrs) == 0 || newAttrs[len(newAttrs)-1].End < start) {
-					// Preserve run that ends exactly at start.
-					newAttrs = append(newAttrs, nr)
-				}
-			}
-		} else {
-			// Run extends past deletion.
-			nr.End = r.End - deleted
-			newAttrs = append(newAttrs, nr)
-		}
-	}
-
 	if newText == "" {
 		return AttributedString{}
 	}
 
-	// Ensure runs cover the full text.
-	if len(newAttrs) == 0 {
-		newAttrs = []AttrRun{{End: len(newText)}}
-	} else if newAttrs[len(newAttrs)-1].End < len(newText) {
-		newAttrs[len(newAttrs)-1].End = len(newText)
+	var newAttrs []Attr
+	for _, a := range as.Attrs {
+		na := a
+		if na.End <= start {
+			// Entirely before deleted range — keep as-is.
+			newAttrs = append(newAttrs, na)
+		} else if na.Start >= end {
+			// Entirely after deleted range — shift.
+			na.Start -= deleted
+			na.End -= deleted
+			newAttrs = append(newAttrs, na)
+		} else {
+			// Overlaps with deleted range — clip.
+			if na.Start < start {
+				// Starts before deletion.
+				if na.End <= end {
+					na.End = start
+				} else {
+					na.End -= deleted
+				}
+			} else {
+				// Starts within or at deletion.
+				if na.End <= end {
+					continue // entirely within deletion — remove
+				}
+				na.Start = start
+				na.End -= deleted
+			}
+			if na.Start < na.End {
+				newAttrs = append(newAttrs, na)
+			}
+		}
 	}
 
-	return AttributedString{Text: newText, Attrs: newAttrs}.Normalized()
+	return AttributedString{Text: newText, Attrs: newAttrs}
 }
 
-// ApplyStyle sets the style for the byte range [start, end).
-// Returns a new AttributedString.
-func (as AttributedString) ApplyStyle(start, end int, style SpanStyle) AttributedString {
-	if start < 0 {
-		start = 0
-	}
-	if end > len(as.Text) {
-		end = len(as.Text)
-	}
-	if start >= end || len(as.Attrs) == 0 {
-		return as
-	}
-
-	var newAttrs []AttrRun
-	prevEnd := 0
-
-	for _, r := range as.Attrs {
-		runStart := prevEnd
-		runEnd := r.End
-		prevEnd = runEnd
-
-		if runEnd <= start || runStart >= end {
-			// Run entirely outside the styled range — keep as-is.
-			newAttrs = append(newAttrs, r)
-			continue
-		}
-
-		// Split: part before styled range.
-		if runStart < start {
-			newAttrs = append(newAttrs, AttrRun{End: start, Style: r.Style})
-		}
-
-		// The styled part of this run.
-		styledStart := runStart
-		if styledStart < start {
-			styledStart = start
-		}
-		styledEnd := runEnd
-		if styledEnd > end {
-			styledEnd = end
-		}
-		newAttrs = append(newAttrs, AttrRun{End: styledEnd, Style: style})
-
-		// Split: part after styled range.
-		if runEnd > end {
-			newAttrs = append(newAttrs, AttrRun{End: runEnd, Style: r.Style})
-		}
-	}
-
-	return AttributedString{Text: as.Text, Attrs: newAttrs}.Normalized()
+// InsertImage inserts an image at the given byte offset.
+// The image is represented by a U+FFFC placeholder (3 UTF-8 bytes).
+func (as AttributedString) InsertImage(offset int, img ImageAttachment) AttributedString {
+	const placeholder = "\uFFFC"
+	as = as.InsertText(offset, placeholder)
+	return as.Apply(offset, offset+len(placeholder), ImageAttr(img))
 }
 
-// ToggleStyleFunc transforms the style of each run overlapping [start, end)
-// using fn. Unlike ApplyStyle, it preserves attributes that fn does not
-// modify — e.g. toggling Bold without losing Italic.
+// ToggleStyleFunc transforms the style of each segment overlapping
+// [start, end) using fn. Preserves attributes that fn does not modify.
 func (as AttributedString) ToggleStyleFunc(start, end int, fn func(SpanStyle) SpanStyle) AttributedString {
 	if start < 0 {
 		start = 0
@@ -356,46 +455,80 @@ func (as AttributedString) ToggleStyleFunc(start, end int, fn func(SpanStyle) Sp
 	if end > len(as.Text) {
 		end = len(as.Text)
 	}
-	if start >= end || len(as.Attrs) == 0 {
+	if start >= end {
 		return as
 	}
 
-	var newAttrs []AttrRun
-	prevEnd := 0
-
-	for _, r := range as.Attrs {
-		runStart := prevEnd
-		runEnd := r.End
-		prevEnd = runEnd
-
-		if runEnd <= start || runStart >= end {
-			newAttrs = append(newAttrs, r)
-			continue
-		}
-
-		// Split: part before the transformed range.
-		if runStart < start {
-			newAttrs = append(newAttrs, AttrRun{End: start, Style: r.Style})
-		}
-
-		// The transformed part of this run.
-		styledEnd := runEnd
-		if styledEnd > end {
-			styledEnd = end
-		}
-		newAttrs = append(newAttrs, AttrRun{End: styledEnd, Style: fn(r.Style)})
-
-		// Split: part after the transformed range.
-		if runEnd > end {
-			newAttrs = append(newAttrs, AttrRun{End: runEnd, Style: r.Style})
-		}
+	points := as.transitionsIn(start, end)
+	result := as
+	for i := 0; i < len(points)-1; i++ {
+		segStart := points[i]
+		segEnd := points[i+1]
+		current := as.ResolveAt(segStart)
+		desired := fn(current)
+		result = result.applyDiff(segStart, segEnd, current, desired)
 	}
-
-	return AttributedString{Text: as.Text, Attrs: newAttrs}.Normalized()
+	return result
 }
 
-// AllMatch reports whether fn returns true for every attribute run
-// overlapping [start, end). Returns true for empty ranges.
+// applyDiff adds Attrs for fields that differ between current and desired.
+func (as AttributedString) applyDiff(start, end int, current, desired SpanStyle) AttributedString {
+	result := as
+	if desired.Bold != current.Bold {
+		result = result.Apply(start, end, BoldAttr(desired.Bold))
+	}
+	if desired.Italic != current.Italic {
+		result = result.Apply(start, end, ItalicAttr(desired.Italic))
+	}
+	if desired.Underline != current.Underline {
+		result = result.Apply(start, end, UnderlineAttr(desired.Underline))
+	}
+	if desired.Strikethrough != current.Strikethrough {
+		result = result.Apply(start, end, StrikethroughAttr(desired.Strikethrough))
+	}
+	if desired.FontFamily != current.FontFamily {
+		result = result.Apply(start, end, FontFamilyAttr(desired.FontFamily))
+	}
+	if desired.Weight != current.Weight {
+		result = result.Apply(start, end, WeightAttr(desired.Weight))
+	}
+	if desired.Color != current.Color {
+		result = result.Apply(start, end, ColorAttr(desired.Color))
+	}
+	if desired.BgColor != current.BgColor {
+		result = result.Apply(start, end, BgColorAttr(desired.BgColor))
+	}
+	if desired.Size != current.Size {
+		result = result.Apply(start, end, SizeAttr(desired.Size))
+	}
+	if desired.Tracking != current.Tracking {
+		result = result.Apply(start, end, TrackingAttr(desired.Tracking))
+	}
+	if desired.LineHeight != current.LineHeight {
+		result = result.Apply(start, end, LineHeightAttr(desired.LineHeight))
+	}
+	if desired.WhiteSpace != current.WhiteSpace {
+		result = result.Apply(start, end, WhiteSpaceAttr(desired.WhiteSpace))
+	}
+	if desired.Image != current.Image {
+		result = result.Apply(start, end, ImageAttr(desired.Image))
+	}
+	if desired.Align != current.Align {
+		result = result.Apply(start, end, AlignAttr(desired.Align))
+	}
+	if desired.Indent != current.Indent {
+		result = result.Apply(start, end, IndentAttr(desired.Indent))
+	}
+	if desired.ParaSpacing != current.ParaSpacing {
+		result = result.Apply(start, end, ParaSpacingAttr(desired.ParaSpacing))
+	}
+	return result
+}
+
+// ── Queries ────────────────────────────────────────────────────
+
+// AllMatch reports whether fn returns true for every resolved style
+// segment overlapping [start, end). Returns true for empty ranges.
 func (as AttributedString) AllMatch(start, end int, fn func(SpanStyle) bool) bool {
 	if start < 0 {
 		start = 0
@@ -406,70 +539,143 @@ func (as AttributedString) AllMatch(start, end int, fn func(SpanStyle) bool) boo
 	if start >= end {
 		return true
 	}
-	if len(as.Attrs) == 0 {
-		return fn(SpanStyle{})
-	}
-
-	prevEnd := 0
-	for _, r := range as.Attrs {
-		runStart := prevEnd
-		runEnd := r.End
-		prevEnd = runEnd
-
-		if runEnd <= start {
-			continue
-		}
-		if runStart >= end {
-			break
-		}
-		if !fn(r.Style) {
+	for _, run := range as.StyleRuns(start, end) {
+		if !fn(run.Style) {
 			return false
 		}
 	}
 	return true
 }
 
-// Normalized merges adjacent runs with identical styles.
-func (as AttributedString) Normalized() AttributedString {
-	if len(as.Attrs) <= 1 {
-		return as
-	}
+// ── Utility ────────────────────────────────────────────────────
 
-	merged := make([]AttrRun, 0, len(as.Attrs))
-	for _, r := range as.Attrs {
-		if len(merged) > 0 && merged[len(merged)-1].Style == r.Style {
-			merged[len(merged)-1].End = r.End
-		} else if r.End > 0 && (len(merged) == 0 || r.End > merged[len(merged)-1].End) {
-			merged = append(merged, r)
+// Normalized removes empty or redundant attributes.
+func (as AttributedString) Normalized() AttributedString {
+	var clean []Attr
+	for _, a := range as.Attrs {
+		if a.Start < a.End {
+			clean = append(clean, a)
 		}
 	}
-
-	if len(merged) == len(as.Attrs) {
+	if len(clean) == len(as.Attrs) {
 		return as
 	}
-	return AttributedString{Text: as.Text, Attrs: merged}
+	return AttributedString{Text: as.Text, Attrs: clean}
 }
 
-// ── Equality ────────────────────────────────────────────────────
-
-// Equal reports whether two AttributedStrings are structurally equal.
+// Equal reports whether two AttributedStrings resolve to the same
+// styles at every position and have the same text.
 func (as AttributedString) Equal(other AttributedString) bool {
 	if as.Text != other.Text {
 		return false
 	}
-	if len(as.Attrs) != len(other.Attrs) {
-		return false
+	// Compare resolved styles at every transition point.
+	allPoints := make(map[int]struct{})
+	allPoints[0] = struct{}{}
+	allPoints[len(as.Text)] = struct{}{}
+	for _, a := range as.Attrs {
+		allPoints[a.Start] = struct{}{}
+		allPoints[a.End] = struct{}{}
 	}
-	for i, a := range as.Attrs {
-		b := other.Attrs[i]
-		if a.End != b.End || a.Style != b.Style {
+	for _, a := range other.Attrs {
+		allPoints[a.Start] = struct{}{}
+		allPoints[a.End] = struct{}{}
+	}
+	for p := range allPoints {
+		if p < 0 || p >= len(as.Text) {
+			continue
+		}
+		if as.ResolveAt(p) != other.ResolveAt(p) {
 			return false
 		}
 	}
 	return true
 }
 
-// ── Legacy interop (DocumentChangedMsg) ─────────────────────────
+// spanStyleToAttrs converts a SpanStyle to individual typed Attrs.
+// Only non-zero fields produce an Attr.
+func spanStyleToAttrs(start, end int, s SpanStyle) []Attr {
+	var out []Attr
+	if s.Bold {
+		out = append(out, Attr{start, end, BoldAttr(true)})
+	}
+	if s.Italic {
+		out = append(out, Attr{start, end, ItalicAttr(true)})
+	}
+	if s.Underline {
+		out = append(out, Attr{start, end, UnderlineAttr(true)})
+	}
+	if s.Strikethrough {
+		out = append(out, Attr{start, end, StrikethroughAttr(true)})
+	}
+	if s.FontFamily != "" {
+		out = append(out, Attr{start, end, FontFamilyAttr(s.FontFamily)})
+	}
+	if s.Weight > 0 {
+		out = append(out, Attr{start, end, WeightAttr(s.Weight)})
+	}
+	if s.Color.A > 0 {
+		out = append(out, Attr{start, end, ColorAttr(s.Color)})
+	}
+	if s.BgColor.A > 0 {
+		out = append(out, Attr{start, end, BgColorAttr(s.BgColor)})
+	}
+	if s.Size > 0 {
+		out = append(out, Attr{start, end, SizeAttr(s.Size)})
+	}
+	if s.Tracking != 0 {
+		out = append(out, Attr{start, end, TrackingAttr(s.Tracking)})
+	}
+	if s.LineHeight > 0 {
+		out = append(out, Attr{start, end, LineHeightAttr(s.LineHeight)})
+	}
+	if s.WhiteSpace != WhiteSpaceNormal {
+		out = append(out, Attr{start, end, WhiteSpaceAttr(s.WhiteSpace)})
+	}
+	if s.Image.ImageID != 0 {
+		out = append(out, Attr{start, end, ImageAttr(s.Image)})
+	}
+	if s.Align != draw.TextAlignLeft {
+		out = append(out, Attr{start, end, AlignAttr(s.Align)})
+	}
+	if s.Indent != 0 {
+		out = append(out, Attr{start, end, IndentAttr(s.Indent)})
+	}
+	if s.ParaSpacing != 0 {
+		out = append(out, Attr{start, end, ParaSpacingAttr(s.ParaSpacing)})
+	}
+	return out
+}
+
+// ParagraphRange returns [start, end) of the paragraph containing offset.
+// Paragraphs are delimited by \n characters.
+func ParagraphRange(text string, offset int) (start, end int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(text) {
+		offset = len(text)
+	}
+	start = strings.LastIndex(text[:offset], "\n")
+	if start < 0 {
+		start = 0
+	} else {
+		start++ // skip the \n itself
+	}
+	end = strings.Index(text[offset:], "\n")
+	if end < 0 {
+		end = len(text)
+	} else {
+		end += offset
+	}
+	return
+}
+
+// ── Legacy Compatibility ───────────────────────────────────────
+
+// AttrRun is the legacy type alias for backward compatibility.
+// Deprecated: use Attr instead.
+type AttrRun = Attr
 
 // DocumentChangedMsg is sent when the user edits the document.
 type DocumentChangedMsg struct {
