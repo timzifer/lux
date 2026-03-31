@@ -22,6 +22,12 @@ type Loop struct {
 
 	mu      sync.Mutex
 	running bool
+
+	// wakeFn is called after a message is enqueued via Send/TrySend to
+	// wake the platform event loop when it is blocking in idle mode.
+	// Set once before goroutines are spawned; read concurrently (safe
+	// because the write happens-before goroutine creation).
+	wakeFn func()
 }
 
 // New creates a new Loop with the given options.
@@ -48,10 +54,20 @@ func WithMaxFrameDelta(d time.Duration) Option {
 	}
 }
 
+// SetWakeFunc registers a callback that is invoked after every successful
+// Send/TrySend to wake the platform event loop from idle blocking.
+// Must be called before any concurrent Send.
+func (l *Loop) SetWakeFunc(fn func()) {
+	l.wakeFn = fn
+}
+
 // Send enqueues a message. Thread-safe, never blocks (drops if full).
 func (l *Loop) Send(msg any) {
 	select {
 	case l.msgCh <- msg:
+		if l.wakeFn != nil {
+			l.wakeFn()
+		}
 	default:
 		// Channel full — drop message to avoid blocking.
 		// This matches RFC's "blockiert nie" requirement.
@@ -62,6 +78,9 @@ func (l *Loop) Send(msg any) {
 func (l *Loop) TrySend(msg any) bool {
 	select {
 	case l.msgCh <- msg:
+		if l.wakeFn != nil {
+			l.wakeFn()
+		}
 		return true
 	default:
 		return false

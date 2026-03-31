@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -45,6 +46,8 @@ const (
 	wmKeyDown      = 0x0100
 	wmKeyUp        = 0x0101
 	wmChar         = 0x0102
+
+	wmApp         = 0x8000 // WM_APP — used to wake the loop from idle
 
 	pmRemove      = 0x0001
 	swShowDefault = 10
@@ -92,6 +95,8 @@ var (
 	procSetClipboardData = user32.NewProc("SetClipboardData")
 	procGetClipboardData = user32.NewProc("GetClipboardData")
 	procInvalidateRect   = user32.NewProc("InvalidateRect")
+	procWaitMessage      = user32.NewProc("WaitMessage")
+	procPostMessageW     = user32.NewProc("PostMessageW")
 	procSetTimer         = user32.NewProc("SetTimer")
 	procKillTimer        = user32.NewProc("KillTimer")
 
@@ -125,7 +130,7 @@ type Platform struct {
 	fullscreen     bool
 	savedStyle     uintptr
 	savedRect      rect
-	frameRequested bool
+	frameRequested atomic.Bool
 	windows        map[uint32]*windowState
 	uiaBridge      *UIABridge
 }
@@ -197,11 +202,25 @@ func (p *Platform) Init(cfg platform.Config) error {
 }
 
 // Run enters the Win32 event loop.
+// When no frame is requested the loop blocks on WaitMessage to avoid
+// burning CPU in idle. Animations and async messages wake the loop via
+// RequestFrame → PostMessage.
 func (p *Platform) Run(cb platform.Callbacks) error {
 	p.callbacks = cb
+	p.frameRequested.Store(true) // ensure the first frame runs immediately
 
 	var msg msg
 	for !p.shouldClose {
+		// Idle: block until a Win32 message arrives (input, timer,
+		// or the WM_APP posted by RequestFrame / Loop.Send).
+		if !p.frameRequested.Load() {
+			procWaitMessage.Call()
+		}
+
+		// Clear the request — OnFrame will re-set it via
+		// RequestFrame if it needs continued rendering.
+		p.frameRequested.Store(false)
+
 		for {
 			hasMessage, _, _ := procPeekMessageW.Call(
 				uintptr(unsafe.Pointer(&msg)),
@@ -229,7 +248,11 @@ func (p *Platform) Run(cb platform.Callbacks) error {
 			p.callbacks.OnFrame()
 		}
 
-		time.Sleep(time.Second / 60)
+		// If the app requested more frames (animations active),
+		// pace at ~60 fps. Otherwise loop back to WaitMessage.
+		if p.frameRequested.Load() {
+			time.Sleep(time.Second / 60)
+		}
 	}
 
 	return nil
@@ -373,12 +396,14 @@ func (p *Platform) SetFullscreen(fullscreen bool) {
 }
 
 // RequestFrame requests a new frame to be rendered (RFC §7.1).
+// Thread-safe: may be called from any goroutine (e.g. via Loop.Send wake callback).
 func (p *Platform) RequestFrame() {
 	if p.hwnd == 0 {
 		return
 	}
-	p.frameRequested = true
-	procInvalidateRect.Call(p.hwnd, 0, 0)
+	p.frameRequested.Store(true)
+	// Post a no-op application message to wake WaitMessage from idle.
+	procPostMessageW.Call(p.hwnd, wmApp, 0, 0)
 }
 
 // SetClipboard sets the system clipboard text (RFC §7.1).
