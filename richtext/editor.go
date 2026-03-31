@@ -545,22 +545,56 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 			// ── Text run ───────────────────────────────────────────
 			runText := plainText[rStart:rEnd]
 
-			// Resolve style.
+			// Resolve style — map SpanStyle fields onto draw.TextStyle.
 			style := bodyStyle
 			color := defaultColor
-			if run.Style.Bold {
+
+			// Font family.
+			if run.Style.FontFamily != "" {
+				style.FontFamily = run.Style.FontFamily
+			}
+
+			// Font weight: explicit Weight takes precedence, then Bold flag.
+			if run.Style.Weight > 0 {
+				style.Weight = run.Style.Weight
+			} else if run.Style.Bold {
 				style.Weight = draw.FontWeightBold
 			}
+
+			// Font style (italic / oblique).
+			if run.Style.Italic {
+				style.Style = draw.FontStyleItalic
+			}
+
+			// Font size.
 			if run.Style.Size > 0 {
 				style.Size = run.Style.Size
 			}
+
+			// Letter-spacing.
+			if run.Style.Tracking != 0 {
+				style.Tracking = run.Style.Tracking
+			}
+
+			// Line height.
+			if run.Style.LineHeight > 0 {
+				style.LineHeight = run.Style.LineHeight
+			}
+
+			// Color.
 			if run.Style.Color.A > 0 {
 				color = run.Style.Color
 			}
 
-			canvas.DrawText(runText, draw.Pt(x, y), style, color)
-
 			m := canvas.MeasureText(runText, style)
+
+			// Background highlight (CSS background-color on inline box).
+			if run.Style.BgColor.A > 0 {
+				canvas.FillRect(draw.R(x, y, m.Width, lineH),
+					draw.SolidPaint(run.Style.BgColor))
+			}
+
+			canvas.DrawText(runText, draw.Pt(x, y), style, color)
 
 			// Synthetic bold: draw text a second time offset by 1dp.
 			// This thickens strokes when no dedicated bold font
@@ -569,10 +603,18 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 				canvas.DrawText(runText, draw.Pt(x+1, y), style, color)
 			}
 
-			// Underline: draw a 1dp line below the text baseline.
+			// Underline: 1dp line at baseline + descent (CSS text-decoration-line: underline).
 			if run.Style.Underline {
-				ulY := y + lineH - 2
+				ulY := y + m.Ascent + 1
 				canvas.FillRect(draw.R(x, ulY, m.Width, 1),
+					draw.SolidPaint(color))
+			}
+
+			// Strikethrough: 1dp line through the vertical centre of x-height
+			// (CSS text-decoration-line: line-through).
+			if run.Style.Strikethrough {
+				stY := y + m.Ascent*0.65
+				canvas.FillRect(draw.R(x, stY, m.Width, 1),
 					draw.SolidPaint(color))
 			}
 

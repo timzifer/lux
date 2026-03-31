@@ -68,13 +68,23 @@ type Canvas interface {
 	Restore()
 }
 
+// FontStyle distinguishes normal, italic, and oblique faces (CSS font-style).
+type FontStyle uint8
+
+const (
+	FontStyleNormal  FontStyle = iota // upright (default)
+	FontStyleItalic                   // true italic or synthetic slant
+	FontStyleOblique                  // oblique (slanted)
+)
+
 // TextStyle describes how text is rendered.
 type TextStyle struct {
 	FontFamily string
 	Size       float32    // dp
 	Weight     FontWeight // 100–900; 400 = Regular
+	Style      FontStyle  // Normal, Italic, Oblique
 	LineHeight float32    // multiplier
-	Tracking   float32    // em
+	Tracking   float32    // em (letter-spacing)
 	Raster     bool       // force bitmap rasterization, skip MSDF
 }
 
