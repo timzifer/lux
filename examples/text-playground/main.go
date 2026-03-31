@@ -8,7 +8,11 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"os"
+	"time"
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
@@ -19,6 +23,7 @@ import (
 	"github.com/timzifer/lux/ui/button"
 	"github.com/timzifer/lux/ui/data"
 	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/layout"
 	"github.com/timzifer/lux/ui/nav"
 
@@ -38,6 +43,16 @@ var sectionIDs = []string{
 	"text-shaping",
 	"grapheme-nav",
 	"line-breaking",
+	"html-viewer",
+}
+
+// mustHTML parses an HTML snippet into an AttributedString at init time.
+func mustHTML(html string) richtext.AttributedString {
+	as, err := richtext.FromHTML(html)
+	if err != nil {
+		log.Fatalf("mustHTML: %v", err)
+	}
+	return as
 }
 
 func sectionLabel(id string) string {
@@ -62,6 +77,8 @@ func sectionLabel(id string) string {
 		return "Grapheme Navigation"
 	case "line-breaking":
 		return "Line Breaking"
+	case "html-viewer":
+		return "HTML Viewer"
 	default:
 		return id
 	}
@@ -88,6 +105,14 @@ type Model struct {
 	// Lists section state
 	ListEditorDoc    richtext.AttributedString
 	ListEditorScroll *ui.ScrollState
+	// HTML Viewer section state
+	HTMLViewerDoc    richtext.AttributedString
+	HTMLViewerScroll *ui.ScrollState
+	HTMLViewerURL    string
+	HTMLViewerFile   string
+	HTMLViewerPicker *form.FilePickerState
+	HTMLViewerError  string
+	HTMLViewerLoading bool
 	// Images
 	ImageStore  *luximage.Store
 	ImgChecker1 draw.ImageID
@@ -107,6 +132,13 @@ type SetListEditorDocMsg struct{ Doc richtext.AttributedString }
 type SetEditorDocMsg struct{ Doc richtext.AttributedString }
 type RestoreToEditorMsg struct{ Doc richtext.AttributedString }
 type ShowDemoMsg struct{}
+type SetHTMLViewerURLMsg struct{ URL string }
+type LoadHTMLFromURLMsg struct{}
+type HTMLLoadedMsg struct {
+	Doc richtext.AttributedString
+	Err error
+}
+type HTMLFileSelectedMsg struct{ Path string }
 
 // ── Update ────────────────────────────────────────────────────────
 
@@ -137,6 +169,47 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.ShowEditor = true
 	case ShowDemoMsg:
 		m.ShowEditor = false
+	case SetHTMLViewerURLMsg:
+		m.HTMLViewerURL = msg.URL
+	case LoadHTMLFromURLMsg:
+		m.HTMLViewerLoading = true
+		m.HTMLViewerError = ""
+		url := m.HTMLViewerURL
+		return m, func() app.Msg {
+			client := &http.Client{Timeout: 15 * time.Second}
+			resp, err := client.Get(url)
+			if err != nil {
+				return HTMLLoadedMsg{Err: err}
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return HTMLLoadedMsg{Err: err}
+			}
+			doc, err := richtext.FromHTML(string(body))
+			return HTMLLoadedMsg{Doc: doc, Err: err}
+		}
+	case HTMLFileSelectedMsg:
+		m.HTMLViewerFile = msg.Path
+		m.HTMLViewerLoading = true
+		m.HTMLViewerError = ""
+		path := msg.Path
+		return m, func() app.Msg {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return HTMLLoadedMsg{Err: err}
+			}
+			doc, err := richtext.FromHTML(string(data))
+			return HTMLLoadedMsg{Doc: doc, Err: err}
+		}
+	case HTMLLoadedMsg:
+		m.HTMLViewerLoading = false
+		if msg.Err != nil {
+			m.HTMLViewerError = msg.Err.Error()
+		} else {
+			m.HTMLViewerDoc = msg.Doc
+			m.HTMLViewerError = ""
+		}
 	}
 	return m, nil
 }
@@ -244,6 +317,8 @@ func sectionContent(m Model) ui.Element {
 		return graphemeNavSection()
 	case "line-breaking":
 		return lineBreakingSection()
+	case "html-viewer":
+		return htmlViewerSection(m)
 	default:
 		return layout.Column(
 			display.Spacer(24),
@@ -293,18 +368,8 @@ func generateColorChecker(store *luximage.Store, w, h, cellSize int, r1, g1, b1,
 // ── Section Views ─────────────────────────────────────────────────
 
 func richTextSection() ui.Element {
-	mixedDoc := richtext.Build(
-		richtext.S("Bold text ", richtext.SpanStyle{Bold: true}),
-		richtext.S("and normal text "),
-		richtext.S("with color", richtext.SpanStyle{Color: draw.Hex("#3b82f6")}),
-	)
-	multiDoc := richtext.Build(
-		richtext.S("First paragraph with "),
-		richtext.S("bold", richtext.SpanStyle{Bold: true}),
-		richtext.S(" and "),
-		richtext.S("colored", richtext.SpanStyle{Color: draw.Hex("#ef4444")}),
-		richtext.S(" spans.\nSecond paragraph. Rich text supports per-span styling."),
-	)
+	mixedDoc := mustHTML(`<b>Bold text </b>and normal text <span style="color:#3b82f6">with color</span>`)
+	multiDoc := mustHTML(`<p>First paragraph with <b>bold</b> and <span style="color:#ef4444">colored</span> spans.</p><p>Second paragraph. Rich text supports per-span styling.</p>`)
 
 	return layout.Column(
 		sectionHeader("RichText"),
@@ -338,16 +403,7 @@ func richTextSection() ui.Element {
 }
 
 func richTextEditorSection(m Model) ui.Element {
-	styledDoc := richtext.Build(
-		richtext.S("Bold text ", richtext.SpanStyle{Bold: true}),
-		richtext.S("then italic ", richtext.SpanStyle{Italic: true}),
-		richtext.S("then colored", richtext.SpanStyle{Color: draw.Hex("#ef4444")}),
-		richtext.S(" and "),
-		richtext.S("combined", richtext.SpanStyle{Bold: true, Italic: true, Color: draw.Hex("#8b5cf6")}),
-		richtext.S(".\nSecond paragraph with "),
-		richtext.S("blue text", richtext.SpanStyle{Color: draw.Hex("#3b82f6")}),
-		richtext.S(" for variety."),
-	)
+	styledDoc := mustHTML(`<p><b>Bold text </b><i>then italic </i><span style="color:#ef4444">then colored</span> and <b><i><span style="color:#8b5cf6">combined</span></i></b>.</p><p>Second paragraph with <span style="color:#3b82f6">blue text</span> for variety.</p>`)
 	plainDoc := richtext.NewAttributedString("Line 1: The quick brown fox\nLine 2: jumps over\nLine 3: the lazy dog")
 
 	return layout.Column(
@@ -436,67 +492,15 @@ func richTextEditorSection(m Model) ui.Element {
 }
 
 func fontFormattingSection() ui.Element {
-	strikeDoc := richtext.Build(
-		richtext.S("Normal text, "),
-		richtext.S("strikethrough text", richtext.SpanStyle{Strikethrough: true}),
-		richtext.S(", and "),
-		richtext.S("bold + strikethrough", richtext.SpanStyle{Bold: true, Strikethrough: true}),
-		richtext.S("."),
-	)
-	weightsDoc := richtext.Build(
-		richtext.S("Thin ", richtext.SpanStyle{Weight: draw.FontWeightThin}),
-		richtext.S("Light ", richtext.SpanStyle{Weight: draw.FontWeightLight}),
-		richtext.S("Regular ", richtext.SpanStyle{Weight: draw.FontWeightRegular}),
-		richtext.S("Medium ", richtext.SpanStyle{Weight: draw.FontWeightMedium}),
-		richtext.S("SemiBold ", richtext.SpanStyle{Weight: draw.FontWeightSemiBold}),
-		richtext.S("Bold ", richtext.SpanStyle{Weight: draw.FontWeightBold}),
-		richtext.S("Black", richtext.SpanStyle{Weight: draw.FontWeightBlack}),
-	)
-	decoDoc := richtext.Build(
-		richtext.S("Bold+Italic", richtext.SpanStyle{Bold: true, Italic: true}),
-		richtext.S(" | "),
-		richtext.S("Underline+Strike", richtext.SpanStyle{Underline: true, Strikethrough: true}),
-		richtext.S(" | "),
-		richtext.S("All four", richtext.SpanStyle{Bold: true, Italic: true, Underline: true, Strikethrough: true}),
-	)
-	bgDoc := richtext.Build(
-		richtext.S("Normal text with "),
-		richtext.S("yellow highlight", richtext.SpanStyle{BgColor: draw.Hex("#fef08a")}),
-		richtext.S(" and "),
-		richtext.S("blue highlight", richtext.SpanStyle{BgColor: draw.Hex("#bfdbfe"), Color: draw.Hex("#1e40af")}),
-		richtext.S(" inline."),
-	)
-	trackDoc := richtext.Build(
-		richtext.S("Condensed ", richtext.SpanStyle{Tracking: -0.05}),
-		richtext.S("Normal "),
-		richtext.S("Expanded ", richtext.SpanStyle{Tracking: 0.1}),
-		richtext.S("Very Expanded", richtext.SpanStyle{Tracking: 0.25}),
-	)
-	sizeDoc := richtext.Build(
-		richtext.S("Small ", richtext.SpanStyle{Size: 10}),
-		richtext.S("Normal ", richtext.SpanStyle{Size: 13}),
-		richtext.S("Large ", richtext.SpanStyle{Size: 18}),
-		richtext.S("XL", richtext.SpanStyle{Size: 24}),
-	)
-	wsDoc := richtext.Build(
-		richtext.S("column1    column2    column3", richtext.SpanStyle{WhiteSpace: richtext.WhiteSpacePre}),
-	)
-	colorDecoDoc := richtext.Build(
-		richtext.S("Red underline", richtext.SpanStyle{Underline: true, Color: draw.Hex("#ef4444")}),
-		richtext.S(" | "),
-		richtext.S("Blue strikethrough", richtext.SpanStyle{Strikethrough: true, Color: draw.Hex("#3b82f6")}),
-		richtext.S(" | "),
-		richtext.S("Purple all", richtext.SpanStyle{
-			Bold: true, Italic: true, Underline: true, Strikethrough: true,
-			Color: draw.Hex("#8b5cf6"),
-		}),
-	)
-	displayItalicDoc := richtext.Build(
-		richtext.S("Normal "),
-		richtext.S("Italic ", richtext.SpanStyle{Italic: true}),
-		richtext.S("Bold+Italic ", richtext.SpanStyle{Bold: true, Italic: true}),
-		richtext.S("Tracked", richtext.SpanStyle{Tracking: 0.15}),
-	)
+	strikeDoc := mustHTML(`Normal text, <s>strikethrough text</s>, and <b><s>bold + strikethrough</s></b>.`)
+	weightsDoc := mustHTML(`<span style="font-weight:100">Thin </span><span style="font-weight:300">Light </span><span style="font-weight:400">Regular </span><span style="font-weight:500">Medium </span><span style="font-weight:600">SemiBold </span><span style="font-weight:700">Bold </span><span style="font-weight:900">Black</span>`)
+	decoDoc := mustHTML(`<b><i>Bold+Italic</i></b> | <span style="text-decoration:underline line-through">Underline+Strike</span> | <b><i><span style="text-decoration:underline line-through">All four</span></i></b>`)
+	bgDoc := mustHTML(`Normal text with <span style="background-color:#fef08a">yellow highlight</span> and <span style="background-color:#bfdbfe;color:#1e40af">blue highlight</span> inline.`)
+	trackDoc := mustHTML(`<span style="letter-spacing:-0.05em">Condensed </span>Normal <span style="letter-spacing:0.1em">Expanded </span><span style="letter-spacing:0.25em">Very Expanded</span>`)
+	sizeDoc := mustHTML(`<span style="font-size:10px">Small </span><span style="font-size:13px">Normal </span><span style="font-size:18px">Large </span><span style="font-size:24px">XL</span>`)
+	wsDoc := mustHTML(`<pre>column1    column2    column3</pre>`)
+	colorDecoDoc := mustHTML(`<span style="text-decoration:underline;color:#ef4444">Red underline</span> | <span style="text-decoration:line-through;color:#3b82f6">Blue strikethrough</span> | <b><i><span style="text-decoration:underline line-through;color:#8b5cf6">Purple all</span></i></b>`)
+	displayItalicDoc := mustHTML(`Normal <i>Italic </i><b><i>Bold+Italic </i></b><span style="letter-spacing:0.15em">Tracked</span>`)
 
 	return layout.Column(
 		sectionHeader("Font Formatting (CSS Inline)"),
@@ -614,38 +618,18 @@ func fontFormattingSection() ui.Element {
 func paragraphStylingSection() ui.Element {
 	lorem := "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
 
-	alignLeftDoc := richtext.Build(
-		richtext.S(lorem),
-	)
-	alignCenterDoc := richtext.Build(
-		richtext.S(lorem, richtext.SpanStyle{Align: draw.TextAlignCenter}),
-	)
-	alignRightDoc := richtext.Build(
-		richtext.S(lorem, richtext.SpanStyle{Align: draw.TextAlignRight}),
-	)
-	alignJustifyDoc := richtext.Build(
-		richtext.S(lorem, richtext.SpanStyle{Align: draw.TextAlignJustify}),
-	)
-	indentDoc := richtext.Build(
-		richtext.S(lorem, richtext.SpanStyle{Indent: 24}),
-	)
+	alignLeftDoc := mustHTML(`<p>` + lorem + `</p>`)
+	alignCenterDoc := mustHTML(`<p style="text-align:center">` + lorem + `</p>`)
+	alignRightDoc := mustHTML(`<p style="text-align:right">` + lorem + `</p>`)
+	alignJustifyDoc := mustHTML(`<p style="text-align:justify">` + lorem + `</p>`)
+	indentDoc := mustHTML(`<p style="text-indent:24px">` + lorem + `</p>`)
 	paraSpacingDoc := richtext.Build(
 		richtext.S("First paragraph.\nSecond paragraph with large gap before.\nThird paragraph with default spacing."),
 	)
-	lineHeight15Doc := richtext.Build(
-		richtext.S(lorem, richtext.SpanStyle{LineHeight: 1.5}),
-	)
-	lineHeight20Doc := richtext.Build(
-		richtext.S(lorem, richtext.SpanStyle{LineHeight: 2.0}),
-	)
-	combinedDoc := richtext.Build(
-		richtext.S(lorem, richtext.SpanStyle{Align: draw.TextAlignCenter, Indent: 32, LineHeight: 1.5}),
-	)
-	mixedAlignDoc := richtext.Build(
-		richtext.S("Left-aligned paragraph (default).\n"),
-		richtext.S("Center-aligned paragraph.\n", richtext.SpanStyle{Align: draw.TextAlignCenter}),
-		richtext.S("Right-aligned paragraph.", richtext.SpanStyle{Align: draw.TextAlignRight}),
-	)
+	lineHeight15Doc := mustHTML(`<p style="line-height:1.5">` + lorem + `</p>`)
+	lineHeight20Doc := mustHTML(`<p style="line-height:2.0">` + lorem + `</p>`)
+	combinedDoc := mustHTML(`<p style="text-align:center;text-indent:32px;line-height:1.5">` + lorem + `</p>`)
+	mixedAlignDoc := mustHTML(`<p>Left-aligned paragraph (default).</p><p style="text-align:center">Center-aligned paragraph.</p><p style="text-align:right">Right-aligned paragraph.</p>`)
 
 	return layout.Column(
 		sectionHeader("Paragraph Styling (CSS Block-Level)"),
@@ -1115,104 +1099,13 @@ func richTextImagesSection(m Model) ui.Element {
 }
 
 func listsSection(m Model) ui.Element {
-	ulDoc := richtext.Build(
-		richtext.S("Apples\n", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-		richtext.S("Bananas\n", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-		richtext.S("Cherries", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-	)
-	olDoc := richtext.Build(
-		richtext.S("First step\n", richtext.SpanStyle{ListType: draw.ListTypeOrdered}),
-		richtext.S("Second step\n", richtext.SpanStyle{ListType: draw.ListTypeOrdered}),
-		richtext.S("Third step", richtext.SpanStyle{ListType: draw.ListTypeOrdered}),
-	)
-	nestedDoc := func() richtext.AttributedString {
-		doc := richtext.Build(
-			richtext.S("Fruits\nApple\nBanana\nTropical\nVegetables\nCarrot\nBroccoli"),
-		)
-		// Fruits (line 0-7)
-		doc = doc.Apply(0, 7, richtext.ListTypeAttr(draw.ListTypeUnordered))
-		// Apple (7-13)
-		doc = doc.Apply(7, 13, richtext.ListTypeAttr(draw.ListTypeUnordered))
-		doc = doc.Apply(7, 13, richtext.ListLevelAttr(1))
-		// Banana (13-20)
-		doc = doc.Apply(13, 20, richtext.ListTypeAttr(draw.ListTypeUnordered))
-		doc = doc.Apply(13, 20, richtext.ListLevelAttr(1))
-		// Tropical (20-29)
-		doc = doc.Apply(20, 29, richtext.ListTypeAttr(draw.ListTypeUnordered))
-		doc = doc.Apply(20, 29, richtext.ListLevelAttr(2))
-		// Vegetables (29-40)
-		doc = doc.Apply(29, 40, richtext.ListTypeAttr(draw.ListTypeUnordered))
-		// Carrot (40-47)
-		doc = doc.Apply(40, 47, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(40, 47, richtext.ListLevelAttr(1))
-		// Broccoli (47-55)
-		doc = doc.Apply(47, 55, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(47, 55, richtext.ListLevelAttr(1))
-		return doc
-	}()
-	nestedOlDoc := func() richtext.AttributedString {
-		doc := richtext.Build(
-			richtext.S("First chapter\nSection alpha\nSection beta\nDetail one\nDetail two\nSecond chapter\nAnother section"),
-		)
-		// First chapter (0-14)
-		doc = doc.Apply(0, 14, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		// Section alpha (14-28)
-		doc = doc.Apply(14, 28, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(14, 28, richtext.ListLevelAttr(1))
-		// Section beta (28-41)
-		doc = doc.Apply(28, 41, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(28, 41, richtext.ListLevelAttr(1))
-		// Detail one (41-52)
-		doc = doc.Apply(41, 52, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(41, 52, richtext.ListLevelAttr(2))
-		// Detail two (52-62)
-		doc = doc.Apply(52, 62, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(52, 62, richtext.ListLevelAttr(2))
-		// Second chapter (62-76)
-		doc = doc.Apply(62, 76, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		// Another section (76-91)
-		doc = doc.Apply(76, 91, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(76, 91, richtext.ListLevelAttr(1))
-		return doc
-	}()
-	olStartDoc := func() richtext.AttributedString {
-		doc := richtext.Build(
-			richtext.S("Fifth item\nSixth item\nSeventh item"),
-		)
-		doc = doc.Apply(0, len(doc.Text), richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(0, len(doc.Text), richtext.ListStartAttr(5))
-		return doc
-	}()
-	styledListDoc := richtext.Build(
-		richtext.S("This is ", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-		richtext.S("bold", richtext.SpanStyle{Bold: true, ListType: draw.ListTypeUnordered}),
-		richtext.S(" text\n", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-		richtext.S("This is ", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-		richtext.S("italic", richtext.SpanStyle{Italic: true, ListType: draw.ListTypeUnordered}),
-		richtext.S(" text\n", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-		richtext.S("This is ", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-		richtext.S("colored", richtext.SpanStyle{Color: draw.Hex("#ef4444"), ListType: draw.ListTypeUnordered}),
-		richtext.S(" text", richtext.SpanStyle{ListType: draw.ListTypeUnordered}),
-	)
-	customMarkerDoc := func() richtext.AttributedString {
-		doc := richtext.Build(
-			richtext.S("Lower alpha\nLower alpha\nLower roman\nLower roman\nSquare bullet"),
-		)
-		// Lower alpha items (0-12, 12-24)
-		doc = doc.Apply(0, 12, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(0, 12, richtext.ListMarkerAttr(draw.ListMarkerLowerAlpha))
-		doc = doc.Apply(12, 24, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(12, 24, richtext.ListMarkerAttr(draw.ListMarkerLowerAlpha))
-		// Lower roman items (24-36, 36-48)
-		doc = doc.Apply(24, 36, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(24, 36, richtext.ListMarkerAttr(draw.ListMarkerLowerRoman))
-		doc = doc.Apply(36, 48, richtext.ListTypeAttr(draw.ListTypeOrdered))
-		doc = doc.Apply(36, 48, richtext.ListMarkerAttr(draw.ListMarkerLowerRoman))
-		// Square bullet (48-61)
-		doc = doc.Apply(48, 61, richtext.ListTypeAttr(draw.ListTypeUnordered))
-		doc = doc.Apply(48, 61, richtext.ListMarkerAttr(draw.ListMarkerSquare))
-		return doc
-	}()
+	ulDoc := mustHTML(`<ul><li>Apples</li><li>Bananas</li><li>Cherries</li></ul>`)
+	olDoc := mustHTML(`<ol><li>First step</li><li>Second step</li><li>Third step</li></ol>`)
+	nestedDoc := mustHTML(`<ul><li>Fruits<ul><li>Apple</li><li>Banana</li><ul><li>Tropical</li></ul></ul></li><li>Vegetables<ol><li>Carrot</li><li>Broccoli</li></ol></li></ul>`)
+	nestedOlDoc := mustHTML(`<ol><li>First chapter<ol><li>Section alpha</li><li>Section beta</li><ol><li>Detail one</li><li>Detail two</li></ol></ol></li><li>Second chapter<ol><li>Another section</li></ol></li></ol>`)
+	olStartDoc := mustHTML(`<ol start="5"><li>Fifth item</li><li>Sixth item</li><li>Seventh item</li></ol>`)
+	styledListDoc := mustHTML(`<ul><li>This is <b>bold</b> text</li><li>This is <i>italic</i> text</li><li>This is <span style="color:#ef4444">colored</span> text</li></ul>`)
+	customMarkerDoc := mustHTML(`<ol style="list-style-type:lower-alpha"><li>Lower alpha</li><li>Lower alpha</li></ol><ol style="list-style-type:lower-roman"><li>Lower roman</li><li>Lower roman</li></ol><ul style="list-style-type:square"><li>Square bullet</li></ul>`)
 
 	return layout.Column(
 		sectionHeader("Lists"),
@@ -1557,6 +1450,68 @@ func lineBreakingSection() ui.Element {
 	return layout.Column(items...)
 }
 
+// ── HTML Viewer Section ──────────────────────────────────────────
+
+func htmlViewerSection(m Model) ui.Element {
+	items := []ui.Element{
+		sectionHeader("HTML Viewer"),
+		display.Text("Load HTML from a URL or open a local file:"),
+		display.Spacer(8),
+
+		// ── URL bar ──────────────────────────────────────────
+		layout.Row(
+			form.NewTextField(m.HTMLViewerURL, "https://example.com",
+				form.WithOnChange(func(s string) { app.Send(SetHTMLViewerURLMsg{s}) }),
+			),
+			display.Spacer(8),
+			button.Text("Load", func() { app.Send(LoadHTMLFromURLMsg{}) }),
+		),
+		display.Spacer(8),
+
+		// ── File picker ──────────────────────────────────────
+		form.NewFilePicker(m.HTMLViewerFile,
+			form.WithFilePickerMode(form.FilePickerOpen),
+			form.WithFileFilters(form.FileFilter{
+				Label:      "HTML Files",
+				Extensions: []string{".html", ".htm"},
+			}),
+			form.WithFilePickerState(m.HTMLViewerPicker),
+			form.WithOnFileSelect(func(path string) { app.Send(HTMLFileSelectedMsg{path}) }),
+		),
+		display.Spacer(12),
+	}
+
+	if m.HTMLViewerLoading {
+		items = append(items, display.Text("Loading…"))
+		items = append(items, display.Spacer(8))
+	}
+	if m.HTMLViewerError != "" {
+		items = append(items,
+			display.RichTextSpans(display.Span{
+				Text:  "Error: " + m.HTMLViewerError,
+				Style: display.SpanStyle{Color: draw.Hex("#ef4444")},
+			}),
+			display.Spacer(8),
+		)
+	}
+
+	if !m.HTMLViewerDoc.IsEmpty() {
+		items = append(items,
+			display.Text("Rendered content:"),
+			display.Spacer(4),
+			richtext.New(m.HTMLViewerDoc,
+				richtext.WithReadOnly(),
+				richtext.WithRows(12),
+				richtext.WithScroll(m.HTMLViewerScroll),
+			),
+			display.Spacer(4),
+			editBtn(m.HTMLViewerDoc),
+		)
+	}
+
+	return layout.Column(items...)
+}
+
 // ── Main ──────────────────────────────────────────────────────────
 
 func main() {
@@ -1568,35 +1523,16 @@ func main() {
 		NavSplitRatio: 0.22,
 		EditorScroll:  &ui.ScrollState{},
 		// RichTextEditor defaults
-		RichEditorDoc: richtext.Build(
-			richtext.S("Hello ", richtext.SpanStyle{Bold: true}),
-			richtext.S("Rich World!\nThis is a "),
-			richtext.S("fully editable", richtext.SpanStyle{Italic: true}),
-			richtext.S(" rich text editor.\nTry typing, selecting, and using undo/redo."),
-		),
+		RichEditorDoc: mustHTML(`<p><b>Hello </b>Rich World!</p><p>This is a <i>fully editable</i> rich text editor.</p><p>Try typing, selecting, and using undo/redo.</p>`),
 		RichEditorScroll: &ui.ScrollState{},
-		RichEditorDoc2: richtext.Build(
-			richtext.S("Read-only content with "),
-			richtext.S("styled spans", richtext.SpanStyle{Bold: true, Color: draw.Hex("#3b82f6")}),
-			richtext.S("."),
-		),
+		RichEditorDoc2: mustHTML(`Read-only content with <b><span style="color:#3b82f6">styled spans</span></b>.`),
 		RichEditorScroll2: &ui.ScrollState{},
 		// Lists demo defaults
-		ListEditorDoc: func() richtext.AttributedString {
-			doc := richtext.Build(
-				richtext.S("First item\nSecond item\nThird item\n"),
-				richtext.S("Sub-item A\nSub-item B"),
-			)
-			doc = doc.Apply(0, 11, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(11, 23, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(23, 34, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(34, 45, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(34, 45, richtext.ListLevelAttr(1))
-			doc = doc.Apply(45, 55, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(45, 55, richtext.ListLevelAttr(1))
-			return doc
-		}(),
+		ListEditorDoc: mustHTML(`<ul><li>First item</li><li>Second item</li><li>Third item</li><ul><li>Sub-item A</li><li>Sub-item B</li></ul></ul>`),
 		ListEditorScroll: &ui.ScrollState{},
+		// HTML Viewer defaults
+		HTMLViewerScroll: &ui.ScrollState{},
+		HTMLViewerPicker: form.NewFilePickerState("."),
 		// Images
 		ImageStore: luximage.NewStore(),
 	}
