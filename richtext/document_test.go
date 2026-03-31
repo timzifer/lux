@@ -1018,3 +1018,96 @@ func TestStyled_ParaSpacing(t *testing.T) {
 		t.Fatalf("expected ParaSpacing=16, got %g", as.RunAt(0).ParaSpacing)
 	}
 }
+
+// ── List Attributes ─────────────────────────────────────────────
+
+func TestListTypeAttr_Apply(t *testing.T) {
+	as := NewAttributedString("Item one\nItem two")
+	as = as.Apply(0, 8, ListTypeAttr(draw.ListTypeUnordered))
+
+	got := as.ResolveAt(0).ListType
+	if got != draw.ListTypeUnordered {
+		t.Fatalf("expected ListTypeUnordered, got %d", got)
+	}
+	// Second paragraph should not have list type.
+	got2 := as.ResolveAt(9).ListType
+	if got2 != draw.ListTypeNone {
+		t.Fatalf("expected ListTypeNone at offset 9, got %d", got2)
+	}
+}
+
+func TestListLevelAttr_Apply(t *testing.T) {
+	as := NewAttributedString("Nested item")
+	as = as.Apply(0, len(as.Text), ListLevelAttr(2))
+
+	got := as.ResolveAt(0).ListLevel
+	if got != 2 {
+		t.Fatalf("expected ListLevel=2, got %d", got)
+	}
+}
+
+func TestListStartAttr_Apply(t *testing.T) {
+	as := NewAttributedString("Item five")
+	as = as.Apply(0, len(as.Text), ListStartAttr(5))
+
+	got := as.ResolveAt(0).ListStart
+	if got != 5 {
+		t.Fatalf("expected ListStart=5, got %d", got)
+	}
+}
+
+func TestListMarkerAttr_Apply(t *testing.T) {
+	as := NewAttributedString("Roman item")
+	as = as.Apply(0, len(as.Text), ListMarkerAttr(draw.ListMarkerLowerRoman))
+
+	got := as.ResolveAt(0).ListMarker
+	if got != draw.ListMarkerLowerRoman {
+		t.Fatalf("expected ListMarkerLowerRoman, got %d", got)
+	}
+}
+
+func TestListAttr_ParagraphScope(t *testing.T) {
+	as := NewAttributedString("Para one\nPara two\nPara three")
+	// Apply list only to second paragraph.
+	as = as.Apply(9, 17, ListTypeAttr(draw.ListTypeOrdered))
+
+	if as.ResolveAt(0).ListType != draw.ListTypeNone {
+		t.Fatal("first paragraph should not be a list")
+	}
+	if as.ResolveAt(9).ListType != draw.ListTypeOrdered {
+		t.Fatal("second paragraph should be ordered list")
+	}
+	if as.ResolveAt(18).ListType != draw.ListTypeNone {
+		t.Fatal("third paragraph should not be a list")
+	}
+}
+
+func TestListAttr_ToggleOff(t *testing.T) {
+	as := NewAttributedString("List item")
+	as = as.Apply(0, len(as.Text), ListTypeAttr(draw.ListTypeUnordered))
+	// Toggle off.
+	as = as.Apply(0, len(as.Text), ListTypeAttr(draw.ListTypeNone))
+
+	got := as.ResolveAt(0).ListType
+	if got != draw.ListTypeNone {
+		t.Fatalf("expected ListTypeNone after toggle off, got %d", got)
+	}
+}
+
+func TestListAttr_SpanStyleToAttrs(t *testing.T) {
+	as := Styled("List styled", SpanStyle{
+		ListType:  draw.ListTypeOrdered,
+		ListLevel: 1,
+		ListStart: 3,
+	})
+	s := as.ResolveAt(0)
+	if s.ListType != draw.ListTypeOrdered {
+		t.Fatalf("expected ListTypeOrdered, got %d", s.ListType)
+	}
+	if s.ListLevel != 1 {
+		t.Fatalf("expected ListLevel=1, got %d", s.ListLevel)
+	}
+	if s.ListStart != 3 {
+		t.Fatalf("expected ListStart=3, got %d", s.ListStart)
+	}
+}
