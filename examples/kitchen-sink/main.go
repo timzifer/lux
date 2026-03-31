@@ -2299,6 +2299,38 @@ func inlineWidgetsSection() ui.Element {
 				},
 			},
 		),
+
+		display.Spacer(12),
+
+		// ── Block widget (display: block) ───────────────────────
+		display.Text("Block widget (breaks flow, full-width):"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Text before the block widget. "},
+				display.BlockElement(
+					display.BadgeColor(display.Text("Block-Level Widget"), draw.Hex("#3B82F6")),
+				),
+				display.Span{Text: "Text after the block widget."},
+			},
+		}),
+
+		display.Spacer(12),
+
+		// ── Block + inline mixed ────────────────────────────────
+		display.Text("Mixed inline + block widgets:"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Inline: "},
+				display.InlineElement(display.BadgeColor(display.Text("tag"), draw.Hex("#22c55e"))),
+				display.Span{Text: " then a block: "},
+				display.BlockElement(
+					display.BadgeColor(display.Text("Full-Width Block"), draw.Hex("#8B5CF6")),
+				),
+				display.Span{Text: "Continues inline after block."},
+			},
+		}),
 	)
 }
 
