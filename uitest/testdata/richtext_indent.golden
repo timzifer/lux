@@ -1,0 +1,6 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (1)
+  0: glyph(48,30) scale=1 color(238,242,247,255) "This paragraph has a first-line indent of 24dp, similar to traditional typographic indentation."
+

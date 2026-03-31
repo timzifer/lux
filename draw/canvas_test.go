@@ -12,6 +12,9 @@ func TestTextAlignConstants(t *testing.T) {
 	if TextAlignRight != 2 {
 		t.Errorf("TextAlignRight = %d, want 2", TextAlignRight)
 	}
+	if TextAlignJustify != 3 {
+		t.Errorf("TextAlignJustify = %d, want 3", TextAlignJustify)
+	}
 }
 
 func TestTextLayoutDefaults(t *testing.T) {
