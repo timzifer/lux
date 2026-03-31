@@ -1,6 +1,6 @@
 module github.com/timzifer/lux
 
-go 1.25
+go 1.25.0
 
 replace github.com/gogpu/wgpu v0.21.3 => ./vendor_gogpu_wgpu
 
@@ -16,10 +16,13 @@ require (
 	github.com/rivo/uniseg v0.4.7
 	github.com/zzl/go-win32api/v2 v2.0.1
 	golang.org/x/image v0.29.0
-	golang.org/x/text v0.27.0
+	golang.org/x/text v0.35.0
 )
 
 require (
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/gogpu/naga v0.14.8 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	github.com/tdewolff/parse/v2 v2.8.11 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 )
