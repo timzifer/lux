@@ -402,7 +402,7 @@ func (n RichTextEditor) drawDefault(ctx *ui.LayoutContext, area ui.Bounds, w, h 
 	}
 	if len(plainText) > 0 {
 		n.drawRichContent(canvas, plainText, lines, lineH, bodyStyle, textColor,
-			contentX, contentY, contentH, scrollOff)
+			contentX, contentY, contentW, contentH, scrollOff)
 	} else if n.Placeholder != "" {
 		canvas.DrawText(n.Placeholder, draw.Pt(contentX, contentY), bodyStyle, tokens.Colors.Text.Disabled)
 	}
@@ -470,14 +470,12 @@ func (n RichTextEditor) drawSelection(canvas draw.Canvas, tokens *theme.TokenSet
 	}
 }
 
-// drawRichContent renders text with per-run styling directly from
-// the AttributedString's Attrs — no intermediate conversion needed.
+// drawRichContent renders text with per-run styling using resolved
+// style runs from the AttributedString's tagged-range attributes.
 func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 	plainText string, lines []text.LineSpan, lineH float32,
 	bodyStyle draw.TextStyle, defaultColor draw.Color,
-	contentX, contentY, contentH, scrollOff float32) {
-
-	attrs := n.Value.Attrs
+	contentX, contentY, contentW, contentH, scrollOff float32) {
 
 	for i, span := range lines {
 		y := contentY + lineH*float32(i) - scrollOff
@@ -485,31 +483,36 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 			continue // skip lines outside viewport
 		}
 
-		if len(attrs) == 0 {
-			// No attrs — draw with body style.
+		if len(n.Value.Attrs) == 0 {
 			lineText := plainText[span.Start:span.End]
 			canvas.DrawText(lineText, draw.Pt(contentX, y), bodyStyle, defaultColor)
 			continue
 		}
 
-		// Walk attribute runs that overlap this line.
-		// x is tracked cumulatively so image widths are accounted for
-		// correctly — prefix-measurement alone cannot handle inline images
-		// because MeasureText returns the U+FFFC glyph width, not the
-		// image width.
-		x := contentX
-		prevEnd := 0
-		for _, run := range attrs {
-			runStart := prevEnd
-			runEnd := run.End
-			prevEnd = runEnd
+		// Resolve styled runs for this line.
+		runs := n.Value.StyleRuns(span.Start, span.End)
 
-			// Clip to line bounds.
-			rStart := runStart
+		// Read paragraph-level alignment from the first byte of this line.
+		paraStyle := n.Value.ResolveAt(span.Start)
+
+		// ── Pre-pass: measure total line width for alignment ──
+		type runMeasure struct {
+			style   draw.TextStyle
+			color   draw.Color
+			ss      SpanStyle
+			text    string
+			width   float32
+			isImage bool
+		}
+		measured := make([]runMeasure, len(runs))
+		lineWidth := float32(0)
+
+		for j, run := range runs {
+			rStart := run.Start
 			if rStart < span.Start {
 				rStart = span.Start
 			}
-			rEnd := runEnd
+			rEnd := run.End
 			if rEnd > span.End {
 				rEnd = span.End
 			}
@@ -517,9 +520,96 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 				continue
 			}
 
-			// ── Image run ──────────────────────────────────────────
+			rm := runMeasure{ss: run.Style}
+
+			// Image run.
 			if run.Style.Image.ImageID != 0 {
 				img := run.Style.Image
+				imgH := img.Height
+				if imgH == 0 {
+					imgH = lineH
+				}
+				imgW := img.Width
+				if imgW == 0 {
+					imgW = imgH
+				}
+				rm.isImage = true
+				rm.width = imgW
+				lineWidth += imgW
+				measured[j] = rm
+				continue
+			}
+
+			// Text run — resolve draw.TextStyle.
+			rm.text = plainText[rStart:rEnd]
+			style := bodyStyle
+			color := defaultColor
+
+			if run.Style.FontFamily != "" {
+				style.FontFamily = run.Style.FontFamily
+			}
+			if run.Style.Weight > 0 {
+				style.Weight = run.Style.Weight
+			} else if run.Style.Bold {
+				style.Weight = draw.FontWeightBold
+			}
+			if run.Style.Italic {
+				style.Style = draw.FontStyleItalic
+			}
+			if run.Style.Size > 0 {
+				style.Size = run.Style.Size
+			}
+			if run.Style.Tracking != 0 {
+				style.Tracking = run.Style.Tracking
+			}
+			if run.Style.LineHeight > 0 {
+				style.LineHeight = run.Style.LineHeight
+			}
+			if run.Style.Color.A > 0 {
+				color = run.Style.Color
+			}
+
+			m := canvas.MeasureText(rm.text, style)
+			rm.style = style
+			rm.color = color
+			rm.width = m.Width
+			lineWidth += m.Width
+			measured[j] = rm
+		}
+
+		// ── Compute alignment offset ──
+		x := contentX
+
+		// First-line indent.
+		if paraStyle.Indent > 0 && isFirstLineOfParagraph(i, lines, plainText) {
+			x += paraStyle.Indent
+		}
+
+		isLastLine := i == len(lines)-1 || (i < len(lines)-1 && span.End < len(plainText) && plainText[span.End] == '\n')
+		justifyGap := float32(0)
+
+		switch paraStyle.Align {
+		case draw.TextAlignCenter:
+			x += (contentW - lineWidth) / 2
+		case draw.TextAlignRight:
+			x += contentW - lineWidth
+		case draw.TextAlignJustify:
+			if !isLastLine && len(runs) > 1 {
+				extra := contentW - lineWidth
+				if extra > 0 {
+					justifyGap = extra / float32(len(runs)-1)
+				}
+			}
+		}
+
+		// ── Paint runs ──
+		for j, rm := range measured {
+			if rm.width == 0 && rm.text == "" && !rm.isImage {
+				continue
+			}
+
+			if rm.isImage {
+				img := rm.ss.Image
 				imgH := img.Height
 				if imgH == 0 {
 					imgH = lineH
@@ -532,95 +622,56 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 				if op == 0 {
 					op = 1.0
 				}
-				// Vertically centre the image on the line.
 				imgY := y + (lineH-imgH)/2
 				canvas.DrawImageScaled(img.ImageID,
 					draw.R(x, imgY, imgW, imgH),
 					img.ScaleMode,
 					draw.ImageOptions{Opacity: op})
 				x += imgW
-				continue
+			} else {
+				m := canvas.MeasureText(rm.text, rm.style)
+
+				if rm.ss.BgColor.A > 0 {
+					canvas.FillRect(draw.R(x, y, m.Width, lineH),
+						draw.SolidPaint(rm.ss.BgColor))
+				}
+
+				canvas.DrawText(rm.text, draw.Pt(x, y), rm.style, rm.color)
+
+				if rm.ss.Bold {
+					canvas.DrawText(rm.text, draw.Pt(x+1, y), rm.style, rm.color)
+				}
+
+				if rm.ss.Underline {
+					ulY := y + m.Ascent + 1
+					canvas.FillRect(draw.R(x, ulY, m.Width, 1),
+						draw.SolidPaint(rm.color))
+				}
+
+				if rm.ss.Strikethrough {
+					stY := y + m.Ascent*0.65
+					canvas.FillRect(draw.R(x, stY, m.Width, 1),
+						draw.SolidPaint(rm.color))
+				}
+
+				x += m.Width
 			}
 
-			// ── Text run ───────────────────────────────────────────
-			runText := plainText[rStart:rEnd]
-
-			// Resolve style — map SpanStyle fields onto draw.TextStyle.
-			style := bodyStyle
-			color := defaultColor
-
-			// Font family.
-			if run.Style.FontFamily != "" {
-				style.FontFamily = run.Style.FontFamily
+			if justifyGap > 0 && j < len(measured)-1 {
+				x += justifyGap
 			}
-
-			// Font weight: explicit Weight takes precedence, then Bold flag.
-			if run.Style.Weight > 0 {
-				style.Weight = run.Style.Weight
-			} else if run.Style.Bold {
-				style.Weight = draw.FontWeightBold
-			}
-
-			// Font style (italic / oblique).
-			if run.Style.Italic {
-				style.Style = draw.FontStyleItalic
-			}
-
-			// Font size.
-			if run.Style.Size > 0 {
-				style.Size = run.Style.Size
-			}
-
-			// Letter-spacing.
-			if run.Style.Tracking != 0 {
-				style.Tracking = run.Style.Tracking
-			}
-
-			// Line height.
-			if run.Style.LineHeight > 0 {
-				style.LineHeight = run.Style.LineHeight
-			}
-
-			// Color.
-			if run.Style.Color.A > 0 {
-				color = run.Style.Color
-			}
-
-			m := canvas.MeasureText(runText, style)
-
-			// Background highlight (CSS background-color on inline box).
-			if run.Style.BgColor.A > 0 {
-				canvas.FillRect(draw.R(x, y, m.Width, lineH),
-					draw.SolidPaint(run.Style.BgColor))
-			}
-
-			canvas.DrawText(runText, draw.Pt(x, y), style, color)
-
-			// Synthetic bold: draw text a second time offset by 1dp.
-			// This thickens strokes when no dedicated bold font
-			// face is available in the font family.
-			if run.Style.Bold {
-				canvas.DrawText(runText, draw.Pt(x+1, y), style, color)
-			}
-
-			// Underline: 1dp line at baseline + descent (CSS text-decoration-line: underline).
-			if run.Style.Underline {
-				ulY := y + m.Ascent + 1
-				canvas.FillRect(draw.R(x, ulY, m.Width, 1),
-					draw.SolidPaint(color))
-			}
-
-			// Strikethrough: 1dp line through the vertical centre of x-height
-			// (CSS text-decoration-line: line-through).
-			if run.Style.Strikethrough {
-				stY := y + m.Ascent*0.65
-				canvas.FillRect(draw.R(x, stY, m.Width, 1),
-					draw.SolidPaint(color))
-			}
-
-			x += m.Width
 		}
 	}
+}
+
+// isFirstLineOfParagraph returns true if lines[i] is the first line
+// of a paragraph (i.e., preceded by \n or at the start of text).
+func isFirstLineOfParagraph(i int, lines []text.LineSpan, plainText string) bool {
+	if i == 0 {
+		return true
+	}
+	prevEnd := lines[i-1].End
+	return prevEnd > 0 && prevEnd <= len(plainText) && plainText[prevEnd-1] == '\n'
 }
 
 // makeOnChange wraps the AttributedString-based OnChange into a

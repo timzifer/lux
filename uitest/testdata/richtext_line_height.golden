@@ -1,0 +1,6 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (1)
+  0: glyph(24,30) scale=1 color(238,242,247,255) "This paragraph uses 2x line height for increased readability and spacing between lines."
+

@@ -186,6 +186,18 @@ func imageOpacity(op float32) float32 {
 	return op
 }
 
+// ── Paragraph Style ─────────────────────────────────────────────
+
+// ParagraphStyle configures block-level formatting for a RichParagraph,
+// following CSS paragraph properties (text-align, text-indent, etc.).
+type ParagraphStyle struct {
+	Align       draw.TextAlign // CSS text-align (Left, Center, Right, Justify)
+	LineHeight  float32        // CSS line-height multiplier; 0 = inherit from theme
+	SpaceBefore float32        // dp before paragraph; 0 = default theme spacing
+	SpaceAfter  float32        // dp after paragraph; 0 = default theme spacing
+	Indent      float32        // CSS text-indent (dp); first-line indent
+}
+
 // ── RichParagraph & RichTextElement ─────────────────────────────
 
 // RichParagraph is a block-level text unit containing styled spans,
@@ -193,6 +205,7 @@ func imageOpacity(op float32) float32 {
 type RichParagraph struct {
 	Spans   []Span             // legacy text-only content
 	Content []ParagraphContent // mixed content (takes precedence over Spans)
+	Style   ParagraphStyle     // block-level formatting (alignment, spacing, indent)
 }
 
 // RichTextElement renders read-only rich-formatted text.
@@ -269,10 +282,19 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	for pIdx, para := range n.Paragraphs {
 		allContent := paragraphContent(para)
 		if len(allContent) == 0 {
+			spacing := paraSpacing
+			if para.Style.SpaceAfter > 0 {
+				spacing = int(para.Style.SpaceAfter)
+			}
 			if pIdx < len(n.Paragraphs)-1 {
-				cursorY += paraSpacing
+				cursorY += spacing
 			}
 			continue
+		}
+
+		// Apply SpaceBefore.
+		if pIdx > 0 && para.Style.SpaceBefore > 0 {
+			cursorY += int(para.Style.SpaceBefore)
 		}
 
 		// ── Pre-pass: separate float/block images from inline content ──
@@ -432,8 +454,40 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 			lineH := lineAscent + lineDescent
 
+			// Paragraph-level line height override.
+			if para.Style.LineHeight > 0 {
+				lh := int(para.Style.LineHeight * float32(defaultLineH))
+				if lh > lineH {
+					lineH = lh
+				}
+			}
+
 			// Paint items on this line.
 			cursorX := inlineX
+
+			// First-line indent.
+			if lineStart == 0 && para.Style.Indent > 0 {
+				cursorX += int(para.Style.Indent)
+			}
+
+			// Alignment offset.
+			isLastLine := lineEnd >= len(items)
+			justifyGap := 0
+			itemCount := lineEnd - lineStart
+
+			switch para.Style.Align {
+			case draw.TextAlignCenter:
+				cursorX += (availW - lineW) / 2
+			case draw.TextAlignRight:
+				cursorX += availW - lineW
+			case draw.TextAlignJustify:
+				if !isLastLine && itemCount > 1 {
+					extra := availW - lineW
+					if extra > 0 {
+						justifyGap = extra / (itemCount - 1)
+					}
+				}
+			}
 			for i := lineStart; i < lineEnd; i++ {
 				it := items[i]
 				switch v := it.content.(type) {
@@ -462,6 +516,9 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 					ctx.Canvas.DrawImageScaled(it.imageID, r, it.scaleMode, draw.ImageOptions{Opacity: it.opacity})
 				}
 				cursorX += it.w
+				if justifyGap > 0 && i < lineEnd-1 {
+					cursorX += justifyGap
+				}
 			}
 
 			lineEndX := inlineX + lineW
@@ -503,7 +560,11 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		if pIdx < len(n.Paragraphs)-1 {
-			cursorY += paraSpacing
+			spacing := paraSpacing
+			if para.Style.SpaceAfter > 0 {
+				spacing = int(para.Style.SpaceAfter)
+			}
+			cursorY += spacing
 		}
 	}
 
@@ -546,6 +607,9 @@ func (n RichTextElement) TreeEqual(other ui.Element) bool {
 	}
 	for i, p := range n.Paragraphs {
 		op := nb.Paragraphs[i]
+		if p.Style != op.Style {
+			return false
+		}
 		ac := paragraphContent(p)
 		bc := paragraphContent(op)
 		if len(ac) != len(bc) {

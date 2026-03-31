@@ -342,6 +342,94 @@ func TestGoldenRichTextSpansBackcompat(t *testing.T) {
 	AssertScene(t, scene, "testdata/richtext_spans_backcompat.golden")
 }
 
+// ── Paragraph Styling ───────────────────────────────────────────
+
+func TestGoldenRichTextAlignCenter(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "This text is centered within the paragraph."},
+			},
+			Style: display.ParagraphStyle{Align: draw.TextAlignCenter},
+		}),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_align_center.golden")
+}
+
+func TestGoldenRichTextAlignRight(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "This text is right-aligned."},
+			},
+			Style: display.ParagraphStyle{Align: draw.TextAlignRight},
+		}),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_align_right.golden")
+}
+
+func TestGoldenRichTextAlignJustify(t *testing.T) {
+	// Narrow width to force wrapping so justify has visible effect.
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "This is a justified paragraph that should wrap across multiple lines to demonstrate the text-align justify effect."},
+			},
+			Style: display.ParagraphStyle{Align: draw.TextAlignJustify},
+		}),
+		250, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_align_justify.golden")
+}
+
+func TestGoldenRichTextIndent(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "This paragraph has a first-line indent of 24dp, similar to traditional typographic indentation."},
+			},
+			Style: display.ParagraphStyle{Indent: 24},
+		}),
+		300, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_indent.golden")
+}
+
+func TestGoldenRichTextParagraphSpacing(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "First paragraph with large spacing after."},
+				},
+				Style: display.ParagraphStyle{SpaceAfter: 24},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Second paragraph with default spacing."},
+				},
+			},
+		),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_paragraph_spacing.golden")
+}
+
+func TestGoldenRichTextLineHeight(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "This paragraph uses 2x line height for increased readability and spacing between lines."},
+			},
+			Style: display.ParagraphStyle{LineHeight: 2.0},
+		}),
+		300, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_line_height.golden")
+}
+
 // ── Toolbar ──────────────────────────────────────────────────────
 
 func TestGoldenToolbar(t *testing.T) {
