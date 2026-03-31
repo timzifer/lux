@@ -1111,3 +1111,112 @@ func TestListAttr_SpanStyleToAttrs(t *testing.T) {
 		t.Fatalf("expected ListStart=3, got %d", s.ListStart)
 	}
 }
+
+// ── Paragraph-level attribute handling in InsertText / DeleteRange ──
+
+func TestInsertText_ParagraphAttr_CharInMiddle(t *testing.T) {
+	// Typing a character in the middle of a list item should keep the attr.
+	doc := NewAttributedString("Item A\nItem B")
+	doc = doc.Apply(0, 7, ListTypeAttr(draw.ListTypeUnordered))
+	doc = doc.Apply(7, 13, ListTypeAttr(draw.ListTypeUnordered))
+
+	doc = doc.InsertText(4, "X") // "ItemX A\nItem B"
+
+	s := doc.ResolveAt(4)
+	if s.ListType != draw.ListTypeUnordered {
+		t.Errorf("inserted char should be Unordered, got %d", s.ListType)
+	}
+	// Second paragraph should still be Unordered.
+	s2 := doc.ResolveAt(8)
+	if s2.ListType != draw.ListTypeUnordered {
+		t.Errorf("second line should remain Unordered, got %d", s2.ListType)
+	}
+}
+
+func TestInsertText_ParagraphAttr_CharAtStart(t *testing.T) {
+	// Typing at the start of a list item should keep the attr (not shift it away).
+	doc := NewAttributedString("Item A\nItem B")
+	doc = doc.Apply(0, 7, ListTypeAttr(draw.ListTypeUnordered))
+	doc = doc.Apply(7, 13, ListTypeAttr(draw.ListTypeUnordered))
+
+	doc = doc.InsertText(7, "X") // "Item A\nXItem B"
+
+	s := doc.ResolveAt(7)
+	if s.ListType != draw.ListTypeUnordered {
+		t.Errorf("char at start of second paragraph should be Unordered, got %d", s.ListType)
+	}
+}
+
+func TestInsertText_ParagraphAttr_NewlineInMiddle(t *testing.T) {
+	// Pressing Enter in the middle of a list item should give both halves the attr.
+	doc := NewAttributedString("Item AB")
+	doc = doc.Apply(0, 7, ListTypeAttr(draw.ListTypeUnordered))
+
+	doc = doc.InsertText(4, "\n") // "Item\nAB"
+
+	s1 := doc.ResolveAt(0) // "Item" portion
+	if s1.ListType != draw.ListTypeUnordered {
+		t.Errorf("first half should be Unordered, got %d", s1.ListType)
+	}
+	s2 := doc.ResolveAt(5) // "AB" portion
+	if s2.ListType != draw.ListTypeUnordered {
+		t.Errorf("second half should be Unordered, got %d", s2.ListType)
+	}
+}
+
+func TestInsertText_ParagraphAttr_NewlineAtEnd(t *testing.T) {
+	// Pressing Enter at the end of a list item should create a new list item.
+	doc := NewAttributedString("Item A\nItem B")
+	doc = doc.Apply(0, 7, ListTypeAttr(draw.ListTypeUnordered))
+	doc = doc.Apply(7, 13, ListTypeAttr(draw.ListTypeUnordered))
+
+	doc = doc.InsertText(6, "\n") // "Item A\n\nItem B"
+
+	// The new empty line (position 7) should be Unordered.
+	s := doc.ResolveAt(7)
+	if s.ListType != draw.ListTypeUnordered {
+		t.Errorf("new line after Enter should be Unordered, got %d", s.ListType)
+	}
+	// Original second line should remain Unordered.
+	s2 := doc.ResolveAt(8)
+	if s2.ListType != draw.ListTypeUnordered {
+		t.Errorf("original second line should remain Unordered, got %d", s2.ListType)
+	}
+}
+
+func TestInsertText_ParagraphAttr_LevelPreserved(t *testing.T) {
+	// Pressing Enter in a nested list item should preserve the level.
+	doc := NewAttributedString("Sub A")
+	doc = doc.Apply(0, 5, ListTypeAttr(draw.ListTypeUnordered))
+	doc = doc.Apply(0, 5, ListLevelAttr(1))
+
+	doc = doc.InsertText(3, "\n") // "Sub\nA"
+
+	s1 := doc.ResolveAt(0)
+	if s1.ListLevel != 1 {
+		t.Errorf("first half level = %d, want 1", s1.ListLevel)
+	}
+	s2 := doc.ResolveAt(4)
+	if s2.ListLevel != 1 {
+		t.Errorf("second half level = %d, want 1", s2.ListLevel)
+	}
+}
+
+func TestInsertText_SpanAttr_NotAffectedByParagraphLogic(t *testing.T) {
+	// Bold (span attr) should still extend through insertion as before.
+	doc := NewAttributedString("Hello")
+	doc = doc.Apply(0, 5, BoldAttr(true))
+	doc = doc.Apply(0, 5, ListTypeAttr(draw.ListTypeUnordered))
+
+	doc = doc.InsertText(3, "\n") // "Hel\nlo"
+
+	// Bold should extend through both halves (span attr behavior).
+	s1 := doc.ResolveAt(0)
+	if !s1.Bold {
+		t.Error("first half should still be bold")
+	}
+	s2 := doc.ResolveAt(4)
+	if !s2.Bold {
+		t.Error("second half should still be bold")
+	}
+}

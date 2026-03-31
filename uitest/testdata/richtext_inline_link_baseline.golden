@@ -1,0 +1,8 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (3)
+  0: glyph(24,30) scale=1 color(238,242,247,255) "Click "
+  1: glyph(60,30) scale=1 color(76,141,255,255) "here"
+  2: glyph(84,30) scale=1 color(238,242,247,255) " to continue."
+

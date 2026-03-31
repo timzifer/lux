@@ -73,6 +73,19 @@ func (ListLevelAttr) attrTag() attrTag     { return 17 }
 func (ListStartAttr) attrTag() attrTag     { return 18 }
 func (ListMarkerAttr) attrTag() attrTag    { return 19 }
 
+// isParagraphAttr reports whether an attribute is paragraph-level (not inline).
+// Paragraph-level attributes must be split at newline boundaries during
+// InsertText and merged during DeleteRange so that each paragraph carries
+// its own independent attribute ranges.
+func isParagraphAttr(v Attribute) bool {
+	switch v.(type) {
+	case AlignAttr, IndentAttr, ParaSpacingAttr,
+		ListTypeAttr, ListLevelAttr, ListStartAttr, ListMarkerAttr:
+		return true
+	}
+	return false
+}
+
 // ── Attr (Tagged Range) ────────────────────────────────────────
 
 // Attr is a typed attribute applied to a byte range [Start, End).
@@ -369,8 +382,12 @@ func (as AttributedString) ApplyStyle(start, end int, style SpanStyle) Attribute
 }
 
 // InsertText inserts text at the given byte offset.
-// Attrs that contain the offset are extended to cover the insertion.
-// Attrs that start at or after the offset are shifted forward.
+// Span-level attrs that contain the offset are extended to cover the insertion.
+// Paragraph-level attrs use paragraph-aware boundaries:
+//   - Insertion within a paragraph attr's range extends it (or splits it when
+//     the inserted text contains newlines).
+//   - Insertion exactly at the Start of a paragraph attr extends it rather than
+//     shifting, because the insertion is still part of the same paragraph.
 func (as AttributedString) InsertText(offset int, text string) AttributedString {
 	if len(text) == 0 {
 		return as
@@ -385,23 +402,60 @@ func (as AttributedString) InsertText(offset int, text string) AttributedString 
 	ins := len(text)
 	newText := as.Text[:offset] + text + as.Text[offset:]
 
-	newAttrs := make([]Attr, len(as.Attrs))
-	for i, a := range as.Attrs {
+	// Position of the last newline in the inserted text (-1 if none).
+	lastNL := strings.LastIndex(text, "\n")
+
+	newAttrs := make([]Attr, 0, len(as.Attrs)+4)
+	for _, a := range as.Attrs {
 		na := a
-		if na.End <= offset {
-			// Attr entirely before insertion — extend if at boundary.
-			if na.End == offset {
+
+		if isParagraphAttr(na.Value) {
+			// Paragraph-level attribute: [Start, End) should track paragraph
+			// boundaries. The insertion is "within" when Start <= offset <= End.
+			if na.End < offset {
+				// Entirely before, not touching — keep as-is.
+				newAttrs = append(newAttrs, na)
+			} else if na.Start > offset {
+				// Entirely after — shift.
+				na.Start += ins
+				na.End += ins
+				newAttrs = append(newAttrs, na)
+			} else {
+				// Start <= offset <= End: insertion is within this paragraph.
+				if lastNL >= 0 {
+					// Inserted text contains newlines — split the attr so
+					// each resulting paragraph has its own range.
+					head := na
+					head.End = offset + lastNL + 1 // through the last \n
+					if head.Start < head.End {
+						newAttrs = append(newAttrs, head)
+					}
+					tail := na
+					tail.Start = offset + lastNL + 1
+					tail.End = na.End + ins
+					if tail.Start < tail.End {
+						newAttrs = append(newAttrs, tail)
+					}
+				} else {
+					// No newlines in insertion — simply extend.
+					na.End += ins
+					newAttrs = append(newAttrs, na)
+				}
+			}
+		} else {
+			// Span-level attribute — original logic.
+			if na.End <= offset {
+				if na.End == offset {
+					na.End += ins
+				}
+			} else if na.Start >= offset {
+				na.Start += ins
+				na.End += ins
+			} else {
 				na.End += ins
 			}
-		} else if na.Start >= offset {
-			// Attr entirely after insertion — shift.
-			na.Start += ins
-			na.End += ins
-		} else {
-			// Attr straddles the insertion point — extend End.
-			na.End += ins
+			newAttrs = append(newAttrs, na)
 		}
-		newAttrs[i] = na
 	}
 
 	return AttributedString{Text: newText, Attrs: newAttrs}
@@ -694,6 +748,17 @@ func spanStyleToAttrs(start, end int, s SpanStyle) []Attr {
 		out = append(out, Attr{start, end, ListMarkerAttr(s.ListMarker)})
 	}
 	return out
+}
+
+// paragraphEndInclusive returns the exclusive end of the paragraph range
+// including its trailing \n (if any). Use this for paragraph-level attribute
+// ranges so that the \n is covered, which is required for correct attribute
+// resolution when scanning across paragraph boundaries.
+func paragraphEndInclusive(text string, end int) int {
+	if end < len(text) && text[end] == '\n' {
+		return end + 1
+	}
+	return end
 }
 
 // ParagraphRange returns [start, end) of the paragraph containing offset.

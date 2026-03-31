@@ -2669,6 +2669,42 @@ func listsSection(m Model) ui.Element {
 
 		display.Spacer(16),
 
+		// ── 3b. Nested ordered list (decimal → lower-alpha → lower-roman) ──
+		display.Text("Nested ordered list (auto marker cycling):"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "First chapter"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Section alpha"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Section beta"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Detail one"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 2},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Detail two"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 2},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Second chapter"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Another section"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+		),
+
+		display.Spacer(16),
+
 		// ── 4. Ordered list with start number ──
 		display.Text("Ordered list with start=5:"),
 		display.Spacer(4),
@@ -5412,13 +5448,15 @@ func main() {
 				richtext.S("First item\nSecond item\nThird item\n"),
 				richtext.S("Sub-item A\nSub-item B"),
 			)
-			// Apply list attrs to each paragraph.
-			doc = doc.Apply(0, 10, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(11, 22, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(23, 33, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(34, 44, richtext.ListTypeAttr(draw.ListTypeUnordered))
-			doc = doc.Apply(34, 44, richtext.ListLevelAttr(1))
-			doc = doc.Apply(45, 55, richtext.ListTypeAttr(draw.ListTypeUnordered))
+			// Apply list attrs to each paragraph (ranges include trailing \n).
+			// Text layout: "First item\nSecond item\nThird item\nSub-item A\nSub-item B"
+			//               0         10 11         22 23        33 34        44 45        55
+			doc = doc.Apply(0, 11, richtext.ListTypeAttr(draw.ListTypeUnordered))  // "First item\n"
+			doc = doc.Apply(11, 23, richtext.ListTypeAttr(draw.ListTypeUnordered)) // "Second item\n"
+			doc = doc.Apply(23, 34, richtext.ListTypeAttr(draw.ListTypeUnordered)) // "Third item\n"
+			doc = doc.Apply(34, 45, richtext.ListTypeAttr(draw.ListTypeUnordered)) // "Sub-item A\n"
+			doc = doc.Apply(34, 45, richtext.ListLevelAttr(1))
+			doc = doc.Apply(45, 55, richtext.ListTypeAttr(draw.ListTypeUnordered)) // "Sub-item B"
 			doc = doc.Apply(45, 55, richtext.ListLevelAttr(1))
 			return doc
 		}(),

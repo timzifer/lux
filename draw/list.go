@@ -14,9 +14,9 @@ type ListMarker uint8
 
 const (
 	ListMarkerDefault    ListMarker = iota // auto based on type and nesting level
-	ListMarkerDisc                         // • (filled circle)
-	ListMarkerCircle                       // ◦ (open circle)
-	ListMarkerSquare                       // ▪ (filled square)
+	ListMarkerDisc                         // • (filled circle, U+2022)
+	ListMarkerCircle                       // ⁃ (hyphen bullet, U+2043)
+	ListMarkerSquare                       // ‣ (triangular bullet, U+2023)
 	ListMarkerDecimal                      // 1. 2. 3.
 	ListMarkerLowerAlpha                   // a. b. c.
 	ListMarkerUpperAlpha                   // A. B. C.

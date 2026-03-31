@@ -2,14 +2,14 @@
 grain: 0.0300
 
 [Rects] (2)
-  0: rect(96,28 24x20) color(63,112,199,255) r=10.0
-  1: rect(204,24 30x20) color(63,112,199,255) r=10.0
+  0: rect(96,24 24x20) color(63,112,199,255) r=10.0
+  1: rect(204,28 30x20) color(63,112,199,255) r=10.0
 
 [Glyphs] (4)
-  0: glyph(24,37) scale=1 color(238,242,247,255) "Shifted up: "
-  1: glyph(102,34) scale=1 color(238,242,247,255) "UP"
-  2: glyph(120,37) scale=1 color(238,242,247,255) " and default: "
-  3: glyph(210,30) scale=1 color(238,242,247,255) "DEF"
+  0: glyph(24,34) scale=1 color(238,242,247,255) "Shifted up: "
+  1: glyph(102,30) scale=1 color(238,242,247,255) "UP"
+  2: glyph(120,34) scale=1 color(238,242,247,255) " and default: "
+  3: glyph(210,34) scale=1 color(238,242,247,255) "DEF"
 
 [ClipBatches] (1)
   0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0

@@ -1,0 +1,17 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (12)
+  0: glyph(24,24) scale=1 color(238,242,247,255) "1."
+  1: glyph(48,30) scale=1 color(238,242,247,255) "First chapter"
+  2: glyph(48,45) scale=1 color(238,242,247,255) "a."
+  3: glyph(72,51) scale=1 color(238,242,247,255) "Section alpha"
+  4: glyph(48,66) scale=1 color(238,242,247,255) "b."
+  5: glyph(72,72) scale=1 color(238,242,247,255) "Section beta"
+  6: glyph(72,87) scale=1 color(238,242,247,255) "i."
+  7: glyph(96,93) scale=1 color(238,242,247,255) "Sub-item one"
+  8: glyph(72,108) scale=1 color(238,242,247,255) "ii."
+  9: glyph(96,114) scale=1 color(238,242,247,255) "Sub-item two"
+  10: glyph(24,129) scale=1 color(238,242,247,255) "2."
+  11: glyph(48,135) scale=1 color(238,242,247,255) "Second chapter"
+

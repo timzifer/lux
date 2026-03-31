@@ -223,13 +223,14 @@ func (n RichTextEditor) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			clusters := text.GraphemeClusters(lineText)
 			xs := make([]float32, len(clusters))
 			offs := make([]int, len(clusters))
+			lineX := cX + lineListIndent(n.Value, span)
 			for j, boff := range clusters {
 				offs[j] = span.Start + boff
 				if boff == 0 {
-					xs[j] = cX
+					xs[j] = lineX
 				} else {
 					m := canvas.MeasureText(lineText[:boff], sty)
-					xs[j] = cX + m.Width
+					xs[j] = lineX + m.Width
 				}
 			}
 			lineBoundsArr[i] = lineBounds{xs: xs, offs: offs}
@@ -358,7 +359,7 @@ func (n RichTextEditor) drawDefault(ctx *ui.LayoutContext, area ui.Bounds, w, h 
 				offInLine = len(lineText)
 			}
 			m := canvas.MeasureText(lineText[:offInLine], bodyStyle)
-			cursorX = contentX + m.Width
+			cursorX = contentX + lineListIndent(n.Value, span) + m.Width
 			break
 		}
 	}
@@ -439,6 +440,7 @@ func (n RichTextEditor) drawSelection(canvas draw.Canvas, tokens *theme.TokenSet
 		if y+lineH < contentY || y > contentY+contentH {
 			continue
 		}
+		lineX := contentX + lineListIndent(n.Value, span)
 		lineSelStart := selA
 		if lineSelStart < span.Start {
 			lineSelStart = span.Start
@@ -451,7 +453,7 @@ func (n RichTextEditor) drawSelection(canvas draw.Canvas, tokens *theme.TokenSet
 			if selA <= span.End && selB > span.End && i < len(lines)-1 {
 				lineText := plainText[span.Start:span.End]
 				mEnd := canvas.MeasureText(lineText, bodyStyle)
-				canvas.FillRect(draw.R(contentX+mEnd.Width, y, 4, lineH),
+				canvas.FillRect(draw.R(lineX+mEnd.Width, y, 4, lineH),
 					draw.SolidPaint(selColor))
 			}
 			continue
@@ -461,12 +463,12 @@ func (n RichTextEditor) drawSelection(canvas draw.Canvas, tokens *theme.TokenSet
 		offB := lineSelEnd - span.Start
 		mA := canvas.MeasureText(lineText[:offA], bodyStyle)
 		mB := canvas.MeasureText(lineText[:offB], bodyStyle)
-		sx := contentX + mA.Width
+		sx := lineX + mA.Width
 		sw := mB.Width - mA.Width
 		canvas.FillRect(draw.R(sx, y, sw, lineH),
 			draw.SolidPaint(selColor))
 		if selB > span.End && i < len(lines)-1 {
-			canvas.FillRect(draw.R(contentX+mB.Width, y, 4, lineH),
+			canvas.FillRect(draw.R(lineX+mB.Width, y, 4, lineH),
 				draw.SolidPaint(selColor))
 		}
 	}
@@ -693,13 +695,23 @@ func isFirstLineOfParagraph(i int, lines []text.LineSpan, plainText string) bool
 	if i == 0 {
 		return true
 	}
-	prevEnd := lines[i-1].End
-	return prevEnd > 0 && prevEnd <= len(plainText) && plainText[prevEnd-1] == '\n'
+	prevEnd := lines[i-1].End // exclusive end = index of the \n
+	return prevEnd < len(plainText) && plainText[prevEnd] == '\n'
 }
 
 // ── List Helpers ────────────────────────────────────────────────
 
 const editorListIndentStep = 24 // dp per nesting level
+
+// lineListIndent returns the horizontal indent (in dp) for a line
+// based on the paragraph-level list attributes at span.Start.
+func lineListIndent(doc AttributedString, span text.LineSpan) float32 {
+	s := doc.ResolveAt(span.Start)
+	if s.ListType == draw.ListTypeNone {
+		return 0
+	}
+	return float32((s.ListLevel + 1) * editorListIndentStep)
+}
 
 // countEditorListItemIndex counts preceding list items of the same
 // type and level by scanning paragraphs backwards from offset.
@@ -712,12 +724,14 @@ func countEditorListItemIndex(doc AttributedString, offset int) int {
 		if start == 0 {
 			break
 		}
-		pos = start - 1 // move to \n before this paragraph
-		prevStyle := doc.ResolveAt(pos)
+		// Resolve at the start of the previous paragraph (not at the \n).
+		prevStart, _ := ParagraphRange(doc.Text, start-1)
+		prevStyle := doc.ResolveAt(prevStart)
 		if prevStyle.ListType != curStyle.ListType || prevStyle.ListLevel != curStyle.ListLevel {
 			break
 		}
 		count++
+		pos = prevStart
 	}
 	return count
 }
