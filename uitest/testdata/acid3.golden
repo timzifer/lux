@@ -1,0 +1,24 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (2)
+  0: rect(24,24 552x796) color(135,136,138,140) r=4.0
+  1: rect(25,25 550x794) color(19,22,27,255) r=3.0
+
+[Glyphs] (12)
+  0: glyph(32,71) scale=2 color(96,105,117,255) "Acid3 Selectors"
+  1: glyph(33,71) scale=2 color(96,105,117,255) "Acid3 Selectors"
+  2: glyph(32,110) scale=1 color(0,128,0,255) "Child combinator: green"
+  3: glyph(32,168) scale=1 color(128,0,128,255) "Attribute selector: purple bold"
+  4: glyph(33,168) scale=1 color(128,0,128,255) "Attribute selector: purple bold"
+  5: glyph(32,207) scale=1 color(0,128,128,255) "Multiple classes: teal italic"
+  6: glyph(32,266) scale=1 color(96,105,117,255) "  "
+  7: glyph(44,266) scale=1 color(96,105,117,255) "Ordered item one"
+  8: glyph(32,305) scale=1 color(96,105,117,255) "  "
+  9: glyph(44,305) scale=1 color(96,105,117,255) "Ordered item two"
+  10: glyph(32,344) scale=1 color(96,105,117,255) "  "
+  11: glyph(44,344) scale=1 color(96,105,117,255) "Ordered item three"
+
+[ClipBatches] (1)
+  0: clip(0,0 600x800) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

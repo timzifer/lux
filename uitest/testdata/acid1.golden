@@ -1,0 +1,29 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (4)
+  0: rect(24,24 552x796) color(135,136,138,140) r=4.0
+  1: rect(25,25 550x794) color(19,22,27,255) r=3.0
+  2: rect(156,110 288x19) color(255,255,0,255)
+  3: rect(32,235 132x1) color(96,105,117,255)
+
+[Glyphs] (14)
+  0: glyph(32,71) scale=4 color(96,105,117,255) "Acid1 Lite"
+  1: glyph(33,71) scale=4 color(96,105,117,255) "Acid1 Lite"
+  2: glyph(156,110) scale=3 color(0,0,0,255) "CSS1 Conformance"
+  3: glyph(157,110) scale=3 color(0,0,0,255) "CSS1 Conformance"
+  4: glyph(32,149) scale=1 color(0,128,0,255) "PASS: green text"
+  5: glyph(32,188) scale=1 color(255,0,0,255) "FAIL: red text"
+  6: glyph(32,227) scale=1 color(96,105,117,255) "Bold italic underlined"
+  7: glyph(33,227) scale=1 color(96,105,117,255) "Bold italic underlined"
+  8: glyph(32,266) scale=1 color(0,0,255,255) "Red bold"
+  9: glyph(33,266) scale=1 color(0,0,255,255) "Red bold"
+  10: glyph(80,266) scale=1 color(0,0,255,255) " in blue"
+  11: glyph(32,305) scale=1 color(96,105,117,255) "Normal with "
+  12: glyph(104,305) scale=1 color(96,105,117,255) "monospace"
+  13: glyph(158,305) scale=1 color(96,105,117,255) " inline."
+
+[ClipBatches] (2)
+  0: clip(0,0 600x800) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  1: clip(32,32 536x780) rects@2 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+
