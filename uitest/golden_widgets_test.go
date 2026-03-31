@@ -269,6 +269,40 @@ func TestGoldenRichTextMixedContent(t *testing.T) {
 	AssertScene(t, scene, "testdata/richtext_mixed_content.golden")
 }
 
+// ── RichText Block Widgets ──────────────────────────────────────
+
+func TestGoldenRichTextBlockWidget(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Before block."},
+				display.BlockElement(display.BadgeText("BLOCK")),
+				display.Span{Text: "After block."},
+			},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_block_widget.golden")
+}
+
+func TestGoldenRichTextBlockWidgetMixed(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Inline "},
+				display.InlineElement(display.BadgeText("TAG")),
+				display.Span{Text: " text. "},
+				display.BlockElement(
+					display.BadgeColor(display.Text("Full-Width Block"), draw.Hex("#3b82f6")),
+				),
+				display.Span{Text: "More inline."},
+			},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_block_widget_mixed.golden")
+}
+
 // ── RichText Images ─────────────────────────────────────────────
 
 func TestGoldenRichTextInlineImage(t *testing.T) {
