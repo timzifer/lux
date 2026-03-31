@@ -238,3 +238,106 @@ func TestAllMatch_SubRange(t *testing.T) {
 		t.Error("expected all bold within first run")
 	}
 }
+
+// ── StrikethroughCommand ───────────────────────────────────────
+
+func TestStrikethroughCommand_IsActive_Cursor(t *testing.T) {
+	doc := Build(
+		S("Hello ", SpanStyle{Strikethrough: true}),
+		S("World"),
+	)
+	cmd := StrikethroughCommand{}
+	if !cmd.IsActive(doc, 0, 0) {
+		t.Error("expected active at offset 0 (strikethrough run)")
+	}
+	if cmd.IsActive(doc, 8, 8) {
+		t.Error("expected inactive at offset 8 (plain run)")
+	}
+}
+
+func TestStrikethroughCommand_IsActive_Selection(t *testing.T) {
+	doc := Build(
+		S("Hello ", SpanStyle{Strikethrough: true}),
+		S("World"),
+	)
+	cmd := StrikethroughCommand{}
+	if !cmd.IsActive(doc, 0, 5) {
+		t.Error("expected active for selection within strikethrough run")
+	}
+	if cmd.IsActive(doc, 0, 8) {
+		t.Error("expected inactive for selection spanning both runs")
+	}
+}
+
+func TestStrikethroughCommand_Execute_Selection(t *testing.T) {
+	doc := NewAttributedString("Hello World")
+	cmd := StrikethroughCommand{}
+
+	// Apply strikethrough to "Hello".
+	newDoc, pending := cmd.Execute(doc, 0, 5)
+	if pending != nil {
+		t.Error("expected nil pending for selection execute")
+	}
+	if !newDoc.RunAt(0).Strikethrough {
+		t.Error("expected Strikethrough at offset 0 after execute")
+	}
+	if newDoc.RunAt(6).Strikethrough {
+		t.Error("expected non-Strikethrough at offset 6 after execute")
+	}
+
+	// Toggle off.
+	newDoc2, _ := cmd.Execute(newDoc, 0, 5)
+	if newDoc2.RunAt(0).Strikethrough {
+		t.Error("expected Strikethrough toggled off")
+	}
+}
+
+func TestStrikethroughCommand_Execute_NoSelection(t *testing.T) {
+	doc := NewAttributedString("Hello")
+	cmd := StrikethroughCommand{}
+
+	newDoc, pending := cmd.Execute(doc, 3, 3)
+	if newDoc.Text != doc.Text {
+		t.Error("document should not change for no-selection execute")
+	}
+	if pending == nil {
+		t.Fatal("expected pending mod for no-selection execute")
+	}
+
+	// The pending mod should toggle Strikethrough on.
+	style := pending(SpanStyle{Bold: true})
+	if !style.Strikethrough {
+		t.Error("expected Strikethrough to be set by pending mod")
+	}
+	if !style.Bold {
+		t.Error("expected Bold to be preserved by pending mod")
+	}
+}
+
+func TestStrikethroughCommand_PreservesOtherStyles(t *testing.T) {
+	doc := Build(
+		S("Hello", SpanStyle{Bold: true, Italic: true, Underline: true}),
+	)
+	cmd := StrikethroughCommand{}
+
+	newDoc, _ := cmd.Execute(doc, 0, 5)
+	s := newDoc.RunAt(0)
+	if !s.Bold || !s.Italic || !s.Underline {
+		t.Error("other styles should be preserved when applying strikethrough")
+	}
+	if !s.Strikethrough {
+		t.Error("strikethrough should be applied")
+	}
+}
+
+// ── DefaultCommands ────────────────────────────────────────────
+
+func TestDefaultCommands_IncludesStrikethrough(t *testing.T) {
+	cmds := DefaultCommands()
+	if len(cmds) != 4 {
+		t.Fatalf("expected 4 default commands, got %d", len(cmds))
+	}
+	if _, ok := cmds[3].(StrikethroughCommand); !ok {
+		t.Errorf("expected 4th command to be StrikethroughCommand, got %T", cmds[3])
+	}
+}

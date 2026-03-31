@@ -60,14 +60,31 @@ func (s *GoTextShaper) resolveFont(style draw.TextStyle) *fonts.Font {
 	if family == nil {
 		return nil
 	}
-	key := fonts.FontFaceKey{Weight: int(style.Weight), Style: fonts.StyleNormal}
+	fontStyle := drawFontStyleToFonts(style.Style)
+
+	// Try exact weight + style match.
+	key := fonts.FontFaceKey{Weight: int(style.Weight), Style: fontStyle}
 	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
 		return f
 	}
-	key.Weight = 400
+	// Fall back: try requested weight with normal style.
+	if fontStyle != fonts.StyleNormal {
+		key.Style = fonts.StyleNormal
+		if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
+			return f
+		}
+	}
+	// Fall back to Regular weight + requested style.
+	key = fonts.FontFaceKey{Weight: 400, Style: fontStyle}
 	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
 		return f
 	}
+	// Fall back to Regular weight + normal style.
+	key.Style = fonts.StyleNormal
+	if f, ok := family.Faces[key]; ok && !f.IsBitmap() {
+		return f
+	}
+	// Try any sfnt face.
 	for _, f := range family.Faces {
 		if !f.IsBitmap() {
 			return f

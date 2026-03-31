@@ -262,3 +262,100 @@ func TestEditorWithImage_WithToolbar(t *testing.T) {
 		t.Fatalf("expected WidgetElement, got %T", el)
 	}
 }
+
+// ── Extended Style Fields ──────────────────────────────────────
+
+func TestEditorDoc_StrikethroughPreserved(t *testing.T) {
+	doc := Build(
+		S("normal "),
+		S("struck", SpanStyle{Strikethrough: true}),
+	)
+	el := New(doc, WithReadOnly())
+	editor := el.(RichTextEditor)
+	if editor.Value.RunAt(7).Strikethrough != true {
+		t.Error("strikethrough should be preserved in editor value")
+	}
+}
+
+func TestEditorDoc_FontFamilyPreserved(t *testing.T) {
+	doc := Build(
+		S("default "),
+		S("mono", SpanStyle{FontFamily: "Monospace"}),
+	)
+	el := New(doc, WithReadOnly())
+	editor := el.(RichTextEditor)
+	if editor.Value.RunAt(9).FontFamily != "Monospace" {
+		t.Errorf("FontFamily = %q, want Monospace", editor.Value.RunAt(9).FontFamily)
+	}
+}
+
+func TestEditorDoc_WeightPreserved(t *testing.T) {
+	doc := Styled("light", SpanStyle{Weight: draw.FontWeightLight})
+	el := New(doc, WithReadOnly())
+	editor := el.(RichTextEditor)
+	if editor.Value.RunAt(0).Weight != draw.FontWeightLight {
+		t.Errorf("Weight = %d, want Light (300)", editor.Value.RunAt(0).Weight)
+	}
+}
+
+func TestEditorDoc_TrackingPreserved(t *testing.T) {
+	doc := Styled("spaced", SpanStyle{Tracking: 0.15})
+	el := New(doc, WithReadOnly())
+	editor := el.(RichTextEditor)
+	if editor.Value.RunAt(0).Tracking != 0.15 {
+		t.Errorf("Tracking = %g, want 0.15", editor.Value.RunAt(0).Tracking)
+	}
+}
+
+func TestEditorDoc_BgColorPreserved(t *testing.T) {
+	bg := draw.Hex("#ffff00")
+	doc := Styled("highlight", SpanStyle{BgColor: bg})
+	el := New(doc, WithReadOnly())
+	editor := el.(RichTextEditor)
+	if editor.Value.RunAt(0).BgColor != bg {
+		t.Error("BgColor should be preserved in editor value")
+	}
+}
+
+func TestEditorDoc_AllNewFieldsCombined(t *testing.T) {
+	style := SpanStyle{
+		Bold:          true,
+		Italic:        true,
+		Underline:     true,
+		Strikethrough: true,
+		FontFamily:    "Serif",
+		Weight:        draw.FontWeightBlack,
+		Color:         draw.Hex("#ff0000"),
+		BgColor:       draw.Hex("#00ff00"),
+		Size:          24,
+		Tracking:      0.1,
+		LineHeight:    2.0,
+		WhiteSpace:    WhiteSpacePreWrap,
+	}
+	doc := Styled("all", style)
+	el := New(doc, WithReadOnly())
+	editor := el.(RichTextEditor)
+	got := editor.Value.RunAt(0)
+
+	if !got.Strikethrough {
+		t.Error("Strikethrough lost")
+	}
+	if got.FontFamily != "Serif" {
+		t.Errorf("FontFamily = %q", got.FontFamily)
+	}
+	if got.Weight != draw.FontWeightBlack {
+		t.Errorf("Weight = %d", got.Weight)
+	}
+	if got.BgColor != draw.Hex("#00ff00") {
+		t.Error("BgColor lost")
+	}
+	if got.Tracking != 0.1 {
+		t.Errorf("Tracking = %g", got.Tracking)
+	}
+	if got.LineHeight != 2.0 {
+		t.Errorf("LineHeight = %g", got.LineHeight)
+	}
+	if got.WhiteSpace != WhiteSpacePreWrap {
+		t.Errorf("WhiteSpace = %d", got.WhiteSpace)
+	}
+}

@@ -695,3 +695,232 @@ func TestInsertImage_DeleteRemovesPlaceholder(t *testing.T) {
 		t.Error("expected no image after placeholder deleted")
 	}
 }
+
+// ── Strikethrough ──────────────────────────────────────────────
+
+func TestStyled_Strikethrough(t *testing.T) {
+	as := Styled("Strike", SpanStyle{Strikethrough: true})
+	if !as.Attrs[0].Style.Strikethrough {
+		t.Fatal("expected Strikethrough style")
+	}
+}
+
+func TestBuild_Strikethrough(t *testing.T) {
+	as := Build(
+		S("normal "),
+		S("struck", SpanStyle{Strikethrough: true}),
+	)
+	if as.RunAt(0).Strikethrough {
+		t.Error("first run should not be strikethrough")
+	}
+	if !as.RunAt(8).Strikethrough {
+		t.Error("second run should be strikethrough")
+	}
+}
+
+func TestToggleStyleFunc_Strikethrough(t *testing.T) {
+	as := NewAttributedString("Hello World")
+	as = as.ToggleStyleFunc(0, 5, func(s SpanStyle) SpanStyle {
+		s.Strikethrough = true
+		return s
+	})
+	if !as.RunAt(0).Strikethrough {
+		t.Error("expected strikethrough at offset 0")
+	}
+	if as.RunAt(6).Strikethrough {
+		t.Error("expected no strikethrough at offset 6")
+	}
+}
+
+// ── FontFamily ─────────────────────────────────────────────────
+
+func TestStyled_FontFamily(t *testing.T) {
+	as := Styled("Mono", SpanStyle{FontFamily: "Monospace"})
+	if as.RunAt(0).FontFamily != "Monospace" {
+		t.Fatalf("expected FontFamily=Monospace, got %q", as.RunAt(0).FontFamily)
+	}
+}
+
+func TestBuild_FontFamily(t *testing.T) {
+	as := Build(
+		S("sans "),
+		S("mono", SpanStyle{FontFamily: "Monospace"}),
+	)
+	if as.RunAt(0).FontFamily != "" {
+		t.Error("first run should inherit font family")
+	}
+	if as.RunAt(6).FontFamily != "Monospace" {
+		t.Errorf("second run FontFamily = %q, want Monospace", as.RunAt(6).FontFamily)
+	}
+}
+
+// ── Weight ─────────────────────────────────────────────────────
+
+func TestStyled_Weight(t *testing.T) {
+	as := Styled("Light", SpanStyle{Weight: draw.FontWeightLight})
+	if as.RunAt(0).Weight != draw.FontWeightLight {
+		t.Fatalf("expected Weight=300, got %d", as.RunAt(0).Weight)
+	}
+}
+
+func TestBuild_MultipleWeights(t *testing.T) {
+	as := Build(
+		S("thin ", SpanStyle{Weight: draw.FontWeightThin}),
+		S("bold ", SpanStyle{Weight: draw.FontWeightBold}),
+		S("black", SpanStyle{Weight: draw.FontWeightBlack}),
+	)
+	if as.RunAt(0).Weight != draw.FontWeightThin {
+		t.Errorf("expected Thin at 0, got %d", as.RunAt(0).Weight)
+	}
+	if as.RunAt(5).Weight != draw.FontWeightBold {
+		t.Errorf("expected Bold at 5, got %d", as.RunAt(5).Weight)
+	}
+	if as.RunAt(10).Weight != draw.FontWeightBlack {
+		t.Errorf("expected Black at 10, got %d", as.RunAt(10).Weight)
+	}
+}
+
+// ── BgColor ────────────────────────────────────────────────────
+
+func TestStyled_BgColor(t *testing.T) {
+	bg := draw.Hex("#ffff00")
+	as := Styled("Highlight", SpanStyle{BgColor: bg})
+	if as.RunAt(0).BgColor != bg {
+		t.Fatal("expected yellow background color")
+	}
+}
+
+// ── Tracking ───────────────────────────────────────────────────
+
+func TestStyled_Tracking(t *testing.T) {
+	as := Styled("Spaced", SpanStyle{Tracking: 0.1})
+	if as.RunAt(0).Tracking != 0.1 {
+		t.Fatalf("expected Tracking=0.1, got %g", as.RunAt(0).Tracking)
+	}
+}
+
+// ── LineHeight ─────────────────────────────────────────────────
+
+func TestStyled_LineHeight(t *testing.T) {
+	as := Styled("Tall", SpanStyle{LineHeight: 2.0})
+	if as.RunAt(0).LineHeight != 2.0 {
+		t.Fatalf("expected LineHeight=2.0, got %g", as.RunAt(0).LineHeight)
+	}
+}
+
+// ── WhiteSpace ─────────────────────────────────────────────────
+
+func TestWhiteSpace_Enum(t *testing.T) {
+	tests := []struct {
+		ws   WhiteSpace
+		want WhiteSpace
+	}{
+		{WhiteSpaceNormal, 0},
+		{WhiteSpacePre, 1},
+		{WhiteSpaceNoWrap, 2},
+		{WhiteSpacePreWrap, 3},
+		{WhiteSpacePreLine, 4},
+	}
+	for _, tt := range tests {
+		if tt.ws != tt.want {
+			t.Errorf("WhiteSpace %d != %d", tt.ws, tt.want)
+		}
+	}
+}
+
+func TestStyled_WhiteSpace(t *testing.T) {
+	as := Styled("pre", SpanStyle{WhiteSpace: WhiteSpacePre})
+	if as.RunAt(0).WhiteSpace != WhiteSpacePre {
+		t.Fatalf("expected WhiteSpacePre, got %d", as.RunAt(0).WhiteSpace)
+	}
+}
+
+// ── Combined styles ────────────────────────────────────────────
+
+func TestBuild_AllInlineStyles(t *testing.T) {
+	style := SpanStyle{
+		Bold:          true,
+		Italic:        true,
+		Underline:     true,
+		Strikethrough: true,
+		FontFamily:    "Serif",
+		Weight:        draw.FontWeightSemiBold,
+		Color:         draw.Hex("#ff0000"),
+		BgColor:       draw.Hex("#00ff00"),
+		Size:          18,
+		Tracking:      0.05,
+		LineHeight:    1.6,
+		WhiteSpace:    WhiteSpacePreWrap,
+	}
+	as := Styled("all styles", style)
+	got := as.RunAt(0)
+	if !got.Bold || !got.Italic || !got.Underline || !got.Strikethrough {
+		t.Error("expected all boolean flags set")
+	}
+	if got.FontFamily != "Serif" {
+		t.Errorf("FontFamily = %q, want Serif", got.FontFamily)
+	}
+	if got.Weight != draw.FontWeightSemiBold {
+		t.Errorf("Weight = %d, want SemiBold", got.Weight)
+	}
+	if got.Size != 18 {
+		t.Errorf("Size = %g, want 18", got.Size)
+	}
+	if got.Tracking != 0.05 {
+		t.Errorf("Tracking = %g, want 0.05", got.Tracking)
+	}
+	if got.LineHeight != 1.6 {
+		t.Errorf("LineHeight = %g, want 1.6", got.LineHeight)
+	}
+	if got.WhiteSpace != WhiteSpacePreWrap {
+		t.Errorf("WhiteSpace = %d, want PreWrap", got.WhiteSpace)
+	}
+}
+
+func TestInsertText_InheritsNewFields(t *testing.T) {
+	as := Styled("AB", SpanStyle{
+		Strikethrough: true,
+		FontFamily:    "Mono",
+		Weight:        draw.FontWeightLight,
+		BgColor:       draw.Hex("#ff0000"),
+		Tracking:      0.1,
+	})
+	as = as.InsertText(1, "X")
+	// Inserted text should inherit the style of the character before it.
+	got := as.RunAt(1)
+	if !got.Strikethrough {
+		t.Error("inserted text should inherit Strikethrough")
+	}
+	if got.FontFamily != "Mono" {
+		t.Errorf("inserted text FontFamily = %q, want Mono", got.FontFamily)
+	}
+	if got.Weight != draw.FontWeightLight {
+		t.Errorf("inserted text Weight = %d, want Light", got.Weight)
+	}
+	if got.BgColor != draw.Hex("#ff0000") {
+		t.Error("inserted text should inherit BgColor")
+	}
+	if got.Tracking != 0.1 {
+		t.Errorf("inserted text Tracking = %g, want 0.1", got.Tracking)
+	}
+}
+
+func TestAllMatch_Strikethrough(t *testing.T) {
+	doc := Build(
+		S("Hello ", SpanStyle{Strikethrough: true}),
+		S("World", SpanStyle{Strikethrough: true}),
+	)
+	if !doc.AllMatch(0, 11, func(s SpanStyle) bool { return s.Strikethrough }) {
+		t.Error("expected all strikethrough")
+	}
+}
+
+func TestAllMatch_MixedStrikethrough(t *testing.T) {
+	doc := Build(
+		S("Hello ", SpanStyle{Strikethrough: true}),
+		S("World"),
+	)
+	if doc.AllMatch(0, 11, func(s SpanStyle) bool { return s.Strikethrough }) {
+		t.Error("expected not all strikethrough")
+	}
+}
