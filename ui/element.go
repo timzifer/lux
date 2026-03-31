@@ -503,10 +503,15 @@ func (h *HoverState) SetHovered(idx int, dur time.Duration) {
 }
 
 // Tick advances all hover animations by dt.
-func (h *HoverState) Tick(dt time.Duration) {
+// Returns true if any animation is still running.
+func (h *HoverState) Tick(dt time.Duration) bool {
+	running := false
 	for i := range h.anims {
-		h.anims[i].Tick(dt)
+		if h.anims[i].Tick(dt) {
+			running = true
+		}
 	}
+	return running
 }
 
 // resetCounter prepares for a new BuildScene pass.

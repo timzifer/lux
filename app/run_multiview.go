@@ -59,6 +59,10 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 	}
 	defer plat.Destroy()
 
+	// Wake the platform event loop when a message is enqueued from a
+	// background goroutine (same rationale as single-view run.go).
+	appLoop.SetWakeFunc(func() { plat.RequestFrame() })
+
 	activePlatform = plat
 	defer func() { activePlatform = nil }()
 
@@ -201,6 +205,9 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 	}
 
 	_ = bgColor // used via updateBgColor side-effect on renderer
+
+	// needsInitialPaint ensures the first frame always paints the initial tree.
+	needsInitialPaint := true
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
@@ -533,6 +540,10 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					}
 					return true
 
+				case msdfReadyMsg:
+					modelDirty = true
+					return true
+
 				case input.MouseMsg:
 					mainWC.dispatcher.Collect(m)
 				case input.ScrollMsg:
@@ -594,58 +605,76 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				fm.SortOrder()
 			}
 
-			// Drain completed async MSDF glyphs into the atlas.
-			atlas.DrainMSDFResults()
-
-			// Main window: hover + scene + render.
+			// Main window: hover tick.
 			hoveredIdx := mainWC.hitMap.HitTestIndex(mainWC.mouseX, mainWC.mouseY)
 			mainWC.hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick.Duration)
-			mainWC.hoverState.Tick(dt)
+			hoverDirty := mainWC.hoverState.Tick(dt)
 
-			w, h := plat.FramebufferSize()
-			canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
-			mainWC.hitMap.Reset()
-			ix := ui.NewInteractor(&mainWC.hitMap, &mainWC.hoverState)
-			scene := ui.BuildScene(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm)
-
-			syncImages(cfg.imageStore, renderer)
-
-			renderer.BeginFrame()
-			renderer.Draw(scene)
-			renderer.EndFrame()
-
-			// Render secondary windows.
-			wr, hasWR := renderer.(gpu.WindowRenderer)
+			// Tick hover animations on secondary windows.
 			for winID, wc := range windows {
 				if winID == MainWindow {
 					continue
 				}
-				elem, ok := views[winID]
-				if !ok {
-					continue
-				}
-
-				// Reconcile secondary window.
-				if modelDirty {
-					wc.dispatcher.Dispatch()
-					wc.currentTree, _ = wc.reconciler.Reconcile(elem, activeTheme, Send, wc.dispatcher, nil, currentLocale)
-				}
-
-				// Hover + scene.
 				hovIdx := wc.hitMap.HitTestIndex(wc.mouseX, wc.mouseY)
 				wc.hoverState.SetHovered(hovIdx, activeTheme.Tokens().Motion.Quick.Duration)
-				wc.hoverState.Tick(dt)
-
-				winCanvas := render.NewSceneCanvas(wc.width, wc.height, render.WithShaper(shaper), render.WithAtlas(atlas))
-				wc.hitMap.Reset()
-				winIx := ui.NewInteractor(&wc.hitMap, &wc.hoverState)
-				winScene := ui.BuildScene(wc.currentTree, winCanvas, activeTheme, wc.width, wc.height, winIx)
-
-				if hasWR {
-					wr.BeginFrameWindow(uint32(winID))
-					wr.DrawWindow(uint32(winID), winScene)
-					wr.EndFrameWindow(uint32(winID))
+				if wc.hoverState.Tick(dt) {
+					hoverDirty = true
 				}
+			}
+
+			// Skip scene build + GPU draw when nothing changed.
+			needsPaint := modelDirty || hoverDirty || needsInitialPaint
+			if needsPaint {
+				needsInitialPaint = false
+
+				// Drain completed async MSDF glyphs into the atlas.
+				atlas.DrainMSDFResults()
+
+				w, h := plat.FramebufferSize()
+				canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
+				mainWC.hitMap.Reset()
+				ix := ui.NewInteractor(&mainWC.hitMap, &mainWC.hoverState)
+				scene := ui.BuildScene(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm)
+
+				syncImages(cfg.imageStore, renderer)
+
+				renderer.BeginFrame()
+				renderer.Draw(scene)
+				renderer.EndFrame()
+
+				// Render secondary windows.
+				wr, hasWR := renderer.(gpu.WindowRenderer)
+				for winID, wc := range windows {
+					if winID == MainWindow {
+						continue
+					}
+					elem, ok := views[winID]
+					if !ok {
+						continue
+					}
+
+					// Reconcile secondary window.
+					if modelDirty {
+						wc.dispatcher.Dispatch()
+						wc.currentTree, _ = wc.reconciler.Reconcile(elem, activeTheme, Send, wc.dispatcher, nil, currentLocale)
+					}
+
+					winCanvas := render.NewSceneCanvas(wc.width, wc.height, render.WithShaper(shaper), render.WithAtlas(atlas))
+					wc.hitMap.Reset()
+					winIx := ui.NewInteractor(&wc.hitMap, &wc.hoverState)
+					winScene := ui.BuildScene(wc.currentTree, winCanvas, activeTheme, wc.width, wc.height, winIx)
+
+					if hasWR {
+						wr.BeginFrameWindow(uint32(winID))
+						wr.DrawWindow(uint32(winID), winScene)
+						wr.EndFrameWindow(uint32(winID))
+					}
+				}
+			}
+
+			// Request continued rendering while animations are active.
+			if animDirty || hoverDirty {
+				plat.RequestFrame()
 			}
 		},
 

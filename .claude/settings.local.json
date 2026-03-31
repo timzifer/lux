@@ -109,7 +109,8 @@
       "Bash(find G:/golang/lux -name *icker* -type f)",
       "Bash(find G:golanglux -type f \\\\\\(-name *webview* -o -name *web_view* \\\\\\))",
       "Bash(rm -rf surface/webview/)",
-      "Bash(rm -rf cmd/lux-browser/)"
+      "Bash(rm -rf cmd/lux-browser/)",
+      "Bash(find /g/golang/lux -name \"*.go\" -type f -exec grep -l \"func.*Run\" {})"
     ]
   }
 }

@@ -73,6 +73,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	}); err != nil {
 		return fmt.Errorf("platform init: %w", err)
 	}
+
+	// Wake the platform event loop when a message is enqueued from a
+	// background goroutine so that idle-blocking platforms (Win32
+	// WaitMessage, GLFW WaitEvents) process the message promptly.
+	appLoop.SetWakeFunc(func() { plat.RequestFrame() })
 	defer plat.Destroy()
 
 	// Make platform accessible for package-level clipboard functions (RFC §7.1).
@@ -258,6 +263,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			_ = savePersistedModel(cfg.persistence, any(currentModel), persistPath)
 		}()
 	}
+
+	// needsInitialPaint ensures the first frame always paints the initial tree.
+	needsInitialPaint := true
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
@@ -611,6 +619,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					}
 					return true
 
+				case msdfReadyMsg:
+					modelDirty = true
+					return true
+
 				case input.MouseMsg:
 					dispatcher.Collect(m)
 				case input.ScrollMsg:
@@ -697,58 +709,70 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick.Duration)
 
 			// 4. Tick hover animations (RFC §12.2: AnimationTick before paint).
-			hoverState.Tick(dt)
+			hoverDirty := hoverState.Tick(dt)
 
-			// 4b. Drain completed async MSDF glyphs into the atlas.
-			// Newly inserted glyphs will be picked up by BuildScene below,
-			// replacing the temporary bitmap fallbacks with MSDF textures.
-			atlas.DrainMSDFResults()
+			// 5. Skip scene build + GPU draw when nothing changed.
+			// This is the main idle-CPU optimisation: BuildScene walks the
+			// entire widget tree and renderer.Draw submits GPU commands —
+			// both are expensive relative to the cheap message-drain above.
+			needsPaint := modelDirty || hoverDirty || needsInitialPaint
+			if needsPaint {
+				needsInitialPaint = false
 
-			// 5. Build scene with hover state.
-			// Reset element UID counter so BuildScene assigns the same UIDs
-			// as the previous frame — hit-target callbacks capture these UIDs,
-			// and they must match across frames for focus to persist.
-			fm.ResetElementIDs()
+				// Drain completed async MSDF glyphs into the atlas.
+				atlas.DrainMSDFResults()
 
-			w, h := plat.FramebufferSize()
-			sceneCanvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
+				// Reset element UID counter so BuildScene assigns the same UIDs
+				// as the previous frame — hit-target callbacks capture these UIDs,
+				// and they must match across frames for focus to persist.
+				fm.ResetElementIDs()
 
-			// Inspector: wrap canvas with CanvasEncoder if active (RFC-012 §5.3).
-			var encoder *vellum.CanvasEncoder
-			var frameBuf *vellum.FrameBuffer
-			var canvas draw.Canvas = sceneCanvas
-			if inspectorServer != nil && inspectorServer.HasClient() {
-				frameBuf = vellum.NewFrameBuffer()
-				encoder = vellum.NewCanvasEncoder(sceneCanvas, frameBuf)
-				encoder.BeginFrame(frameCounter, draw.R(0, 0, float32(w), float32(h)), sceneCanvas.DPR())
-				canvas = encoder
+				w, h := plat.FramebufferSize()
+				sceneCanvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
+
+				// Inspector: wrap canvas with CanvasEncoder if active (RFC-012 §5.3).
+				var encoder *vellum.CanvasEncoder
+				var frameBuf *vellum.FrameBuffer
+				var canvas draw.Canvas = sceneCanvas
+				if inspectorServer != nil && inspectorServer.HasClient() {
+					frameBuf = vellum.NewFrameBuffer()
+					encoder = vellum.NewCanvasEncoder(sceneCanvas, frameBuf)
+					encoder.BeginFrame(frameCounter, draw.R(0, 0, float32(w), float32(h)), sceneCanvas.DPR())
+					canvas = encoder
+				}
+				frameCounter++
+
+				hitMap.Reset()
+				ix := ui.NewInteractor(&hitMap, &hoverState)
+
+				paintStart := time.Now()
+				scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
+				paintTime := time.Since(paintStart)
+
+				// Inspector: finalize frame and send to client.
+				if encoder != nil && inspectorServer != nil && inspectorCollector != nil {
+					info := inspectorCollector.CollectFrameInfo(
+						vellum.FrameTimings{PaintTime: paintTime},
+						uint32(reconciler.StateCount()),
+						reconciler.DirtyUIDs(),
+					)
+					encoder.EndFrame(info)
+					inspectorServer.SendCanvas(frameBuf.Bytes())
+				}
+
+				// Sync dirty images from the image store to the renderer.
+				syncImages(cfg.imageStore, renderer)
+
+				renderer.BeginFrame()
+				renderer.Draw(scene)
+				renderer.EndFrame()
 			}
-			frameCounter++
 
-			hitMap.Reset()
-			ix := ui.NewInteractor(&hitMap, &hoverState)
-
-			paintStart := time.Now()
-			scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
-			paintTime := time.Since(paintStart)
-
-			// Inspector: finalize frame and send to client.
-			if encoder != nil && inspectorServer != nil && inspectorCollector != nil {
-				info := inspectorCollector.CollectFrameInfo(
-					vellum.FrameTimings{PaintTime: paintTime},
-					uint32(reconciler.StateCount()),
-					reconciler.DirtyUIDs(),
-				)
-				encoder.EndFrame(info)
-				inspectorServer.SendCanvas(frameBuf.Bytes())
+			// Request continued rendering while animations are active,
+			// so platforms that idle between frames keep ticking.
+			if animDirty || hoverDirty {
+				plat.RequestFrame()
 			}
-
-			// Sync dirty images from the image store to the renderer.
-			syncImages(cfg.imageStore, renderer)
-
-			renderer.BeginFrame()
-			renderer.Draw(scene)
-			renderer.EndFrame()
 		},
 
 		OnResize: func(width, height int) {
