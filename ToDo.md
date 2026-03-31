@@ -199,7 +199,13 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 
 ### 4.7 Inline-Widgets in RichText (RFC-003 §5.5) ✅
 - [x] `InlineWidget` Typ (Widget im Textfluss) mit Baseline-Alignment (`ui/display/richtext.go`)
-- [x] `ParagraphContent` sealed Interface (`TextSpan | InlineWidget`)
+- [x] `InlineWidget` Block-Modus (`Block bool`, `BlockElement()` — CSS display: block)
+- [x] `ImageSpan` Typ mit Float-Verhalten (None/Left/Right/Block)
+- [x] `ParagraphContent` sealed Interface (`Span | InlineWidget | ImageSpan`)
+- [x] CSS-Paragraph-Styling: Align, Indent, LineHeight, ParaSpacing
+- [x] Listen-Rendering: ul/ol mit Nesting (0–8 Ebenen), 9 Marker-Stile (`draw/list.go`)
+- [x] Tagged-Range `AttributedString` mit 17 Attribut-Typen (Span/Paragraph/List-Level)
+- [x] ToolbarCommands: DefaultCommands (Bold/Italic/Underline/Strikethrough), AlignmentCommands, ListCommands (ul/ol/Indent/Outdent)
 - **Abhängig von:** 4.1
 
 ---
@@ -350,6 +356,7 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] Toolbar (`ui/nav/toolbar.go`)
 - [x] RichTextEditor (`richtext/` — Editor, Widget, Commands, AttributedString)
 - [x] FilePicker (`ui/form/filepicker.go`)
+- [x] Link (`ui/link/link.go` — klickbarer Inline-Link, A11y, InlineWidget-Embedding in RichText)
 - **Abhängig von:** Phase 0–2 vollständig abgeschlossen
 
 ### 7.2 Widget-Spezifikations-Templates (RFC-003 §4.2)

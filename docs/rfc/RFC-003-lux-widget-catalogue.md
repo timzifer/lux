@@ -2,7 +2,7 @@
 
 **Repository:** `github.com/timzifer/lux`
 **Status:** Integriert
-**Version:** 0.1.0
+**Version:** 0.3.0
 **Datum:** 2026-03-18
 **Zuletzt abgeglichen:** 2026-03-31
 **Abhängig von:** RFC-001, RFC-002
@@ -35,12 +35,13 @@
 | §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |
 | §4.1 Tier 2 — Formulare | ✅ Integriert | TextField, Checkbox, Radio, Toggle, Slider, ProgressBar, Select, FormField-Validation (`ui/form/formfield.go`, `validation/`) |
 | §4.1 Tier 3 — Struktur | ✅ Integriert | Card, Tabs, Accordion, Tooltip, Badge, Chip, MenuBar, ContextMenu |
-| §4.1 Tier 4 — Erweitert | ✅ Integriert | SplitView (`ui/nav/splitview.go`), DatePicker (`ui/form/datepicker.go`), ColorPicker (`ui/form/colorpicker.go`), TimePicker (`ui/form/timepicker.go`), NumericInput (`ui/form/numericinput.go`), Spinner (`ui/form/spinner.go`), DataTable (`ui/data/datatable.go`), Toolbar (`ui/nav/toolbar.go`), RichTextEditor (`richtext/`), FilePicker (`ui/form/filepicker.go`) |
+| §4.1 Tier 4 — Erweitert | ✅ Integriert | SplitView (`ui/nav/splitview.go`), DatePicker (`ui/form/datepicker.go`), ColorPicker (`ui/form/colorpicker.go`), TimePicker (`ui/form/timepicker.go`), NumericInput (`ui/form/numericinput.go`), Spinner (`ui/form/spinner.go`), DataTable (`ui/data/datatable.go`), Toolbar (`ui/nav/toolbar.go`), RichTextEditor (`richtext/`), FilePicker (`ui/form/filepicker.go`), Link (`ui/link/link.go`) |
 | §4.2 Widget-Spezifikations-Template | ⏳ Wartend | Detailspezifikationen pro Widget fehlen |
-| §5 Rich Text & Texteditierung | ✅ Integriert | Inline-Widgets + RichTextEditor integriert |
-| §5.2–5.4 RichText (Ebene 2) | ✅ Integriert | `ui/rich_text.go` mit Spans |
-| §5.5 Inline-Widgets | ✅ Integriert | `ui/display/richtext.go` — `InlineWidget`, `ParagraphContent` sealed Interface, Baseline-Alignment |
-| §5.6 RichTextEditor (Ebene 3) | ✅ Integriert | `richtext/` — Document, CursorPosition, Selection, Undo/Redo, WidgetKindRichTextEditor |
+| §5 Rich Text & Texteditierung | ✅ Integriert | Tagged-Range AttributedString, Inline-/Block-Widgets, ImageSpan, Listen (ul/ol), Link-Widget, RichTextEditor mit Toolbar-Commands |
+| §5.2–5.4 RichText (Ebene 2) | ✅ Integriert | `ui/display/richtext.go` (897 LOC) — `RichParagraph` mit `ParagraphContent` (Span, InlineWidget, ImageSpan), CSS-Paragraph-Styling (Align, Indent, LineHeight, ParaSpacing), Listen-Rendering (ul/ol, Nesting, Marker-Stile) |
+| §5.5 Inline-Widgets | ✅ Integriert | `InlineWidget` mit Baseline-Alignment + Block-Modus (`Block bool`, `BlockElement()`); `ImageSpan` mit Float (None/Left/Right/Block); `ParagraphContent` Union (Span \| InlineWidget \| ImageSpan) |
+| §5.5a Link-Widget | ✅ Integriert | `ui/link/link.go` (235 LOC) — klickbarer Inline-Link mit Hover/Focus-States, A11y-URL, kann als `InlineWidget` in RichText eingebettet werden |
+| §5.6 RichTextEditor (Ebene 3) | ✅ Integriert | `richtext/` — Tagged-Range `AttributedString` (statt Run-Length), 17 Attribut-Typen (Span/Paragraph/List), Cursor, Selection, Undo/Redo, ToolbarCommands (Bold/Italic/Underline/Strikethrough/Align/List/Indent) |
 
 ---
 
@@ -844,62 +845,87 @@ Ebene 3  RichTextEditor      Separates Paket — Cursor, Selection, Undo/Redo
 Ebene 4  External Surface    §8 — Browser-Engine, CodeMirror, vollst. HTML/CSS
 ```
 
-### 5.2 Das Span-Modell
+### 5.2 Das Attribut-Modell (Tagged Ranges)
 
-Rich Text besteht aus `TextSpan`-Runs — zusammenhängende Textsegmente mit einheitlichem Styling. Mehrere Spans bilden einen `Paragraph`, mehrere Paragraphen ein `RichText`-Widget.
+> **Architektur-Wechsel (v0.2.0):** Das ursprüngliche Run-Length-Modell (SpanStyle-Structs pro TextSpan) wurde durch ein **Tagged-Range-Modell** ersetzt — inspiriert von Apples `NSAttributedString`. Statt Style-Structs werden typisierte Attribute als überlappende Byte-Bereiche gespeichert (`[Start, End)`). Das vereinfacht Operationen wie Insert, Delete und Merge erheblich.
 
 ```go
-// TextSpan: ein gestylter Run innerhalb eines Paragraphs.
-type TextSpan struct {
-    Text  string
-
-    // Style überschreibt den Paragraph-Default für diesen Span.
-    // Zero-Value = erbt vom Paragraph.
-    Style SpanStyle
+// AttributedString ist der serialisierbare Dokument-Inhalt.
+// Speichert Klartext + eine Liste typisierter, potentiell überlappender
+// Attribut-Bereiche. Inspiriert von NSAttributedString, aber mit
+// Tagged Ranges statt Run-Length-Encoding.
+type AttributedString struct {
+    Text  string  // vollständiger Klartext inkl. \n für Absätze
+    Attrs []Attr  // typisierte Attribut-Bereiche (Reihenfolge zählt: last wins)
 }
 
-type SpanStyle struct {
-    FontFamily string      // leer = Paragraph-Default
-    Size       float32     // 0 = Paragraph-Default
-    Weight     FontWeight  // 0 = Paragraph-Default
-    Italic     bool
-    Underline  bool
-    Strikethrough bool
-
-    Color      Color       // Zero-Value = Paragraph-Default
-    Background Color       // Zero-Value = transparent (kein Highlight)
-
-    // Link: wenn gesetzt, ist dieser Span ein klickbarer Link.
-    // Sendet LinkClickedMsg{Href} via ctx.Send wenn angeklickt.
-    Link       string
+// Attr ist ein typisiertes Attribut auf einem Byte-Bereich [Start, End).
+type Attr struct {
+    Start int       // inklusiver Byte-Offset
+    End   int       // exklusiver Byte-Offset
+    Value Attribute // typisierter Attribut-Wert
 }
-
-// Paragraph: eine Texteinheit mit Block-Level-Eigenschaften.
-type Paragraph struct {
-    Spans []TextSpan
-
-    // Block-Level-Stil:
-    Alignment   TextAlignment   // Start, Center, End, Justify
-    LineHeight  float32         // Multiplikator; 0 = 1.2 (Default)
-    SpaceBefore float32         // dp Abstand vor dem Paragraph
-    SpaceAfter  float32         // dp Abstand nach dem Paragraph
-
-    // Einrückung:
-    Indent      float32         // dp, erste Zeile
-    HangingIndent float32       // dp, Folgezeilen (negatives Indent)
-
-    // Fallback-Style für alle Spans ohne expliziten Wert:
-    DefaultStyle SpanStyle
-}
-
-type TextAlignment uint8
-const (
-    TextAlignStart   TextAlignment = iota  // LTR: links, RTL: rechts
-    TextAlignEnd
-    TextAlignCenter
-    TextAlignJustify
-)
 ```
+
+#### Verfügbare Attribut-Typen
+
+**Span-Level (Inline-Textformatierung):**
+
+| Typ | Go-Typ | CSS-Äquivalent | Wertebereich |
+|-----|--------|----------------|--------------|
+| `BoldAttr` | `bool` | `font-weight: bold` | `true`/`false` |
+| `ItalicAttr` | `bool` | `font-style: italic` | `true`/`false` |
+| `UnderlineAttr` | `bool` | `text-decoration: underline` | `true`/`false` |
+| `StrikethroughAttr` | `bool` | `text-decoration: line-through` | `true`/`false` |
+| `FontFamilyAttr` | `string` | `font-family` | Font-Name |
+| `WeightAttr` | `draw.FontWeight` | `font-weight` | 100–900 |
+| `ColorAttr` | `draw.Color` | `color` | RGBA |
+| `BgColorAttr` | `draw.Color` | `background-color` | RGBA |
+| `SizeAttr` | `float32` | `font-size` | dp |
+| `TrackingAttr` | `float32` | `letter-spacing` | em |
+| `LineHeightAttr` | `float32` | `line-height` | Multiplikator |
+| `WhiteSpaceAttr` | `WhiteSpace` | `white-space` | Normal/Pre/NoWrap/PreWrap/PreLine |
+| `ImageAttr` | `ImageAttachment` | Inline-Bild | U+FFFC Platzhalter |
+
+**Paragraph-Level (Block-Formatierung):**
+
+| Typ | Go-Typ | CSS-Äquivalent | Wertebereich |
+|-----|--------|----------------|--------------|
+| `AlignAttr` | `draw.TextAlign` | `text-align` | Left/Center/Right/Justify |
+| `IndentAttr` | `float32` | `text-indent` | dp |
+| `ParaSpacingAttr` | `float32` | Absatzabstand | dp |
+
+**List-Level (Listen-Formatierung):**
+
+| Typ | Go-Typ | CSS-Äquivalent | Wertebereich |
+|-----|--------|----------------|--------------|
+| `ListTypeAttr` | `draw.ListType` | `list-style-type` (Kategorie) | None/Unordered/Ordered |
+| `ListLevelAttr` | `int` | Verschachtelungstiefe | 0–8 (0 = oberste Ebene) |
+| `ListStartAttr` | `int` | `<ol start>` | Startnummer (0 = Standard 1) |
+| `ListMarkerAttr` | `draw.ListMarker` | `list-style-type` | Default/Disc/Circle/Square/Decimal/LowerAlpha/UpperAlpha/LowerRoman/UpperRoman/None |
+
+Paragraph- und List-Attribute werden bei `InsertText` an Newline-Grenzen gesplittet und bei `DeleteRange` zusammengeführt, sodass jeder Absatz seine eigenen unabhängigen Attribut-Bereiche behält.
+
+#### SpanStyle (Resolved Output)
+
+`SpanStyle` ist der aufgelöste Stil an einem Byte-Offset — Ergebnis von `ResolveAt()`, nicht zur Speicherung gedacht:
+
+```go
+type SpanStyle struct {
+    Bold, Italic, Underline, Strikethrough bool
+    FontFamily string;  Weight draw.FontWeight
+    Color, BgColor draw.Color
+    Size, Tracking, LineHeight float32
+    WhiteSpace WhiteSpace;  Image ImageAttachment
+    // Paragraph-Level:
+    Align draw.TextAlign;  Indent, ParaSpacing float32
+    // List-Level:
+    ListType draw.ListType;  ListLevel int
+    ListStart int;  ListMarker draw.ListMarker
+}
+```
+
+Das alte `Paragraph`-Struct wird für die Read-Only-Darstellungsebene (`ui/display/richtext.go`) weiterhin genutzt. Im Editor (`richtext/`) ist `AttributedString` das primäre Dokument-Modell.
 
 ### 5.3 TextLayout-Pipeline
 
@@ -961,54 +987,131 @@ type TextSelectedMsg struct {
 }
 ```
 
-### 5.5 Inline-Widgets
+### 5.5 Inline-Widgets, Block-Widgets & Bilder
 
-Ein wichtiger Sonderfall: Inline-Widgets — nicht-Text-Elemente die im Textfluss mitschwimmen (Inline-Images, Custom-Badges, Emoji-Ersatz durch Bitmaps).
+Nicht-Text-Elemente können auf drei Arten in den Textfluss eingebettet werden:
 
 ```go
-// InlineWidget bettet ein Widget in den Textfluss ein.
-// Breite und Höhe werden vom Widget selbst bestimmt (via Intrinsic-Messung).
-// Baseline-Alignment: Unterkante des Inline-Widgets sitzt auf der Textbaseline.
-type InlineWidget struct {
-    Widget  Widget
-    Baseline float32  // 0 = Unterkante auf Baseline; positiv = höher
-}
-
-// InlineWidget kann als Span-Alternative in einem Paragraph genutzt werden:
+// ParagraphContent ist das sealed Interface für Items in einem
+// RichParagraph: Text-Spans, Inline-Widgets und Bilder.
 type ParagraphContent interface{ isParagraphContent() }
 
-func (TextSpan) isParagraphContent()    {}
+func (Span) isParagraphContent()         {}
 func (InlineWidget) isParagraphContent() {}
-
-// Paragraph mit gemischtem Content:
-type Paragraph struct {
-    Content []ParagraphContent  // TextSpan oder InlineWidget
-    // ... Block-Level-Properties wie zuvor
-}
+func (ImageSpan) isParagraphContent()    {}
 ```
+
+#### InlineWidget
+
+```go
+// InlineWidget bettet ein beliebiges Element in den Textfluss ein.
+// Breite und Höhe werden per Intrinsic-Messung bestimmt.
+//
+// Block-Modus (Block == true): Das Widget bricht aus dem Inline-Flow
+// aus und belegt eine eigene Zeile bei voller Absatzbreite —
+// analog zu CSS display: block.
+type InlineWidget struct {
+    Element  ui.Element
+    Baseline float32  // 0 = Unterkante auf Baseline; positiv = höher
+    Block    bool     // true = Block-Level; eigene Zeile, volle Breite
+}
+
+// Konstruktoren:
+func InlineElement(el ui.Element) InlineWidget           // Standard-Baseline
+func InlineElementWithBaseline(el ui.Element, b float32) // Custom Baseline
+func BlockElement(el ui.Element) InlineWidget             // Block-Modus
+```
+
+#### ImageSpan
+
+```go
+// ImageSpan bettet ein Bild in den Textfluss ein.
+// Float-Verhalten: None (inline), Left/Right (Textumfluss), Block (eigene Zeile).
+type ImageSpan struct {
+    ImageID   draw.ImageID
+    Alt       string              // Accessibility-Label (wie HTML alt="")
+    Width     float32             // dp; 0 → quadratisch auf Zeilenhöhe
+    Height    float32             // dp; 0 → quadratisch auf Zeilenhöhe
+    ScaleMode draw.ImageScaleMode // Fit/Fill/Stretch
+    Opacity   float32             // 0 = 1.0 (opak)
+    Float     ImageFloat          // None/Left/Right/Block
+    Baseline  float32             // nur bei Float=None: Verschiebung nach oben
+}
+
+type ImageFloat uint8
+const (
+    ImageFloatNone  ImageFloat = iota // Inline im Textfluss
+    ImageFloatLeft                     // Links-Float, Text rechts
+    ImageFloatRight                    // Rechts-Float, Text links
+    ImageFloatBlock                    // Volle Breite, eigene Zeile
+)
+```
+
+### 5.5a Link-Widget
+
+Das Link-Widget (`ui/link/link.go`, 235 LOC) stellt einen klickbaren Inline-Link dar — HTML-`<a>`-Semantik ohne Button-Chrome. Links können als `InlineWidget` in RichText eingebettet werden.
+
+```go
+type Link struct {
+    Content  ui.Element
+    OnClick  func()
+    URL      string  // semantischer href für Accessibility
+    Disabled bool
+}
+
+// Konstruktoren:
+func Text(label string, onClick func()) ui.Element
+func WithURL(label, url string, onClick func()) ui.Element
+func New(content ui.Element, onClick func()) ui.Element
+func TextDisabled(label string) ui.Element
+```
+
+Features: Unterstrichener Accent-farbener Text, Hover-State (Farbwechsel), Fokus-Ring, Theme-DrawFunc-Support, A11y (RoleLink, AccessAction).
 
 ### 5.6 RichTextEditor (Ebene 3 — separates Paket)
 
 Der Editor ist ein eigenständiges Paket (`lux/richtext`) das `RichText` als Basis nutzt und Editierbarkeit hinzufügt. Er gehört nicht in den Framework-Kern weil sein `WidgetState` erheblich schwerer ist und seine Abhängigkeiten (Clipboard, IME, Undo-Stack) den Kern unnötig belasten würden.
 
+> **Architektur-Wechsel (v0.2.0):** Das Dokument-Modell nutzt jetzt `AttributedString` (§5.2) statt `Document{Paragraphs}`. Der Editor operiert direkt auf Byte-Offsets und Tagged Ranges — Insert/Delete/Merge sind dadurch erheblich einfacher und robuster.
+
 ```go
 // RichTextEditor: editierbares Rich-Text-Widget.
 // Paket: lux/richtext
 type RichTextEditor struct {
-    // Value: aktueller Dokument-Inhalt.
+    // Value: aktueller Dokument-Inhalt als AttributedString.
     // Wird nicht im WidgetState gehalten — gehört ins User-Model.
-    Value    Document
+    Value    AttributedString
 
     // OnChange: wird via ctx.Send gesendet wenn der Inhalt sich ändert.
     OnChange DocumentChangedMsg
 
-    // Toolbar: optionale eingebettete Formatierungs-Toolbar.
-    Toolbar *EditorToolbar
+    // Commands: pluggbare Toolbar-Aktionen (Bold, Italic, Align, List etc.)
+    Commands []ToolbarCommand
 
     // ReadOnly: Editor akzeptiert keine Eingaben (aber Selection/Copy).
     ReadOnly bool
 }
 ```
+
+#### Toolbar-Commands
+
+Commands sind pluggbare Toolbar-Aktionen über das `ToolbarCommand`-Interface:
+
+```go
+type ToolbarCommand interface {
+    Icon() ui.Element
+    IsActive(doc AttributedString, selStart, selEnd int) bool
+    Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle)
+}
+```
+
+Vorgefertigte Command-Sets:
+
+| Funktion | Commands | Beschreibung |
+|----------|----------|--------------|
+| `DefaultCommands()` | Bold, Italic, Underline, Strikethrough | Inline-Textformatierung (Toggle) |
+| `AlignmentCommands()` | AlignLeft, AlignCenter, AlignRight, AlignJustify | Absatzausrichtung |
+| `ListCommands()` | UnorderedList, OrderedList, Indent, Outdent | Listen-Formatierung mit Nesting (max. 8 Ebenen) |
 
 **Was in `RichTextEditorState` lebt (WidgetState, framework-intern):**
 
@@ -1019,8 +1122,6 @@ type RichTextEditorState struct {
     selection Selection        // Anchor + Focus, nil wenn keine Selektion
 
     // Undo-Stack (lebt im WidgetState, nicht im User-Model):
-    // Begründung: Undo-History ist UI-State, nicht Applikations-State.
-    // Der User-Loop bekommt nur das finale Dokument via OnChange.
     undoStack []DocumentEdit
     redoStack []DocumentEdit
 
@@ -1034,19 +1135,19 @@ type RichTextEditorState struct {
 }
 ```
 
-**`Document` als User-Model-Typ:**
+**`AttributedString` als User-Model-Typ:**
 
 ```go
-// Document ist der serialisierbare Dokument-Inhalt.
+// AttributedString ist der serialisierbare Dokument-Inhalt.
 // Lebt im User-Model — kann persistiert werden (§3.4).
-type Document struct {
-    Paragraphs []Paragraph
+type AttributedString struct {
+    Text  string  // Klartext inkl. \n
+    Attrs []Attr  // typisierte Attribut-Bereiche
 }
 
 // DocumentChangedMsg wird gesendet wenn der User den Inhalt ändert.
-// Das User-Model ersetzt seinen Document-Wert damit.
 type DocumentChangedMsg struct {
-    Document Document
+    Value AttributedString
 }
 ```
 
