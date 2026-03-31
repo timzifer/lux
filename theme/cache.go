@@ -21,6 +21,7 @@ var allWidgetKinds = []WidgetKind{
 	WidgetKindRichTextEditor,
 	WidgetKindToolbar,
 	WidgetKindDataTable,
+	WidgetKindLink,
 }
 
 // CachedTheme wraps a Theme and caches the resolved TokenSet and DrawFuncs.

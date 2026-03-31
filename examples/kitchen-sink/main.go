@@ -33,6 +33,7 @@ import (
 	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/icons"
 	"github.com/timzifer/lux/ui/layout"
+	"github.com/timzifer/lux/ui/link"
 	"github.com/timzifer/lux/ui/menu"
 	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/validation"
@@ -64,7 +65,7 @@ var sectionIDs = []string{
 
 // sectionGroupChildren maps each group to its leaf section IDs.
 var sectionGroupChildren = map[string][]string{
-	"group-basics":       {"typography", "buttons"},
+	"group-basics":       {"typography", "buttons", "links"},
 	"group-input":        {"form-controls", "range-progress", "selection", "validation", "pickers", "numeric-spinner"},
 	"group-layout":       {"layout", "flex-grid-css", "split-view", "custom-layout", "table-layout"},
 	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "datatable", "cards", "tabs", "accordion", "badges-chips"},
@@ -117,6 +118,8 @@ func sectionLabel(id string) string {
 		return "Typography"
 	case "buttons":
 		return "Buttons & Icons"
+	case "links":
+		return "Links"
 	case "form-controls":
 		return "Form Controls"
 	case "range-progress":
@@ -1014,6 +1017,8 @@ func sectionContent(m Model) ui.Element {
 		return typographySection()
 	case "buttons":
 		return buttonsSection(m)
+	case "links":
+		return linksSection()
 	case "form-controls":
 		return formControlsSection(m)
 	case "range-progress":
@@ -1304,6 +1309,80 @@ func buttonsSection(m Model) ui.Element {
 			display.Icon(icons.Link),
 			display.Icon(icons.Play),
 			display.Icon(icons.Pause),
+		),
+	)
+}
+
+func linksSection() ui.Element {
+	noop := func() {}
+	return layout.Column(
+		sectionHeader("Links"),
+
+		// Basic text links
+		display.Text("Text Links:"),
+		layout.Row(
+			link.Text("Click me", noop),
+			link.Text("Learn more", noop),
+			link.Text("View details", noop),
+		),
+
+		// Link with URL (for accessibility)
+		display.Spacer(8),
+		display.Text("Links with URL:"),
+		layout.Row(
+			link.WithURL("Documentation", "https://example.com/docs", noop),
+			link.WithURL("GitHub", "https://github.com", noop),
+		),
+
+		// Disabled links
+		display.Spacer(8),
+		display.Text("Disabled:"),
+		layout.Row(
+			link.TextDisabled("Unavailable"),
+			link.TextDisabled("Coming soon"),
+		),
+
+		// Link with custom content (icon + text)
+		display.Spacer(8),
+		display.Text("Custom Content:"),
+		layout.Row(
+			link.New(layout.Row(display.Icon(icons.ArrowRight), display.Text("Next page")), noop),
+			link.New(layout.Row(display.Icon(icons.Download), display.Text("Download")), noop),
+		),
+
+		// Inline links in RichText
+		display.Spacer(8),
+		display.Text("Inline in RichText:"),
+		display.RichTextContent(
+			display.Span{Text: "Please read the "},
+			display.InlineElement(link.Text("terms of service", noop)),
+			display.Span{Text: " and "},
+			display.InlineElement(link.Text("privacy policy", noop)),
+			display.Span{Text: " before continuing."},
+		),
+
+		// Multiple inline links in flowing text
+		display.Spacer(8),
+		display.Text("Links in flowing text:"),
+		display.RichTextContent(
+			display.Span{Text: "Lux supports "},
+			display.InlineElement(link.Text("inline links", noop)),
+			display.Span{Text: " that sit on the text baseline. You can place "},
+			display.InlineElement(link.Text("multiple links", noop)),
+			display.Span{Text: " within a paragraph and they will "},
+			display.InlineElement(link.Text("wrap naturally", noop)),
+			display.Span{Text: " with the surrounding text flow."},
+		),
+
+		// Link with URL in rich text
+		display.Spacer(8),
+		display.Text("Links with URL in RichText:"),
+		display.RichTextContent(
+			display.Span{Text: "Visit "},
+			display.InlineElement(link.WithURL("our website", "https://example.com", noop)),
+			display.Span{Text: " for more information, or check the "},
+			display.InlineElement(link.WithURL("API reference", "https://example.com/api", noop)),
+			display.Span{Text: "."},
 		),
 	)
 }

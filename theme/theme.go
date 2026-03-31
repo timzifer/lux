@@ -56,6 +56,8 @@ const (
 	WidgetKindToolbar
 	// DataTable
 	WidgetKindDataTable
+	// Link (HTML <a> semantics)
+	WidgetKindLink
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).
