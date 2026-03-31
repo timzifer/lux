@@ -27,12 +27,13 @@ type ToolbarCommand interface {
 }
 
 // DefaultCommands returns the standard formatting commands:
-// Bold, Italic and Underline.
+// Bold, Italic, Underline and Strikethrough.
 func DefaultCommands() []ToolbarCommand {
 	return []ToolbarCommand{
 		BoldCommand{},
 		ItalicCommand{},
 		UnderlineCommand{},
+		StrikethroughCommand{},
 	}
 }
 
@@ -116,6 +117,34 @@ func (UnderlineCommand) Execute(doc AttributedString, selStart, selEnd int) (Att
 	allUnderline := doc.AllMatch(selStart, selEnd, func(s SpanStyle) bool { return s.Underline })
 	return doc.ToggleStyleFunc(selStart, selEnd, func(s SpanStyle) SpanStyle {
 		s.Underline = !allUnderline
+		return s
+	}), nil
+}
+
+// ── Strikethrough ──────────────────────────────────────────────
+
+// StrikethroughCommand toggles strikethrough formatting.
+type StrikethroughCommand struct{}
+
+func (StrikethroughCommand) Icon() ui.Element {
+	return display.Icon(icons.TextStrikethrough)
+}
+
+func (StrikethroughCommand) IsActive(doc AttributedString, selStart, selEnd int) bool {
+	if selStart == selEnd {
+		return doc.RunAt(selStart).Strikethrough
+	}
+	return doc.AllMatch(selStart, selEnd, func(s SpanStyle) bool { return s.Strikethrough })
+}
+
+func (StrikethroughCommand) Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle) {
+	if selStart == selEnd {
+		wasStrike := doc.RunAt(selStart).Strikethrough
+		return doc, func(s SpanStyle) SpanStyle { s.Strikethrough = !wasStrike; return s }
+	}
+	allStrike := doc.AllMatch(selStart, selEnd, func(s SpanStyle) bool { return s.Strikethrough })
+	return doc.ToggleStyleFunc(selStart, selEnd, func(s SpanStyle) SpanStyle {
+		s.Strikethrough = !allStrike
 		return s
 	}), nil
 }
