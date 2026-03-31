@@ -3,7 +3,7 @@
 **Repository:** `github.com/timzifer/lux`
 
 **Status:** Very Theoretical — nicht zur Umsetzung vorgesehen
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Datum:** 2026-03-26
 **Zuletzt abgeglichen:** 2026-03-31
 **Abhängigkeiten:** RFC-001 (Core), RFC-002 (Interaction/Layout), RFC-003 (Widget-Katalog), RFC-004 (WebView)
@@ -90,7 +90,8 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 | ScrollView + Kinetic | `ui/nav/scroll.go`, `ui/kinetic_scroll.go` | `overflow:auto/scroll` | Scrolling/Scrollbar/Trägheit bereits gelöst |
 | VirtualList | `ui/data/virtuallist.go` | Viewport-Culling | Direkt nutzbar für große Dokumente |
 | Tree Widget | `ui/data/tree.go` | DOM-Inspector | DevTools-Struktur nahezu direkt |
-| RichText + Inline Widgets | `ui/display/richtext.go` | Inline Text-Runs + Replaced Elements | Inline-Layout mit gemischtem Text-/Widget-Flow; `InlineWidget` mit Baseline-Alignment |
+| RichText + Inline/Block Widgets | `ui/display/richtext.go` (897 LOC) | Inline Text-Runs + Replaced Elements + Block Elements + Floats + Lists | Inline-Layout mit gemischtem Text-/Widget-Flow; `InlineWidget` (Baseline + Block-Modus), `ImageSpan` (Float: None/Left/Right/Block), Listen (ul/ol, Nesting, 9 Marker-Stile), CSS-Paragraph-Styling (Align/Indent/LineHeight/ParaSpacing) |
+| Link Widget | `ui/link/link.go` (235 LOC) | HTML `<a>` | Klickbarer Inline-Link mit Hover/Focus-States, A11y, Theme-Integration; einbettbar als `InlineWidget` in RichText |
 | Text Shaping | `internal/text/gotext_shaper.go` | `font-*`, Shaping | GSUB/GPOS + Fallback-Ketten vorhanden |
 | Font-Fallback | `fonts/fonts.go` | `font-family` Cascade | Fallback-Mechanik bereits robust |
 | Line Breaking | `internal/text/linebreak.go` | `word-wrap`, `overflow-wrap` | Unicode-konforme Zeilenumbrüche vorhanden |
@@ -135,8 +136,9 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 | Spinner | ✅ Integriert | CSS `animation` Spinner | `ui/form/spinner.go` — Animierter Ladeindikator (neu seit v0.1.0) |
 | Toolbar | ✅ Integriert | Browser-Chrome | `ui/nav/toolbar.go` — Item-Groups, Separators, Toggle-Buttons |
 | FilePicker | ✅ Integriert | `<input type="file">` | `ui/form/filepicker.go` — Open/Save mit OS-Dialog |
-| RichTextEditor | ✅ Integriert | `contenteditable` | `richtext/` — Document-Modell, Cursor, Selection, Undo/Redo, Toolbar-Integration |
-| Inline Widgets in RichText | ✅ Integriert | Replaced Elements Inline | `ui/display/richtext.go` — `InlineWidget`-Typ mit Baseline-Alignment, `ParagraphContent`-Union (TextSpan \| InlineWidget) |
+| RichTextEditor | ✅ Integriert | `contenteditable` | `richtext/` — Tagged-Range `AttributedString`, 17 Attribut-Typen (Span/Paragraph/List), Cursor, Selection, Undo/Redo, ToolbarCommands (Bold/Italic/Underline/Strikethrough/Align/List/Indent) |
+| Inline/Block Widgets in RichText | ✅ Integriert | Replaced Elements (Inline + Block) + Floats | `ui/display/richtext.go` (897 LOC) — `InlineWidget` (Baseline + Block-Modus), `ImageSpan` (Float: None/Left/Right/Block), Listen (ul/ol, Nesting, Marker-Stile), CSS-Paragraph-Styling |
+| Link Widget | ✅ Integriert | HTML `<a>` | `ui/link/link.go` (235 LOC) — klickbarer Inline-Link, Hover/Focus, A11y, einbettbar als InlineWidget |
 | Code Editor | 🔶 RFC-010 | Script/CSS-Editor in DevTools | Reuse für Inspektor-/Source-Views; RFC-Design abgeschlossen, Implementierung ausstehend |
 | SVG Support | ✅ Integriert | `<svg>` | `image/svg.go` (785 LOC) + `svgpath.go` (697 LOC) — GPU-beschleunigte Vektorisierung; Unterstützung für path/rect/circle/ellipse/line/polygon/polyline/g |
 | Inspector/DevTools | ✅ Integriert | Browser DevTools | RFC-012 Inspector-Vellum PoC: Widget-Tree, Layout-Overlay, Event-Log, State-Dump, Frame-Metriken |
@@ -419,10 +421,10 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 | CSS Flexbox spec-konform | ✅ Bereits CSS-Spec-konform in `ui/layout/flex.go` | Erledigt |
 | CSS Grid spec-näher | ✅ Bereits CSS-Spec-konform in `ui/layout/grid.go` | Erledigt |
 | Table Layout | ✅ Bereits HTML-Spec-konform in `ui/layout/table.go` | Erledigt |
-| Inline Layout / Replaced Elements | ✅ `InlineWidget` in RichText mit Baseline-Alignment | Erledigt (neu) |
+| Inline Layout / Replaced Elements | ✅ `InlineWidget` (Inline + Block-Modus), `ImageSpan` (Float), Listen (ul/ol), Link-Widget, CSS-Paragraph-Styling | Erledigt (erweitert v0.3.0) |
 | SVG Pipeline | ✅ GPU-beschleunigte SVG-Vektorisierung in `image/svg.go` | Erledigt (neu) |
 | Form-Controls für HTML-Inputs | ✅ DatePicker, ColorPicker, TimePicker, NumericInput, Spinner | Erledigt (neu) |
-| contenteditable-nahe Logik | ✅ RichTextEditor in `richtext/` — Document, Selection, Undo/Redo | Erledigt |
+| contenteditable-nahe Logik | ✅ RichTextEditor in `richtext/` — Tagged-Range AttributedString, 17 Attribut-Typen, ToolbarCommands, Listen-Support | Erledigt (erweitert v0.3.0) |
 | DevTools-Protokolle | ✅ Inspector-PoC via RFC-012 — Vellum-basiertes Debug-Protokoll | Erledigt |
 | Code Editor (RFC-010) | Syntax-Highlighting, LSP, Multi-Cursor für DevTools-Source-Views | Design fertig, Implementierung ausstehend |
 
@@ -467,7 +469,7 @@ Seit der Erstfassung (v0.1.0, ebenfalls 2026-03-26) wurde in kurzer Zeit erhebli
 | Komponente | Dateien | Browser-Relevanz |
 |---|---|---|
 | **SVG-Rendering** | `image/svg.go` (785 LOC), `image/svgpath.go` (697 LOC) | `<svg>` — GPU-beschleunigte Pfad-Vektorisierung; Elementtypen path/rect/circle/ellipse/line/polygon/polyline/g |
-| **Inline Widgets in RichText** | `ui/display/richtext.go` (389 LOC) | Replaced Elements im Inline-Flow — Kernbaustein für gemischten Text-/Widget-Satz (Bilder in Fließtext, Badges, Chips) |
+| **Inline/Block Widgets + Listen in RichText** | `ui/display/richtext.go` (897 LOC) | Replaced Elements im Inline-/Block-Flow, Float-Bilder, Listen (ul/ol mit Nesting/Marker), CSS-Paragraph-Styling — Kernbaustein für gemischten Text-/Widget-Satz |
 | **DatePicker** | `ui/form/datepicker.go` (352 LOC) | `<input type=”date”>` |
 | **ColorPicker** | `ui/form/colorpicker.go` (270 LOC) | `<input type=”color”>` |
 | **TimePicker** | `ui/form/timepicker.go` (308 LOC) | `<input type=”time”>` |
@@ -484,17 +486,17 @@ Seit der Erstfassung (v0.1.0, ebenfalls 2026-03-26) wurde in kurzer Zeit erhebli
 
 3. **Formular-Controls (§6.11):** Mit DatePicker, ColorPicker, TimePicker, NumericInput und Spinner sind nun **fast alle** gängigen HTML-Input-Typen als native Widgets vorhanden. Neubau reduziert sich auf HTML-Form-Semantik (submission, validation, constraint API). Schätzung sinkt auf **~4–10 KLOC**.
 
-4. **Text/Inline (§6.5):** Inline Widgets im RichText schaffen eine reale Grundlage für CSS Inline Formatting Context (replaced elements). Die Brücke zwischen Lux-RichText und Browser-Inline-Layout wird deutlich kürzer.
+4. **Text/Inline (§6.5):** Inline/Block Widgets, Float-Bilder, Listen (ul/ol) und CSS-Paragraph-Styling im RichText schaffen eine breite Grundlage für CSS Inline + Block Formatting Contexts (replaced elements, floats, list-style). Die Brücke zwischen Lux-RichText und Browser-Inline-Layout wird deutlich kürzer.
 
 #### Gesamtbewertung
 
-| Metrik | v0.1.0 | v0.2.0 | Δ |
-|---|---|---|---|
-| Reuse-Komponenten (§3.1) | 27 Einträge | 31 Einträge | +4 (SVG, Table, SplitView, erweiterte Form-Controls) |
-| Synergie-Investitionen realisiert (§11) | 3/11 | **6/11** | +3 (Inline Widgets, SVG, Form-Controls) |
-| MVP-Schätzung | 35–70 KLOC | **30–60 KLOC** | ↓ ~15% |
-| Interaktiv + JS | 80–160 KLOC | 75–150 KLOC | ↓ ~5% |
-| Robust / Full Web | >220 KLOC | >200 KLOC | ↓ marginal |
+| Metrik | v0.1.0 | v0.2.0 | v0.3.0 | Δ (v0.2→v0.3) |
+|---|---|---|---|---|
+| Reuse-Komponenten (§3.1) | 27 | 31 | **33** | +2 (Link-Widget, Listen-Rendering) |
+| Synergie-Investitionen realisiert (§11) | 3/11 | 6/11 | **8/11** | +2 (CSS-Paragraph-Styling, Link/`<a>`) |
+| MVP-Schätzung | 35–70 KLOC | 30–60 KLOC | **28–55 KLOC** | ↓ ~8% |
+| Interaktiv + JS | 80–160 KLOC | 75–150 KLOC | 72–145 KLOC | ↓ ~3% |
+| Robust / Full Web | >220 KLOC | >200 KLOC | >195 KLOC | ↓ marginal |
 
 #### Was sich **nicht** geändert hat
 
@@ -512,7 +514,7 @@ Die Kernaussage von RFC-998 bleibt bestehen:
 
 3. **RFC-004 (WebView)** ist auf post-V1 zurückgestellt. Bisherige Implementierung im Branch `feature/webview` gesichert. Für den pragmatischen Pfad bleibt Embedding bestehender Engines die empfohlene Strategie für reale Web-Inhalte.
 
-4. **RichTextEditor** ist seit v0.1.0 integriert (`richtext/` — Document-Modell, Cursor, Selection, Undo/Redo, Toolbar-Integration mit Bild-Support). Die `contenteditable`-nahe Logik ist damit realisiert.
+4. **RichTextEditor** ist seit v0.1.0 integriert und in v0.3.0 erheblich erweitert: Tagged-Range `AttributedString` (17 Attribut-Typen), CSS-Paragraph-Styling (Align/Indent/Spacing), Listen-Support (ul/ol, Nesting, 9 Marker-Stile), Inline-Font-Formatting, ToolbarCommands. Die `contenteditable`-nahe Logik ist damit über das Basic-Niveau hinaus realisiert.
 
 5. **Inspector/DevTools** ist als PoC via RFC-012 integriert (Vellum-basiert: Widget-Tree, Layout-Overlay, Event-Log, State-Dump, Frame-Metriken). Das Debug-Protokoll-Fundament steht.
 
@@ -528,3 +530,29 @@ Die Empfehlung von v0.1.0 wird **bestätigt — 2 von 3 priorisierten Investitio
 > 3. **Code Editor (RFC-010)** — Verbleibt als letzte Synergie-Investition (Syntax + LSP, Fundament für Source-View in DevTools)
 >
 > Der Code Editor ist der letzte verbliebene Doppelnutzen-Baustein: Lux-Framework-Wert **und** Browser-Engine-Readiness.
+
+### 14b. Re-Evaluierung v0.3.0 (2026-03-31)
+
+#### Neu seit v0.2.0
+
+| Komponente | Dateien | Browser-Relevanz |
+|---|---|---|
+| **Tagged-Range AttributedString** | `richtext/document.go` (797 LOC) | NSAttributedString-nahes Modell mit 17 Attribut-Typen — direkte Grundlage für CSS-Cascading auf Inline-Ebene |
+| **CSS-Paragraph-Styling** | `richtext/document.go`, `ui/display/richtext.go` | `text-align`, `text-indent`, `line-height`, Paragraph-Spacing — Block Formatting Context nähert sich CSS-Spec |
+| **Listen (ul/ol)** | `draw/list.go` (26 LOC), `richtext/command.go`, `ui/display/richtext.go` | `list-style-type` mit 9 Marker-Stilen, Nesting (0–8), `<ol start>` — vollständiges HTML-Listen-Rendering |
+| **Inline Font Formatting** | `richtext/document.go`, `richtext/command.go` | Bold/Italic/Underline/Strikethrough als Toggle-Commands — `contenteditable`-nahe Toolbar-Logik |
+| **Block-Modus InlineWidget** | `ui/display/richtext.go` | CSS `display: block` für Replaced Elements im Textfluss |
+| **Link-Widget** | `ui/link/link.go` (235 LOC) | HTML `<a>` — klickbarer Inline-Link mit Hover/Focus, A11y, Theme-Support |
+| **ToolbarCommands** | `richtext/command.go` (286 LOC) | Pluggbare Editor-Commands (Default, Alignment, List) — erweiterbar für Custom-Formatierung |
+
+#### Auswirkung
+
+1. **Text/Inline (§6.5):** Der RichText-Stack deckt jetzt Inline Formatting, Block Formatting, Float-Bilder, Listen und Paragraph-Styling ab. Der Reuse-Anteil für CSS Text/Inline steigt von „Hoch" auf „Sehr Hoch".
+
+2. **Formular-Controls (§6.11):** Mit dem Link-Widget ist nun auch HTML `<a>` als nativer Baustein vorhanden.
+
+3. **Reuse-Komponenten:** +2 (Link-Widget, Listen-Rendering) gegenüber v0.2.0.
+
+#### Empfehlung
+
+Empfehlung von v0.2.0 bleibt bestätigt. Der RichText-Stack ist jetzt der am weitesten entwickelte Subsystem-Bereich relativ zu einem Browser-MVP.
