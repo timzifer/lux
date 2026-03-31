@@ -71,5 +71,10 @@ const (
 	TextItalic        = "\uE5C0"
 	TextStrikethrough = "\uE5C2"
 	TextUnderline     = "\uE5C4"
+	TextAlignLeft     = "\uE484"
+	TextAlignCenter   = "\uE480"
+	TextAlignRight    = "\uE486"
+	TextAlignJustify  = "\uE482"
+	TextIndent        = "\uEA1E"
 	ImageSquare       = "\uE2CA"
 )

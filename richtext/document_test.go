@@ -24,11 +24,9 @@ func TestNewAttributedString_Plain(t *testing.T) {
 	if as.Text != "Hello World" {
 		t.Fatalf("unexpected text: %q", as.Text)
 	}
-	if len(as.Attrs) != 1 {
-		t.Fatalf("expected 1 run, got %d", len(as.Attrs))
-	}
-	if as.Attrs[0].End != 11 {
-		t.Fatalf("expected End=11, got %d", as.Attrs[0].End)
+	// Plain text has no attrs (all defaults).
+	if len(as.Attrs) != 0 {
+		t.Fatalf("expected 0 attrs for plain text, got %d", len(as.Attrs))
 	}
 }
 
@@ -36,9 +34,6 @@ func TestNewAttributedString_Multiline(t *testing.T) {
 	as := NewAttributedString("Hello\nWorld\nFoo")
 	if as.Text != "Hello\nWorld\nFoo" {
 		t.Fatalf("unexpected text: %q", as.Text)
-	}
-	if as.Attrs[0].End != len(as.Text) {
-		t.Fatalf("run should cover full text")
 	}
 }
 
@@ -84,7 +79,7 @@ func TestStyled(t *testing.T) {
 	if as.Text != "Bold" {
 		t.Fatalf("unexpected text: %q", as.Text)
 	}
-	if !as.Attrs[0].Style.Bold {
+	if !as.RunAt(0).Bold {
 		t.Fatal("expected Bold style")
 	}
 }
@@ -97,14 +92,14 @@ func TestBuild(t *testing.T) {
 	if as.Text != "Hello World" {
 		t.Fatalf("unexpected text: %q", as.Text)
 	}
-	if len(as.Attrs) != 2 {
-		t.Fatalf("expected 2 runs, got %d", len(as.Attrs))
+	if !as.RunAt(0).Bold {
+		t.Fatal("expected Bold at offset 0")
 	}
-	if as.Attrs[0].End != 6 || !as.Attrs[0].Style.Bold {
-		t.Fatalf("first run: End=%d Bold=%v", as.Attrs[0].End, as.Attrs[0].Style.Bold)
+	if !as.RunAt(5).Bold {
+		t.Fatal("expected Bold at offset 5")
 	}
-	if as.Attrs[1].End != 11 || as.Attrs[1].Style.Bold {
-		t.Fatalf("second run: End=%d Bold=%v", as.Attrs[1].End, as.Attrs[1].Style.Bold)
+	if as.RunAt(6).Bold {
+		t.Fatal("expected non-Bold at offset 6")
 	}
 }
 
@@ -167,9 +162,6 @@ func TestInsertText_Middle(t *testing.T) {
 	as2 := as.InsertText(5, " ")
 	if as2.Text != "Hello World" {
 		t.Fatalf("unexpected text: %q", as2.Text)
-	}
-	if as2.Attrs[len(as2.Attrs)-1].End != 11 {
-		t.Fatal("attrs should cover full text after insert")
 	}
 }
 
@@ -294,49 +286,48 @@ func TestApplyStyle_Overlapping(t *testing.T) {
 	if !as2.RunAt(6).Italic {
 		t.Fatal("second part should be Italic")
 	}
-	if as2.RunAt(6).Bold {
-		t.Fatal("ApplyStyle replaces, not merges")
+	// With tagged ranges, the Bold attr still covers [0,11),
+	// and Italic covers [6,11), so Bold is ALSO present at offset 6.
+	if !as2.RunAt(6).Bold {
+		t.Fatal("tagged ranges: Bold should still be active at offset 6")
 	}
 }
 
 func TestApplyStyle_Full(t *testing.T) {
 	as := NewAttributedString("Hello")
 	as2 := as.ApplyStyle(0, 5, SpanStyle{Underline: true})
-	if len(as2.Attrs) != 1 {
-		t.Fatalf("expected 1 run after full ApplyStyle, got %d", len(as2.Attrs))
-	}
-	if !as2.Attrs[0].Style.Underline {
+	if !as2.RunAt(0).Underline {
 		t.Fatal("expected Underline")
 	}
 }
 
 // ── Normalized ──────────────────────────────────────────────────
 
-func TestNormalized_MergesAdjacentSameStyle(t *testing.T) {
+func TestNormalized_RemovesEmptyRanges(t *testing.T) {
 	as := AttributedString{
-		Text: "Hello World",
-		Attrs: []AttrRun{
-			{End: 5, Style: SpanStyle{Bold: true}},
-			{End: 11, Style: SpanStyle{Bold: true}},
+		Text: "Hello",
+		Attrs: []Attr{
+			{Start: 0, End: 5, Value: BoldAttr(true)},
+			{Start: 3, End: 3, Value: ItalicAttr(true)}, // empty range
 		},
 	}
 	n := as.Normalized()
 	if len(n.Attrs) != 1 {
-		t.Fatalf("expected 1 run after normalize, got %d", len(n.Attrs))
-	}
-	if n.Attrs[0].End != 11 {
-		t.Fatalf("expected End=11, got %d", n.Attrs[0].End)
+		t.Fatalf("expected 1 attr after normalize, got %d", len(n.Attrs))
 	}
 }
 
-func TestNormalized_KeepsDifferentStyles(t *testing.T) {
+func TestNormalized_KeepsValidAttrs(t *testing.T) {
 	as := Build(
 		S("AAA", SpanStyle{Bold: true}),
 		S("BBB", SpanStyle{Italic: true}),
 	)
 	n := as.Normalized()
-	if len(n.Attrs) != 2 {
-		t.Fatalf("expected 2 runs, got %d", len(n.Attrs))
+	if !n.RunAt(0).Bold {
+		t.Fatal("expected Bold preserved")
+	}
+	if !n.RunAt(3).Italic {
+		t.Fatal("expected Italic preserved")
 	}
 }
 
@@ -366,11 +357,18 @@ func TestEqual_DifferentStyles(t *testing.T) {
 	}
 }
 
-func TestEqual_DifferentRunCount(t *testing.T) {
-	a := NewAttributedString("Hello")
-	b := Build(S("Hel", SpanStyle{Bold: true}), S("lo"))
-	if a.Equal(b) {
-		t.Fatal("different run count should not be Equal")
+func TestEqual_SameResolution(t *testing.T) {
+	// Two different Attr slices but same resolved output.
+	a := Styled("Hello", SpanStyle{Bold: true})
+	b := AttributedString{
+		Text: "Hello",
+		Attrs: []Attr{
+			{Start: 0, End: 3, Value: BoldAttr(true)},
+			{Start: 3, End: 5, Value: BoldAttr(true)},
+		},
+	}
+	if !a.Equal(b) {
+		t.Fatal("same resolved styles should be Equal")
 	}
 }
 
@@ -583,7 +581,6 @@ func TestInsertImage_AtStart(t *testing.T) {
 	if result.Text != want {
 		t.Fatalf("text = %q, want %q", result.Text, want)
 	}
-	// First run (placeholder) should have the image style.
 	s := result.RunAt(0)
 	if s.Image.ImageID != 42 {
 		t.Errorf("ImageID = %d, want 42", s.Image.ImageID)
@@ -591,7 +588,6 @@ func TestInsertImage_AtStart(t *testing.T) {
 	if s.Image.Alt != "icon" {
 		t.Errorf("Alt = %q, want %q", s.Image.Alt, "icon")
 	}
-	// Remainder should have default style.
 	if result.RunAt(len(placeholder)).Image.ImageID != 0 {
 		t.Error("expected no image on text portion")
 	}
@@ -610,16 +606,13 @@ func TestInsertImage_InMiddle(t *testing.T) {
 	if result.Text != want {
 		t.Fatalf("text = %q, want %q", result.Text, want)
 	}
-	// Bold style before the image.
 	if !result.RunAt(0).Bold {
 		t.Error("expected Bold before image")
 	}
-	// Image run.
 	mid := len("before")
 	if result.RunAt(mid).Image.ImageID != 7 {
 		t.Errorf("image run: ImageID = %d, want 7", result.RunAt(mid).Image.ImageID)
 	}
-	// Italic style after the image.
 	if !result.RunAt(mid + len(placeholder)).Italic {
 		t.Error("expected Italic after image")
 	}
@@ -647,11 +640,9 @@ func TestInsertImage_StylePreservation(t *testing.T) {
 	img := ImageAttachment{ImageID: 5}
 	result := as.InsertImage(4, img) // "red " + image + "text"
 
-	// "red " keeps red color.
 	if result.RunAt(0).Color != draw.Hex("#ff0000") {
 		t.Error("color before image should be preserved")
 	}
-	// "text" keeps red color.
 	endOff := len("red ") + len("\uFFFC")
 	if result.RunAt(endOff).Color != draw.Hex("#ff0000") {
 		t.Error("color after image should be preserved")
@@ -667,16 +658,11 @@ func TestInsertImage_TwoImagesNotMerged(t *testing.T) {
 	as = as.InsertImage(0, img1)
 	as = as.InsertImage(len(placeholder), img2)
 
-	// Two separate runs.
 	if as.RunAt(0).Image.ImageID != 1 {
 		t.Errorf("first image ImageID = %d, want 1", as.RunAt(0).Image.ImageID)
 	}
 	if as.RunAt(len(placeholder)).Image.ImageID != 2 {
 		t.Errorf("second image ImageID = %d, want 2", as.RunAt(len(placeholder)).Image.ImageID)
-	}
-	// Should NOT be merged (different ImageIDs ⇒ different styles).
-	if len(as.Attrs) < 2 {
-		t.Errorf("expected at least 2 runs, got %d (images with different IDs must not be merged)", len(as.Attrs))
 	}
 }
 
@@ -686,7 +672,6 @@ func TestInsertImage_DeleteRemovesPlaceholder(t *testing.T) {
 	const placeholder = "\uFFFC"
 	as = as.InsertImage(5, img)
 
-	// Delete the placeholder (last 3 bytes).
 	as = as.DeleteRange(5, 5+len(placeholder))
 	if as.Text != "hello" {
 		t.Fatalf("after delete: text = %q, want %q", as.Text, "hello")
@@ -700,7 +685,7 @@ func TestInsertImage_DeleteRemovesPlaceholder(t *testing.T) {
 
 func TestStyled_Strikethrough(t *testing.T) {
 	as := Styled("Strike", SpanStyle{Strikethrough: true})
-	if !as.Attrs[0].Style.Strikethrough {
+	if !as.RunAt(0).Strikethrough {
 		t.Fatal("expected Strikethrough style")
 	}
 }
@@ -886,7 +871,6 @@ func TestInsertText_InheritsNewFields(t *testing.T) {
 		Tracking:      0.1,
 	})
 	as = as.InsertText(1, "X")
-	// Inserted text should inherit the style of the character before it.
 	got := as.RunAt(1)
 	if !got.Strikethrough {
 		t.Error("inserted text should inherit Strikethrough")
@@ -922,5 +906,115 @@ func TestAllMatch_MixedStrikethrough(t *testing.T) {
 	)
 	if doc.AllMatch(0, 11, func(s SpanStyle) bool { return s.Strikethrough }) {
 		t.Error("expected not all strikethrough")
+	}
+}
+
+// ── Tagged Ranges: Overlapping Attributes ──────────────────────
+
+func TestResolveAt_OverlappingAttrs(t *testing.T) {
+	// Paragraph-level Align + overlapping Span-level Bold.
+	as := AttributedString{
+		Text: "Hello World",
+		Attrs: []Attr{
+			{Start: 0, End: 11, Value: AlignAttr(draw.TextAlignCenter)},
+			{Start: 0, End: 5, Value: BoldAttr(true)},
+		},
+	}
+	s0 := as.ResolveAt(0)
+	if s0.Align != draw.TextAlignCenter {
+		t.Error("expected Center align at offset 0")
+	}
+	if !s0.Bold {
+		t.Error("expected Bold at offset 0")
+	}
+	s6 := as.ResolveAt(6)
+	if s6.Align != draw.TextAlignCenter {
+		t.Error("expected Center align at offset 6")
+	}
+	if s6.Bold {
+		t.Error("expected non-Bold at offset 6")
+	}
+}
+
+func TestApply_NoSplit(t *testing.T) {
+	as := NewAttributedString("Hello World")
+	as = as.Apply(0, 11, AlignAttr(draw.TextAlignCenter))
+	as = as.Apply(3, 7, BoldAttr(true))
+	// Should have exactly 2 attrs (no splitting).
+	if len(as.Attrs) != 2 {
+		t.Fatalf("expected 2 attrs (no split), got %d", len(as.Attrs))
+	}
+}
+
+func TestStyleRuns_TransitionPoints(t *testing.T) {
+	as := AttributedString{
+		Text: "AABBCC",
+		Attrs: []Attr{
+			{Start: 0, End: 6, Value: AlignAttr(draw.TextAlignRight)},
+			{Start: 2, End: 4, Value: BoldAttr(true)},
+		},
+	}
+	runs := as.StyleRuns(0, 6)
+	if len(runs) != 3 {
+		t.Fatalf("expected 3 style runs, got %d", len(runs))
+	}
+	if runs[0].Start != 0 || runs[0].End != 2 {
+		t.Errorf("run 0: [%d,%d) want [0,2)", runs[0].Start, runs[0].End)
+	}
+	if runs[1].Start != 2 || runs[1].End != 4 || !runs[1].Style.Bold {
+		t.Errorf("run 1: [%d,%d) Bold=%v want [2,4) Bold=true", runs[1].Start, runs[1].End, runs[1].Style.Bold)
+	}
+	if runs[2].Start != 4 || runs[2].End != 6 || runs[2].Style.Bold {
+		t.Errorf("run 2: [%d,%d) Bold=%v want [4,6) Bold=false", runs[2].Start, runs[2].End, runs[2].Style.Bold)
+	}
+	// All runs should have Right alignment.
+	for i, r := range runs {
+		if r.Style.Align != draw.TextAlignRight {
+			t.Errorf("run %d: Align=%d, want Right", i, r.Style.Align)
+		}
+	}
+}
+
+func TestParagraphRange(t *testing.T) {
+	text := "Hello\nWorld\nFoo"
+	tests := []struct {
+		offset    int
+		wantStart int
+		wantEnd   int
+	}{
+		{0, 0, 5},
+		{3, 0, 5},
+		{6, 6, 11},
+		{12, 12, 15},
+	}
+	for _, tt := range tests {
+		start, end := ParagraphRange(text, tt.offset)
+		if start != tt.wantStart || end != tt.wantEnd {
+			t.Errorf("ParagraphRange(%q, %d) = (%d, %d), want (%d, %d)",
+				text, tt.offset, start, end, tt.wantStart, tt.wantEnd)
+		}
+	}
+}
+
+// ── Paragraph-level attributes ─────────────────────────────────
+
+func TestStyled_Align(t *testing.T) {
+	as := Styled("centered", SpanStyle{Align: draw.TextAlignCenter})
+	if as.RunAt(0).Align != draw.TextAlignCenter {
+		t.Fatal("expected Center alignment")
+	}
+}
+
+func TestStyled_Indent(t *testing.T) {
+	as := Styled("indented", SpanStyle{Indent: 24})
+	if as.RunAt(0).Indent != 24 {
+		t.Fatalf("expected Indent=24, got %g", as.RunAt(0).Indent)
+	}
+}
+
+func TestStyled_ParaSpacing(t *testing.T) {
+	as := Styled("spaced", SpanStyle{ParaSpacing: 16})
+	if as.RunAt(0).ParaSpacing != 16 {
+		t.Fatalf("expected ParaSpacing=16, got %g", as.RunAt(0).ParaSpacing)
 	}
 }

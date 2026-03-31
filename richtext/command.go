@@ -1,6 +1,7 @@
 package richtext
 
 import (
+	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/display"
 	"github.com/timzifer/lux/ui/icons"
@@ -34,6 +35,17 @@ func DefaultCommands() []ToolbarCommand {
 		ItalicCommand{},
 		UnderlineCommand{},
 		StrikethroughCommand{},
+	}
+}
+
+// AlignmentCommands returns toolbar commands for paragraph alignment:
+// Left, Center, Right, and Justify.
+func AlignmentCommands() []ToolbarCommand {
+	return []ToolbarCommand{
+		AlignCommand{draw.TextAlignLeft},
+		AlignCommand{draw.TextAlignCenter},
+		AlignCommand{draw.TextAlignRight},
+		AlignCommand{draw.TextAlignJustify},
 	}
 }
 
@@ -147,4 +159,40 @@ func (StrikethroughCommand) Execute(doc AttributedString, selStart, selEnd int) 
 		s.Strikethrough = !allStrike
 		return s
 	}), nil
+}
+
+// ── Align ──────────────────────────────────────────────────────
+
+// AlignCommand sets paragraph alignment. It operates on the full
+// paragraph containing the cursor, not just the selection.
+type AlignCommand struct {
+	Alignment draw.TextAlign
+}
+
+func (c AlignCommand) Icon() ui.Element {
+	switch c.Alignment {
+	case draw.TextAlignCenter:
+		return display.Icon(icons.TextAlignCenter)
+	case draw.TextAlignRight:
+		return display.Icon(icons.TextAlignRight)
+	case draw.TextAlignJustify:
+		return display.Icon(icons.TextAlignJustify)
+	default:
+		return display.Icon(icons.TextAlignLeft)
+	}
+}
+
+func (c AlignCommand) IsActive(doc AttributedString, selStart, selEnd int) bool {
+	return doc.ResolveAt(selStart).Align == c.Alignment
+}
+
+func (c AlignCommand) Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle) {
+	start, end := ParagraphRange(doc.Text, selStart)
+	if end <= start {
+		end = start + 1
+		if end > len(doc.Text) {
+			end = len(doc.Text)
+		}
+	}
+	return doc.Apply(start, end, AlignAttr(c.Alignment)), nil
 }

@@ -70,7 +70,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "datatable", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts", "toolbar"},
 	"group-overlays":     {"overlays", "dialogs"},
-	"group-text":         {"rich-text", "rich-text-editor", "font-formatting", "inline-widgets", "rich-text-images", "text-shaping", "grapheme-nav", "line-breaking"},
+	"group-text":         {"rich-text", "rich-text-editor", "font-formatting", "paragraph-styling", "inline-widgets", "rich-text-images", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
 	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
@@ -139,6 +139,8 @@ func sectionLabel(id string) string {
 		return "RichTextEditor"
 	case "font-formatting":
 		return "Font Formatting"
+	case "paragraph-styling":
+		return "Paragraph Styling"
 	case "inline-widgets":
 		return "Inline Widgets"
 	case "rich-text-images":
@@ -1036,6 +1038,8 @@ func sectionContent(m Model) ui.Element {
 		return richTextEditorSection(m)
 	case "font-formatting":
 		return fontFormattingSection()
+	case "paragraph-styling":
+		return paragraphStylingSection()
 	case "inline-widgets":
 		return inlineWidgetsSection()
 	case "rich-text-images":
@@ -2043,6 +2047,148 @@ func fontFormattingSection() ui.Element {
 			display.Span{Text: "Italic ", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightRegular, Style: draw.FontStyleItalic}}},
 			display.Span{Text: "Bold+Italic ", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold, Style: draw.FontStyleItalic}}},
 			display.Span{Text: "Tracked", Style: display.SpanStyle{Style: draw.TextStyle{Tracking: 0.15}}},
+		),
+	)
+}
+
+func paragraphStylingSection() ui.Element {
+	lorem := "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+
+	return layout.Column(
+		sectionHeader("Paragraph Styling (CSS Block-Level)"),
+
+		// ── text-align ──────────────────────────────────────────
+		display.Text("text-align: left (default)"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+		}),
+
+		display.Spacer(12),
+		display.Text("text-align: center"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+			Style: display.ParagraphStyle{Align: draw.TextAlignCenter},
+		}),
+
+		display.Spacer(12),
+		display.Text("text-align: right"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+			Style: display.ParagraphStyle{Align: draw.TextAlignRight},
+		}),
+
+		display.Spacer(12),
+		display.Text("text-align: justify"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+			Style: display.ParagraphStyle{Align: draw.TextAlignJustify},
+		}),
+
+		// ── text-indent ─────────────────────────────────────────
+		display.Spacer(16),
+		display.Text("text-indent: 24dp"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+			Style: display.ParagraphStyle{Indent: 24},
+		}),
+
+		// ── paragraph spacing ───────────────────────────────────
+		display.Spacer(16),
+		display.Text("Paragraph spacing: SpaceBefore=16, SpaceAfter=24"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "First paragraph."},
+				},
+				Style: display.ParagraphStyle{SpaceAfter: 24},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Second paragraph with large gap before."},
+				},
+				Style: display.ParagraphStyle{SpaceBefore: 16},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Third paragraph with default spacing."},
+				},
+			},
+		),
+
+		// ── line-height ─────────────────────────────────────────
+		display.Spacer(16),
+		display.Text("line-height: 1.5x"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+			Style: display.ParagraphStyle{LineHeight: 1.5},
+		}),
+
+		display.Spacer(12),
+		display.Text("line-height: 2.0x"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+			Style: display.ParagraphStyle{LineHeight: 2.0},
+		}),
+
+		// ── Combined ────────────────────────────────────────────
+		display.Spacer(16),
+		display.Text("Combined: center + indent + line-height 1.5x"),
+		display.Spacer(4),
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: lorem},
+			},
+			Style: display.ParagraphStyle{
+				Align:      draw.TextAlignCenter,
+				Indent:     32,
+				LineHeight: 1.5,
+			},
+		}),
+
+		// ── Mixed alignment ─────────────────────────────────────
+		display.Spacer(16),
+		display.Text("Mixed alignment in one RichText"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Left-aligned paragraph (default)."},
+				},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Center-aligned paragraph."},
+				},
+				Style: display.ParagraphStyle{Align: draw.TextAlignCenter},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Right-aligned paragraph."},
+				},
+				Style: display.ParagraphStyle{Align: draw.TextAlignRight},
+			},
 		),
 	)
 }

@@ -1,0 +1,6 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (1)
+  0: glyph(24,30) scale=1 color(238,242,247,255) "This is a justified paragraph that should wrap across multiple lines to demonstrate the text-align justify effect."
+
