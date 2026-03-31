@@ -1,6 +1,6 @@
 # lux — Offene Aufgaben (nach Abhängigkeit geordnet)
 
-**Stand:** 2026-03-27
+**Stand:** 2026-03-31
 **Abgeleitet aus:** RFC-001, RFC-002, RFC-003, RFC-007
 
 Die Aufgaben sind in Phasen gegliedert. Jede Phase baut auf den vorherigen auf — innerhalb einer Phase sind die Aufgaben weitgehend unabhängig und parallelisierbar.
@@ -328,18 +328,18 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] Kitchen-Sink Demos (SliceDataset, PagedDataset, StreamDataset)
 - **Abhängig von:** nichts
 
-### 6.7 Inspector & Debugging (RFC-001 §12)
-- [ ] Debug-Protocol via TCP/Unix-Socket
-- [ ] VTree-Streaming
-- [ ] Frame-Metriken
-- [ ] Widget-Inspector als separates Binary
+### 6.7 Inspector & Debugging (RFC-001 §12) ✅
+- [x] Debug-Protocol via Unix-Socket (RFC-012 Inspector-Vellum PoC)
+- [x] VTree-Streaming (AccessTree über Kanal 0 + Debug-Extensions)
+- [x] Frame-Metriken (Timing-Daten in EndFrame-Kommando)
+- [x] Widget-Inspector als separates Binary (`cmd/lux-inspector/`)
 - **Abhängig von:** 3.4 (DirtyTracker für Paint-Highlighting)
 
 ---
 
 ## Phase 7 — Post-v1.0
 
-### 7.1 Tier 4 Widgets (RFC-003 §4.1) 🔶
+### 7.1 Tier 4 Widgets (RFC-003 §4.1) ✅
 - [x] DatePicker (`ui/form/datepicker.go`)
 - [x] ColorPicker (`ui/form/colorpicker.go`)
 - [x] TimePicker (`ui/form/timepicker.go`)
@@ -347,9 +347,9 @@ Diese Aufgaben betreffen Kern-Infrastruktur, auf der spätere Features aufbauen.
 - [x] Spinner (`ui/form/spinner.go`)
 - [x] SplitView (`ui/nav/splitview.go`)
 - [x] DataTable (`ui/data/datatable.go`)
-- [x] Toolbar
+- [x] Toolbar (`ui/nav/toolbar.go`)
 - [x] RichTextEditor (`richtext/` — Editor, Widget, Commands, AttributedString)
-- [ ] FilePicker (Open/Save)
+- [x] FilePicker (`ui/form/filepicker.go`)
 - **Abhängig von:** Phase 0–2 vollständig abgeschlossen
 
 ### 7.2 Widget-Spezifikations-Templates (RFC-003 §4.2)

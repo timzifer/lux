@@ -1,10 +1,10 @@
 # RFC-002 — lux: Interaction & Layout
 
 **Repository:** `github.com/timzifer/lux`
-**Status:** Teilweise integriert
+**Status:** Integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-26
+**Zuletzt abgeglichen:** 2026-03-31
 **Abhängig von:** RFC-001 (Core Architecture)
 **Folge-RFC:** RFC-003 (Widget Catalogue & Theme)
 
@@ -49,10 +49,10 @@
 | §4.6 RTL-Layout-Spiegelung (i18n) | ✅ Integriert | `Insets.Resolve(dir)`, `InlineInsets`, `BlockInsets`, `LogicalInsets`, `LayoutDirection` |
 | §4.9 Layout-Cache | ✅ Integriert | `ui/layout_cache.go` — `LayoutCache` mit Store/IsValid/Invalidate |
 | §4.10 Insets-Typ (Start/End) | ✅ Integriert | `Start`/`End` in `Insets`, `Resolve(dir)` für physische Auflösung |
-| §5 Datenbasierte Widgets | 🔶 Teilweise | |
+| §5 Datenbasierte Widgets | ✅ Integriert | Tree, Overlay, DynamicDataset |
 | §5.2 Tree-Widget | ✅ Integriert | `ui/tree.go` mit Expand/Collapse, Animation, Selection |
 | §5.3 Overlay-System | ✅ Integriert | `Overlay` Element mit Anchor, Placement, Dismissable, Animation |
-| §6 DynamicDataset | ⏳ Wartend | |
+| §6 DynamicDataset | ✅ Integriert | `ui/data/paged_dataset.go` — Page-basierte Lazy-Loading-Datenquelle mit SlotState, PageProvider |
 
 ---
 

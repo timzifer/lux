@@ -5,7 +5,7 @@
 **Status:** Very Theoretical — nicht zur Umsetzung vorgesehen
 **Version:** 0.2.0
 **Datum:** 2026-03-26
-**Zuletzt abgeglichen:** 2026-03-26
+**Zuletzt abgeglichen:** 2026-03-31
 **Abhängigkeiten:** RFC-001 (Core), RFC-002 (Interaction/Layout), RFC-003 (Widget-Katalog), RFC-004 (WebView)
 
 > **Hinweis:** Dieses RFC ist eine theoretische Machbarkeitsanalyse. Ziel ist **nicht** der Start eines Engine-Projekts, sondern eine ehrliche Einordnung: *Was wäre mit Lux bereits möglich, was fehlt, und wo entstehen Synergien für Lux selbst?*
@@ -127,20 +127,20 @@ Die zentrale Beobachtung: Lux hat bereits ungewöhnlich viele primitive und halb
 
 | Lux-Komponente | Status | Browser-Äquivalent | Synergie |
 |---|---|---|---|
-| DataTable / CSS Table Layout | ✅ Table Layout integriert | `<table>` | `ui/layout/table.go` (1038 LOC) — HTML-Spec-konformes CSS Table Layout (Fixed + Auto); DataTable-Widget darauf aufbauend ausstehend |
+| DataTable / CSS Table Layout | ✅ Integriert | `<table>` | `ui/layout/table.go` (1038 LOC) — HTML-Spec-konformes CSS Table Layout (Fixed + Auto); DataTable-Widget in `ui/data/datatable.go` mit Pagination, Sortierung, Filter |
 | DatePicker | ✅ Integriert | `<input type="date">` | `ui/form/datepicker.go` — Kalender-Dropdown mit Monatsnavigation |
 | ColorPicker | ✅ Integriert | `<input type="color">` | `ui/form/colorpicker.go` — 16-Farben-Palette mit Dropdown |
 | TimePicker | ✅ Integriert | `<input type="time">` | `ui/form/timepicker.go` — HH:MM-Auswahl (neu seit v0.1.0) |
 | NumericInput | ✅ Integriert | `<input type="number">` | `ui/form/numericinput.go` — Stepper, Drag-to-Adjust, Unit-Suffix (neu seit v0.1.0) |
 | Spinner | ✅ Integriert | CSS `animation` Spinner | `ui/form/spinner.go` — Animierter Ladeindikator (neu seit v0.1.0) |
-| Toolbar | ⏳ Phase 7.1 | Browser-Chrome | Adressleiste/Navigation/UI-Shell |
-| FilePicker | ⏳ Phase 7.1 | `<input type="file">` | Upload-Flow mit OS-Dialog |
-| RichTextEditor | ⏳ Phase 7.1 | `contenteditable` | Gemeinsame Editier-/Selection-Logik; RichText-Display bereits vorhanden |
+| Toolbar | ✅ Integriert | Browser-Chrome | `ui/nav/toolbar.go` — Item-Groups, Separators, Toggle-Buttons |
+| FilePicker | ✅ Integriert | `<input type="file">` | `ui/form/filepicker.go` — Open/Save mit OS-Dialog |
+| RichTextEditor | ✅ Integriert | `contenteditable` | `richtext/` — Document-Modell, Cursor, Selection, Undo/Redo, Toolbar-Integration |
 | Inline Widgets in RichText | ✅ Integriert | Replaced Elements Inline | `ui/display/richtext.go` — `InlineWidget`-Typ mit Baseline-Alignment, `ParagraphContent`-Union (TextSpan \| InlineWidget) |
 | Code Editor | 🔶 RFC-010 | Script/CSS-Editor in DevTools | Reuse für Inspektor-/Source-Views; RFC-Design abgeschlossen, Implementierung ausstehend |
 | SVG Support | ✅ Integriert | `<svg>` | `image/svg.go` (785 LOC) + `svgpath.go` (697 LOC) — GPU-beschleunigte Vektorisierung; Unterstützung für path/rect/circle/ellipse/line/polygon/polyline/g |
-| Inspector/DevTools | ⏳ Phase 6.7 | Browser DevTools | Debug-Protokolle direkt wiederverwertbar |
-| DynamicDataset | ⏳ Phase 6.6 | Infinite/Lazy DOM | Large-Page-Strategien für beide Welten |
+| Inspector/DevTools | ✅ Integriert | Browser DevTools | RFC-012 Inspector-Vellum PoC: Widget-Tree, Layout-Overlay, Event-Log, State-Dump, Frame-Metriken |
+| DynamicDataset | ✅ Integriert | Infinite/Lazy DOM | `ui/data/paged_dataset.go` — Page-basierte Lazy-Loading-Datenquelle |
 
 ---
 
@@ -422,11 +422,11 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 | Inline Layout / Replaced Elements | ✅ `InlineWidget` in RichText mit Baseline-Alignment | Erledigt (neu) |
 | SVG Pipeline | ✅ GPU-beschleunigte SVG-Vektorisierung in `image/svg.go` | Erledigt (neu) |
 | Form-Controls für HTML-Inputs | ✅ DatePicker, ColorPicker, TimePicker, NumericInput, Spinner | Erledigt (neu) |
-| contenteditable-nahe Logik | Fundament für RichTextEditor | Ausstehend |
-| DevTools-Protokolle | Stärkung Inspector/Debug-Tooling | Ausstehend |
+| contenteditable-nahe Logik | ✅ RichTextEditor in `richtext/` — Document, Selection, Undo/Redo | Erledigt |
+| DevTools-Protokolle | ✅ Inspector-PoC via RFC-012 — Vellum-basiertes Debug-Protokoll | Erledigt |
 | Code Editor (RFC-010) | Syntax-Highlighting, LSP, Multi-Cursor für DevTools-Source-Views | Design fertig, Implementierung ausstehend |
 
-**Strategischer Punkt:** Seit der Erstfassung dieses RFC wurden 6 der 11 identifizierten Synergie-Investitionen realisiert. Die verbleibenden (RichTextEditor, Inspector, Code Editor) sind die architektonisch anspruchsvollsten und bilden den natürlichen nächsten Horizont.
+**Strategischer Punkt:** Seit der Erstfassung dieses RFC wurden 8 der 11 identifizierten Synergie-Investitionen realisiert. Der verbleibende Baustein (Code Editor, RFC-010) ist die letzte architektonisch anspruchsvolle Synergie-Investition.
 
 ---
 
@@ -506,21 +506,25 @@ Die Kernaussage von RFC-998 bleibt bestehen:
 
 #### Neue strategische Beobachtungen
 
-1. **RFC-010 (Code Editor)** ist vollständig designed. Bei Umsetzung entsteht ein weiterer hochwertiger Synergie-Baustein für DevTools/Inspector.
+1. **RFC-010 (Code Editor)** ist vollständig designed. Bei Umsetzung entsteht der letzte verbleibende Synergie-Baustein für DevTools/Inspector.
 
 2. **RFC-011 (Vellum / Remote Rendering)** eröffnet ein theoretisches Alternativszenario: Statt einer eigenen Browser-Engine könnte ein schlanker „Document Renderer” über Vellum remote gestreamt werden — konzeptuell interessant, aber ebenfalls rein theoretisch.
 
-3. **RFC-004 (WebView)** ist auf Windows (WebView2) integriert. Für den pragmatischen Pfad bleibt Embedding bestehender Engines die empfohlene Strategie für reale Web-Inhalte.
+3. **RFC-004 (WebView)** ist auf post-V1 zurückgestellt. Bisherige Implementierung im Branch `feature/webview` gesichert. Für den pragmatischen Pfad bleibt Embedding bestehender Engines die empfohlene Strategie für reale Web-Inhalte.
 
-4. **Nächster Hebel für RFC-998:** Die verbleibenden Synergie-Investitionen (RichTextEditor, Inspector/DevTools, Code Editor) sind die architektonisch anspruchsvollsten. Ihre Realisierung würde den MVP-Track weiter senken und gleichzeitig Lux als Framework massiv aufwerten — unabhängig davon, ob je eine Browser-Engine gebaut wird.
+4. **RichTextEditor** ist seit v0.1.0 integriert (`richtext/` — Document-Modell, Cursor, Selection, Undo/Redo, Toolbar-Integration mit Bild-Support). Die `contenteditable`-nahe Logik ist damit realisiert.
+
+5. **Inspector/DevTools** ist als PoC via RFC-012 integriert (Vellum-basiert: Widget-Tree, Layout-Overlay, Event-Log, State-Dump, Frame-Metriken). Das Debug-Protokoll-Fundament steht.
+
+6. **Nächster Hebel für RFC-998:** Der einzig verbleibende Synergie-Baustein ist der **Code Editor (RFC-010)**. Seine Realisierung würde den MVP-Track weiter senken und gleichzeitig Lux als Framework aufwerten — unabhängig davon, ob je eine Browser-Engine gebaut wird.
 
 #### Empfehlung
 
-Die Empfehlung von v0.1.0 wird **bestätigt und verschärft:**
+Die Empfehlung von v0.1.0 wird **bestätigt — 2 von 3 priorisierten Investitionen sind realisiert:**
 
-> RFC-998 als Architektur-Kompass nutzen. Die nächsten drei Synergie-Investitionen priorisieren:
-> 1. **RichTextEditor** — Inline-Editing + Selection-Logik (Fundament für `contenteditable`)
-> 2. **Inspector/DevTools** — Debug-Protokoll + VTree-Streaming (Fundament für Browser-DevTools)
-> 3. **Code Editor (RFC-010)** — Syntax + LSP (Fundament für Source-View in DevTools)
+> RFC-998 als Architektur-Kompass nutzen. Status der priorisierten Synergie-Investitionen:
+> 1. ~~**RichTextEditor**~~ — ✅ Integriert (`richtext/`, Toolbar, Bild-Support)
+> 2. ~~**Inspector/DevTools**~~ — ✅ Integriert (RFC-012 Inspector-Vellum PoC)
+> 3. **Code Editor (RFC-010)** — Verbleibt als letzte Synergie-Investition (Syntax + LSP, Fundament für Source-View in DevTools)
 >
-> Diese drei schaffen den größten Doppelnutzen: Lux-Framework-Wert **und** Browser-Engine-Readiness.
+> Der Code Editor ist der letzte verbliebene Doppelnutzen-Baustein: Lux-Framework-Wert **und** Browser-Engine-Readiness.

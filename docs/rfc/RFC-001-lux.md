@@ -1,10 +1,10 @@
 # RFC-001 — lux: Core Architecture
 
 **Repository:** `github.com/timzifer/lux`
-**Status:** Teilweise integriert
+**Status:** Integriert
 **Version:** 0.2.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-26
+**Zuletzt abgeglichen:** 2026-03-31
 **Folge-RFCs:** RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme)
 
 ---
@@ -34,7 +34,7 @@
 | §7 Platform-Abstraktion | ✅ Integriert | Interface + GLFW, Wayland, X11, Win32, Cocoa, DRM/KMS Backends |
 | §8 Externe Surfaces | ✅ Integriert | `SurfaceProvider`-Interface, `AcquireFrame`/`ReleaseFrame`, Input-Routing |
 | §11 Accessibility (A11y) | ✅ Integriert | Core-Typen, `AccessTree`-Konstruktion, Windows-UIA-Bridge, macOS-NSAccessibility-Bridge, Linux AT-SPI2-Bridge (`platform/atspi/`, pure Go D-Bus), Focus-Trapping (`ui/focus_trap.go`, Stack-basiert mit aria-hidden-Semantik) |
-| §12 Inspector & Debugging | ⏳ Wartend | |
+| §12 Inspector & Debugging | ✅ Integriert | RFC-012 Inspector-Vellum PoC: Widget-Tree, Layout-Overlay, Paint-Highlighting, Event-Log, State-Dump, Frame-Metriken |
 
 ---
 

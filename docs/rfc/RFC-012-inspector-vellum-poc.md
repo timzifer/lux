@@ -2,10 +2,10 @@
 
 **Repository:** `github.com/timzifer/lux`
 
-**Status:** Draft
+**Status:** Integriert (PoC)
 **Version:** 0.1.0
 **Datum:** 2026-03-28
-**Zuletzt abgeglichen:** 2026-03-28
+**Zuletzt abgeglichen:** 2026-03-31
 **Abhängig von:** RFC-001 (Core Architecture, §12), RFC-011 (Vellum-Protokoll)
 **Berührt:** RFC-002 (Interaction & Layout), RFC-006 (Surface Semantics), RFC-007 (WGPU Rendering)
 **Löst ab:** ToDo 6.7 (Inspector & Debugging)
