@@ -70,7 +70,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-data":         {"virtual-list", "tree", "dataset-slice", "dataset-paged", "dataset-stream", "datatable", "cards", "tabs", "accordion", "badges-chips"},
 	"group-navigation":   {"menus", "shortcuts", "toolbar"},
 	"group-overlays":     {"overlays", "dialogs"},
-	"group-text":         {"rich-text", "rich-text-editor", "font-formatting", "paragraph-styling", "inline-widgets", "rich-text-images", "text-shaping", "grapheme-nav", "line-breaking"},
+	"group-text":         {"rich-text", "rich-text-editor", "font-formatting", "paragraph-styling", "inline-widgets", "rich-text-images", "lists", "text-shaping", "grapheme-nav", "line-breaking"},
 	"group-images":       {"images", "shader-effects"},
 	"group-animation":    {"spring-anim", "cubic-bezier", "motion-spec", "animation-id", "anim-group-seq"},
 	"group-theming":      {"scoped-themes", "gradients", "effects", "blur"},
@@ -145,6 +145,8 @@ func sectionLabel(id string) string {
 		return "Inline Widgets"
 	case "rich-text-images":
 		return "RichText Images"
+	case "lists":
+		return "Lists"
 	case "virtual-list":
 		return "VirtualList"
 	case "tree":
@@ -368,6 +370,9 @@ type Model struct {
 	RichEditorReadOnly  bool
 	RichEditorDoc2      richtext.AttributedString
 	RichEditorScroll2   *ui.ScrollState
+	// Lists demo
+	ListEditorDoc    richtext.AttributedString
+	ListEditorScroll *ui.ScrollState
 	// Toolbar demo
 	ToolbarDoc       richtext.AttributedString
 	ToolbarDocScroll *ui.ScrollState
@@ -477,6 +482,7 @@ type SetTextAreaMsg struct{ Value string }
 type SetRichEditorDocMsg struct{ Doc richtext.AttributedString }
 type ToggleRichEditorReadOnlyMsg struct{}
 type SetRichEditorDoc2Msg struct{ Doc richtext.AttributedString }
+type SetListEditorDocMsg struct{ Doc richtext.AttributedString }
 
 // Toolbar messages
 type SetToolbarDocMsg struct{ Doc richtext.AttributedString }
@@ -571,6 +577,8 @@ func update(m Model, msg app.Msg) (Model, app.Cmd) {
 		m.RichEditorReadOnly = !m.RichEditorReadOnly
 	case SetRichEditorDoc2Msg:
 		m.RichEditorDoc2 = msg.Doc
+	case SetListEditorDocMsg:
+		m.ListEditorDoc = msg.Doc
 	case SetToolbarDocMsg:
 		m.ToolbarDoc = msg.Doc
 	case SelectSectionMsg:
@@ -1044,6 +1052,8 @@ func sectionContent(m Model) ui.Element {
 		return inlineWidgetsSection()
 	case "rich-text-images":
 		return richTextImagesSection(m)
+	case "lists":
+		return listsSection(m)
 	case "virtual-list":
 		return virtualListSection(m)
 	case "tree":
@@ -2495,6 +2505,182 @@ func richTextImagesSection(m Model) ui.Element {
 			return richtext.New(doc,
 				richtext.WithReadOnly(),
 				richtext.WithRows(2),
+			)
+		}(),
+	)
+}
+
+func listsSection(m Model) ui.Element {
+	return layout.Column(
+		sectionHeader("Lists"),
+
+		// ── 1. Simple unordered list ──
+		display.Text("Unordered list (ul):"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Apples"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Bananas"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Cherries"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+		),
+
+		display.Spacer(16),
+
+		// ── 2. Simple ordered list ──
+		display.Text("Ordered list (ol):"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "First step"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Second step"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Third step"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+		),
+
+		display.Spacer(16),
+
+		// ── 3. Nested list ──
+		display.Text("Nested lists (mixed ul/ol):"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Fruits"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Apple"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Banana"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Tropical"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered, ListLevel: 2},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Vegetables"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Carrot"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Broccoli"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+		),
+
+		display.Spacer(16),
+
+		// ── 4. Ordered list with start number ──
+		display.Text("Ordered list with start=5:"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Fifth item"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListStart: 5},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Sixth item"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListStart: 5},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Seventh item"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListStart: 5},
+			},
+		),
+
+		display.Spacer(16),
+
+		// ── 5. List with formatted text ──
+		display.Text("List with styled content:"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "This is "},
+					display.Span{Text: "bold", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold}}},
+					display.Span{Text: " text"},
+				},
+				Style: display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "This is "},
+					display.Span{Text: "italic", Style: display.SpanStyle{Style: draw.TextStyle{Style: draw.FontStyleItalic}}},
+					display.Span{Text: " text"},
+				},
+				Style: display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "This is "},
+					display.Span{Text: "colored", Style: display.SpanStyle{Color: draw.Hex("#ef4444")}},
+					display.Span{Text: " text"},
+				},
+				Style: display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+		),
+
+		display.Spacer(16),
+
+		// ── 6. Custom marker styles ──
+		display.Text("Custom marker styles:"),
+		display.Spacer(4),
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Lower alpha"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListMarker: draw.ListMarkerLowerAlpha},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Lower alpha"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListMarker: draw.ListMarkerLowerAlpha},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Lower roman"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListMarker: draw.ListMarkerLowerRoman},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Lower roman"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListMarker: draw.ListMarkerLowerRoman},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Square bullet"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered, ListMarker: draw.ListMarkerSquare},
+			},
+		),
+
+		display.Spacer(16),
+
+		// ── 7. Editable list in RichTextEditor ──
+		display.Text("Editable list (with toolbar):"),
+		display.Spacer(4),
+		func() ui.Element {
+			cmds := append(richtext.DefaultCommands(), richtext.ListCommands()...)
+			return richtext.NewEditorWithToolbar(m.ListEditorDoc,
+				richtext.WithWidgetOnChange(func(as richtext.AttributedString) { app.Send(SetListEditorDocMsg{as}) }),
+				richtext.WithWidgetFocus(app.Focus()),
+				richtext.WithWidgetScroll(m.ListEditorScroll),
+				richtext.WithWidgetRows(6),
+				richtext.WithWidgetCommands(cmds),
 			)
 		}(),
 	)
@@ -5141,6 +5327,23 @@ func main() {
 			richtext.S("."),
 		),
 		RichEditorScroll2: &ui.ScrollState{},
+		// Lists demo defaults
+		ListEditorDoc: func() richtext.AttributedString {
+			doc := richtext.Build(
+				richtext.S("First item\nSecond item\nThird item\n"),
+				richtext.S("Sub-item A\nSub-item B"),
+			)
+			// Apply list attrs to each paragraph.
+			doc = doc.Apply(0, 10, richtext.ListTypeAttr(draw.ListTypeUnordered))
+			doc = doc.Apply(11, 22, richtext.ListTypeAttr(draw.ListTypeUnordered))
+			doc = doc.Apply(23, 33, richtext.ListTypeAttr(draw.ListTypeUnordered))
+			doc = doc.Apply(34, 44, richtext.ListTypeAttr(draw.ListTypeUnordered))
+			doc = doc.Apply(34, 44, richtext.ListLevelAttr(1))
+			doc = doc.Apply(45, 55, richtext.ListTypeAttr(draw.ListTypeUnordered))
+			doc = doc.Apply(45, 55, richtext.ListLevelAttr(1))
+			return doc
+		}(),
+		ListEditorScroll: &ui.ScrollState{},
 		// Toolbar demo defaults
 		ToolbarDoc: richtext.Build(
 			richtext.S("Format this text using the toolbar above.\n"),

@@ -43,6 +43,13 @@ type AlignAttr draw.TextAlign // CSS text-align
 type IndentAttr float32       // CSS text-indent (dp)
 type ParaSpacingAttr float32  // Paragraph spacing (dp)
 
+// List-level attributes (paragraph formatting).
+
+type ListTypeAttr draw.ListType     // ul/ol/none (CSS list-style-type category)
+type ListLevelAttr int              // nesting depth (0-based)
+type ListStartAttr int              // start number for ol (0 = default 1)
+type ListMarkerAttr draw.ListMarker // bullet/number style (CSS list-style-type)
+
 // attrTag implementations (sealed marker).
 
 func (BoldAttr) attrTag() attrTag          { return 0 }
@@ -61,6 +68,10 @@ func (ImageAttr) attrTag() attrTag         { return 12 }
 func (AlignAttr) attrTag() attrTag         { return 13 }
 func (IndentAttr) attrTag() attrTag        { return 14 }
 func (ParaSpacingAttr) attrTag() attrTag   { return 15 }
+func (ListTypeAttr) attrTag() attrTag      { return 16 }
+func (ListLevelAttr) attrTag() attrTag     { return 17 }
+func (ListStartAttr) attrTag() attrTag     { return 18 }
+func (ListMarkerAttr) attrTag() attrTag    { return 19 }
 
 // ── Attr (Tagged Range) ────────────────────────────────────────
 
@@ -108,6 +119,12 @@ type SpanStyle struct {
 	Align       draw.TextAlign // 0 = TextAlignLeft (default)
 	Indent      float32        // dp first-line indent; 0 = none
 	ParaSpacing float32        // dp between paragraphs; 0 = theme default
+
+	// List properties (CSS list-style).
+	ListType   draw.ListType   // 0 = no list
+	ListLevel  int             // nesting depth (0 = top level)
+	ListStart  int             // ol start number; 0 = default (1)
+	ListMarker draw.ListMarker // 0 = auto based on type and level
 }
 
 // ImageAttachment describes an image embedded inline in the document.
@@ -250,6 +267,14 @@ func applyAttr(s *SpanStyle, v Attribute) {
 		s.Indent = float32(a)
 	case ParaSpacingAttr:
 		s.ParaSpacing = float32(a)
+	case ListTypeAttr:
+		s.ListType = draw.ListType(a)
+	case ListLevelAttr:
+		s.ListLevel = int(a)
+	case ListStartAttr:
+		s.ListStart = int(a)
+	case ListMarkerAttr:
+		s.ListMarker = draw.ListMarker(a)
 	}
 }
 
@@ -522,6 +547,18 @@ func (as AttributedString) applyDiff(start, end int, current, desired SpanStyle)
 	if desired.ParaSpacing != current.ParaSpacing {
 		result = result.Apply(start, end, ParaSpacingAttr(desired.ParaSpacing))
 	}
+	if desired.ListType != current.ListType {
+		result = result.Apply(start, end, ListTypeAttr(desired.ListType))
+	}
+	if desired.ListLevel != current.ListLevel {
+		result = result.Apply(start, end, ListLevelAttr(desired.ListLevel))
+	}
+	if desired.ListStart != current.ListStart {
+		result = result.Apply(start, end, ListStartAttr(desired.ListStart))
+	}
+	if desired.ListMarker != current.ListMarker {
+		result = result.Apply(start, end, ListMarkerAttr(desired.ListMarker))
+	}
 	return result
 }
 
@@ -643,6 +680,18 @@ func spanStyleToAttrs(start, end int, s SpanStyle) []Attr {
 	}
 	if s.ParaSpacing != 0 {
 		out = append(out, Attr{start, end, ParaSpacingAttr(s.ParaSpacing)})
+	}
+	if s.ListType != draw.ListTypeNone {
+		out = append(out, Attr{start, end, ListTypeAttr(s.ListType)})
+	}
+	if s.ListLevel != 0 {
+		out = append(out, Attr{start, end, ListLevelAttr(s.ListLevel)})
+	}
+	if s.ListStart != 0 {
+		out = append(out, Attr{start, end, ListStartAttr(s.ListStart)})
+	}
+	if s.ListMarker != draw.ListMarkerDefault {
+		out = append(out, Attr{start, end, ListMarkerAttr(s.ListMarker)})
 	}
 	return out
 }

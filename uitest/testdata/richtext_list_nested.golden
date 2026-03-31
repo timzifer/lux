@@ -1,0 +1,13 @@
+=== Scene ===
+grain: 0.0300
+
+[Glyphs] (8)
+  0: glyph(24,24) scale=1 color(238,242,247,255) "•"
+  1: glyph(48,30) scale=1 color(238,242,247,255) "Top level"
+  2: glyph(48,45) scale=1 color(238,242,247,255) "◦"
+  3: glyph(72,51) scale=1 color(238,242,247,255) "Nested level 1"
+  4: glyph(72,66) scale=1 color(238,242,247,255) "▪"
+  5: glyph(96,72) scale=1 color(238,242,247,255) "Nested level 2"
+  6: glyph(24,87) scale=1 color(238,242,247,255) "•"
+  7: glyph(48,93) scale=1 color(238,242,247,255) "Back to top"
+

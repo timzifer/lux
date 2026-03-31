@@ -1,6 +1,10 @@
 package richtext
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/timzifer/lux/draw"
+)
 
 // ── BoldCommand ─────────────────────────────────────────────────
 
@@ -339,5 +343,128 @@ func TestDefaultCommands_IncludesStrikethrough(t *testing.T) {
 	}
 	if _, ok := cmds[3].(StrikethroughCommand); !ok {
 		t.Errorf("expected 4th command to be StrikethroughCommand, got %T", cmds[3])
+	}
+}
+
+// ── ListCommand ─────────────────────────────────────────────────
+
+func TestListCommand_ToggleUnordered(t *testing.T) {
+	doc := NewAttributedString("Item text")
+	cmd := ListCommand{Type: draw.ListTypeUnordered}
+
+	// Should not be active initially.
+	if cmd.IsActive(doc, 0, 0) {
+		t.Error("expected inactive before toggle")
+	}
+
+	// Toggle on.
+	newDoc, _ := cmd.Execute(doc, 0, 0)
+	if newDoc.ResolveAt(0).ListType != draw.ListTypeUnordered {
+		t.Error("expected ListTypeUnordered after toggle on")
+	}
+
+	// Toggle off.
+	newDoc2, _ := cmd.Execute(newDoc, 0, 0)
+	if newDoc2.ResolveAt(0).ListType != draw.ListTypeNone {
+		t.Error("expected ListTypeNone after toggle off")
+	}
+}
+
+func TestListCommand_ToggleOrdered(t *testing.T) {
+	doc := NewAttributedString("Step one")
+	cmd := ListCommand{Type: draw.ListTypeOrdered}
+
+	newDoc, _ := cmd.Execute(doc, 0, 0)
+	if newDoc.ResolveAt(0).ListType != draw.ListTypeOrdered {
+		t.Error("expected ListTypeOrdered after toggle on")
+	}
+}
+
+func TestListCommand_SwitchType(t *testing.T) {
+	doc := NewAttributedString("Item text")
+	// Set to unordered.
+	doc = doc.Apply(0, len(doc.Text), ListTypeAttr(draw.ListTypeUnordered))
+
+	// Switch to ordered.
+	cmd := ListCommand{Type: draw.ListTypeOrdered}
+	newDoc, _ := cmd.Execute(doc, 0, 0)
+	if newDoc.ResolveAt(0).ListType != draw.ListTypeOrdered {
+		t.Error("expected ListTypeOrdered after switch")
+	}
+}
+
+func TestListCommand_IsActive(t *testing.T) {
+	doc := NewAttributedString("Bullet item")
+	doc = doc.Apply(0, len(doc.Text), ListTypeAttr(draw.ListTypeUnordered))
+
+	ulCmd := ListCommand{Type: draw.ListTypeUnordered}
+	olCmd := ListCommand{Type: draw.ListTypeOrdered}
+
+	if !ulCmd.IsActive(doc, 0, 0) {
+		t.Error("expected ul command active")
+	}
+	if olCmd.IsActive(doc, 0, 0) {
+		t.Error("expected ol command inactive")
+	}
+}
+
+// ── IndentListCommand ──────────────────────────────────────────
+
+func TestIndentListCommand_Increase(t *testing.T) {
+	doc := NewAttributedString("Item text")
+	doc = doc.Apply(0, len(doc.Text), ListTypeAttr(draw.ListTypeUnordered))
+
+	cmd := IndentListCommand{Delta: 1}
+	newDoc, _ := cmd.Execute(doc, 0, 0)
+	if newDoc.ResolveAt(0).ListLevel != 1 {
+		t.Fatalf("expected ListLevel=1, got %d", newDoc.ResolveAt(0).ListLevel)
+	}
+
+	// Increase again.
+	newDoc2, _ := cmd.Execute(newDoc, 0, 0)
+	if newDoc2.ResolveAt(0).ListLevel != 2 {
+		t.Fatalf("expected ListLevel=2, got %d", newDoc2.ResolveAt(0).ListLevel)
+	}
+}
+
+func TestIndentListCommand_Decrease(t *testing.T) {
+	doc := NewAttributedString("Nested item")
+	doc = doc.Apply(0, len(doc.Text), ListTypeAttr(draw.ListTypeUnordered))
+	doc = doc.Apply(0, len(doc.Text), ListLevelAttr(2))
+
+	cmd := IndentListCommand{Delta: -1}
+	newDoc, _ := cmd.Execute(doc, 0, 0)
+	if newDoc.ResolveAt(0).ListLevel != 1 {
+		t.Fatalf("expected ListLevel=1, got %d", newDoc.ResolveAt(0).ListLevel)
+	}
+}
+
+func TestIndentListCommand_MinLevel(t *testing.T) {
+	doc := NewAttributedString("Top item")
+	doc = doc.Apply(0, len(doc.Text), ListTypeAttr(draw.ListTypeUnordered))
+
+	cmd := IndentListCommand{Delta: -1}
+	newDoc, _ := cmd.Execute(doc, 0, 0)
+	if newDoc.ResolveAt(0).ListLevel != 0 {
+		t.Fatalf("expected ListLevel=0 (min), got %d", newDoc.ResolveAt(0).ListLevel)
+	}
+}
+
+func TestIndentListCommand_MaxLevel(t *testing.T) {
+	doc := NewAttributedString("Deep item")
+	doc = doc.Apply(0, len(doc.Text), ListTypeAttr(draw.ListTypeUnordered))
+	doc = doc.Apply(0, len(doc.Text), ListLevelAttr(8))
+
+	cmd := IndentListCommand{Delta: 1}
+	newDoc, _ := cmd.Execute(doc, 0, 0)
+	if newDoc.ResolveAt(0).ListLevel != 8 {
+		t.Fatalf("expected ListLevel=8 (max), got %d", newDoc.ResolveAt(0).ListLevel)
+	}
+}
+
+func TestListCommands_Count(t *testing.T) {
+	cmds := ListCommands()
+	if len(cmds) != 4 {
+		t.Fatalf("expected 4 list commands, got %d", len(cmds))
 	}
 }

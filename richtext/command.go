@@ -196,3 +196,88 @@ func (c AlignCommand) Execute(doc AttributedString, selStart, selEnd int) (Attri
 	}
 	return doc.Apply(start, end, AlignAttr(c.Alignment)), nil
 }
+
+// ── List ──────────────────────────────────────────────────────
+
+// ListCommand toggles list type (ordered/unordered) for the paragraph
+// containing the cursor. Follows the same paragraph-scope pattern as
+// AlignCommand.
+type ListCommand struct {
+	Type draw.ListType // ListTypeUnordered or ListTypeOrdered
+}
+
+func (c ListCommand) Icon() ui.Element {
+	if c.Type == draw.ListTypeOrdered {
+		return display.Icon(icons.ListNumbers)
+	}
+	return display.Icon(icons.ListBullets)
+}
+
+func (c ListCommand) IsActive(doc AttributedString, selStart, selEnd int) bool {
+	return doc.ResolveAt(selStart).ListType == c.Type
+}
+
+func (c ListCommand) Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle) {
+	start, end := ParagraphRange(doc.Text, selStart)
+	if end <= start {
+		end = start + 1
+		if end > len(doc.Text) {
+			end = len(doc.Text)
+		}
+	}
+	current := doc.ResolveAt(selStart).ListType
+	if current == c.Type {
+		// Toggle off — remove list formatting.
+		return doc.Apply(start, end, ListTypeAttr(draw.ListTypeNone)), nil
+	}
+	return doc.Apply(start, end, ListTypeAttr(c.Type)), nil
+}
+
+// ── List Indent ──────────────────────────────────────────────
+
+// IndentListCommand changes the nesting level of the list item at the
+// cursor position. Delta is typically +1 (indent) or -1 (outdent).
+type IndentListCommand struct {
+	Delta int // +1 = indent, -1 = outdent
+}
+
+func (c IndentListCommand) Icon() ui.Element {
+	if c.Delta > 0 {
+		return display.Icon(icons.TextIndent)
+	}
+	return display.Icon(icons.TextOutdent)
+}
+
+func (c IndentListCommand) IsActive(doc AttributedString, selStart, selEnd int) bool {
+	return doc.ResolveAt(selStart).ListType != draw.ListTypeNone
+}
+
+func (c IndentListCommand) Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle) {
+	start, end := ParagraphRange(doc.Text, selStart)
+	if end <= start {
+		end = start + 1
+		if end > len(doc.Text) {
+			end = len(doc.Text)
+		}
+	}
+	current := doc.ResolveAt(selStart).ListLevel
+	newLevel := current + c.Delta
+	if newLevel < 0 {
+		newLevel = 0
+	}
+	if newLevel > 8 {
+		newLevel = 8 // reasonable max nesting depth
+	}
+	return doc.Apply(start, end, ListLevelAttr(newLevel)), nil
+}
+
+// ListCommands returns toolbar commands for list formatting:
+// Unordered List, Ordered List, Indent, and Outdent.
+func ListCommands() []ToolbarCommand {
+	return []ToolbarCommand{
+		ListCommand{Type: draw.ListTypeUnordered},
+		ListCommand{Type: draw.ListTypeOrdered},
+		IndentListCommand{Delta: 1},
+		IndentListCommand{Delta: -1},
+	}
+}

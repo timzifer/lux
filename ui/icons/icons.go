@@ -76,5 +76,8 @@ const (
 	TextAlignRight    = "\uE486"
 	TextAlignJustify  = "\uE482"
 	TextIndent        = "\uEA1E"
+	TextOutdent       = "\uEA1C"
+	ListBullets       = "\uE2F2"
+	ListNumbers       = "\uE2F6"
 	ImageSquare       = "\uE2CA"
 )

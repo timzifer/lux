@@ -2,6 +2,8 @@ package display
 
 import (
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
@@ -208,6 +210,12 @@ type ParagraphStyle struct {
 	SpaceBefore float32        // dp before paragraph; 0 = default theme spacing
 	SpaceAfter  float32        // dp after paragraph; 0 = default theme spacing
 	Indent      float32        // CSS text-indent (dp); first-line indent
+
+	// List properties (CSS list-style).
+	ListType   draw.ListType   // ul/ol/none; 0 = no list
+	ListLevel  int             // nesting depth (0 = top level)
+	ListStart  int             // ol start number; 0 = default (1)
+	ListMarker draw.ListMarker // 0 = auto based on type and level
 }
 
 // ── RichParagraph & RichTextElement ─────────────────────────────
@@ -360,9 +368,26 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			floatRightH += ih
 		}
 
+		// ── List marker + indent ──
+		listIndent := 0
+		if para.Style.ListType != draw.ListTypeNone {
+			level := para.Style.ListLevel
+			listIndent = (level + 1) * listIndentStep
+
+			// Compute item index for ordered lists.
+			itemIdx := countPrecedingListItems(n.Paragraphs, pIdx)
+			marker := resolveListMarker(para.Style, itemIdx)
+			if marker != "" {
+				markerX := ctx.Area.X + floatLeftW + level*listIndentStep
+				ctx.Canvas.DrawText(marker,
+					draw.Pt(float32(markerX), float32(cursorY)),
+					bodyStyle, primaryColor)
+			}
+		}
+
 		// ── Measure all inline items in this paragraph ──
-		inlineX := ctx.Area.X + floatLeftW
-		availW := ctx.Area.W - floatLeftW - floatRightW
+		inlineX := ctx.Area.X + floatLeftW + listIndent
+		availW := ctx.Area.W - floatLeftW - floatRightW - listIndent
 		if availW < 0 {
 			availW = 0
 		}
@@ -626,6 +651,93 @@ func resolveSpanStyle(body draw.TextStyle, ss SpanStyle) draw.TextStyle {
 		style.LineHeight = ss.Style.LineHeight
 	}
 	return style
+}
+
+// ── List Helpers ────────────────────────────────────────────────
+
+const listIndentStep = 24 // dp per nesting level
+
+// countPrecedingListItems counts how many consecutive list paragraphs of
+// the same type and level precede pIdx. This determines the item number
+// for ordered lists.
+func countPrecedingListItems(paras []RichParagraph, pIdx int) int {
+	if pIdx == 0 {
+		return 0
+	}
+	cur := paras[pIdx].Style
+	count := 0
+	for i := pIdx - 1; i >= 0; i-- {
+		prev := paras[i].Style
+		if prev.ListType != cur.ListType || prev.ListLevel != cur.ListLevel {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+// resolveListMarker returns the marker string for a list item paragraph.
+// For unordered lists the marker cycles through disc/circle/square by level.
+// For ordered lists the marker is computed from the item index and start number.
+func resolveListMarker(style ParagraphStyle, itemIndex int) string {
+	marker := style.ListMarker
+	if marker == draw.ListMarkerDefault {
+		if style.ListType == draw.ListTypeUnordered {
+			switch style.ListLevel % 3 {
+			case 0:
+				marker = draw.ListMarkerDisc
+			case 1:
+				marker = draw.ListMarkerCircle
+			case 2:
+				marker = draw.ListMarkerSquare
+			}
+		} else {
+			marker = draw.ListMarkerDecimal
+		}
+	}
+
+	switch marker {
+	case draw.ListMarkerDisc:
+		return "\u2022" // •
+	case draw.ListMarkerCircle:
+		return "\u25E6" // ◦
+	case draw.ListMarkerSquare:
+		return "\u25AA" // ▪
+	case draw.ListMarkerDecimal:
+		start := style.ListStart
+		if start == 0 {
+			start = 1
+		}
+		return strconv.Itoa(start+itemIndex) + "."
+	case draw.ListMarkerLowerAlpha:
+		return string(rune('a'+itemIndex%26)) + "."
+	case draw.ListMarkerUpperAlpha:
+		return string(rune('A'+itemIndex%26)) + "."
+	case draw.ListMarkerLowerRoman:
+		return toLowerRoman(itemIndex+1) + "."
+	case draw.ListMarkerUpperRoman:
+		return strings.ToUpper(toLowerRoman(itemIndex+1)) + "."
+	case draw.ListMarkerNone:
+		return ""
+	}
+	return "\u2022"
+}
+
+// toLowerRoman converts n (1-based) to a lowercase Roman numeral string.
+func toLowerRoman(n int) string {
+	if n <= 0 || n > 3999 {
+		return strconv.Itoa(n)
+	}
+	vals := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
+	syms := []string{"m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"}
+	var b strings.Builder
+	for i, v := range vals {
+		for n >= v {
+			b.WriteString(syms[i])
+			n -= v
+		}
+	}
+	return b.String()
 }
 
 // ── TreeEqual ───────────────────────────────────────────────────

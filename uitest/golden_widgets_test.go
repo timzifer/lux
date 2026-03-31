@@ -503,3 +503,141 @@ func TestGoldenToolbarToggle(t *testing.T) {
 	)
 	AssertScene(t, scene, "testdata/toolbar_toggle.golden")
 }
+
+// ── RichText Lists ──────────────────────────────────────────────
+
+func TestGoldenRichTextListUnordered(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Apples"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Bananas"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Cherries"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+		),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_list_unordered.golden")
+}
+
+func TestGoldenRichTextListOrdered(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "First"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Second"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Third"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+		),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_list_ordered.golden")
+}
+
+func TestGoldenRichTextListNested(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Top level"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Nested level 1"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Nested level 2"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered, ListLevel: 2},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Back to top"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+		),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_list_nested.golden")
+}
+
+func TestGoldenRichTextListStartNumber(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Fifth"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListStart: 5},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Sixth"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListStart: 5},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Seventh"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListStart: 5},
+			},
+		),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_list_start_number.golden")
+}
+
+func TestGoldenRichTextListStyledContent(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "Normal and "},
+					display.Span{Text: "bold", Style: display.SpanStyle{Style: draw.TextStyle{Weight: draw.FontWeightBold}}},
+				},
+				Style: display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{
+					display.Span{Text: "With "},
+					display.Span{Text: "color", Style: display.SpanStyle{Color: draw.Hex("#ef4444")}},
+				},
+				Style: display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+		),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_list_styled.golden")
+}
+
+func TestGoldenRichTextListMixed(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Bullet one"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Numbered sub"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Numbered sub"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Bullet two"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeUnordered},
+			},
+		),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_list_mixed.golden")
+}
