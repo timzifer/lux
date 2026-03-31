@@ -2,6 +2,8 @@ package richtext
 
 import (
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
@@ -495,6 +497,27 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 		// Read paragraph-level alignment from the first byte of this line.
 		paraStyle := n.Value.ResolveAt(span.Start)
 
+		// ── List marker + indent ──
+		lineContentX := contentX
+		lineContentW := contentW
+		if paraStyle.ListType != draw.ListTypeNone {
+			level := paraStyle.ListLevel
+			indent := float32((level + 1) * editorListIndentStep)
+
+			// Draw marker on first line of paragraph only.
+			if isFirstLineOfParagraph(i, lines, plainText) {
+				itemIdx := countEditorListItemIndex(n.Value, span.Start)
+				marker := resolveEditorListMarker(paraStyle, itemIdx)
+				if marker != "" {
+					markerX := contentX + float32(level*editorListIndentStep)
+					canvas.DrawText(marker, draw.Pt(markerX, y), bodyStyle, defaultColor)
+				}
+			}
+
+			lineContentX += indent
+			lineContentW -= indent
+		}
+
 		// ── Pre-pass: measure total line width for alignment ──
 		type runMeasure struct {
 			style   draw.TextStyle
@@ -578,7 +601,7 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 		}
 
 		// ── Compute alignment offset ──
-		x := contentX
+		x := lineContentX
 
 		// First-line indent.
 		if paraStyle.Indent > 0 && isFirstLineOfParagraph(i, lines, plainText) {
@@ -590,12 +613,12 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 
 		switch paraStyle.Align {
 		case draw.TextAlignCenter:
-			x += (contentW - lineWidth) / 2
+			x += (lineContentW - lineWidth) / 2
 		case draw.TextAlignRight:
-			x += contentW - lineWidth
+			x += lineContentW - lineWidth
 		case draw.TextAlignJustify:
 			if !isLastLine && len(runs) > 1 {
-				extra := contentW - lineWidth
+				extra := lineContentW - lineWidth
 				if extra > 0 {
 					justifyGap = extra / float32(len(runs)-1)
 				}
@@ -672,6 +695,93 @@ func isFirstLineOfParagraph(i int, lines []text.LineSpan, plainText string) bool
 	}
 	prevEnd := lines[i-1].End
 	return prevEnd > 0 && prevEnd <= len(plainText) && plainText[prevEnd-1] == '\n'
+}
+
+// ── List Helpers ────────────────────────────────────────────────
+
+const editorListIndentStep = 24 // dp per nesting level
+
+// countEditorListItemIndex counts preceding list items of the same
+// type and level by scanning paragraphs backwards from offset.
+func countEditorListItemIndex(doc AttributedString, offset int) int {
+	curStyle := doc.ResolveAt(offset)
+	count := 0
+	pos := offset
+	for {
+		start, _ := ParagraphRange(doc.Text, pos)
+		if start == 0 {
+			break
+		}
+		pos = start - 1 // move to \n before this paragraph
+		prevStyle := doc.ResolveAt(pos)
+		if prevStyle.ListType != curStyle.ListType || prevStyle.ListLevel != curStyle.ListLevel {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+// resolveEditorListMarker returns the marker string for a list item
+// in the editor. Uses the same CSS-like logic as the display layer.
+func resolveEditorListMarker(style SpanStyle, itemIndex int) string {
+	marker := style.ListMarker
+	if marker == draw.ListMarkerDefault {
+		if style.ListType == draw.ListTypeUnordered {
+			switch style.ListLevel % 3 {
+			case 0:
+				return "\u2022" // •
+			case 1:
+				return "\u25E6" // ◦
+			case 2:
+				return "\u25AA" // ▪
+			}
+		}
+		marker = draw.ListMarkerDecimal
+	}
+
+	switch marker {
+	case draw.ListMarkerDisc:
+		return "\u2022"
+	case draw.ListMarkerCircle:
+		return "\u25E6"
+	case draw.ListMarkerSquare:
+		return "\u25AA"
+	case draw.ListMarkerDecimal:
+		start := style.ListStart
+		if start == 0 {
+			start = 1
+		}
+		return strconv.Itoa(start+itemIndex) + "."
+	case draw.ListMarkerLowerAlpha:
+		return string(rune('a'+itemIndex%26)) + "."
+	case draw.ListMarkerUpperAlpha:
+		return string(rune('A'+itemIndex%26)) + "."
+	case draw.ListMarkerLowerRoman:
+		return toLowerRoman(itemIndex+1) + "."
+	case draw.ListMarkerUpperRoman:
+		return strings.ToUpper(toLowerRoman(itemIndex+1)) + "."
+	case draw.ListMarkerNone:
+		return ""
+	}
+	return "\u2022"
+}
+
+// toLowerRoman converts n (1-based) to a lowercase Roman numeral string.
+func toLowerRoman(n int) string {
+	if n <= 0 || n > 3999 {
+		return strconv.Itoa(n)
+	}
+	vals := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
+	syms := []string{"m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"}
+	var b strings.Builder
+	for i, v := range vals {
+		for n >= v {
+			b.WriteString(syms[i])
+			n -= v
+		}
+	}
+	return b.String()
 }
 
 // makeOnChange wraps the AttributedString-based OnChange into a
