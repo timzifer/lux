@@ -35,9 +35,14 @@ func (ImageSpan) isParagraphContent()    {}
 // Width and height are determined by the element itself via intrinsic
 // measurement (MeasureChild). Baseline alignment: the bottom edge of
 // the widget sits on the text baseline, shifted up by Baseline dp.
+//
+// When Block is true the widget behaves like a CSS block-level element:
+// it breaks out of the inline text flow and occupies its own line at
+// the full paragraph width.
 type InlineWidget struct {
 	Element  ui.Element
 	Baseline float32 // 0 = bottom on text baseline; positive = shift up
+	Block    bool    // true = block-level; renders on its own line at full width
 }
 
 // InlineElement creates an InlineWidget with default baseline alignment.
@@ -48,6 +53,13 @@ func InlineElement(el ui.Element) InlineWidget {
 // InlineElementWithBaseline creates an InlineWidget with a custom baseline offset.
 func InlineElementWithBaseline(el ui.Element, baseline float32) InlineWidget {
 	return InlineWidget{Element: el, Baseline: baseline}
+}
+
+// BlockElement creates an InlineWidget rendered as a block-level element.
+// The widget breaks the text flow and occupies its own line at the full
+// paragraph width, analogous to CSS display: block.
+func BlockElement(el ui.Element) InlineWidget {
+	return InlineWidget{Element: el, Block: true}
 }
 
 // ── Images (HTML §4.8.3) ────────────────────────────────────────
@@ -297,9 +309,10 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			cursorY += int(para.Style.SpaceBefore)
 		}
 
-		// ── Pre-pass: separate float/block images from inline content ──
+		// ── Pre-pass: separate float/block images and block widgets from inline content ──
 		var inlineContent []ParagraphContent
 		var floatLeftImgs, floatRightImgs, blockImgs []ImageSpan
+		var blockWidgets []InlineWidget
 		for _, c := range allContent {
 			if img, ok := c.(ImageSpan); ok {
 				switch img.Float {
@@ -312,6 +325,8 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				default:
 					inlineContent = append(inlineContent, c)
 				}
+			} else if iw, ok := c.(InlineWidget); ok && iw.Block {
+				blockWidgets = append(blockWidgets, iw)
 			} else {
 				inlineContent = append(inlineContent, c)
 			}
@@ -559,6 +574,22 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			}
 		}
 
+		// ── Render block widgets (full-width, below inline + block images) ──
+		for _, bw := range blockWidgets {
+			measured := ctx.MeasureChild(bw.Element, ui.Bounds{
+				X: 0, Y: 0,
+				W: ctx.Area.W, H: ctx.Area.H - (cursorY - ctx.Area.Y),
+			})
+			ctx.LayoutChild(bw.Element, ui.Bounds{
+				X: ctx.Area.X, Y: cursorY,
+				W: ctx.Area.W, H: measured.H,
+			})
+			cursorY += measured.H
+			if ctx.Area.W > maxW {
+				maxW = ctx.Area.W
+			}
+		}
+
 		if pIdx < len(n.Paragraphs)-1 {
 			spacing := paraSpacing
 			if para.Style.SpaceAfter > 0 {
@@ -632,7 +663,7 @@ func contentEqual(a, b ParagraphContent) bool {
 		return ok && va.Text == vb.Text && va.Style == vb.Style
 	case InlineWidget:
 		vb, ok := b.(InlineWidget)
-		if !ok || va.Baseline != vb.Baseline {
+		if !ok || va.Baseline != vb.Baseline || va.Block != vb.Block {
 			return false
 		}
 		return elementsEqual(va.Element, vb.Element)
@@ -679,7 +710,7 @@ func (n RichTextElement) ResolveChildren(resolve func(ui.Element, int) ui.Elemen
 				childIdx++
 				if resolved != iw.Element {
 					changed = true
-					content[j] = InlineWidget{Element: resolved, Baseline: iw.Baseline}
+					content[j] = InlineWidget{Element: resolved, Baseline: iw.Baseline, Block: iw.Block}
 				} else {
 					content[j] = c
 				}
