@@ -1,10 +1,10 @@
 # RFC-003 — lux: Widget Catalogue & Theme
 
 **Repository:** `github.com/timzifer/lux`
-**Status:** Weitgehend integriert (Tier-4-Widgets teilweise, RichTextEditor ausstehend)
+**Status:** Integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-26
+**Zuletzt abgeglichen:** 2026-03-31
 **Abhängig von:** RFC-001, RFC-002
 
 ---
@@ -35,7 +35,7 @@
 | §4.1 Tier 1 — Kern | ✅ Integriert | Text, Button, Icon, Row, Column, Stack, ScrollView, Divider, Spacer |
 | §4.1 Tier 2 — Formulare | ✅ Integriert | TextField, Checkbox, Radio, Toggle, Slider, ProgressBar, Select, FormField-Validation (`ui/form/formfield.go`, `validation/`) |
 | §4.1 Tier 3 — Struktur | ✅ Integriert | Card, Tabs, Accordion, Tooltip, Badge, Chip, MenuBar, ContextMenu |
-| §4.1 Tier 4 — Erweitert | 🔶 Teilweise | SplitView (`ui/nav/splitview.go`), DatePicker (`ui/form/datepicker.go`), ColorPicker (`ui/form/colorpicker.go`), TimePicker (`ui/form/timepicker.go`), NumericInput (`ui/form/numericinput.go`), Spinner (`ui/form/spinner.go`) integriert; fehlt: DataTable, Toolbar, RichTextEditor, FilePicker |
+| §4.1 Tier 4 — Erweitert | ✅ Integriert | SplitView (`ui/nav/splitview.go`), DatePicker (`ui/form/datepicker.go`), ColorPicker (`ui/form/colorpicker.go`), TimePicker (`ui/form/timepicker.go`), NumericInput (`ui/form/numericinput.go`), Spinner (`ui/form/spinner.go`), DataTable (`ui/data/datatable.go`), Toolbar (`ui/nav/toolbar.go`), RichTextEditor (`richtext/`), FilePicker (`ui/form/filepicker.go`) |
 | §4.2 Widget-Spezifikations-Template | ⏳ Wartend | Detailspezifikationen pro Widget fehlen |
 | §5 Rich Text & Texteditierung | ✅ Integriert | Inline-Widgets + RichTextEditor integriert |
 | §5.2–5.4 RichText (Ebene 2) | ✅ Integriert | `ui/rich_text.go` mit Spans |
