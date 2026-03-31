@@ -4,17 +4,17 @@ grain: 0.0300
 [Rects] (3)
   0: rect(60,24 20x20) color(63,112,199,255) r=10.0
   1: rect(122,24 20x20) color(63,112,199,255) r=10.0
-  2: rect(156,52 42x20) color(239,68,68,255) r=10.0
+  2: rect(156,45 42x20) color(239,68,68,255) r=10.0
 
 [Glyphs] (8)
-  0: glyph(24,37) scale=1 color(238,242,247,255) "Hello "
+  0: glyph(24,30) scale=1 color(238,242,247,255) "Hello "
   1: glyph(67,30) scale=1 color(238,242,247,255) "1"
-  2: glyph(80,37) scale=1 color(238,242,247,255) " world "
+  2: glyph(80,30) scale=1 color(238,242,247,255) " world "
   3: glyph(129,30) scale=1 color(238,242,247,255) "2"
-  4: glyph(142,37) scale=1 color(238,242,247,255) " end."
-  5: glyph(24,65) scale=1 color(238,242,247,255) "Second paragraph with "
-  6: glyph(162,58) scale=1 color(238,242,247,255) "color"
-  7: glyph(198,65) scale=1 color(238,242,247,255) " badge."
+  4: glyph(142,30) scale=1 color(238,242,247,255) " end."
+  5: glyph(24,51) scale=1 color(238,242,247,255) "Second paragraph with "
+  6: glyph(162,51) scale=1 color(238,242,247,255) "color"
+  7: glyph(198,51) scale=1 color(238,242,247,255) " badge."
 
 [ClipBatches] (1)
   0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0

@@ -9,6 +9,7 @@ import (
 	"github.com/timzifer/lux/ui/display"
 	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/layout"
+	"github.com/timzifer/lux/ui/link"
 	"github.com/timzifer/lux/ui/nav"
 )
 
@@ -640,4 +641,55 @@ func TestGoldenRichTextListMixed(t *testing.T) {
 		400, testH,
 	)
 	AssertScene(t, scene, "testdata/richtext_list_mixed.golden")
+}
+
+func TestGoldenRichTextListOrderedNested(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(
+			// Level 0: decimal (1. 2.)
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "First chapter"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+			// Level 1: lower-alpha (a. b.)
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Section alpha"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Section beta"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 1},
+			},
+			// Level 2: lower-roman (i. ii.)
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Sub-item one"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 2},
+			},
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Sub-item two"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered, ListLevel: 2},
+			},
+			// Back to level 0
+			display.RichParagraph{
+				Content: []display.ParagraphContent{display.Span{Text: "Second chapter"}},
+				Style:   display.ParagraphStyle{ListType: draw.ListTypeOrdered},
+			},
+		),
+		400, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_list_ordered_nested.golden")
+}
+
+func TestGoldenRichTextInlineLinkBaseline(t *testing.T) {
+	scene := BuildScene(
+		display.RichText(display.RichParagraph{
+			Content: []display.ParagraphContent{
+				display.Span{Text: "Click "},
+				display.InlineElement(link.Text("here", func() {})),
+				display.Span{Text: " to continue."},
+			},
+		}),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/richtext_inline_link_baseline.golden")
 }

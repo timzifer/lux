@@ -64,7 +64,12 @@ func (n BadgeElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	contentY := ctx.Area.Y + (h-cb.H)/2
 	ctx.LayoutChild(n.Content, ui.Bounds{X: contentX, Y: contentY, W: cb.W, H: cb.H})
 
-	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h}
+	// Propagate text baseline through the badge padding.
+	baseline := 0
+	if cb.Baseline > 0 {
+		baseline = contentY - ctx.Area.Y + cb.Baseline
+	}
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h, Baseline: baseline}
 }
 
 // TreeEqual implements ui.TreeEqualizer.

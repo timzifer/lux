@@ -3,14 +3,14 @@ grain: 0.0300
 
 [Rects] (2)
   0: rect(66,24 30x20) color(63,112,199,255) r=10.0
-  1: rect(24,44 108x20) color(59,130,246,255) r=10.0
+  1: rect(24,37 108x20) color(59,130,246,255) r=10.0
 
 [Glyphs] (5)
-  0: glyph(24,37) scale=1 color(238,242,247,255) "Inline "
+  0: glyph(24,30) scale=1 color(238,242,247,255) "Inline "
   1: glyph(72,30) scale=1 color(238,242,247,255) "TAG"
-  2: glyph(96,37) scale=1 color(238,242,247,255) " text. "
-  3: glyph(138,37) scale=1 color(238,242,247,255) "More inline."
-  4: glyph(30,50) scale=1 color(238,242,247,255) "Full-Width Block"
+  2: glyph(96,30) scale=1 color(238,242,247,255) " text. "
+  3: glyph(138,30) scale=1 color(238,242,247,255) "More inline."
+  4: glyph(30,43) scale=1 color(238,242,247,255) "Full-Width Block"
 
 [ClipBatches] (1)
   0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0

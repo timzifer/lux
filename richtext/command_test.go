@@ -462,6 +462,33 @@ func TestIndentListCommand_MaxLevel(t *testing.T) {
 	}
 }
 
+func TestListCommand_OrderedNumbering(t *testing.T) {
+	// Toggling multiple items to ordered should produce 1, 2, 3 — not all 1.
+	doc := NewAttributedString("Alpha\nBeta\nGamma")
+	cmd := ListCommand{Type: draw.ListTypeOrdered}
+
+	// Toggle each item to ordered.
+	doc, _ = cmd.Execute(doc, 0, 0)   // "Alpha"
+	doc, _ = cmd.Execute(doc, 6, 6)   // "Beta"
+	doc, _ = cmd.Execute(doc, 11, 11) // "Gamma"
+
+	// Count from "Gamma" (offset 11) — should see 2 preceding items.
+	idx := countEditorListItemIndex(doc, 11)
+	if idx != 2 {
+		t.Errorf("Gamma item index = %d, want 2 (for marker '3.')", idx)
+	}
+	// Count from "Beta" (offset 6) — should see 1 preceding item.
+	idx = countEditorListItemIndex(doc, 6)
+	if idx != 1 {
+		t.Errorf("Beta item index = %d, want 1 (for marker '2.')", idx)
+	}
+	// Count from "Alpha" (offset 0) — should be 0.
+	idx = countEditorListItemIndex(doc, 0)
+	if idx != 0 {
+		t.Errorf("Alpha item index = %d, want 0 (for marker '1.')", idx)
+	}
+}
+
 func TestListCommands_Count(t *testing.T) {
 	cmds := ListCommands()
 	if len(cmds) != 4 {

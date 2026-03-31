@@ -188,6 +188,7 @@ func (c AlignCommand) IsActive(doc AttributedString, selStart, selEnd int) bool 
 
 func (c AlignCommand) Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle) {
 	start, end := ParagraphRange(doc.Text, selStart)
+	end = paragraphEndInclusive(doc.Text, end)
 	if end <= start {
 		end = start + 1
 		if end > len(doc.Text) {
@@ -219,6 +220,7 @@ func (c ListCommand) IsActive(doc AttributedString, selStart, selEnd int) bool {
 
 func (c ListCommand) Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle) {
 	start, end := ParagraphRange(doc.Text, selStart)
+	end = paragraphEndInclusive(doc.Text, end)
 	if end <= start {
 		end = start + 1
 		if end > len(doc.Text) {
@@ -254,6 +256,7 @@ func (c IndentListCommand) IsActive(doc AttributedString, selStart, selEnd int) 
 
 func (c IndentListCommand) Execute(doc AttributedString, selStart, selEnd int) (AttributedString, func(SpanStyle) SpanStyle) {
 	start, end := ParagraphRange(doc.Text, selStart)
+	end = paragraphEndInclusive(doc.Text, end)
 	if end <= start {
 		end = start + 1
 		if end > len(doc.Text) {

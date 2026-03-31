@@ -411,12 +411,16 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 					X: 0, Y: 0,
 					W: availW, H: ctx.Area.H,
 				})
-				items[i] = lineItem{
+				li := lineItem{
 					content:  v,
 					w:        measured.W,
 					h:        measured.H,
 					baseline: v.Baseline,
 				}
+				if measured.Baseline > 0 {
+					li.ascent = measured.Baseline
+				}
+				items[i] = li
 
 			case ImageSpan:
 				// ImageFloatNone — inline in text flow
@@ -468,8 +472,26 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 						lineAscent = it.ascent
 					}
 
-				case InlineWidget, ImageSpan:
-					// Widget/image bottom sits on baseline, shifted up by baseline offset.
+				case InlineWidget:
+					if it.ascent > 0 {
+						// Widget reports its own text baseline — align like a Span.
+						// Manual shift increases the space needed above the baseline.
+						above := it.ascent + int(math.Round(float64(it.baseline)))
+						if above > lineAscent {
+							lineAscent = above
+						}
+					} else {
+						// No baseline reported — bottom of widget on line baseline.
+						aboveBaseline := it.h - int(math.Round(float64(it.baseline)))
+						if aboveBaseline < 0 {
+							aboveBaseline = 0
+						}
+						if aboveBaseline > lineAscent {
+							lineAscent = aboveBaseline
+						}
+					}
+
+				case ImageSpan:
 					aboveBaseline := it.h - int(math.Round(float64(it.baseline)))
 					if aboveBaseline < 0 {
 						aboveBaseline = 0
@@ -538,7 +560,15 @@ func (n RichTextElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 						it.style, it.color)
 
 				case InlineWidget:
-					widgetTop := cursorY + lineAscent - it.h + int(math.Round(float64(it.baseline)))
+					var widgetTop int
+					if it.ascent > 0 {
+						// Widget-reported baseline — align text baselines.
+						// Manual InlineWidget.Baseline shifts up additionally.
+						widgetTop = cursorY + (lineAscent - it.ascent) - int(math.Round(float64(it.baseline)))
+					} else {
+						// No baseline — bottom of widget on line baseline.
+						widgetTop = cursorY + lineAscent - it.h + int(math.Round(float64(it.baseline)))
+					}
 					if widgetTop < cursorY {
 						widgetTop = cursorY
 					}
@@ -657,9 +687,9 @@ func resolveSpanStyle(body draw.TextStyle, ss SpanStyle) draw.TextStyle {
 
 const listIndentStep = 24 // dp per nesting level
 
-// countPrecedingListItems counts how many consecutive list paragraphs of
-// the same type and level precede pIdx. This determines the item number
-// for ordered lists.
+// countPrecedingListItems counts how many list paragraphs of the same type
+// and level precede pIdx, skipping over deeper-nested items. This determines
+// the item number for ordered lists.
 func countPrecedingListItems(paras []RichParagraph, pIdx int) int {
 	if pIdx == 0 {
 		return 0
@@ -668,6 +698,9 @@ func countPrecedingListItems(paras []RichParagraph, pIdx int) int {
 	count := 0
 	for i := pIdx - 1; i >= 0; i-- {
 		prev := paras[i].Style
+		if prev.ListLevel > cur.ListLevel {
+			continue // skip nested children
+		}
 		if prev.ListType != cur.ListType || prev.ListLevel != cur.ListLevel {
 			break
 		}
@@ -692,17 +725,24 @@ func resolveListMarker(style ParagraphStyle, itemIndex int) string {
 				marker = draw.ListMarkerSquare
 			}
 		} else {
-			marker = draw.ListMarkerDecimal
+			switch style.ListLevel % 3 {
+			case 0:
+				marker = draw.ListMarkerDecimal
+			case 1:
+				marker = draw.ListMarkerLowerAlpha
+			case 2:
+				marker = draw.ListMarkerLowerRoman
+			}
 		}
 	}
 
 	switch marker {
 	case draw.ListMarkerDisc:
-		return "\u2022" // •
+		return "\u2022" // • (BULLET)
 	case draw.ListMarkerCircle:
-		return "\u25E6" // ◦
+		return "\u2043" // ⁃ (HYPHEN BULLET)
 	case draw.ListMarkerSquare:
-		return "\u25AA" // ▪
+		return "\u2023" // ‣ (TRIANGULAR BULLET)
 	case draw.ListMarkerDecimal:
 		start := style.ListStart
 		if start == 0 {
@@ -820,7 +860,7 @@ func (n RichTextElement) ResolveChildren(resolve func(ui.Element, int) ui.Elemen
 			if iw, ok := c.(InlineWidget); ok {
 				resolved := resolve(iw.Element, childIdx)
 				childIdx++
-				if resolved != iw.Element {
+				if !elementsEqual(resolved, iw.Element) {
 					changed = true
 					content[j] = InlineWidget{Element: resolved, Baseline: iw.Baseline, Block: iw.Block}
 				} else {
