@@ -155,7 +155,7 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				}
 			}
 
-			// Measure the child first with available width.
+			// Compute available width between left floats and right edge.
 			availW := floatRightEdge - area.X
 			for _, lf := range leftFloats {
 				if lf.y+lf.h > floatY {
@@ -169,19 +169,18 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				availW = 0
 			}
 
+			// Layout once, positioned at the right edge. The child's
+			// StyledBox uses the available width to compute its size,
+			// and we anchor it to the right edge of the container.
+			floatX := floatRightEdge - availW
 			cb := ctx.LayoutChild(child.Element, ui.Bounds{
-				X: floatRightEdge - availW, Y: floatY, W: availW, H: area.H,
+				X: floatX, Y: floatY, W: availW, H: area.H,
 			})
 
-			// Place at right edge.
-			floatX := floatRightEdge - cb.W
-			// Re-layout at correct X position.
-			cb = ctx.LayoutChild(child.Element, ui.Bounds{
-				X: floatX, Y: floatY, W: cb.W, H: area.H,
-			})
-
+			// Record the actual position based on the child's rendered width.
+			actualX := floatRightEdge - cb.W
 			rightFloats = append(rightFloats, floatRect{
-				x: floatX, y: floatY, w: cb.W, h: cb.H, side: FloatRight,
+				x: actualX, y: floatY, w: cb.W, h: cb.H, side: FloatRight,
 			})
 
 			if bot := floatY + cb.H; bot > maxBottom {
