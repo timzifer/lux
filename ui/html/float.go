@@ -103,8 +103,6 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		switch child.Float {
 		case FloatLeft:
 			// Find the current line's available left position.
-			// The float goes at (floatX, floatY) where floatY is the
-			// max of cursorY and the current float line.
 			floatY := cursorY
 			floatX := area.X
 
@@ -129,9 +127,40 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				availW = 0
 			}
 
+			// Layout once to determine the child's width.
 			cb := ctx.LayoutChild(child.Element, ui.Bounds{
 				X: floatX, Y: floatY, W: availW, H: area.H,
 			})
+
+			// If the child doesn't fit on the current line (its width
+			// exceeds available space and there are floats on this line),
+			// wrap to the next line below current floats.
+			if cb.W > availW && floatX > area.X {
+				// Find the bottom of the lowest float on the current line.
+				nextY := floatY
+				for _, lf := range leftFloats {
+					if lf.y+lf.h > floatY {
+						if bot := lf.y + lf.h; bot > nextY {
+							nextY = bot
+						}
+					}
+				}
+				for _, rf := range rightFloats {
+					if rf.y+rf.h > floatY {
+						if bot := rf.y + rf.h; bot > nextY {
+							nextY = bot
+						}
+					}
+				}
+
+				// Re-layout on the new line with full width.
+				floatY = nextY
+				floatX = area.X
+				availW = area.W
+				cb = ctx.LayoutChild(child.Element, ui.Bounds{
+					X: floatX, Y: floatY, W: availW, H: area.H,
+				})
+			}
 
 			leftFloats = append(leftFloats, floatRect{
 				x: floatX, y: floatY, w: cb.W, h: cb.H, side: FloatLeft,
