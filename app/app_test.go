@@ -587,7 +587,7 @@ func TestReconcilerPreservesWidgetStateThroughFrames(t *testing.T) {
 
 	// Simulate 3 frames.
 	for i := 0; i < 3; i++ {
-		r.Reconcile(tree, th, func(_ any) {}, nil, nil, "")
+		r.Reconcile(tree, th, func(_ any) {}, nil, nil, "", nil)
 	}
 
 	uid := ui.MakeUID(0, "tick", 0)
@@ -605,11 +605,11 @@ func TestReconcilerResetsStateOnKeyChange(t *testing.T) {
 	r := ui.NewReconciler()
 	th := theme.Default
 
-	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {}, nil, nil, "")
-	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {}, nil, nil, "")
+	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {}, nil, nil, "", nil)
+	r.Reconcile(ui.ComponentWithKey("old", tickWidget{}), th, func(_ any) {}, nil, nil, "", nil)
 
 	// Switch key — state should be fresh.
-	r.Reconcile(ui.ComponentWithKey("new", tickWidget{}), th, func(_ any) {}, nil, nil, "")
+	r.Reconcile(ui.ComponentWithKey("new", tickWidget{}), th, func(_ any) {}, nil, nil, "", nil)
 
 	uid := ui.MakeUID(0, "new", 0)
 	raw := r.StateFor(uid)

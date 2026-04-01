@@ -132,6 +132,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 	fm := globalFocus
 	currentModel := model
 	currentLocale := cfg.locale
+	activeProfile := cfg.profile // interaction profile (RFC-004 §2.4)
 
 	dispatchCmd := func(cmd Cmd) {
 		if cmd != nil {
@@ -153,11 +154,14 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 		height:     fbH,
 	}
 	windows[MainWindow] = mainWC
+	if activeProfile != nil {
+		mainWC.dispatcher.SetGestureConfig(ui.GestureConfigFromProfile(activeProfile))
+	}
 
 	// Initial reconcile for main window.
 	views := multiView(currentModel)
 	if mainElem, ok := views[MainWindow]; ok {
-		mainWC.currentTree, _ = mainWC.reconciler.Reconcile(mainElem, activeTheme, Send, nil, nil, currentLocale)
+		mainWC.currentTree, _ = mainWC.reconciler.Reconcile(mainElem, activeTheme, Send, nil, nil, currentLocale, activeProfile)
 	}
 
 	lastFrame := time.Now()
@@ -242,6 +246,12 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				case SetLocaleMsg:
 					currentLocale = m.Locale
 					applyLocale(m.Locale)
+					modelDirty = true
+
+				case SetInteractionProfileMsg:
+					p := m.Profile
+					activeProfile = &p
+					mainWC.dispatcher.SetGestureConfig(ui.GestureConfigFromProfile(activeProfile))
 					modelDirty = true
 
 				case SetSizeMsg:
@@ -601,12 +611,15 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 
 			// Render main window.
 			if mainElem, ok := views[MainWindow]; ok && modelDirty {
-				mainWC.currentTree, _ = mainWC.reconciler.Reconcile(mainElem, activeTheme, Send, mainWC.dispatcher, fm, currentLocale)
+				mainWC.currentTree, _ = mainWC.reconciler.Reconcile(mainElem, activeTheme, Send, mainWC.dispatcher, fm, currentLocale, activeProfile)
 				fm.SortOrder()
 			}
 
 			// Main window: hover tick.
 			hoveredIdx := mainWC.hitMap.HitTestIndex(mainWC.mouseX, mainWC.mouseY)
+			if activeProfile != nil && !activeProfile.HasHover {
+				hoveredIdx = -1
+			}
 			mainWC.hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick.Duration)
 			hoverDirty := mainWC.hoverState.Tick(dt)
 
@@ -616,6 +629,9 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					continue
 				}
 				hovIdx := wc.hitMap.HitTestIndex(wc.mouseX, wc.mouseY)
+				if activeProfile != nil && !activeProfile.HasHover {
+					hovIdx = -1
+				}
 				wc.hoverState.SetHovered(hovIdx, activeTheme.Tokens().Motion.Quick.Duration)
 				if wc.hoverState.Tick(dt) {
 					hoverDirty = true
@@ -656,7 +672,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					// Reconcile secondary window.
 					if modelDirty {
 						wc.dispatcher.Dispatch()
-						wc.currentTree, _ = wc.reconciler.Reconcile(elem, activeTheme, Send, wc.dispatcher, nil, currentLocale)
+						wc.currentTree, _ = wc.reconciler.Reconcile(elem, activeTheme, Send, wc.dispatcher, nil, currentLocale, activeProfile)
 					}
 
 					winCanvas := render.NewSceneCanvas(wc.width, wc.height, render.WithShaper(shaper), render.WithAtlas(atlas))
