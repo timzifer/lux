@@ -101,11 +101,28 @@ func isTableDisplay(display string) bool {
 	return strings.HasPrefix(display, "table")
 }
 
+// ── Font-size resolution ──────────────────────────────────────────
+
+// resolvedFontSize returns the computed font-size in dp for a style,
+// using parentFontSize to resolve em/rem units.
+func resolvedFontSize(style css.StyleDeclaration, parentFontSize float32) float32 {
+	if v := style.Get("font-size"); v != "" {
+		if size, ok := css.ParseFontSizeWith(v, parentFontSize); ok {
+			return size
+		}
+	}
+	if parentFontSize > 0 {
+		return parentFontSize
+	}
+	return css.DefaultFontSize
+}
+
 // ── CSS to SpanStyle ────────────────────────────────────────────────
 
 // toSpanStyle converts resolved CSS properties into a display.SpanStyle
-// for use in RichText Spans.
-func toSpanStyle(style css.StyleDeclaration) display.SpanStyle {
+// for use in RichText Spans. parentFontSize is the inherited font-size
+// for resolving em units.
+func toSpanStyle(style css.StyleDeclaration, parentFontSize float32) display.SpanStyle {
 	var ts draw.TextStyle
 	var color draw.Color
 
@@ -119,7 +136,7 @@ func toSpanStyle(style css.StyleDeclaration) display.SpanStyle {
 	}
 
 	if v := style.Get("font-size"); v != "" {
-		if size, ok := css.ParseFontSize(v); ok {
+		if size, ok := css.ParseFontSizeWith(v, parentFontSize); ok {
 			ts.Size = size
 		}
 	}
@@ -143,7 +160,8 @@ func toSpanStyle(style css.StyleDeclaration) display.SpanStyle {
 	}
 
 	if v := style.Get("letter-spacing"); v != "" {
-		if ls, ok := css.ParseDimension(v); ok {
+		fontSize := resolvedFontSize(style, parentFontSize)
+		if ls, ok := css.ResolveDimension(v, fontSize); ok {
 			ts.Tracking = ls
 		}
 	}
@@ -295,15 +313,24 @@ func toFlexContainer(style css.StyleDeclaration, children []ui.Element) layout.F
 // around a child element.
 type StyledBox struct {
 	ui.BaseElement
-	Child        ui.Element
-	Background   draw.Color
-	BorderColor  draw.Color
-	BorderWidth  float32
-	BorderRadius float32
-	Width        float32    // 0 = auto
-	Height       float32    // 0 = auto
-	Padding      [4]float32 // top, right, bottom, left
-	Margin       [4]float32 // top, right, bottom, left
+	Child          ui.Element
+	Background     draw.Color
+	BorderColor    draw.Color
+	BorderWidth    [4]float32 // top, right, bottom, left
+	HasBorderStyle bool       // true if border-style is set (not "none")
+	BorderRadius   float32
+	Width          float32    // 0 = auto
+	Height         float32    // 0 = auto
+	WidthPct       float32    // 0 = not percentage; fraction (0.5 = 50%)
+	Padding        [4]float32 // top, right, bottom, left
+	Margin         [4]float32 // top, right, bottom, left
+}
+
+// borderWidthSum returns the total horizontal or vertical border width.
+func (n StyledBox) borderH() int { return int(n.BorderWidth[1]) + int(n.BorderWidth[3]) } // right + left
+func (n StyledBox) borderV() int { return int(n.BorderWidth[0]) + int(n.BorderWidth[2]) } // top + bottom
+func (n StyledBox) hasBorder() bool {
+	return n.BorderWidth != [4]float32{} && (n.BorderColor != (draw.Color{}) || n.HasBorderStyle)
 }
 
 // LayoutSelf implements ui.Layouter.
@@ -311,11 +338,18 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
 	canvas := ctx.Canvas
 
+	bT, bR, bB, bL := int(n.BorderWidth[0]), int(n.BorderWidth[1]), int(n.BorderWidth[2]), int(n.BorderWidth[3])
+
 	// Apply margin.
 	mx := area.X + int(n.Margin[3]) // left
 	my := area.Y + int(n.Margin[0]) // top
 	mw := area.W - int(n.Margin[1]) - int(n.Margin[3])
 	mh := area.H - int(n.Margin[0]) - int(n.Margin[2])
+
+	// Resolve percentage width against parent area.
+	if n.WidthPct > 0 {
+		mw = int(float32(area.W) * n.WidthPct)
+	}
 
 	// Apply explicit dimensions.
 	if n.Width > 0 {
@@ -325,16 +359,16 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		mh = int(n.Height)
 	}
 
-	// Compute content area inside padding.
+	// Compute content area inside padding and border.
 	pT := int(n.Padding[0])
 	pR := int(n.Padding[1])
 	pB := int(n.Padding[2])
 	pL := int(n.Padding[3])
 	contentArea := ui.Bounds{
-		X: mx + pL + int(n.BorderWidth),
-		Y: my + pT + int(n.BorderWidth),
-		W: max(mw-pL-pR-2*int(n.BorderWidth), 0),
-		H: max(mh-pT-pB-2*int(n.BorderWidth), 0),
+		X: mx + pL + bL,
+		Y: my + pT + bT,
+		W: max(mw-pL-pR-bL-bR, 0),
+		H: max(mh-pT-pB-bT-bB, 0),
 	}
 
 	// Layout child to determine content size.
@@ -344,8 +378,11 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Determine final box dimensions.
-	boxW := cb.W + pL + pR + 2*int(n.BorderWidth)
-	boxH := cb.H + pT + pB + 2*int(n.BorderWidth)
+	boxW := cb.W + pL + pR + bL + bR
+	boxH := cb.H + pT + pB + bT + bB
+	if n.WidthPct > 0 {
+		boxW = int(float32(area.W) * n.WidthPct)
+	}
 	if n.Width > 0 {
 		boxW = int(n.Width)
 	}
@@ -364,17 +401,31 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 	}
 
-	// Draw border.
-	if n.BorderWidth > 0 && n.BorderColor != (draw.Color{}) {
-		bw := n.BorderWidth
+	// Draw border (4-sided with potentially different widths).
+	if n.hasBorder() {
+		bc := n.BorderColor
+		if bc == (draw.Color{}) {
+			bc = draw.Color{R: 0, G: 0, B: 0, A: 255}
+		}
+		paint := draw.SolidPaint(bc)
+		fmx, fmy := float32(mx), float32(my)
+		fbW, fbH := float32(boxW), float32(boxH)
 		// Top
-		canvas.FillRect(draw.R(float32(mx), float32(my), float32(boxW), bw), draw.SolidPaint(n.BorderColor))
+		if n.BorderWidth[0] > 0 {
+			canvas.FillRect(draw.R(fmx, fmy, fbW, n.BorderWidth[0]), paint)
+		}
 		// Bottom
-		canvas.FillRect(draw.R(float32(mx), float32(my+boxH)-bw, float32(boxW), bw), draw.SolidPaint(n.BorderColor))
+		if n.BorderWidth[2] > 0 {
+			canvas.FillRect(draw.R(fmx, fmy+fbH-n.BorderWidth[2], fbW, n.BorderWidth[2]), paint)
+		}
 		// Left
-		canvas.FillRect(draw.R(float32(mx), float32(my), bw, float32(boxH)), draw.SolidPaint(n.BorderColor))
+		if n.BorderWidth[3] > 0 {
+			canvas.FillRect(draw.R(fmx, fmy, n.BorderWidth[3], fbH), paint)
+		}
 		// Right
-		canvas.FillRect(draw.R(float32(mx+boxW)-bw, float32(my), bw, float32(boxH)), draw.SolidPaint(n.BorderColor))
+		if n.BorderWidth[1] > 0 {
+			canvas.FillRect(draw.R(fmx+fbW-n.BorderWidth[1], fmy, n.BorderWidth[1], fbH), paint)
+		}
 	}
 
 	totalW := boxW + int(n.Margin[1]) + int(n.Margin[3])
@@ -385,7 +436,7 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		Y:        area.Y,
 		W:        totalW,
 		H:        totalH,
-		Baseline: int(n.Margin[0]) + pT + int(n.BorderWidth) + cb.Baseline,
+		Baseline: int(n.Margin[0]) + pT + bT + cb.Baseline,
 	}
 }
 
@@ -398,9 +449,11 @@ func (n StyledBox) TreeEqual(other ui.Element) bool {
 	return n.Background == o.Background &&
 		n.BorderColor == o.BorderColor &&
 		n.BorderWidth == o.BorderWidth &&
+		n.HasBorderStyle == o.HasBorderStyle &&
 		n.BorderRadius == o.BorderRadius &&
 		n.Width == o.Width &&
 		n.Height == o.Height &&
+		n.WidthPct == o.WidthPct &&
 		n.Padding == o.Padding &&
 		n.Margin == o.Margin
 }
@@ -426,7 +479,8 @@ func (n StyledBox) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 // applyBoxStyle extracts CSS box-model properties (padding, margin,
 // background, border, width, height) from a computed style and wraps
 // the element in a StyledBox if any visual properties are set.
-func applyBoxStyle(el ui.Element, style css.StyleDeclaration) ui.Element {
+// fontSize is the resolved font-size for em unit resolution.
+func applyBoxStyle(el ui.Element, style css.StyleDeclaration, fontSize float32) ui.Element {
 	if el == nil {
 		return nil
 	}
@@ -434,6 +488,10 @@ func applyBoxStyle(el ui.Element, style css.StyleDeclaration) ui.Element {
 	var box StyledBox
 	box.Child = el
 	hasStyle := false
+
+	if fontSize <= 0 {
+		fontSize = css.DefaultFontSize
+	}
 
 	// Background.
 	if v := style.Get("background-color"); v != "" {
@@ -450,10 +508,10 @@ func applyBoxStyle(el ui.Element, style css.StyleDeclaration) ui.Element {
 		}
 	}
 
-	// Border.
+	// Border — separate properties first, then shorthand can override.
 	if v := style.Get("border-width"); v != "" {
-		if bw, ok := css.ParseDimension(v); ok {
-			box.BorderWidth = bw
+		if dims, ok := css.ResolveBoxDimensions(v, fontSize); ok {
+			box.BorderWidth = dims
 			hasStyle = true
 		}
 	}
@@ -463,53 +521,66 @@ func applyBoxStyle(el ui.Element, style css.StyleDeclaration) ui.Element {
 			hasStyle = true
 		}
 	}
+	if v := style.Get("border-style"); v != "" {
+		v = strings.TrimSpace(v)
+		if v != "none" && v != "" {
+			box.HasBorderStyle = true
+			hasStyle = true
+		}
+	}
 	if v := style.Get("border-radius"); v != "" {
-		if br, ok := css.ParseDimension(v); ok {
+		if br, ok := css.ResolveDimension(v, fontSize); ok {
 			box.BorderRadius = br
 			hasStyle = true
 		}
 	}
-	// Shorthand: border: 1px solid #color
+	// Legacy shorthand fallback: if "border" is still present (e.g. from
+	// inline styles that bypassed Set expansion), parse it directly.
 	if v := style.Get("border"); v != "" {
-		parseBorderShorthand(v, &box)
-		if box.BorderWidth > 0 {
+		parseBorderShorthand(v, &box, fontSize)
+		if box.BorderWidth != ([4]float32{}) {
 			hasStyle = true
 		}
 	}
 
 	// Padding.
 	if v := style.Get("padding"); v != "" {
-		if dims, ok := css.ParseBoxDimensions(v); ok {
+		if dims, ok := css.ResolveBoxDimensions(v, fontSize); ok {
 			box.Padding = dims
 			hasStyle = true
 		}
 	}
-	applyIndividualSide(style, "padding-top", &box.Padding[0], &hasStyle)
-	applyIndividualSide(style, "padding-right", &box.Padding[1], &hasStyle)
-	applyIndividualSide(style, "padding-bottom", &box.Padding[2], &hasStyle)
-	applyIndividualSide(style, "padding-left", &box.Padding[3], &hasStyle)
+	applyIndividualSide(style, "padding-top", &box.Padding[0], &hasStyle, fontSize)
+	applyIndividualSide(style, "padding-right", &box.Padding[1], &hasStyle, fontSize)
+	applyIndividualSide(style, "padding-bottom", &box.Padding[2], &hasStyle, fontSize)
+	applyIndividualSide(style, "padding-left", &box.Padding[3], &hasStyle, fontSize)
 
 	// Margin.
 	if v := style.Get("margin"); v != "" {
-		if dims, ok := css.ParseBoxDimensions(v); ok {
+		if dims, ok := css.ResolveBoxDimensions(v, fontSize); ok {
 			box.Margin = dims
 			hasStyle = true
 		}
 	}
-	applyIndividualSide(style, "margin-top", &box.Margin[0], &hasStyle)
-	applyIndividualSide(style, "margin-right", &box.Margin[1], &hasStyle)
-	applyIndividualSide(style, "margin-bottom", &box.Margin[2], &hasStyle)
-	applyIndividualSide(style, "margin-left", &box.Margin[3], &hasStyle)
+	applyIndividualSide(style, "margin-top", &box.Margin[0], &hasStyle, fontSize)
+	applyIndividualSide(style, "margin-right", &box.Margin[1], &hasStyle, fontSize)
+	applyIndividualSide(style, "margin-bottom", &box.Margin[2], &hasStyle, fontSize)
+	applyIndividualSide(style, "margin-left", &box.Margin[3], &hasStyle, fontSize)
 
 	// Dimensions.
 	if v := style.Get("width"); v != "" {
-		if w, ok := css.ParseDimension(v); ok {
+		if css.IsPercentage(v) {
+			if pct, ok := css.ParsePercentage(v); ok {
+				box.WidthPct = pct
+				hasStyle = true
+			}
+		} else if w, ok := css.ResolveDimension(v, fontSize); ok {
 			box.Width = w
 			hasStyle = true
 		}
 	}
 	if v := style.Get("height"); v != "" {
-		if h, ok := css.ParseDimension(v); ok {
+		if h, ok := css.ResolveDimension(v, fontSize); ok {
 			box.Height = h
 			hasStyle = true
 		}
@@ -521,9 +592,9 @@ func applyBoxStyle(el ui.Element, style css.StyleDeclaration) ui.Element {
 	return box
 }
 
-func applyIndividualSide(style css.StyleDeclaration, prop string, target *float32, hasStyle *bool) {
+func applyIndividualSide(style css.StyleDeclaration, prop string, target *float32, hasStyle *bool, fontSize float32) {
 	if v := style.Get(prop); v != "" {
-		if d, ok := css.ParseDimension(v); ok {
+		if d, ok := css.ResolveDimension(v, fontSize); ok {
 			*target = d
 			*hasStyle = true
 		}
@@ -531,12 +602,13 @@ func applyIndividualSide(style css.StyleDeclaration, prop string, target *float3
 }
 
 // parseBorderShorthand parses "1px solid #000" style border shorthands.
-func parseBorderShorthand(v string, box *StyledBox) {
+func parseBorderShorthand(v string, box *StyledBox, fontSize float32) {
 	parts := strings.Fields(v)
 	for _, part := range parts {
 		// Try as dimension (border-width).
-		if d, ok := css.ParseDimension(part); ok {
-			box.BorderWidth = d
+		if d, ok := css.ResolveDimension(part, fontSize); ok {
+			box.BorderWidth = [4]float32{d, d, d, d}
+			box.HasBorderStyle = true
 			continue
 		}
 		// Try as color.
@@ -544,7 +616,11 @@ func parseBorderShorthand(v string, box *StyledBox) {
 			box.BorderColor = c
 			continue
 		}
-		// Skip style keywords (solid, dashed, etc.) — we render solid only.
+		// Style keywords (solid, dashed, etc.) — mark border as present.
+		switch part {
+		case "solid", "dashed", "dotted", "double", "groove", "ridge", "inset", "outset":
+			box.HasBorderStyle = true
+		}
 	}
 }
 
