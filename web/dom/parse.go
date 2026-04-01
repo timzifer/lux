@@ -7,12 +7,35 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// ParseHTML parses an HTML fragment and returns a DOM tree.
-// The input may be a full document or a fragment; the function always
-// returns a DocumentNode root with the parsed content as children.
+// ParseHTML parses an HTML string and returns a DOM tree.
+// If the input contains a full document (<!DOCTYPE, <html>, etc.), it is
+// parsed as a complete document preserving <html>, <head>, and <body>
+// elements. Otherwise it is parsed as a fragment inside <body>.
+// The function always returns a DocumentNode root.
 func ParseHTML(input string) (*Node, error) {
-	// Parse as fragment inside a <body> context so that bare text and
-	// inline elements are handled correctly.
+	trimmed := strings.TrimSpace(input)
+	lower := strings.ToLower(trimmed)
+	isFullDoc := strings.HasPrefix(lower, "<!doctype") ||
+		strings.HasPrefix(lower, "<html")
+
+	if isFullDoc {
+		return parseFullDocument(input)
+	}
+	return parseFragment(input)
+}
+
+// parseFullDocument parses a complete HTML document, preserving
+// <html>, <head>, and <body> elements in the DOM tree.
+func parseFullDocument(input string) (*Node, error) {
+	root, err := html.Parse(strings.NewReader(input))
+	if err != nil {
+		return nil, err
+	}
+	return fromHTMLNode(root), nil
+}
+
+// parseFragment parses an HTML fragment inside a <body> context.
+func parseFragment(input string) (*Node, error) {
 	ctx := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
 	nodes, err := html.ParseFragment(strings.NewReader(input), ctx)
 	if err != nil {
