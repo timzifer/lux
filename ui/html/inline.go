@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/display"
 	"github.com/timzifer/lux/ui/link"
 	"github.com/timzifer/lux/web/css"
@@ -183,11 +182,14 @@ func (ic *inlineCollector) addLink(node *dom.Node, style css.StyleDeclaration) {
 		onClick = func() { ic.onLink(capturedHref) }
 	}
 
-	var linkEl ui.Element
-	if href != "" {
-		linkEl = link.WithURL(label, href, onClick)
-	} else {
-		linkEl = link.Text(label, onClick)
+	// Use the CSS-inherited text style for the link text.
+	ss := toSpanStyle(style, ic.parentFontSize)
+	textEl := display.TextStyled(label, ss.Style)
+
+	linkEl := link.Link{
+		Content: textEl,
+		OnClick: onClick,
+		URL:     href,
 	}
 
 	ic.items = append(ic.items, display.InlineElement(linkEl))
