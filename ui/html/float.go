@@ -41,6 +41,39 @@ type FloatLayout struct {
 	ContainFloats bool // true if this container establishes a BFC (e.g. floated parent, overflow:hidden)
 }
 
+// floatRect tracks the position and size of a placed float.
+type floatRect struct {
+	x, y, w, h int
+	side        FloatSide
+}
+
+// findLeftFloatPos computes the X position and available width for a
+// left float at the given Y position, accounting for existing floats.
+// Only floats that vertically overlap floatY are considered.
+func findLeftFloatPos(area ui.Bounds, floatY int, leftFloats, rightFloats []floatRect) (floatX, availW int) {
+	floatX = area.X
+	for _, lf := range leftFloats {
+		if lf.y <= floatY && lf.y+lf.h > floatY {
+			if lf.x+lf.w > floatX {
+				floatX = lf.x + lf.w
+			}
+		}
+	}
+	availW = area.X + area.W - floatX
+	for _, rf := range rightFloats {
+		if rf.y <= floatY && rf.y+rf.h > floatY {
+			rEdge := rf.x
+			if rAvail := rEdge - floatX; rAvail < availW {
+				availW = rAvail
+			}
+		}
+	}
+	if availW < 0 {
+		availW = 0
+	}
+	return
+}
+
 // LayoutSelf implements ui.Layouter.
 func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
@@ -49,11 +82,6 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Float tracking state is maintained in leftFloats/rightFloats slices below.
 
 	// Simple float layout: process children in order.
-	// We track "float lines" — a horizontal band where floats are placed.
-	type floatRect struct {
-		x, y, w, h int
-		side        FloatSide
-	}
 	var leftFloats, rightFloats []floatRect
 
 	// bottomOf returns the max bottom Y of the given float rects.
@@ -69,6 +97,9 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// cursorY tracks where normal flow content goes.
 	cursorY := area.Y
+	// floatY tracks the minimum Y for the next float (CSS: a float
+	// cannot be placed above a previous float in document order).
+	floatTopY := area.Y
 	maxW := 0
 	maxBottom := area.Y
 
@@ -103,67 +134,57 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 		switch child.Float {
 		case FloatLeft:
-			// Find the current line's available left position.
-			floatY := cursorY
-			floatX := area.X
-
-			// Account for existing left floats on the same line.
-			for _, lf := range leftFloats {
-				if lf.y+lf.h > floatY && lf.x+lf.w > floatX {
-					floatX = lf.x + lf.w
-				}
+			// CSS: a float cannot be placed above a previous float.
+			floatY := floatTopY
+			if cursorY > floatY {
+				floatY = cursorY
 			}
 
-			availW := area.X + area.W - floatX
-			// Account for right floats.
-			for _, rf := range rightFloats {
-				if rf.y+rf.h > floatY {
-					rEdge := rf.x
-					if rAvail := rEdge - floatX; rAvail < availW {
-						availW = rAvail
-					}
-				}
-			}
-			if availW < 0 {
-				availW = 0
-			}
+			// Find placement: try current Y, drop down if no room.
+			floatX, availW := findLeftFloatPos(area, floatY, leftFloats, rightFloats)
 
-			// Measure without painting to determine if wrapping is needed.
+			// Measure to check if wrapping is needed.
 			mb := ctx.MeasureChild(child.Element, ui.Bounds{
-				X: floatX, Y: floatY, W: availW, H: area.H,
+				X: floatX, Y: floatY, W: max(availW, 1), H: area.H,
 			})
 
-			// If the child doesn't fit on the current line and there
-			// are already floats on this line, wrap to the next line.
-			if mb.W > availW && floatX > area.X {
-				nextY := floatY
+			// If doesn't fit and there are floats blocking, drop below them.
+			for mb.W > availW && floatX > area.X {
+				// Find bottom of the lowest blocking float at this Y.
+				nextY := floatY + 1
 				for _, lf := range leftFloats {
-					if lf.y+lf.h > floatY {
+					if lf.y <= floatY && lf.y+lf.h > floatY {
 						if bot := lf.y + lf.h; bot > nextY {
 							nextY = bot
 						}
 					}
 				}
 				for _, rf := range rightFloats {
-					if rf.y+rf.h > floatY {
+					if rf.y <= floatY && rf.y+rf.h > floatY {
 						if bot := rf.y + rf.h; bot > nextY {
 							nextY = bot
 						}
 					}
 				}
 				floatY = nextY
-				floatX = area.X
-				availW = area.W
+				floatX, availW = findLeftFloatPos(area, floatY, leftFloats, rightFloats)
+				mb = ctx.MeasureChild(child.Element, ui.Bounds{
+					X: floatX, Y: floatY, W: max(availW, 1), H: area.H,
+				})
+				// Safety: if we've dropped past all floats, break.
+				if floatX == area.X && availW == area.W {
+					break
+				}
 			}
 
-			// Single layout call at the correct position.
 			cb := ctx.LayoutChild(child.Element, ui.Bounds{
-				X: floatX, Y: floatY, W: availW, H: area.H,
+				X: floatX, Y: floatY, W: max(availW, 1), H: area.H,
 			})
 
 			leftFloats = append(leftFloats, floatRect{
 				x: floatX, y: floatY, w: cb.W, h: cb.H, side: FloatLeft,
 			})
+			floatTopY = floatY // next float can't go above this one
 
 			// Floated elements do NOT expand the container's height
 			// (CSS: floats are out of normal flow). Only track for
@@ -173,7 +194,10 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			}
 
 		case FloatRight:
-			floatY := cursorY
+			floatY := floatTopY
+			if cursorY > floatY {
+				floatY = cursorY
+			}
 
 			// Find available right position.
 			floatRightEdge := area.X + area.W
@@ -212,6 +236,7 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			})
 
 			// Floated elements do NOT expand the container's height.
+			floatTopY = floatY
 			if area.X+area.W-floatX > maxW {
 				maxW = area.X + area.W - floatX
 			}
