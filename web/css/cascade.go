@@ -38,6 +38,7 @@ func init() {
 			{Selector: "h6", Decl: declFrom("font-weight", "bold")},
 			{Selector: "ul", Decl: declFrom("list-style-type", "disc")},
 			{Selector: "ol", Decl: declFrom("list-style-type", "decimal")},
+			{Selector: "address", Decl: declFrom("font-style", "italic")},
 		},
 	}
 }
