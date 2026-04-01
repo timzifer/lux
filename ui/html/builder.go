@@ -197,8 +197,12 @@ func (b *builder) buildChildren(node *dom.Node) []ui.Element {
 		})
 	}
 
-	// Determine if this container establishes a Block Formatting Context.
-	containFloats := b.nodeEstablishesBFC(node)
+	// Always contain floats. Proper CSS float propagation (escaping
+	// non-BFC containers) requires separating visual containment from
+	// float-context containment, which is architecturally complex.
+	// Containing all floats produces correct visual results for the
+	// common case where containers have padding/border/background.
+	containFloats := true
 
 	return []ui.Element{FloatLayout{Children: floatChildren, ContainFloats: containFloats}}
 }
@@ -285,25 +289,14 @@ func (b *builder) collectChildren(node *dom.Node) []floatChild {
 				childFloat := resolveFloat(childStyle)
 				childClear := resolveClear(childStyle)
 
-				// CSS float propagation: if a non-floated block child
-				// does NOT establish a BFC, its floated descendants
-				// "escape" to our level. We hoist them by collecting
-				// the child's descendants separately — floated ones
-				// become our direct float children, and non-floated
-				// content stays as a normal-flow child.
-				if childFloat == FloatNone && !b.nodeEstablishesBFC(child) && b.hasFloatedDescendants(child) {
-					hoisted := b.hoistFloats(child)
-					result = append(result, hoisted...)
-				} else {
-					el := b.buildElementNode(child)
-					if el != nil {
-						fc := floatChild{
-							element: el,
-							float:   childFloat,
-							clear:   childClear,
-						}
-						result = append(result, fc)
+				el := b.buildElementNode(child)
+				if el != nil {
+					fc := floatChild{
+						element: el,
+						float:   childFloat,
+						clear:   childClear,
 					}
+					result = append(result, fc)
 				}
 			}
 		}
