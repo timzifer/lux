@@ -1,7 +1,7 @@
 // Acid Viewer — visual renderer for the three official ACID conformance tests.
 //
 // Renders the real W3C/WaSP Acid tests through the full lux pipeline:
-//   HTML → DOM → CSS cascade → RichText → GPU
+//   HTML → DOM → CSS cascade → ui/html widget tree → GPU
 //
 // Most of Acid2 and Acid3 will look broken — that's the point.
 // Each rendering gap is a concrete improvement to pick off.
@@ -14,11 +14,11 @@ import (
 	"log"
 
 	"github.com/timzifer/lux/app"
-	"github.com/timzifer/lux/richtext"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/button"
 	"github.com/timzifer/lux/ui/display"
+	"github.com/timzifer/lux/ui/html"
 	"github.com/timzifer/lux/ui/layout"
 	"github.com/timzifer/lux/ui/nav"
 )
@@ -55,19 +55,6 @@ func update(m Model, msg app.Msg) Model {
 	return m
 }
 
-// mustParse parses HTML into a read-only RichTextEditor element.
-func mustParse(html string) richtext.RichTextEditor {
-	as, err := richtext.FromHTML(html)
-	if err != nil {
-		log.Fatalf("FromHTML: %v", err)
-	}
-	return richtext.RichTextEditor{
-		Value:    as,
-		ReadOnly: true,
-		Rows:     60,
-	}
-}
-
 func view(m Model) ui.Element {
 	themeLabel := "Light"
 	if m.Dark {
@@ -76,9 +63,9 @@ func view(m Model) ui.Element {
 
 	tabs := nav.New(
 		[]nav.TabItem{
-			{Header: display.Text("Acid1 — CSS1 (1998)"), Content: mustParse(acid1HTML)},
-			{Header: display.Text("Acid2 — CSS2.1 (2005)"), Content: mustParse(acid2HTML)},
-			{Header: display.Text("Acid3 — CSS3/JS (2008)"), Content: mustParse(acid3HTML)},
+			{Header: display.Text("Acid1 — CSS1 (1998)"), Content: html.View(acid1HTML, html.WithScrollable(600))},
+			{Header: display.Text("Acid2 — CSS2.1 (2005)"), Content: html.View(acid2HTML, html.WithScrollable(600))},
+			{Header: display.Text("Acid3 — CSS3/JS (2008)"), Content: html.View(acid3HTML, html.WithScrollable(600))},
 		},
 		m.Selected,
 		func(i int) { app.Send(SelectTabMsg{Index: i}) },
