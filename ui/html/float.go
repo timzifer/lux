@@ -143,9 +143,10 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			// Find placement: try current Y, drop down if no room.
 			floatX, availW := findLeftFloatPos(area, floatY, leftFloats, rightFloats)
 
-			// Measure to check if wrapping is needed.
+			// Measure with full container width so percentage widths
+			// resolve against the containing block, not available space.
 			mb := ctx.MeasureChild(child.Element, ui.Bounds{
-				X: floatX, Y: floatY, W: max(availW, 1), H: area.H,
+				X: floatX, Y: floatY, W: area.W, H: area.H,
 			})
 
 			// If doesn't fit and there are floats blocking, drop below them.
@@ -169,7 +170,7 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				floatY = nextY
 				floatX, availW = findLeftFloatPos(area, floatY, leftFloats, rightFloats)
 				mb = ctx.MeasureChild(child.Element, ui.Bounds{
-					X: floatX, Y: floatY, W: max(availW, 1), H: area.H,
+					X: floatX, Y: floatY, W: area.W, H: area.H,
 				})
 				// Safety: if we've dropped past all floats, break.
 				if floatX == area.X && availW == area.W {
@@ -178,7 +179,7 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			}
 
 			cb := ctx.LayoutChild(child.Element, ui.Bounds{
-				X: floatX, Y: floatY, W: max(availW, 1), H: area.H,
+				X: floatX, Y: floatY, W: area.W, H: area.H,
 			})
 
 			leftFloats = append(leftFloats, floatRect{
