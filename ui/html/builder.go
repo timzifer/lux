@@ -17,6 +17,21 @@ type builder struct {
 	onLink func(href string)
 }
 
+// fontSize returns the resolved font-size for a node.
+func (b *builder) fontSize(node *dom.Node) float32 {
+	style := css.Resolve(node, b.sheets)
+	parentFS := b.parentFontSize(node)
+	return resolvedFontSize(style, parentFS)
+}
+
+// parentFontSize returns the inherited font-size from a node's parent.
+func (b *builder) parentFontSize(node *dom.Node) float32 {
+	if node.Parent != nil && node.Parent.Type == dom.ElementNode {
+		return b.fontSize(node.Parent)
+	}
+	return css.DefaultFontSize
+}
+
 // buildElement converts a single DOM node (and its subtree) into a
 // ui.Element. Returns nil for nodes that produce no visual output.
 func (b *builder) buildElement(node *dom.Node) ui.Element {
@@ -76,13 +91,13 @@ func (b *builder) buildElementNode(node *dom.Node) ui.Element {
 		return display.Divider()
 	case "table":
 		el := b.buildTable(node, style)
-		return applyBoxStyle(el, style)
+		return applyBoxStyle(el, style, b.fontSize(node))
 	case "input", "select", "textarea", "button", "progress":
 		el := b.buildFormControl(node, style)
 		if el == nil {
 			return nil
 		}
-		return applyBoxStyle(el, style)
+		return applyBoxStyle(el, style, b.fontSize(node))
 	case "img":
 		return b.buildImg(node, style)
 	}
@@ -111,14 +126,81 @@ func (b *builder) buildElementNode(node *dom.Node) ui.Element {
 	}
 }
 
+// floatChild pairs an element with its float/clear metadata.
+type floatChild struct {
+	element ui.Element
+	float   FloatSide
+	clear   ClearSide
+}
+
+// resolveFloat returns the FloatSide for a CSS float value.
+func resolveFloat(style css.StyleDeclaration) FloatSide {
+	switch strings.TrimSpace(style.Get("float")) {
+	case "left":
+		return FloatLeft
+	case "right":
+		return FloatRight
+	}
+	return FloatNone
+}
+
+// resolveClear returns the ClearSide for a CSS clear value.
+func resolveClear(style css.StyleDeclaration) ClearSide {
+	switch strings.TrimSpace(style.Get("clear")) {
+	case "left":
+		return ClearLeft
+	case "right":
+		return ClearRight
+	case "both":
+		return ClearBoth
+	}
+	return ClearNone
+}
+
 // buildChildren converts all children of a node into a list of
 // block-level elements. This handles the critical inline/block mixing:
 // consecutive inline nodes are collected into RichParagraphs.
+// If any children have float or clear set, a FloatLayout is returned.
 func (b *builder) buildChildren(node *dom.Node) []ui.Element {
-	var result []ui.Element
+	children := b.collectChildren(node)
+
+	// Check if any children use float or clear.
+	hasFloat := false
+	for _, c := range children {
+		if c.float != FloatNone || c.clear != ClearNone {
+			hasFloat = true
+			break
+		}
+	}
+
+	if !hasFloat {
+		// No floats — return plain elements as before.
+		result := make([]ui.Element, 0, len(children))
+		for _, c := range children {
+			result = append(result, c.element)
+		}
+		return result
+	}
+
+	// Wrap in a FloatLayout.
+	floatChildren := make([]FloatChild, 0, len(children))
+	for _, c := range children {
+		floatChildren = append(floatChildren, FloatChild{
+			Element: c.element,
+			Float:   c.float,
+			Clear:   c.clear,
+		})
+	}
+	return []ui.Element{FloatLayout{Children: floatChildren}}
+}
+
+// collectChildren builds all child elements with float/clear metadata.
+func (b *builder) collectChildren(node *dom.Node) []floatChild {
+	var result []floatChild
 	ic := &inlineCollector{
-		sheets: b.sheets,
-		onLink: b.onLink,
+		sheets:         b.sheets,
+		onLink:         b.onLink,
+		parentFontSize: b.fontSize(node),
 	}
 
 	for child := node.FirstChild; child != nil; child = child.NextSib {
@@ -156,12 +238,17 @@ func (b *builder) buildChildren(node *dom.Node) []ui.Element {
 			} else {
 				// Block element encountered — flush inline content first.
 				if para := ic.flush(); para != nil {
-					result = append(result, display.RichText(*para))
+					result = append(result, floatChild{element: display.RichText(*para)})
 				}
 
 				el := b.buildElementNode(child)
 				if el != nil {
-					result = append(result, el)
+					fc := floatChild{
+						element: el,
+						float:   resolveFloat(childStyle),
+						clear:   resolveClear(childStyle),
+					}
+					result = append(result, fc)
 				}
 			}
 		}
@@ -169,7 +256,7 @@ func (b *builder) buildChildren(node *dom.Node) []ui.Element {
 
 	// Flush remaining inline content.
 	if para := ic.flush(); para != nil {
-		result = append(result, display.RichText(*para))
+		result = append(result, floatChild{element: display.RichText(*para)})
 	}
 
 	return result
@@ -195,7 +282,7 @@ func (b *builder) buildBlockElement(node *dom.Node, style css.StyleDeclaration, 
 		el = applyHeadingStyle(el, tag, style)
 	}
 
-	return applyBoxStyle(el, style)
+	return applyBoxStyle(el, style, b.fontSize(node))
 }
 
 // buildFlexContainer builds a flex layout from a node with display:flex.
@@ -209,7 +296,7 @@ func (b *builder) buildFlexContainer(node *dom.Node, style css.StyleDeclaration)
 	}
 
 	flex := toFlexContainer(style, children)
-	return applyBoxStyle(flex, style)
+	return applyBoxStyle(flex, style, b.fontSize(node))
 }
 
 // buildGridContainer builds a grid layout from a node with display:grid.
@@ -225,7 +312,7 @@ func (b *builder) buildGridContainer(node *dom.Node, style css.StyleDeclaration)
 	// For now, use a simple column layout as grid placeholder.
 	// Full CSS Grid property mapping can be added incrementally.
 	el := layout.Column(children...)
-	return applyBoxStyle(el, style)
+	return applyBoxStyle(el, style, b.fontSize(node))
 }
 
 // buildInlineBlock builds an inline-block element (rendered as a block
@@ -243,7 +330,7 @@ func (b *builder) buildInlineBlock(node *dom.Node, style css.StyleDeclaration) u
 		el = layout.Column(children...)
 	}
 
-	return applyBoxStyle(el, style)
+	return applyBoxStyle(el, style, b.fontSize(node))
 }
 
 // buildListItem builds a <li> or list-item display element.
@@ -289,7 +376,7 @@ func (b *builder) buildListItem(node *dom.Node, style css.StyleDeclaration) ui.E
 	// If there's inline content, wrap it in a paragraph with list style.
 	// Otherwise wrap the block children in a column with a marker.
 	// For simplicity in Phase 1, collect inline text from children.
-	ic := &inlineCollector{sheets: b.sheets, onLink: b.onLink}
+	ic := &inlineCollector{sheets: b.sheets, onLink: b.onLink, parentFontSize: b.fontSize(node)}
 	ic.paraStyle = ps
 	var blockChildren []ui.Element
 

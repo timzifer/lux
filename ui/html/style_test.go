@@ -62,7 +62,7 @@ func TestToSpanStyle(t *testing.T) {
 	style.Set("font-style", "italic")
 	style.Set("color", "#ff0000")
 
-	ss := toSpanStyle(style)
+	ss := toSpanStyle(style, css.DefaultFontSize)
 	if ss.Style.FontFamily != "Helvetica" {
 		t.Errorf("FontFamily = %q, want %q", ss.Style.FontFamily, "Helvetica")
 	}
@@ -127,7 +127,7 @@ func TestApplyBoxStyle(t *testing.T) {
 	style.Set("border", "2px solid #000000")
 
 	inner := display.Text("test")
-	result := applyBoxStyle(inner, style)
+	result := applyBoxStyle(inner, style, css.DefaultFontSize)
 
 	// Should be wrapped in a StyledBox.
 	box, ok := result.(StyledBox)
@@ -140,15 +140,15 @@ func TestApplyBoxStyle(t *testing.T) {
 	if box.Background == (draw.Color{}) {
 		t.Error("Background should be set")
 	}
-	if box.BorderWidth != 2 {
-		t.Errorf("BorderWidth = %v, want 2", box.BorderWidth)
+	if box.BorderWidth != [4]float32{2, 2, 2, 2} {
+		t.Errorf("BorderWidth = %v, want [2,2,2,2]", box.BorderWidth)
 	}
 }
 
 func TestApplyBoxStyleNoStyle(t *testing.T) {
 	style := css.NewDecl()
 	inner := display.Text("test")
-	result := applyBoxStyle(inner, style)
+	result := applyBoxStyle(inner, style, css.DefaultFontSize)
 
 	// No box styling — should return original element.
 	if _, ok := result.(StyledBox); ok {
@@ -163,7 +163,7 @@ func TestApplyBoxStyleWithDimensions(t *testing.T) {
 	style.Set("margin", "5px 10px")
 
 	inner := display.Text("test")
-	result := applyBoxStyle(inner, style)
+	result := applyBoxStyle(inner, style, css.DefaultFontSize)
 
 	box, ok := result.(StyledBox)
 	if !ok {

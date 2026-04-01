@@ -18,10 +18,11 @@ import (
 // inline-level DOM nodes are merged into a single RichParagraph with
 // properly styled spans and embedded inline widgets.
 type inlineCollector struct {
-	items     []display.ParagraphContent
-	paraStyle display.ParagraphStyle
-	sheets    []*css.StyleSheet
-	onLink    func(href string)
+	items          []display.ParagraphContent
+	paraStyle      display.ParagraphStyle
+	sheets         []*css.StyleSheet
+	onLink         func(href string)
+	parentFontSize float32 // inherited font-size for em resolution
 }
 
 // hasContent returns true if the collector has accumulated any content.
@@ -35,7 +36,7 @@ func (ic *inlineCollector) addTextNode(node *dom.Node, style css.StyleDeclaratio
 	if text == "" {
 		return
 	}
-	ss := toSpanStyle(style)
+	ss := toSpanStyle(style, ic.parentFontSize)
 	ic.items = append(ic.items, display.Span{Text: text, Style: ss})
 }
 
@@ -135,7 +136,7 @@ func (ic *inlineCollector) addBlockWidget(node *dom.Node, style css.StyleDeclara
 	var text strings.Builder
 	collectText(node, &text)
 	if text.Len() > 0 {
-		ss := toSpanStyle(style)
+		ss := toSpanStyle(style, ic.parentFontSize)
 		ic.items = append(ic.items, display.Span{Text: text.String(), Style: ss})
 	}
 }
