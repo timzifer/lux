@@ -58,11 +58,10 @@ func TestAcid1_DOMParsing(t *testing.T) {
 		t.Fatalf("parse failed: %v", err)
 	}
 
-	// T1: Document structure — ParseHTML uses fragment parsing, so
-	// html/head/body are NOT preserved as explicit elements. We verify
-	// the parser correctly flattens them and exposes their children.
-	sc.check(t, "fragment parsing: no <html> wrapper",
-		len(doc.GetElementsByTagName("html")) == 0)
+	// T1: Document structure — ParseHTML preserves html/head/body when
+	// input is a full HTML document (starts with <!DOCTYPE or <html>).
+	sc.check(t, "full document: <html> preserved",
+		len(doc.GetElementsByTagName("html")) == 1)
 
 	sc.check(t, "fragment parsing: <style> accessible",
 		len(doc.GetElementsByTagName("style")) == 1)
