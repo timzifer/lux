@@ -236,6 +236,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		r.surface.Configure(device, &wgpu.SurfaceConfiguration{
 			Format:      wgpu.TextureFormatBGRA8Unorm,
 			Usage:       wgpu.TextureUsageRenderAttachment,
+			AlphaMode:   wgpu.CompositeAlphaModeOpaque,
 			Width:       uint32(r.width),
 			Height:      uint32(r.height),
 			PresentMode: wgpu.PresentModeFifo,
@@ -931,6 +932,7 @@ func (r *WGPURenderer) Resize(width, height int) {
 		r.surface.Configure(r.device, &wgpu.SurfaceConfiguration{
 			Format:      wgpu.TextureFormatBGRA8Unorm,
 			Usage:       wgpu.TextureUsageRenderAttachment,
+			AlphaMode:   wgpu.CompositeAlphaModeOpaque,
 			Width:       uint32(width),
 			Height:      uint32(height),
 			PresentMode: wgpu.PresentModeFifo,
@@ -2347,6 +2349,7 @@ func (r *WGPURenderer) InitWindow(id uint32, cfg Config) error {
 		ws.surface.Configure(r.device, &wgpu.SurfaceConfiguration{
 			Format:      wgpu.TextureFormatBGRA8Unorm,
 			Usage:       wgpu.TextureUsageRenderAttachment,
+			AlphaMode:   wgpu.CompositeAlphaModeOpaque,
 			Width:       uint32(ws.width),
 			Height:      uint32(ws.height),
 			PresentMode: wgpu.PresentModeFifo,
@@ -2448,6 +2451,7 @@ func (r *WGPURenderer) ResizeWindow(id uint32, width, height int) {
 		ws.surface.Configure(r.device, &wgpu.SurfaceConfiguration{
 			Format:      wgpu.TextureFormatBGRA8Unorm,
 			Usage:       wgpu.TextureUsageRenderAttachment,
+			AlphaMode:   wgpu.CompositeAlphaModeOpaque,
 			Width:       uint32(width),
 			Height:      uint32(height),
 			PresentMode: wgpu.PresentModeFifo,
