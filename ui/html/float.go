@@ -37,7 +37,8 @@ type FloatChild struct {
 // the element to be placed below the relevant floats.
 type FloatLayout struct {
 	ui.BaseElement
-	Children []FloatChild
+	Children      []FloatChild
+	ContainFloats bool // true if this container establishes a BFC (e.g. floated parent, overflow:hidden)
 }
 
 // LayoutSelf implements ui.Layouter.
@@ -164,9 +165,9 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				x: floatX, y: floatY, w: cb.W, h: cb.H, side: FloatLeft,
 			})
 
-			if bot := floatY + cb.H; bot > maxBottom {
-				maxBottom = bot
-			}
+			// Floated elements do NOT expand the container's height
+			// (CSS: floats are out of normal flow). Only track for
+			// maxW to ensure the container is wide enough.
 			if floatX+cb.W-area.X > maxW {
 				maxW = floatX + cb.W - area.X
 			}
@@ -210,9 +211,7 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				x: actualX, y: floatY, w: cb.W, h: cb.H, side: FloatRight,
 			})
 
-			if bot := floatY + cb.H; bot > maxBottom {
-				maxBottom = bot
-			}
+			// Floated elements do NOT expand the container's height.
 			if area.X+area.W-floatX > maxW {
 				maxW = area.X + area.W - floatX
 			}
@@ -244,6 +243,20 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 	}
 
+	// If this container establishes a BFC (ContainFloats), expand to
+	// contain all floated children. Otherwise, only normal-flow children
+	// contribute to the height (CSS: floats are out of normal flow).
+	if n.ContainFloats {
+		botL := bottomOf(leftFloats)
+		botR := bottomOf(rightFloats)
+		if botL > maxBottom {
+			maxBottom = botL
+		}
+		if botR > maxBottom {
+			maxBottom = botR
+		}
+	}
+
 	totalH := maxBottom - area.Y
 	if maxW == 0 {
 		maxW = area.W
@@ -260,7 +273,7 @@ func (n FloatLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 // TreeEqual implements ui.TreeEqualizer.
 func (n FloatLayout) TreeEqual(other ui.Element) bool {
 	o, ok := other.(FloatLayout)
-	if !ok || len(n.Children) != len(o.Children) {
+	if !ok || len(n.Children) != len(o.Children) || n.ContainFloats != o.ContainFloats {
 		return false
 	}
 	for i := range n.Children {
