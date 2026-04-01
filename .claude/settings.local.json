@@ -114,7 +114,11 @@
       "Bash(find /G/golang/lux -type f -name *kitchen* -o -name *sink*)",
       "WebFetch(domain:www.w3.org)",
       "WebFetch(domain:acid2.acidtests.org)",
-      "WebFetch(domain:acid3.acidtests.org)"
+      "WebFetch(domain:acid3.acidtests.org)",
+      "Bash(find /g/golang/lux -name *editor* -o -name *vellum* -o -name *inspector*)",
+      "Bash(find /g/golang/lux -name *.go -exec grep -l \"SVG\\\\|svg\" {})",
+      "Bash(2)",
+      "Bash(find /g/golang/lux -name *editor* -o -name *code*)"
     ]
   }
 }

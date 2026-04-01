@@ -3,9 +3,9 @@
 **Repository:** `github.com/timzifer/lux`
 
 **Status:** Very Theoretical — nicht zur Umsetzung vorgesehen
-**Version:** 0.3.0
+**Version:** 0.4.0
 **Datum:** 2026-03-26
-**Zuletzt abgeglichen:** 2026-03-31
+**Zuletzt abgeglichen:** 2026-04-01
 **Abhängigkeiten:** RFC-001 (Core), RFC-002 (Interaction/Layout), RFC-003 (Widget-Katalog), RFC-004 (WebView)
 
 > **Hinweis:** Dieses RFC ist eine theoretische Machbarkeitsanalyse. Ziel ist **nicht** der Start eines Engine-Projekts, sondern eine ehrliche Einordnung: *Was wäre mit Lux bereits möglich, was fehlt, und wo entstehen Synergien für Lux selbst?*
@@ -385,12 +385,15 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 
 ## 10. Phasenmodell
 
-### Phase 1 — Static HTML/CSS Viewer
+### Phase 1 — Static HTML/CSS Viewer ✅ Realisiert (v0.4.0)
 
-- HTML Parse → DOM
-- CSS Teilmenge (Typ-, Klassen-, ID-Selektoren; Basiseigenschaften)
-- Block + einfache Inline-Layoutregeln
-- Kein JS
+- ✅ HTML Parse → DOM (`internal/dom/` + `golang.org/x/net/html`)
+- ✅ CSS Teilmenge (`internal/css/` — Typ-, Klassen-, ID-Selektoren; Basiseigenschaften)
+- ✅ Block + Inline-Layoutregeln (DOM→Element-Konvertierung via `ui/html/builder.go`)
+- ✅ Tabellen, Listen, Formulare als native Widgets
+- Kein JS (bleibt Phase 3)
+
+> **Implementierung:** `ui/html/` — 12 Dateien, HTML Viewer Widget mit `html.View()` Convenience-API. Siehe RFC-003 §5.8.
 
 ### Phase 2 — Interaktive Dokumente (ohne volle Web-API)
 
@@ -426,9 +429,12 @@ Die zentrale Lehre aus Servo/Blink/Gecko/WebKit: Browser-Kompatibilität entsteh
 | Form-Controls für HTML-Inputs | ✅ DatePicker, ColorPicker, TimePicker, NumericInput, Spinner | Erledigt (neu) |
 | contenteditable-nahe Logik | ✅ RichTextEditor in `richtext/` — Tagged-Range AttributedString, 17 Attribut-Typen, ToolbarCommands, Listen-Support | Erledigt (erweitert v0.3.0) |
 | DevTools-Protokolle | ✅ Inspector-PoC via RFC-012 — Vellum-basiertes Debug-Protokoll | Erledigt |
+| HTML Viewer (Phase 1) | ✅ `ui/html/` — nativer Static HTML/CSS Viewer mit DOM→Widget-Konvertierung, CSS-Styling, Tabellen, Formulare, Links | Erledigt (neu v0.4.0) |
+| HTML/CSS ↔ AttributedString | ✅ Bidirektionale Konvertierung via DOM/CSS-Modell (`richtext.FromHTML`, `richtext.ToHTML`) | Erledigt (neu v0.4.0) |
+| Acid Test Suite | ✅ Visuelle Golden-File-Tests durch die vollständige Render-Pipeline — Grundstein für Spec-Compliance-Testing | Erledigt (neu v0.4.0) |
 | Code Editor (RFC-010) | Syntax-Highlighting, LSP, Multi-Cursor für DevTools-Source-Views | Design fertig, Implementierung ausstehend |
 
-**Strategischer Punkt:** Seit der Erstfassung dieses RFC wurden 8 der 11 identifizierten Synergie-Investitionen realisiert. Der verbleibende Baustein (Code Editor, RFC-010) ist die letzte architektonisch anspruchsvolle Synergie-Investition.
+**Strategischer Punkt:** Seit der Erstfassung dieses RFC wurden 11 der 12 identifizierten Synergie-Investitionen realisiert — **inklusive Phase 1 (Static HTML/CSS Viewer)**, dem ersten konkreten Meilenstein des Phasenmodells (§10). Der verbleibende Baustein (Code Editor, RFC-010) ist die letzte architektonisch anspruchsvolle Synergie-Investition.
 
 ---
 
@@ -454,7 +460,7 @@ Gleichzeitig bleibt der fehlende obere Stack (DOM/CSSOM/Layout/JS-Bridge/Securit
 **Empfohlene Lesart von RFC-998:**
 
 - Nicht als Produkt-Roadmap für „Lux Browser”.
-- Sondern als Architektur-Kompass für selektive Investitionen mit hohem Rückfluss in Lux selbst (DataTable, RichTextEditor, SVG, Inspector, Layout-Engine-Qualität).
+- Sondern als Architektur-Kompass für selektive Investitionen mit hohem Rückfluss in Lux selbst (DataTable, RichTextEditor, SVG, Inspector, Layout-Engine-Qualität, HTML Viewer).
 
 ---
 
@@ -556,3 +562,65 @@ Die Empfehlung von v0.1.0 wird **bestätigt — 2 von 3 priorisierten Investitio
 #### Empfehlung
 
 Empfehlung von v0.2.0 bleibt bestätigt. Der RichText-Stack ist jetzt der am weitesten entwickelte Subsystem-Bereich relativ zu einem Browser-MVP.
+
+### 14c. Re-Evaluierung v0.4.0 (2026-04-01)
+
+#### Meilenstein: Phase 1 realisiert
+
+Mit `ui/html/` ist **Phase 1 (Static HTML/CSS Viewer)** des Phasenmodells (§10) erstmals als funktionsfähiger nativer Baustein realisiert. Das ist ein qualitativer Sprung gegenüber den bisherigen inkrementellen Erweiterungen: Lux kann jetzt HTML-Dokumente in native Widget-Bäume konvertieren und rendern — ohne Browser-Engine, ohne Surface-Slot, ohne CGo.
+
+#### Neu seit v0.3.0
+
+| Komponente | Dateien | Browser-Relevanz |
+|---|---|---|
+| **HTML Viewer Widget** | `ui/html/` (12 Dateien: `widget.go`, `builder.go`, `document.go`, `style.go`, `form.go`, `inline.go`, `table.go`, `doc.go` + Tests) | **Phase 1 komplett:** DOM→Element-Konvertierung, CSS-Styling, Block/Inline-Layout, Tabellen, Formulare (`<input>` aller Typen, `<select>`, `<textarea>`, `<button>`, `<progress>`), Links, Listen |
+| **HTML/CSS ↔ AttributedString** | `richtext/html.go` (DOM/CSS-basiert) | Bidirektionale Konvertierung: `FromHTML()` für Import, `ToHTML()` für Export — ersetzt einfache Regex-basierte Konvertierung durch echtes DOM-Parsing |
+| **Acid Test Suite** | `tests/acid/` | Visuelle Golden-File-Tests durch die vollständige Render-Pipeline — erste Spec-Compliance-Testsuite |
+| **Playground HTML Viewer** | `examples/playground/` | Konvertierung der Text-Beispiele zu HTML-Snippets + HTML Viewer Page |
+
+#### Auswirkung auf die Subsystem-Analyse
+
+1. **Phase 1 (§10):** Vollständig realisiert. HTML Parse → DOM → CSS → Element-Baum ist funktionsfähig. Die `Document`/`Builder`/`Widget`-Trennung in `ui/html/` ermöglicht inkrementelle Erweiterung Richtung Phase 2 (DOM Events, Navigation).
+
+2. **Painting (§6.4):** Kein Neubau nötig — der HTML Viewer nutzt direkt die bestehenden Lux-Widgets und das Rendering-System. Zero Painting-Overhead für den HTML-Track.
+
+3. **Formulare (§6.11):** Der HTML Viewer mappt `<input>` auf native Lux-Widgets (TextField, Checkbox, Radio, Slider, DatePicker, ColorPicker, TimePicker, NumericInput, ProgressBar, Select, TextArea). Formular-Rendering ist damit „gratis".
+
+4. **Testing (§7.1):** Die Acid Test Suite etabliert erstmals visuelle Regressions-Tests durch die vollständige Render-Pipeline — ein Grundstein für die in §7.1 geforderte WPT-nahe Teststrategie.
+
+#### Gesamtbewertung
+
+| Metrik | v0.1.0 | v0.2.0 | v0.3.0 | **v0.4.0** | Δ (v0.3→v0.4) |
+|---|---|---|---|---|---|
+| Reuse-Komponenten (§3.1) | 27 | 31 | 33 | **36** | +3 (HTML Viewer, HTML↔AttrString, Acid Tests) |
+| Synergie-Investitionen realisiert (§11) | 3/11 | 6/11 | 8/11 | **11/12** | +3 (HTML Viewer, HTML-Konvertierung, Acid Tests) |
+| Phasenmodell-Fortschritt (§10) | — | — | — | **Phase 1 ✅** | Phase 1 vollständig realisiert |
+| MVP-Schätzung (verbleibend) | 35–70 KLOC | 30–60 KLOC | 28–55 KLOC | **20–45 KLOC** | ↓ ~20% — Phase 1 ist nicht mehr Schätzung |
+| Interaktiv + JS | 80–160 KLOC | 75–150 KLOC | 72–145 KLOC | 65–135 KLOC | ↓ ~8% |
+| Robust / Full Web | >220 KLOC | >200 KLOC | >195 KLOC | >190 KLOC | ↓ marginal |
+
+#### Was sich **nicht** geändert hat
+
+- **DOM-Mutationen, Event-Handling und JavaScript** (Phase 2–3) sind weiterhin nicht implementiert und dominieren den Aufwand.
+- Der **obere Stack** (DOM-Lifecycle, CSSOM, JS-Bridge, Security) bleibt unverändert groß.
+- Ein vollwertiger Browser bleibt ein **Multi-Jahresprojekt für ein dediziertes Team**.
+
+#### Neue strategische Beobachtungen
+
+1. **Phase 1 als eigenständiges Produkt:** `ui/html.View()` ist bereits jetzt für reale Anwendungsfälle nutzbar — Markdown-Preview, statische Dokumentation, HTML-E-Mail-Rendering, Hilfe-Seiten. Das war bisher nur via WebView (Surface-Slot, RFC-004) möglich.
+
+2. **Architektonische Basis für Phase 2:** Die `Document`/`Builder`-Trennung in `ui/html/` ist bewusst so gestaltet, dass DOM-Mutationen und Event-Handling inkrementell hinzugefügt werden können, ohne die bestehende API zu brechen.
+
+3. **Acid Tests als Qualitäts-Hebel:** Die visuelle Regressions-Testsuite ist der erste Schritt Richtung der in §7.1 beschriebenen WPT-nahen Teststrategie. Sie sichert den bestehenden Rendering-Stack ab und ermöglicht risikoarme Erweiterungen.
+
+4. **RFC-004 (WebView) bleibt relevant:** Für JavaScript-lastige Web-Inhalte und vollständige Web-Kompatibilität ist Embedding weiterhin der pragmatische Pfad. `ui/html` deckt den „kuratierten Dokument"-Track ab, nicht das offene Web.
+
+#### Empfehlung
+
+> RFC-998 Phase 1 ist realisiert. Die Empfehlung verschiebt sich:
+> 1. ~~**RichTextEditor**~~ — ✅ Integriert
+> 2. ~~**Inspector/DevTools**~~ — ✅ Integriert
+> 3. ~~**Static HTML/CSS Viewer (Phase 1)**~~ — ✅ Integriert (`ui/html/`)
+> 4. **Code Editor (RFC-010)** — Verbleibt als letzte Synergie-Investition
+>
+> Der nächste natürliche Schritt wäre Phase 2 (DOM Events + Navigation) — aber nur wenn ein konkreter Anwendungsfall dies rechtfertigt. Ohne Bedarf ist der HTML Viewer in seinem aktuellen Zustand ein abgeschlossener, nützlicher Baustein.
