@@ -123,10 +123,37 @@ func (n Tabs) TreeEqual(other ui.Element) bool {
 	return false
 }
 
-// ResolveChildren implements ui.ChildResolver. Tabs is a leaf in resolution.
+// ResolveChildren implements ui.ChildResolver.
 func (n Tabs) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
-	return n
+	out := n
+	out.Items = make([]TabItem, len(n.Items))
+	sel := n.Selected
+	if sel < 0 || sel >= len(n.Items) {
+		sel = 0
+	}
+	for i, item := range n.Items {
+		out.Items[i] = TabItem{
+			Header: resolve(item.Header, i*2),
+		}
+		if i == sel {
+			out.Items[i].Content = resolve(item.Content, i*2+1)
+		} else {
+			out.Items[i].Content = item.Content
+		}
+	}
+	return out
 }
 
-// WalkAccess implements ui.AccessWalker. No-op for Tabs.
-func (n Tabs) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {}
+// WalkAccess implements ui.AccessWalker.
+func (n Tabs) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
+	sel := n.Selected
+	if sel < 0 || sel >= len(n.Items) {
+		sel = 0
+	}
+	for i, item := range n.Items {
+		b.Walk(item.Header, parentIdx)
+		if i == sel {
+			b.Walk(item.Content, parentIdx)
+		}
+	}
+}
