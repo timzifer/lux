@@ -416,12 +416,17 @@ func (s *goSurface) Configure(device Device, config *SurfaceConfiguration) {
 		return
 	}
 	s.device = gd.device
+	alphaMode := gputypes.CompositeAlphaModeAuto
+	if config.AlphaMode == CompositeAlphaModeOpaque {
+		alphaMode = gputypes.CompositeAlphaModeOpaque
+	}
 	err := s.surface.Configure(gd.device, &gpuwgpu.SurfaceConfiguration{
 		Format:      mapTextureFormat(config.Format),
 		Usage:       mapTextureUsage(config.Usage),
 		Width:       config.Width,
 		Height:      config.Height,
 		PresentMode: mapPresentMode(config.PresentMode),
+		AlphaMode:   alphaMode,
 	})
 	if err != nil {
 		log.Printf("wgpu/gogpu: Surface.Configure failed: %v", err)

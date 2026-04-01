@@ -455,7 +455,16 @@ type SurfaceConfiguration struct {
 	Width       uint32
 	Height      uint32
 	PresentMode PresentMode
+	AlphaMode   CompositeAlphaMode
 }
+
+// CompositeAlphaMode controls alpha compositing for the surface.
+type CompositeAlphaMode uint32
+
+const (
+	CompositeAlphaModeAuto   CompositeAlphaMode = iota // Default (backend-dependent)
+	CompositeAlphaModeOpaque                           // Surface is fully opaque
+)
 
 // PresentMode describes the presentation mode.
 type PresentMode uint32
