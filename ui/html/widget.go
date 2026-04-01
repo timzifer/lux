@@ -1,9 +1,14 @@
 package html
 
 import (
+	"strings"
+
+	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/layout"
 	"github.com/timzifer/lux/ui/nav"
+	"github.com/timzifer/lux/web/css"
+	"github.com/timzifer/lux/web/dom"
 )
 
 // ── ViewOption ──────────────────────────────────────────────────────
@@ -82,6 +87,17 @@ func (w HTMLView) Render(ctx ui.RenderCtx, state ui.WidgetState) (ui.Element, ui
 		return display_text_empty(), s
 	}
 
+	// Apply html element's background-color as a full-width wrapper.
+	// Per CSS spec, the html element's background covers the entire canvas.
+	if htmlNode := findHTMLElement(w.Doc.Root); htmlNode != nil {
+		htmlStyle := css.Resolve(htmlNode, w.Doc.Sheets)
+		if v := htmlStyle.Get("background-color"); v != "" {
+			if c, ok := css.ParseColor(v); ok {
+				el = CanvasBackground{Child: el, Color: c}
+			}
+		}
+	}
+
 	// Apply max width constraint.
 	if w.MaxWidth > 0 {
 		el = layout.Sized(w.MaxWidth, 0, el)
@@ -114,6 +130,69 @@ func ViewFromDocument(doc *Document, opts ...ViewOption) ui.Element {
 		opt(&w)
 	}
 	return ui.Component(w)
+}
+
+// findHTMLElement finds the <html> element in the DOM tree.
+func findHTMLElement(root *dom.Node) *dom.Node {
+	if root == nil {
+		return nil
+	}
+	if root.Type == dom.ElementNode && strings.ToLower(root.Tag) == "html" {
+		return root
+	}
+	for child := root.FirstChild; child != nil; child = child.NextSib {
+		if found := findHTMLElement(child); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// CanvasBackground is a layout element that fills its entire area with
+// a background color before rendering its child. Used for the html
+// element's background which covers the entire viewport.
+type CanvasBackground struct {
+	ui.BaseElement
+	Child ui.Element
+	Color draw.Color
+}
+
+// LayoutSelf implements ui.Layouter.
+func (n CanvasBackground) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	area := ctx.Area
+	// Fill the entire area with the background color.
+	if n.Color != (draw.Color{}) {
+		ctx.Canvas.FillRect(draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(area.H)),
+			draw.SolidPaint(n.Color))
+	}
+	// Layout child within the area.
+	var cb ui.Bounds
+	if n.Child != nil {
+		cb = ctx.LayoutChild(n.Child, area)
+	}
+	return cb
+}
+
+// TreeEqual implements ui.TreeEqualizer.
+func (n CanvasBackground) TreeEqual(other ui.Element) bool {
+	o, ok := other.(CanvasBackground)
+	return ok && n.Color == o.Color
+}
+
+// ResolveChildren implements ui.ChildResolver.
+func (n CanvasBackground) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
+	out := n
+	if n.Child != nil {
+		out.Child = resolve(n.Child, 0)
+	}
+	return out
+}
+
+// WalkAccess implements ui.AccessWalker.
+func (n CanvasBackground) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
+	if n.Child != nil {
+		b.Walk(n.Child, parentIdx)
+	}
 }
 
 // display_text_empty returns a minimal empty text element.
