@@ -197,12 +197,13 @@ func (b *builder) buildChildren(node *dom.Node) []ui.Element {
 		})
 	}
 
-	// Always contain floats. Proper CSS float propagation (escaping
-	// non-BFC containers) requires separating visual containment from
-	// float-context containment, which is architecturally complex.
-	// Containing all floats produces correct visual results for the
-	// common case where containers have padding/border/background.
-	containFloats := true
+	// Contain floats when the container establishes a BFC or has visual
+	// styling (padding/border/background) that would visually frame the
+	// floated children. Containers without any visual styling (like a
+	// bare <ul> with margin:0 border:0 padding:0) let their floats
+	// "collapse" — the container height is 0, allowing sibling elements
+	// to start at the same Y position as the floats.
+	containFloats := b.nodeEstablishesBFC(node) || b.hasVisualBoxStyle(node)
 
 	return []ui.Element{FloatLayout{Children: floatChildren, ContainFloats: containFloats}}
 }
@@ -230,6 +231,38 @@ func (b *builder) nodeEstablishesBFC(node *dom.Node) bool {
 	}
 	disp := resolveDisplay(node, style)
 	if disp == "flex" || disp == "grid" || disp == "flow-root" {
+		return true
+	}
+	return false
+}
+
+// hasVisualBoxStyle returns true if a node has CSS box styling (padding,
+// border, or background) that would visually frame its content.
+func (b *builder) hasVisualBoxStyle(node *dom.Node) bool {
+	if node.Type != dom.ElementNode {
+		return false
+	}
+	style := css.Resolve(node, b.sheets)
+	if v := style.Get("padding"); v != "" && v != "0" && v != "0px" {
+		return true
+	}
+	for _, side := range []string{"padding-top", "padding-right", "padding-bottom", "padding-left"} {
+		if v := style.Get(side); v != "" && v != "0" && v != "0px" {
+			return true
+		}
+	}
+	if v := style.Get("border-width"); v != "" && v != "0" && v != "0px" {
+		return true
+	}
+	if v := style.Get("border-style"); v != "" && v != "none" {
+		if bw := style.Get("border-width"); bw != "" && bw != "0" && bw != "0px" {
+			return true
+		}
+	}
+	if v := style.Get("background-color"); v != "" {
+		return true
+	}
+	if v := style.Get("background"); v != "" {
 		return true
 	}
 	return false
