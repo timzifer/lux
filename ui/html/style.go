@@ -371,28 +371,22 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		H: max(mh-pT-pB-bT-bB, 0),
 	}
 
-	// Layout child to determine content size.
+	// Determine box dimensions. For explicit sizes, we know upfront.
+	// For auto-sized boxes, measure the child first (without painting).
+	hasExplicitSize := n.Width > 0 || n.Height > 0 || n.WidthPct > 0
 	var cb ui.Bounds
-	if n.Child != nil {
-		cb = ctx.LayoutChild(n.Child, contentArea)
-	}
+	boxW, boxH := mw, mh
 
-	// Determine final box dimensions.
-	boxW := cb.W + pL + pR + bL + bR
-	boxH := cb.H + pT + pB + bT + bB
-	if n.WidthPct > 0 {
-		boxW = int(float32(area.W) * n.WidthPct)
-	}
-	if n.Width > 0 {
-		boxW = int(n.Width)
-	}
-	if n.Height > 0 {
-		boxH = int(n.Height)
+	if !hasExplicitSize && n.Child != nil {
+		// Measure child to compute auto box size.
+		mb := ctx.MeasureChild(n.Child, contentArea)
+		boxW = mb.W + pL + pR + bL + bR
+		boxH = mb.H + pT + pB + bT + bB
 	}
 
 	boxRect := draw.R(float32(mx), float32(my), float32(boxW), float32(boxH))
 
-	// Draw background.
+	// Draw background BEFORE children so it appears behind them.
 	if n.Background != (draw.Color{}) {
 		if n.BorderRadius > 0 {
 			canvas.FillRoundRect(boxRect, n.BorderRadius, draw.SolidPaint(n.Background))
@@ -401,9 +395,7 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 	}
 
-	// Draw border (4-sided with potentially different widths).
-	// Top/bottom span full width; left/right span only the middle
-	// portion to avoid double-painting at corners.
+	// Draw border BEFORE children so it appears behind content.
 	if n.hasBorder() {
 		bc := n.BorderColor
 		if bc == (draw.Color{}) {
@@ -421,14 +413,25 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		if bwB > 0 {
 			canvas.FillRect(draw.R(fmx, fmy+fbH-bwB, fbW, bwB), paint)
 		}
-		// Left (between top and bottom borders — no corner overlap)
+		// Left (between top and bottom borders)
 		if bwL > 0 {
 			canvas.FillRect(draw.R(fmx, fmy+bwT, bwL, fbH-bwT-bwB), paint)
 		}
-		// Right (between top and bottom borders — no corner overlap)
+		// Right (between top and bottom borders)
 		if bwR > 0 {
 			canvas.FillRect(draw.R(fmx+fbW-bwR, fmy+bwT, bwR, fbH-bwT-bwB), paint)
 		}
+	}
+
+	// Layout child AFTER background/border so content renders on top.
+	if n.Child != nil {
+		cb = ctx.LayoutChild(n.Child, contentArea)
+	}
+
+	// For auto-sized boxes, use actual child bounds.
+	if !hasExplicitSize {
+		boxW = cb.W + pL + pR + bL + bR
+		boxH = cb.H + pT + pB + bT + bB
 	}
 
 	totalW := boxW + int(n.Margin[1]) + int(n.Margin[3])
