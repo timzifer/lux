@@ -296,57 +296,15 @@ func (c *converter) applyCSS(start, end int, style css.StyleDeclaration) {
 // ── CSS value parsers ──────────────────────────────────────────
 
 func parseFontSize(v string) (float32, bool) {
-	// Named sizes (approximate dp values).
-	switch v {
-	case "xx-small":
-		return 8, true
-	case "x-small":
-		return 10, true
-	case "small":
-		return 12, true
-	case "medium":
-		return 14, true
-	case "large":
-		return 16, true
-	case "x-large":
-		return 20, true
-	case "xx-large":
-		return 24, true
-	}
-	// Relative em sizes (multiply by a base of 14dp).
-	if strings.HasSuffix(v, "em") {
-		if f, err := strconv.ParseFloat(v[:len(v)-2], 32); err == nil {
-			return float32(f) * 14, true
-		}
-	}
-	return parseDimension(v)
+	return css.ParseFontSize(v)
 }
 
 func parseDimension(v string) (float32, bool) {
-	v = strings.TrimSpace(v)
-	// Strip known unit suffixes.
-	for _, suffix := range []string{"px", "dp", "pt", "em", "rem"} {
-		if strings.HasSuffix(v, suffix) {
-			v = v[:len(v)-len(suffix)]
-			break
-		}
-	}
-	f, err := strconv.ParseFloat(v, 32)
-	if err != nil {
-		return 0, false
-	}
-	return float32(f), true
+	return css.ParseDimension(v)
 }
 
 func parseLineHeight(v string) (float32, bool) {
-	if v == "normal" {
-		return 0, false // 0 = inherit
-	}
-	// Unitless number is a multiplier.
-	if f, err := strconv.ParseFloat(v, 32); err == nil {
-		return float32(f), true
-	}
-	return parseDimension(v)
+	return css.ParseLineHeight(v)
 }
 
 func parseWhiteSpace(v string) (WhiteSpace, bool) {
@@ -366,17 +324,7 @@ func parseWhiteSpace(v string) (WhiteSpace, bool) {
 }
 
 func parseTextAlign(v string) (draw.TextAlign, bool) {
-	switch v {
-	case "left", "start":
-		return draw.TextAlignLeft, true
-	case "center":
-		return draw.TextAlignCenter, true
-	case "right", "end":
-		return draw.TextAlignRight, true
-	case "justify":
-		return draw.TextAlignJustify, true
-	}
-	return 0, false
+	return css.ParseTextAlign(v)
 }
 
 func parseListMarker(v string) (draw.ListMarker, bool) {
