@@ -47,7 +47,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 fn rounded_box_sdf(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
     let q = abs(p) - b + r;
-    return length(max(q, vec2<f32>(0.0))) - r;
+    return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
 }
 
 fn noise_hash(p: vec2<f32>) -> f32 {
