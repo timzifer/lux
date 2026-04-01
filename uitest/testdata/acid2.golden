@@ -1,0 +1,36 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (3)
+  0: rect(24,24 552x796) color(135,136,138,140) r=4.0
+  1: rect(25,25 550x794) color(19,22,27,255) r=3.0
+  2: rect(44,332 54x1) color(96,105,117,255)
+
+[Glyphs] (22)
+  0: glyph(32,71) scale=3 color(51,51,51,255) "Acid2 Visual"
+  1: glyph(33,71) scale=3 color(51,51,51,255) "Acid2 Visual"
+  2: glyph(252,110) scale=4 color(96,105,117,255) "O  O"
+  3: glyph(270,149) scale=2 color(204,102,0,255) "\\___/"
+  4: glyph(32,188) scale=1 color(51,102,153,255) "Features tested:"
+  5: glyph(33,188) scale=1 color(51,102,153,255) "Features tested:"
+  6: glyph(32,246) scale=1 color(96,105,117,255) "  "
+  7: glyph(44,246) scale=1 color(96,105,117,255) "Bold"
+  8: glyph(45,246) scale=1 color(96,105,117,255) "Bold"
+  9: glyph(68,246) scale=1 color(96,105,117,255) " via UA stylesheet"
+  10: glyph(32,285) scale=1 color(96,105,117,255) "  "
+  11: glyph(44,285) scale=1 color(96,105,117,255) "Italic"
+  12: glyph(80,285) scale=1 color(96,105,117,255) " via UA stylesheet"
+  13: glyph(32,324) scale=1 color(96,105,117,255) "  "
+  14: glyph(44,324) scale=1 color(96,105,117,255) "Underline"
+  15: glyph(98,324) scale=1 color(96,105,117,255) " via UA stylesheet"
+  16: glyph(32,363) scale=1 color(96,105,117,255) "  "
+  17: glyph(44,363) scale=1 color(96,105,117,255) "Inline "
+  18: glyph(86,363) scale=1 color(96,105,117,255) "monospace"
+  19: glyph(32,402) scale=1 color(96,105,117,255) "  "
+  20: glyph(44,402) scale=1 color(255,0,0,255) "Inline style"
+  21: glyph(116,402) scale=1 color(96,105,117,255) " override"
+
+[ClipBatches] (2)
+  0: clip(0,0 600x800) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  1: clip(32,32 536x780) rects@2 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+
