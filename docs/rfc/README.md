@@ -10,7 +10,7 @@ column below reflects the current implementation state.
 |-----|------|--------|-------------------------|
 | 001 | [RFC-001-lux.md](RFC-001-lux.md) | Integrated | Core architecture: Elm app loop, widget system, virtual tree reconciliation, rendering pipeline, platform abstraction, accessibility, Inspector |
 | 002 | [RFC-002-interaction-layout.md](RFC-002-interaction-layout.md) | Integrated | Input handling, focus management, animation system, Flexbox/Grid/Table layout engines, kinetic scrolling, overlay/effects |
-| 003 | [RFC-003-lux-widget-catalogue.md](RFC-003-lux-widget-catalogue.md) | Integrated | Full widget catalogue, design token system, typography, i18n, RTL, built-in fonts |
+| 003 | [RFC-003-lux-widget-catalogue.md](RFC-003-lux-widget-catalogue.md) | Integrated | Full widget catalogue, design token system, typography, i18n, RTL, built-in fonts, HTML Viewer widget |
 | 004 | [RFC-004-hmi-touch.md](RFC-004-hmi-touch.md) | Integrated | Touch input, multi-touch gesture recognition, HMI/embedded targets |
 | 004 | [RFC-004-lux-webview.md](RFC-004-lux-webview.md) | Deferred (post-V1) | WebView integration as an external surface — code saved in branch `feature/webview` |
 | 006 | [RFC-006-lux-surface-semantics.md](RFC-006-lux-surface-semantics.md) | Integrated | External surface API, zero-copy texture provider, accessibility semantics for surfaces |
@@ -19,7 +19,7 @@ column below reflects the current implementation state.
 | 010 | [RFC-010-lux-code-editor.md](RFC-010-lux-code-editor.md) | Planned | Code editor widget (syntax highlighting, virtual rendering, multi-cursor — not yet implemented) |
 | 011 | [RFC-011-lux-vellum.md](RFC-011-lux-vellum.md) | Theoretical | Remote/network rendering protocol for distributed UI (not scheduled for implementation) |
 | 012 | [RFC-012-inspector-vellum-poc.md](RFC-012-inspector-vellum-poc.md) | Integrated (PoC) | Widget-Inspector as Vellum client — PoC merging ToDo 6.7 + RFC-011 §12.2 |
-| 998 | [RFC-998-lux-browser-engine.md](RFC-998-lux-browser-engine.md) | Theoretical | Custom browser engine integration (exploratory, not planned) |
+| 998 | [RFC-998-lux-browser-engine.md](RFC-998-lux-browser-engine.md) | Theoretical (Phase 1 realized) | Custom browser engine analysis; Phase 1 (Static HTML/CSS Viewer) realized via `ui/html` |
 | 999 | [RFC-999-lux-sim.md](RFC-999-lux-sim.md) | Integrated | Testing infrastructure: headless simulation, golden-file scene tests |
 
 ## Status Definitions

@@ -4,7 +4,7 @@
 **Status:** Integriert
 **Version:** 0.3.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-31
+**Zuletzt abgeglichen:** 2026-04-01
 **Abhängig von:** RFC-001, RFC-002
 
 ---
@@ -42,6 +42,8 @@
 | §5.5 Inline-Widgets | ✅ Integriert | `InlineWidget` mit Baseline-Alignment + Block-Modus (`Block bool`, `BlockElement()`); `ImageSpan` mit Float (None/Left/Right/Block); `ParagraphContent` Union (Span \| InlineWidget \| ImageSpan) |
 | §5.5a Link-Widget | ✅ Integriert | `ui/link/link.go` (235 LOC) — klickbarer Inline-Link mit Hover/Focus-States, A11y-URL, kann als `InlineWidget` in RichText eingebettet werden |
 | §5.6 RichTextEditor (Ebene 3) | ✅ Integriert | `richtext/` — Tagged-Range `AttributedString` (statt Run-Length), 17 Attribut-Typen (Span/Paragraph/List), Cursor, Selection, Undo/Redo, ToolbarCommands (Bold/Italic/Underline/Strikethrough/Align/List/Indent) |
+| §5.7a HTML/CSS ↔ AttributedString | ✅ Integriert | `richtext/html.go` — bidirektionale Konvertierung HTML/CSS ↔ `AttributedString` via DOM/CSS-Modell (`FromHTML`, `ToHTML`) |
+| §5.8 HTML Viewer Widget (Ebene 3+) | ✅ Integriert | `ui/html/` (12 Dateien, ~67 KLOC) — nativer HTML-Viewer als Widget-Baum: DOM→Element-Konvertierung, CSS-Styling, Tabellen, Formulare, Inline-Elemente, Links; realisiert RFC-998 Phase 1 (Static HTML/CSS Viewer) |
 
 ---
 
@@ -1156,21 +1158,62 @@ Undo-History ist UI-State: sie gehört zum Editor-Widget, nicht zur Applikations
 
 ### 5.7 Externe Rendering-Grenze (Ebene 4)
 
-Für Anwendungsfälle die über das hinausgehen was `go-text/typesetting` leisten kann — vollständiges HTML/CSS-Rendering, komplexe mathematische Notation (LaTeX), eingebettete PDF-Seiten — ist der Surface-Slot-Pfad (§8) der korrekte Weg:
+Für Anwendungsfälle die über das hinausgehen was `go-text/typesetting` leisten kann — komplexe mathematische Notation (LaTeX), eingebettete PDF-Seiten, oder vollständige Web-Kompatibilität — ist der Surface-Slot-Pfad (§8) der korrekte Weg:
 
 ```
 Benötigt man...                           → Lösung
 ─────────────────────────────────────────────────────
 Fett, Kursiv, Links, Inline-Bilder       → RichText (Ebene 2)
 Vollständiger Texteditor                  → RichTextEditor (Ebene 3)
-HTML mit CSS (z.B. Markdown-Preview)      → WebView als Surface-Slot
+Statisches HTML/CSS (Markdown, Docs)      → ui/html.View (Ebene 3+, §5.8)
+Vollständiges Web (JS, Web-APIs)          → WebView als Surface-Slot
 LaTeX / MathML                            → External Renderer als Surface-Slot
 PDF-Seiten                                → External Renderer als Surface-Slot
 Code-Editor mit LSP                       → CodeMirror/Monaco als Surface-Slot
                                             oder nativer Code-Editor (Ebene 3+)
 ```
 
-Die Grenze ist klar: alles was `go-text/typesetting` + die Canvas-API leisten können, bleibt im Framework. Was einen vollständigen Browser-Engine oder spezialisierten Renderer erfordert, dockt als Surface-Slot an.
+Die Grenze ist klar: statisches HTML/CSS mit Formularen und Tabellen wird seit v0.4.0 nativ via `ui/html.View` gerendert (§5.8). Was einen vollständigen Browser-Engine mit JavaScript oder spezialisierten Renderer erfordert, dockt als Surface-Slot an.
+
+### 5.8 HTML Viewer Widget (Ebene 3+ — nativer HTML-Renderer)
+
+> **Neu in v0.4.0.** Realisiert RFC-998 Phase 1 (Static HTML/CSS Viewer) als nativer Lux-Baustein.
+
+Das `ui/html`-Paket baut einen vollständigen `ui.Element`-Baum aus geparstem HTML auf — im Gegensatz zu `richtext.FromHTML` (das HTML in eine flache `AttributedString` konvertiert und dabei Struktur wie Tabellen und Formulare verliert).
+
+```go
+// Einfache Nutzung:
+el := html.View(`<h1>Hello</h1><p>World</p>`)
+
+// Mit Optionen:
+el := html.View(htmlStr, html.WithOnLink(func(href string) {
+    fmt.Println("navigating to", href)
+}))
+
+// Aus vorgeparstem Dokument:
+doc, _ := html.Parse(htmlStr)
+el := html.ViewFromDocument(doc)
+```
+
+**Architektur:**
+
+```
+HTML string → dom.ParseHTML() → *dom.Node tree
+    → <style> extraction → []*css.StyleSheet
+    → Document{Root, Sheets}
+    → builder.buildElement() → rekursive DOM→Element-Konvertierung
+    → ui.Element tree (gerendert vom Lux-Framework)
+```
+
+**Unterstützte HTML-Elemente:**
+- Block-Elemente: `<div>`, `<p>`, `<h1>`–`<h6>`, `<blockquote>`, `<pre>`, `<hr>`
+- Inline-Elemente: `<span>`, `<strong>`, `<em>`, `<code>`, `<a>`, `<br>`
+- Listen: `<ul>`, `<ol>`, `<li>` (mit Nesting)
+- Tabellen: `<table>`, `<thead>`, `<tbody>`, `<tr>`, `<td>`, `<th>` (colspan)
+- Formulare: `<input>` (text/password/number/date/time/color/range/checkbox/radio), `<select>`, `<textarea>`, `<button>`, `<progress>`
+- CSS: `<style>`-Blöcke, Inline-Styles, externe Stylesheets via `Document.AddCSS()`
+
+**Abgrenzung:** Kein JavaScript, kein vollständiges CSSOM, kein Netzwerk — dafür bleibt der Surface-Slot-Pfad (WebView) der richtige Weg.
 
 ---
 

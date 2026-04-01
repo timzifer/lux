@@ -4,7 +4,7 @@
 **Status:** Integriert (nur Phase D — wgpu-native Backend — noch wartend)
 **Version:** 0.1.0
 **Datum:** 2026-03-19
-**Zuletzt abgeglichen:** 2026-03-26
+**Zuletzt abgeglichen:** 2026-04-01
 **Abhängig von:** RFC-001 (Core Architecture)
 
 ---
