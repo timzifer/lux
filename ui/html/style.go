@@ -17,6 +17,7 @@ import (
 // defaultDisplay returns the default CSS display value for an HTML tag.
 var defaultDisplay = map[string]string{
 	// Block-level elements
+	"html": "block", "body": "block",
 	"div": "block", "p": "block", "section": "block", "article": "block",
 	"header": "block", "footer": "block", "main": "block", "nav": "block",
 	"aside": "block", "blockquote": "block", "pre": "block",
