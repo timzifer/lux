@@ -340,30 +340,30 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	bT, bR, bB, bL := int(n.BorderWidth[0]), int(n.BorderWidth[1]), int(n.BorderWidth[2]), int(n.BorderWidth[3])
 
+	// Compute padding (needed before dimension resolution for content-box).
+	pT := int(n.Padding[0])
+	pR := int(n.Padding[1])
+	pB := int(n.Padding[2])
+	pL := int(n.Padding[3])
+
 	// Apply margin.
 	mx := area.X + int(n.Margin[3]) // left
 	my := area.Y + int(n.Margin[0]) // top
 	mw := area.W - int(n.Margin[1]) - int(n.Margin[3])
 	mh := area.H - int(n.Margin[0]) - int(n.Margin[2])
 
-	// Resolve percentage width against parent area.
+	// CSS width/height refer to the CONTENT area (content-box model).
+	// We convert to full box dimensions by adding padding and border.
 	if n.WidthPct > 0 {
-		mw = int(float32(area.W) * n.WidthPct)
+		contentW := int(float32(area.W) * n.WidthPct)
+		mw = contentW + pL + pR + bL + bR
 	}
-
-	// Apply explicit dimensions.
 	if n.Width > 0 {
-		mw = int(n.Width)
+		mw = int(n.Width) + pL + pR + bL + bR
 	}
 	if n.Height > 0 {
-		mh = int(n.Height)
+		mh = int(n.Height) + pT + pB + bT + bB
 	}
-
-	// Compute content area inside padding and border.
-	pT := int(n.Padding[0])
-	pR := int(n.Padding[1])
-	pB := int(n.Padding[2])
-	pL := int(n.Padding[3])
 	contentArea := ui.Bounds{
 		X: mx + pL + bL,
 		Y: my + pT + bT,
