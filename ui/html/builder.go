@@ -66,6 +66,11 @@ func (b *builder) buildTextNode(node *dom.Node) ui.Element {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
+	// Collapse whitespace (tabs, newlines) per CSS white-space: normal.
+	text = collapseWhitespace(text)
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
 	return display.Text(text)
 }
 
@@ -201,6 +206,7 @@ func (b *builder) collectChildren(node *dom.Node) []floatChild {
 		sheets:         b.sheets,
 		onLink:         b.onLink,
 		parentFontSize: b.fontSize(node),
+		builder:        b,
 	}
 
 	for child := node.FirstChild; child != nil; child = child.NextSib {
@@ -376,7 +382,7 @@ func (b *builder) buildListItem(node *dom.Node, style css.StyleDeclaration) ui.E
 	// If there's inline content, wrap it in a paragraph with list style.
 	// Otherwise wrap the block children in a column with a marker.
 	// For simplicity in Phase 1, collect inline text from children.
-	ic := &inlineCollector{sheets: b.sheets, onLink: b.onLink, parentFontSize: b.fontSize(node)}
+	ic := &inlineCollector{sheets: b.sheets, onLink: b.onLink, parentFontSize: b.fontSize(node), builder: b}
 	ic.paraStyle = ps
 	var blockChildren []ui.Element
 

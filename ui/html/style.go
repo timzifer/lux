@@ -402,6 +402,8 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Draw border (4-sided with potentially different widths).
+	// Top/bottom span full width; left/right span only the middle
+	// portion to avoid double-painting at corners.
 	if n.hasBorder() {
 		bc := n.BorderColor
 		if bc == (draw.Color{}) {
@@ -410,21 +412,22 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		paint := draw.SolidPaint(bc)
 		fmx, fmy := float32(mx), float32(my)
 		fbW, fbH := float32(boxW), float32(boxH)
-		// Top
-		if n.BorderWidth[0] > 0 {
-			canvas.FillRect(draw.R(fmx, fmy, fbW, n.BorderWidth[0]), paint)
+		bwT, bwR, bwB, bwL := n.BorderWidth[0], n.BorderWidth[1], n.BorderWidth[2], n.BorderWidth[3]
+		// Top (full width)
+		if bwT > 0 {
+			canvas.FillRect(draw.R(fmx, fmy, fbW, bwT), paint)
 		}
-		// Bottom
-		if n.BorderWidth[2] > 0 {
-			canvas.FillRect(draw.R(fmx, fmy+fbH-n.BorderWidth[2], fbW, n.BorderWidth[2]), paint)
+		// Bottom (full width)
+		if bwB > 0 {
+			canvas.FillRect(draw.R(fmx, fmy+fbH-bwB, fbW, bwB), paint)
 		}
-		// Left
-		if n.BorderWidth[3] > 0 {
-			canvas.FillRect(draw.R(fmx, fmy, n.BorderWidth[3], fbH), paint)
+		// Left (between top and bottom borders — no corner overlap)
+		if bwL > 0 {
+			canvas.FillRect(draw.R(fmx, fmy+bwT, bwL, fbH-bwT-bwB), paint)
 		}
-		// Right
-		if n.BorderWidth[1] > 0 {
-			canvas.FillRect(draw.R(fmx+fbW-n.BorderWidth[1], fmy, n.BorderWidth[1], fbH), paint)
+		// Right (between top and bottom borders — no corner overlap)
+		if bwR > 0 {
+			canvas.FillRect(draw.R(fmx+fbW-bwR, fmy+bwT, bwR, fbH-bwT-bwB), paint)
 		}
 	}
 
