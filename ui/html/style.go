@@ -371,17 +371,23 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		H: max(mh-pT-pB-bT-bB, 0),
 	}
 
-	// Determine box dimensions. For explicit sizes, we know upfront.
-	// For auto-sized boxes, measure the child first (without painting).
-	hasExplicitSize := n.Width > 0 || n.Height > 0 || n.WidthPct > 0
+	// Determine box dimensions.
+	// For explicit dimensions, use the computed value.
+	// For auto dimensions, measure the child first (without painting).
+	hasExplicitW := n.Width > 0 || n.WidthPct > 0
+	hasExplicitH := n.Height > 0
 	var cb ui.Bounds
 	boxW, boxH := mw, mh
 
-	if !hasExplicitSize && n.Child != nil {
-		// Measure child to compute auto box size.
+	if (!hasExplicitW || !hasExplicitH) && n.Child != nil {
+		// Measure child to determine auto dimensions.
 		mb := ctx.MeasureChild(n.Child, contentArea)
-		boxW = mb.W + pL + pR + bL + bR
-		boxH = mb.H + pT + pB + bT + bB
+		if !hasExplicitW {
+			boxW = mb.W + pL + pR + bL + bR
+		}
+		if !hasExplicitH {
+			boxH = mb.H + pT + pB + bT + bB
+		}
 	}
 
 	boxRect := draw.R(float32(mx), float32(my), float32(boxW), float32(boxH))
@@ -428,9 +434,11 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		cb = ctx.LayoutChild(n.Child, contentArea)
 	}
 
-	// For auto-sized boxes, use actual child bounds.
-	if !hasExplicitSize {
+	// For auto-sized dimensions, use actual child bounds after layout.
+	if !hasExplicitW {
 		boxW = cb.W + pL + pR + bL + bR
+	}
+	if !hasExplicitH {
 		boxH = cb.H + pT + pB + bT + bB
 	}
 
