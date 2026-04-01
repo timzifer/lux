@@ -197,22 +197,44 @@ func (b *builder) buildChildren(node *dom.Node) []ui.Element {
 		})
 	}
 
-	// Determine if this container should contain its floated children.
-	// In strict CSS, only BFC containers (float, overflow!=visible, root)
-	// contain floats. Non-BFC containers let floats "escape" to the
-	// nearest BFC ancestor. However, implementing float propagation
-	// across layout boundaries is complex. As a pragmatic compromise:
-	// - Always contain floats by default (prevents layout collapse)
-	// - Only allow float escape when the parent is a known BFC and
-	//   can handle the escaped floats
-	//
-	// TODO: Implement proper float propagation through non-BFC containers.
-	containFloats := true
+	// Determine if this container establishes a Block Formatting Context.
+	containFloats := b.nodeEstablishesBFC(node)
 
 	return []ui.Element{FloatLayout{Children: floatChildren, ContainFloats: containFloats}}
 }
 
+// nodeEstablishesBFC returns true if a DOM node establishes a new
+// Block Formatting Context. BFC containers contain their floated
+// children (expand to fit them). Elements that establish a BFC:
+// floated elements, overflow != visible, display:flex/grid/flow-root,
+// and root elements (html, body).
+func (b *builder) nodeEstablishesBFC(node *dom.Node) bool {
+	if node.Type != dom.ElementNode {
+		return false
+	}
+	tag := strings.ToLower(node.Tag)
+	if tag == "html" || tag == "body" {
+		return true
+	}
+	style := css.Resolve(node, b.sheets)
+	if resolveFloat(style) != FloatNone {
+		return true
+	}
+	overflow := strings.TrimSpace(style.Get("overflow"))
+	if overflow == "hidden" || overflow == "auto" || overflow == "scroll" {
+		return true
+	}
+	disp := resolveDisplay(node, style)
+	if disp == "flex" || disp == "grid" || disp == "flow-root" {
+		return true
+	}
+	return false
+}
+
 // collectChildren builds all child elements with float/clear metadata.
+// For non-BFC block children that contain floats, the floats are
+// "hoisted" to the current level (CSS float propagation: floats escape
+// non-BFC containers to the nearest BFC ancestor).
 func (b *builder) collectChildren(node *dom.Node) []floatChild {
 	var result []floatChild
 	ic := &inlineCollector{
@@ -260,14 +282,28 @@ func (b *builder) collectChildren(node *dom.Node) []floatChild {
 					result = append(result, floatChild{element: display.RichText(*para)})
 				}
 
-				el := b.buildElementNode(child)
-				if el != nil {
-					fc := floatChild{
-						element: el,
-						float:   resolveFloat(childStyle),
-						clear:   resolveClear(childStyle),
+				childFloat := resolveFloat(childStyle)
+				childClear := resolveClear(childStyle)
+
+				// CSS float propagation: if a non-floated block child
+				// does NOT establish a BFC, its floated descendants
+				// "escape" to our level. We hoist them by collecting
+				// the child's descendants separately — floated ones
+				// become our direct float children, and non-floated
+				// content stays as a normal-flow child.
+				if childFloat == FloatNone && !b.nodeEstablishesBFC(child) && b.hasFloatedDescendants(child) {
+					hoisted := b.hoistFloats(child)
+					result = append(result, hoisted...)
+				} else {
+					el := b.buildElementNode(child)
+					if el != nil {
+						fc := floatChild{
+							element: el,
+							float:   childFloat,
+							clear:   childClear,
+						}
+						result = append(result, fc)
 					}
-					result = append(result, fc)
 				}
 			}
 		}
@@ -276,6 +312,119 @@ func (b *builder) collectChildren(node *dom.Node) []floatChild {
 	// Flush remaining inline content.
 	if para := ic.flush(); para != nil {
 		result = append(result, floatChild{element: display.RichText(*para)})
+	}
+
+	return result
+}
+
+// hasFloatedDescendants checks if a DOM node has any direct children
+// with float: left or float: right.
+func (b *builder) hasFloatedDescendants(node *dom.Node) bool {
+	for child := node.FirstChild; child != nil; child = child.NextSib {
+		if child.Type == dom.ElementNode {
+			childStyle := css.Resolve(child, b.sheets)
+			if resolveFloat(childStyle) != FloatNone {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hoistFloats processes a non-BFC block element and returns its children
+// as floatChild entries at the caller's level. Floated children are
+// returned with their float metadata. Non-floated content is built as
+// a normal-flow element wrapped in the parent's box style.
+func (b *builder) hoistFloats(node *dom.Node) []floatChild {
+	style := css.Resolve(node, b.sheets)
+	fontSize := b.fontSize(node)
+
+	var result []floatChild
+	var normalFlowChildren []ui.Element
+
+	ic := &inlineCollector{
+		sheets:         b.sheets,
+		onLink:         b.onLink,
+		parentFontSize: fontSize,
+		builder:        b,
+	}
+
+	flushNormal := func() {
+		if para := ic.flush(); para != nil {
+			normalFlowChildren = append(normalFlowChildren, display.RichText(*para))
+		}
+	}
+
+	for child := node.FirstChild; child != nil; child = child.NextSib {
+		switch child.Type {
+		case dom.TextNode:
+			text := child.Data
+			if strings.TrimSpace(text) == "" && !ic.hasContent() {
+				continue
+			}
+			parentStyle := css.Resolve(node, b.sheets)
+			ic.addTextNode(child, parentStyle)
+
+		case dom.ElementNode:
+			childStyle := css.Resolve(child, b.sheets)
+			childDisplay := resolveDisplay(child, childStyle)
+			if childDisplay == "none" {
+				continue
+			}
+
+			tag := strings.ToLower(child.Tag)
+			if tag == "style" || tag == "script" || tag == "head" || tag == "title" || tag == "meta" || tag == "link" || tag == "template" {
+				continue
+			}
+
+			if isInlineDisplay(childDisplay) {
+				ic.addInlineElement(child, childStyle)
+				continue
+			}
+
+			flushNormal()
+
+			childFloat := resolveFloat(childStyle)
+			if childFloat != FloatNone {
+				// Floated child — hoist to parent's level.
+				el := b.buildElementNode(child)
+				if el != nil {
+					result = append(result, floatChild{
+						element: el,
+						float:   childFloat,
+						clear:   resolveClear(childStyle),
+					})
+				}
+			} else {
+				// Non-floated child — stays as normal flow.
+				el := b.buildElementNode(child)
+				if el != nil {
+					normalFlowChildren = append(normalFlowChildren, el)
+				}
+			}
+		}
+	}
+
+	flushNormal()
+
+	// Build the non-floated content as a normal-flow element with
+	// the parent's box style (padding, margin, border, background).
+	if len(normalFlowChildren) > 0 {
+		var el ui.Element
+		if len(normalFlowChildren) == 1 {
+			el = normalFlowChildren[0]
+		} else {
+			el = layout.Column(normalFlowChildren...)
+		}
+		el = applyBoxStyle(el, style, fontSize)
+		result = append(result, floatChild{element: el})
+	} else {
+		// Even with no non-floated content, the parent may have
+		// padding/border/background that needs rendering.
+		el := applyBoxStyle(display.Text(""), style, fontSize)
+		if _, ok := el.(StyledBox); ok {
+			result = append(result, floatChild{element: el})
+		}
 	}
 
 	return result
