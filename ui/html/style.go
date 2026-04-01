@@ -371,23 +371,10 @@ func (n StyledBox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		H: max(mh-pT-pB-bT-bB, 0),
 	}
 
-	// Clip content to box bounds when explicit dimensions are set,
-	// preventing text/content from overflowing the box.
-	hasExplicitSize := n.Width > 0 || n.Height > 0 || n.WidthPct > 0
-	if hasExplicitSize {
-		clipRect := draw.R(float32(contentArea.X), float32(contentArea.Y),
-			float32(contentArea.W), float32(contentArea.H))
-		canvas.PushClip(clipRect)
-	}
-
 	// Layout child to determine content size.
 	var cb ui.Bounds
 	if n.Child != nil {
 		cb = ctx.LayoutChild(n.Child, contentArea)
-	}
-
-	if hasExplicitSize {
-		canvas.PopClip()
 	}
 
 	// Determine final box dimensions.
