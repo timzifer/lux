@@ -196,7 +196,25 @@ func (b *builder) buildChildren(node *dom.Node) []ui.Element {
 			Clear:   c.clear,
 		})
 	}
-	return []ui.Element{FloatLayout{Children: floatChildren}}
+
+	// Determine if this container establishes a Block Formatting Context.
+	// BFC containers contain their floated children (expand height).
+	// Elements that establish a BFC: floated elements, overflow != visible,
+	// display:flex/grid, root elements (html, body).
+	containFloats := false
+	if node.Type == dom.ElementNode {
+		style := css.Resolve(node, b.sheets)
+		nodeFloat := resolveFloat(style)
+		overflow := strings.TrimSpace(style.Get("overflow"))
+		tag := strings.ToLower(node.Tag)
+		if nodeFloat != FloatNone ||
+			overflow == "hidden" || overflow == "auto" || overflow == "scroll" ||
+			tag == "html" || tag == "body" {
+			containFloats = true
+		}
+	}
+
+	return []ui.Element{FloatLayout{Children: floatChildren, ContainFloats: containFloats}}
 }
 
 // collectChildren builds all child elements with float/clear metadata.
