@@ -43,15 +43,22 @@ func parseFragment(input string) (*Node, error) {
 	}
 	doc := NewDocument()
 	for _, hn := range nodes {
-		doc.AppendChild(fromHTMLNode(hn))
+		child := fromHTMLNode(hn)
+		if child != nil {
+			doc.AppendChild(child)
+		}
 	}
 	return doc, nil
 }
 
 // fromHTMLNode recursively converts an x/net/html node tree to our DOM model.
+// Returns nil for node types that have no DOM representation (e.g. DOCTYPE).
 func fromHTMLNode(hn *html.Node) *Node {
 	n := &Node{}
 	switch hn.Type {
+	case html.DoctypeNode:
+		// DOCTYPE declarations have no visual representation — skip.
+		return nil
 	case html.ElementNode:
 		n.Type = ElementNode
 		n.Tag = hn.Data
@@ -74,7 +81,10 @@ func fromHTMLNode(hn *html.Node) *Node {
 		n.Data = hn.Data
 	}
 	for c := hn.FirstChild; c != nil; c = c.NextSibling {
-		n.AppendChild(fromHTMLNode(c))
+		child := fromHTMLNode(c)
+		if child != nil {
+			n.AppendChild(child)
+		}
 	}
 	return n
 }
