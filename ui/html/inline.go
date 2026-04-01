@@ -56,7 +56,57 @@ func (ic *inlineCollector) addTextNode(node *dom.Node, style css.StyleDeclaratio
 		}
 	}
 	ss := toSpanStyle(style, ic.parentFontSize)
-	ic.items = append(ic.items, display.Span{Text: text, Style: ss})
+
+	// Split text into word-level spans so the RichText line-breaking
+	// algorithm can wrap between words. Each word includes its trailing
+	// whitespace to maintain correct spacing.
+	words := splitIntoWords(text)
+	for _, w := range words {
+		ic.items = append(ic.items, display.Span{Text: w, Style: ss})
+	}
+}
+
+// splitIntoWords splits text into word-level chunks, each including
+// trailing whitespace. E.g. "the way" → ["the ", "way"].
+// Leading whitespace is preserved as a separate entry.
+func splitIntoWords(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var words []string
+	i := 0
+	for i < len(s) {
+		// Skip to start of word (consume leading spaces as their own chunk).
+		if s[i] == ' ' {
+			j := i
+			for j < len(s) && s[j] == ' ' {
+				j++
+			}
+			// Attach leading spaces to the next word if possible.
+			if j < len(s) {
+				// Find end of next word.
+				k := j
+				for k < len(s) && s[k] != ' ' {
+					k++
+				}
+				words = append(words, s[i:k])
+				i = k
+			} else {
+				// Trailing spaces only.
+				words = append(words, s[i:j])
+				i = j
+			}
+		} else {
+			// Find end of word.
+			j := i
+			for j < len(s) && s[j] != ' ' {
+				j++
+			}
+			words = append(words, s[i:j])
+			i = j
+		}
+	}
+	return words
 }
 
 // addInlineElement adds an inline-level element node to the collector.
