@@ -1,6 +1,7 @@
 package html
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/timzifer/lux/draw"
@@ -10,6 +11,15 @@ import (
 	"github.com/timzifer/lux/web/css"
 	"github.com/timzifer/lux/web/dom"
 )
+
+// collapseWhitespaceRe matches runs of whitespace (spaces, tabs, newlines).
+var collapseWhitespaceRe = regexp.MustCompile(`[\s]+`)
+
+// collapseWhitespace collapses runs of whitespace (tabs, newlines, spaces)
+// into a single space, per CSS white-space: normal behavior.
+func collapseWhitespace(s string) string {
+	return collapseWhitespaceRe.ReplaceAllString(s, " ")
+}
 
 // inlineCollector accumulates inline content (text spans, inline widgets,
 // images) and produces a display.RichParagraph when flushed.
@@ -22,7 +32,8 @@ type inlineCollector struct {
 	paraStyle      display.ParagraphStyle
 	sheets         []*css.StyleSheet
 	onLink         func(href string)
-	parentFontSize float32 // inherited font-size for em resolution
+	parentFontSize float32  // inherited font-size for em resolution
+	builder        *builder // reference to the builder for block-in-inline handling
 }
 
 // hasContent returns true if the collector has accumulated any content.
@@ -35,6 +46,14 @@ func (ic *inlineCollector) addTextNode(node *dom.Node, style css.StyleDeclaratio
 	text := node.Data
 	if text == "" {
 		return
+	}
+	// Collapse whitespace unless white-space: pre.
+	ws := style.Get("white-space")
+	if ws != "pre" && ws != "pre-wrap" && ws != "pre-line" {
+		text = collapseWhitespace(text)
+		if text == " " && !ic.hasContent() {
+			return // skip leading whitespace-only spans
+		}
 	}
 	ss := toSpanStyle(style, ic.parentFontSize)
 	ic.items = append(ic.items, display.Span{Text: text, Style: ss})
@@ -55,6 +74,26 @@ func (ic *inlineCollector) addInlineElement(node *dom.Node, style css.StyleDecla
 		return
 	case "a":
 		ic.addLink(node, style)
+		return
+	case "input", "select", "textarea", "button", "progress":
+		// Form controls: build via the builder and embed as inline widget.
+		if ic.builder != nil {
+			el := ic.builder.buildElementNode(node)
+			if el != nil {
+				ic.items = append(ic.items, display.InlineElement(el))
+			}
+		}
+		return
+	}
+
+	// For inline-block elements without special handling, build via
+	// the builder and embed as inline widget.
+	childDisplay := resolveDisplay(node, style)
+	if childDisplay == "inline-block" && ic.builder != nil {
+		el := ic.builder.buildElementNode(node)
+		if el != nil {
+			ic.items = append(ic.items, display.InlineElement(el))
+		}
 		return
 	}
 
@@ -130,9 +169,16 @@ func (ic *inlineCollector) addImage(node *dom.Node) {
 // addBlockWidget adds a block-level element as an inline block widget.
 // This is used when a block element appears inside an inline context.
 func (ic *inlineCollector) addBlockWidget(node *dom.Node, style css.StyleDeclaration) {
-	// Build the block element using the builder (circular dependency
-	// avoided by accepting a build function).
-	// For now, just insert the text content as a span.
+	// If we have a builder reference, properly build the block element
+	// and embed it as an inline widget.
+	if ic.builder != nil {
+		el := ic.builder.buildElementNode(node)
+		if el != nil {
+			ic.items = append(ic.items, display.InlineElement(el))
+			return
+		}
+	}
+	// Fallback: extract text content only.
 	var text strings.Builder
 	collectText(node, &text)
 	if text.Len() > 0 {
