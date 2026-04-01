@@ -111,7 +111,10 @@
       "Bash(rm -rf surface/webview/)",
       "Bash(rm -rf cmd/lux-browser/)",
       "Bash(find /g/golang/lux -name \"*.go\" -type f -exec grep -l \"func.*Run\" {})",
-      "Bash(find /G/golang/lux -type f -name *kitchen* -o -name *sink*)"
+      "Bash(find /G/golang/lux -type f -name *kitchen* -o -name *sink*)",
+      "WebFetch(domain:www.w3.org)",
+      "WebFetch(domain:acid2.acidtests.org)",
+      "WebFetch(domain:acid3.acidtests.org)"
     ]
   }
 }
