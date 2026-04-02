@@ -19,8 +19,10 @@ import (
 const (
 	defaultHoldDuration = 2 * time.Second
 	holdReleaseSnapDur  = 200 * time.Millisecond // snap-back duration on release
-	progressRingStroke  = 4.0                     // ring stroke width (dp)
-	progressRingGap     = 6.0                     // gap between button edge and ring
+	holdFlashDuration   = 900 * time.Millisecond // completion blink duration
+	holdFlashCycles     = 3.0                    // number of blink cycles
+	progressRingStroke  = 4.0                    // ring stroke width (dp)
+	progressRingGap     = 6.0                    // gap between button edge and ring
 )
 
 // HoldButtonState holds mutable animation state for a HoldButton.
@@ -28,6 +30,8 @@ const (
 type HoldButtonState struct {
 	holding   bool
 	progress  anim.Anim[float32] // 0→1 (fill) or 1→0 (release snap-back)
+	flashAnim anim.Anim[float32] // 0→1 over ~900ms for completion blink
+	flashing  bool               // true during post-completion flash
 	ripple    RippleState
 	completed bool // latched on completion, reset on next press
 }
@@ -40,13 +44,25 @@ func NewHoldButtonState() *HoldButtonState { return &HoldButtonState{} }
 func (s *HoldButtonState) Tick(dt time.Duration) bool {
 	r := s.ripple.Tick(dt)
 	p := s.progress.Tick(dt)
+	f := s.flashAnim.Tick(dt)
 
-	// Detect hold completion.
+	// Detect hold completion → start flash.
 	if s.holding && s.progress.IsDone() && s.progress.Value() >= 0.99 {
 		s.completed = true
 		s.holding = false
+		s.flashing = true
+		s.flashAnim.SetImmediate(0)
+		s.flashAnim.SetTarget(1, holdFlashDuration, anim.Linear)
+		f = true
 	}
-	return r || p
+
+	// End of flash → hide ring.
+	if s.flashing && s.flashAnim.IsDone() {
+		s.flashing = false
+		s.progress.SetImmediate(0)
+	}
+
+	return r || p || f
 }
 
 // IsCompleted returns true once and resets the flag. Use in your update
@@ -178,9 +194,13 @@ func (n HoldButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		style, textColor)
 
 	// ── Radial progress ring ───────────────────────────────────
-	progress := st.progress.Value()
-	if progress > 0.001 {
-		drawProgressRing(canvas, buttonRect, progress, tokens.Colors.Accent.Primary)
+	if st.flashing {
+		// Completion flash: full ring with blinking opacity.
+		flashT := st.flashAnim.Value()
+		blinkOpacity := float32(math.Abs(math.Sin(float64(flashT) * holdFlashCycles * math.Pi)))
+		drawProgressRing(canvas, buttonRect, 1.0, blinkOpacity, tokens.Colors.Accent.Primary)
+	} else if progress := st.progress.Value(); progress > 0.001 {
+		drawProgressRing(canvas, buttonRect, progress, 1.0, tokens.Colors.Accent.Primary)
 	}
 
 	// Total bounds include the ring outside the button.
@@ -192,26 +212,32 @@ func (n HoldButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 }
 
-// drawProgressRing draws a clockwise arc from 12-o'clock around the button.
-func drawProgressRing(canvas draw.Canvas, rect draw.Rect, progress float32, color draw.Color) {
-	if progress <= 0 {
+// drawProgressRing draws a clockwise circular arc from 12-o'clock around the button.
+// opacity modulates the ring alpha (0–1), used for the completion flash blink.
+func drawProgressRing(canvas draw.Canvas, rect draw.Rect, progress, opacity float32, color draw.Color) {
+	if progress <= 0 || opacity <= 0 {
 		return
 	}
 
 	cx := rect.X + rect.W/2
 	cy := rect.Y + rect.H/2
-	// Radius: half-diagonal of the button + gap.
-	rx := rect.W/2 + progressRingGap
-	ry := rect.H/2 + progressRingGap
+	// Circular radius: use the larger half-dimension so the ring encloses the button.
+	halfW := rect.W / 2
+	halfH := rect.H / 2
+	r := halfW
+	if halfH > r {
+		r = halfH
+	}
+	r += progressRingGap
 
-	ringColor := draw.Color{R: color.R, G: color.G, B: color.B, A: 0.9}
+	ringColor := draw.Color{R: color.R, G: color.G, B: color.B, A: 0.9 * opacity}
 
 	if progress >= 0.999 {
 		// Full ring — draw two semicircles.
 		p := draw.NewPath().
-			MoveTo(draw.Pt(cx, cy-ry)).
-			ArcTo(rx, ry, 0, false, true, draw.Pt(cx, cy+ry)).
-			ArcTo(rx, ry, 0, false, true, draw.Pt(cx, cy-ry)).
+			MoveTo(draw.Pt(cx, cy-r)).
+			ArcTo(r, r, 0, false, true, draw.Pt(cx, cy+r)).
+			ArcTo(r, r, 0, false, true, draw.Pt(cx, cy-r)).
 			Close().
 			Build()
 		canvas.StrokePath(p, draw.Stroke{
@@ -223,14 +249,14 @@ func drawProgressRing(canvas draw.Canvas, rect draw.Rect, progress float32, colo
 
 	// Partial arc: start at 12-o'clock, sweep clockwise by progress * 2*PI.
 	angle := float64(progress) * 2 * math.Pi
-	endX := cx + rx*float32(math.Sin(angle))
-	endY := cy - ry*float32(math.Cos(angle))
+	endX := cx + r*float32(math.Sin(angle))
+	endY := cy - r*float32(math.Cos(angle))
 
 	large := progress > 0.5
 
 	p := draw.NewPath().
-		MoveTo(draw.Pt(cx, cy-ry)).
-		ArcTo(rx, ry, 0, large, true, draw.Pt(endX, endY)).
+		MoveTo(draw.Pt(cx, cy-r)).
+		ArcTo(r, r, 0, large, true, draw.Pt(endX, endY)).
 		Build()
 
 	canvas.StrokePath(p, draw.Stroke{
