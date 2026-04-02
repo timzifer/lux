@@ -19,7 +19,7 @@ func (n *BarChartElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	tokens := ctx.Tokens
 
 	w, h := chartSize(n.Config, area.W)
-	palette := defaultPalette(tokens)
+	palette := resolvePalette(n.Config.Palette)
 	hasLegend := len(n.Series) > 1
 	pa := computePlotArea(float32(area.X), float32(area.Y), w, h, n.Config.Title, hasLegend)
 

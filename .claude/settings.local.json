@@ -122,7 +122,8 @@
       "WebFetch(domain:codeberg.org)",
       "WebFetch(domain:star-tex.org)",
       "WebFetch(domain:git.sr.ht)",
-      "Bash(find /g/golang/lux -path */ui/html* -name *.go)"
+      "Bash(find /g/golang/lux -path */ui/html* -name *.go)",
+      "Bash(UPDATE_GOLDEN=1 go test ./ui/chart/)"
     ]
   }
 }

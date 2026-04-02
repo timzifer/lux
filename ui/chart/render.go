@@ -255,10 +255,7 @@ func drawLegend(canvas draw.Canvas, pa plotArea, series []Series, palette []draw
 	boxSize := float32(8)
 
 	for i, s := range series {
-		c := s.Color
-		if c == (draw.Color{}) && i < len(palette) {
-			c = palette[i]
-		}
+		c := seriesColor(s, i, palette)
 		// Color box.
 		canvas.FillRect(draw.R(x, y, boxSize, boxSize), draw.SolidPaint(c))
 		// Label text.
