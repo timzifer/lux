@@ -1,0 +1,23 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (2)
+  0: rect(24,24 400x250) color(15,17,21,255)
+  1: rect(74,58 340x186) color(23,26,32,255)
+
+[Glyphs] (10)
+  0: glyph(64,250) scale=1 color(168,176,188,255) "0"
+  1: glyph(132,250) scale=1 color(168,176,188,255) "1"
+  2: glyph(200,250) scale=1 color(168,176,188,255) "2"
+  3: glyph(268,250) scale=1 color(168,176,188,255) "3"
+  4: glyph(336,250) scale=1 color(168,176,188,255) "4"
+  5: glyph(404,250) scale=1 color(168,176,188,255) "5"
+  6: glyph(26,208) scale=1 color(168,176,188,255) "20"
+  7: glyph(26,146) scale=1 color(168,176,188,255) "22"
+  8: glyph(26,84) scale=1 color(168,176,188,255) "24"
+  9: glyph(178,34) scale=2 color(238,242,247,255) "Temperature"
+
+[ClipBatches] (2)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  1: clip(74,58 340x186) rects@2 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+
