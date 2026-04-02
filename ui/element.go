@@ -647,6 +647,64 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	return draw.Scene{}
 }
 
+// BuildSceneWithOSK is like BuildScene but also renders an on-screen keyboard
+// overlay element after all other overlays (RFC-004 §5.5).
+// If oskOverlay is nil, it behaves identically to BuildScene.
+func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, height int, ix *Interactor, focus *FocusManager, oskOverlay Element) draw.Scene {
+	if width <= 0 {
+		width = 800
+	}
+	if height <= 0 {
+		height = 600
+	}
+
+	ix.resetCounter()
+
+	tokens := th.Tokens()
+	area := Bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
+	var overlays OverlayStack
+	overlays.WindowW = width
+	overlays.WindowH = height
+	layoutElement(root, area, canvas, th, tokens, ix, &overlays, focus)
+
+	// Switch canvas to overlay mode so overlay draw commands go to
+	// separate scene lists, rendered after all main content.
+	type overlayModeSetter interface{ SetOverlayMode(bool) }
+	if oms, ok := canvas.(overlayModeSetter); ok {
+		oms.SetOverlayMode(true)
+	}
+	// Render overlay entries (Tooltip, ContextMenu, etc.) on top of main tree.
+	for _, entry := range overlays.Entries {
+		entry.Render(canvas, tokens, ix)
+	}
+	// Render the OSK overlay on top of everything (RFC-004 §5.5).
+	if oskOverlay != nil {
+		if l, ok := oskOverlay.(Layouter); ok {
+			bounds := canvas.Bounds()
+			oskCtx := &LayoutContext{
+				Area:   Bounds{X: 0, Y: 0, W: int(bounds.W), H: int(bounds.H)},
+				Canvas: canvas,
+				Theme:  th,
+				Tokens: tokens,
+				IX:     ix,
+			}
+			l.LayoutSelf(oskCtx)
+		}
+	}
+	if oms, ok := canvas.(overlayModeSetter); ok {
+		oms.SetOverlayMode(false)
+	}
+
+	// The canvas is a SceneCanvas — retrieve its scene.
+	type scener interface{ Scene() draw.Scene }
+	if sc, ok := canvas.(scener); ok {
+		s := sc.Scene()
+		s.Grain = tokens.Grain // RFC-008 §10.5
+		return s
+	}
+	return draw.Scene{}
+}
+
 func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
 	var fs *FocusManager
 	if len(focus) > 0 {
