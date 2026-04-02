@@ -36,7 +36,7 @@ func TestReconcileNestedWidgets(t *testing.T) {
 	tree := ComponentWithKey("outer", outerWidget{Name: "deep"})
 
 	// First reconcile — both outer and inner should be resolved.
-	resolved, changed := r.Reconcile(tree, th, noopSend, nil, nil, "")
+	resolved, changed := r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 	if !changed {
 		t.Error("first reconcile should report changed")
 	}
@@ -64,7 +64,7 @@ func TestReconcileNestedWidgets(t *testing.T) {
 	}
 
 	// Second reconcile — inner state persists.
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 	if r.StateCount() != 2 {
 		t.Errorf("expected 2 states after 2nd reconcile, got %d", r.StateCount())
 	}
@@ -81,8 +81,8 @@ func TestReconcileWidgetReorderingPreservesState(t *testing.T) {
 		ComponentWithKey("A", counterWidget{}),
 		ComponentWithKey("B", counterWidget{}),
 	)
-	r.Reconcile(tree1, th, noopSend, nil, nil, "")
-	r.Reconcile(tree1, th, noopSend, nil, nil, "")
+	r.Reconcile(tree1, th, noopSend, nil, nil, "", nil)
+	r.Reconcile(tree1, th, noopSend, nil, nil, "", nil)
 
 	uidA := MakeUID(0, "A", 0)
 	uidB := MakeUID(0, "B", 0)
@@ -97,7 +97,7 @@ func TestReconcileWidgetReorderingPreservesState(t *testing.T) {
 		ComponentWithKey("B", counterWidget{}),
 		ComponentWithKey("A", counterWidget{}),
 	)
-	r.Reconcile(tree2, th, noopSend, nil, nil, "")
+	r.Reconcile(tree2, th, noopSend, nil, nil, "", nil)
 
 	sA = r.StateFor(uidA).(*counterState)
 	sB = r.StateFor(uidB).(*counterState)
@@ -119,14 +119,14 @@ func TestEquatableMixedSkipAndRerender(t *testing.T) {
 		ComponentWithKey("x", eqWidget{Label: "same"}),
 		ComponentWithKey("y", eqWidget{Label: "v1"}),
 	)
-	r.Reconcile(tree1, th, noopSend, nil, nil, "")
+	r.Reconcile(tree1, th, noopSend, nil, nil, "", nil)
 
 	// Change only "y" label — "x" should skip Render.
 	tree2 := Column(
 		ComponentWithKey("x", eqWidget{Label: "same"}),
 		ComponentWithKey("y", eqWidget{Label: "v2"}),
 	)
-	r.Reconcile(tree2, th, noopSend, nil, nil, "")
+	r.Reconcile(tree2, th, noopSend, nil, nil, "", nil)
 
 	uidX := MakeUID(0, "x", 0)
 	uidY := MakeUID(0, "y", 0)
@@ -169,14 +169,14 @@ func TestEquatableSkipDoesNotBlockDirtyTracker(t *testing.T) {
 	th := theme.Default
 
 	tree := ComponentWithKey("ed", eqDirtyWidget{Label: "hello"})
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 
 	uid := MakeUID(0, "ed", 0)
 	s := r.StateFor(uid).(*eqDirtyState)
 	s.dirty = true
 
 	// Equatable skip (same label), but DirtyTracker should still detect dirty.
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 
 	if !r.CheckDirtyTrackers() {
 		// State was marked dirty before reconcile. Since Equatable reused the
@@ -221,7 +221,7 @@ func TestAnimatorAndDirtyTrackerOnSameState(t *testing.T) {
 	th := theme.Default
 
 	tree := ComponentWithKey("ad", animDirtyWidget{})
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 
 	uid := MakeUID(0, "ad", 0)
 	s := r.StateFor(uid).(*animDirtyState)
@@ -248,7 +248,7 @@ func TestReconcileEmptyTree(t *testing.T) {
 	r := NewReconciler()
 	th := theme.Default
 
-	resolved, changed := r.Reconcile(Empty(), th, noopSend, nil, nil, "")
+	resolved, changed := r.Reconcile(Empty(), th, noopSend, nil, nil, "", nil)
 	if !changed {
 		t.Error("first reconcile should report changed")
 	}
@@ -262,7 +262,7 @@ func TestReconcileNilTree(t *testing.T) {
 	th := theme.Default
 
 	// nil → nil: prevTree starts as nil, so treeEqual(nil, nil) = true → changed=false.
-	resolved, changed := r.Reconcile(nil, th, noopSend, nil, nil, "")
+	resolved, changed := r.Reconcile(nil, th, noopSend, nil, nil, "", nil)
 	if changed {
 		t.Error("nil → nil should not report changed")
 	}
@@ -271,7 +271,7 @@ func TestReconcileNilTree(t *testing.T) {
 	}
 
 	// nil → Text: should report changed.
-	_, changed = r.Reconcile(Text("hello"), th, noopSend, nil, nil, "")
+	_, changed = r.Reconcile(Text("hello"), th, noopSend, nil, nil, "", nil)
 	if !changed {
 		t.Error("nil → Text should report changed")
 	}
@@ -304,7 +304,7 @@ func TestReconcileWidgetReplacementAtSameKey(t *testing.T) {
 
 	// First frame with alphaWidget.
 	tree1 := ComponentWithKey("slot", alphaWidget{})
-	r.Reconcile(tree1, th, noopSend, nil, nil, "")
+	r.Reconcile(tree1, th, noopSend, nil, nil, "", nil)
 
 	uid := MakeUID(0, "slot", 0)
 	s1 := r.StateFor(uid)
@@ -314,7 +314,7 @@ func TestReconcileWidgetReplacementAtSameKey(t *testing.T) {
 
 	// Second frame with betaWidget at same key — state should be fresh.
 	tree2 := ComponentWithKey("slot", betaWidget{})
-	r.Reconcile(tree2, th, noopSend, nil, nil, "")
+	r.Reconcile(tree2, th, noopSend, nil, nil, "", nil)
 
 	s2 := r.StateFor(uid)
 	bs, ok := s2.(*betaState)
@@ -336,7 +336,7 @@ func TestReconcileDeepOrphanCleanup(t *testing.T) {
 	tree1 := Column(
 		ComponentWithKey("top", outerWidget{Name: "deep"}),
 	)
-	r.Reconcile(tree1, th, noopSend, nil, nil, "")
+	r.Reconcile(tree1, th, noopSend, nil, nil, "", nil)
 
 	// outerWidget + innerWidget = 2 states.
 	if r.StateCount() != 2 {
@@ -345,7 +345,7 @@ func TestReconcileDeepOrphanCleanup(t *testing.T) {
 
 	// Remove the entire subtree.
 	tree2 := Column(Text("simple"))
-	r.Reconcile(tree2, th, noopSend, nil, nil, "")
+	r.Reconcile(tree2, th, noopSend, nil, nil, "", nil)
 
 	if r.StateCount() != 0 {
 		t.Errorf("expected 0 states after removing all widgets, got %d", r.StateCount())
@@ -364,8 +364,8 @@ func TestReconcileThemedSubtree(t *testing.T) {
 		},
 	}
 
-	r.Reconcile(tree, theme.Default, noopSend, nil, nil, "")
-	r.Reconcile(tree, theme.Default, noopSend, nil, nil, "")
+	r.Reconcile(tree, theme.Default, noopSend, nil, nil, "", nil)
+	r.Reconcile(tree, theme.Default, noopSend, nil, nil, "", nil)
 
 	if r.StateCount() != 1 {
 		t.Errorf("expected 1 state for themed widget, got %d", r.StateCount())
@@ -407,14 +407,14 @@ func TestReconcilePassesLocaleToWidget(t *testing.T) {
 
 	tree := ComponentWithKey("loc", localeWidget{})
 
-	r.Reconcile(tree, th, noopSend, nil, nil, "de")
+	r.Reconcile(tree, th, noopSend, nil, nil, "de", nil)
 	uid := MakeUID(0, "loc", 0)
 	s := r.StateFor(uid).(*localeState)
 	if s.Locale != "de" {
 		t.Errorf("Locale = %q, want %q", s.Locale, "de")
 	}
 
-	r.Reconcile(tree, th, noopSend, nil, nil, "en")
+	r.Reconcile(tree, th, noopSend, nil, nil, "en", nil)
 	s = r.StateFor(uid).(*localeState)
 	if s.Locale != "en" {
 		t.Errorf("Locale after change = %q, want %q", s.Locale, "en")
@@ -443,7 +443,7 @@ func TestReconcileWidgetCanCallSend(t *testing.T) {
 	send := func(msg any) { received = append(received, msg) }
 
 	tree := ComponentWithKey("s", sendWidget{})
-	r.Reconcile(tree, th, send, nil, nil, "")
+	r.Reconcile(tree, th, send, nil, nil, "", nil)
 
 	if len(received) != 1 {
 		t.Fatalf("expected 1 sent message, got %d", len(received))
@@ -453,7 +453,7 @@ func TestReconcileWidgetCanCallSend(t *testing.T) {
 	}
 
 	// Second reconcile — already sent, no new message.
-	r.Reconcile(tree, th, send, nil, nil, "")
+	r.Reconcile(tree, th, send, nil, nil, "", nil)
 	if len(received) != 1 {
 		t.Errorf("expected still 1 message after 2nd reconcile, got %d", len(received))
 	}
@@ -476,7 +476,7 @@ func TestReconcileEventsRoutedToNestedWidget(t *testing.T) {
 	tree := ComponentWithKey("outer", eventNestedOuter{})
 
 	// First reconcile to establish both widgets.
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 
 	// The inner widget's UID is nested under the outer's UID.
 	outerUID := MakeUID(0, "outer", 0)
@@ -487,7 +487,7 @@ func TestReconcileEventsRoutedToNestedWidget(t *testing.T) {
 	d.Collect(input.KeyMsg{Key: input.KeyEnter, Action: input.KeyPress})
 	d.Dispatch()
 
-	r.Reconcile(tree, th, noopSend, d, fm, "")
+	r.Reconcile(tree, th, noopSend, d, fm, "", nil)
 
 	state := r.StateFor(innerUID)
 	s, ok := state.(*eventCaptureState)
@@ -513,7 +513,7 @@ func TestCheckDirtyTrackersPartialDirty(t *testing.T) {
 		ComponentWithKey("d2", dirtyWidget{}),
 		ComponentWithKey("d3", dirtyWidget{}),
 	)
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 
 	// Only mark d2 as dirty.
 	uid2 := MakeUID(0, "d2", 0)
@@ -541,7 +541,7 @@ func TestTickAnimatorsMixedAnimatorAndNonAnimator(t *testing.T) {
 		ComponentWithKey("noanim", nonAnimWidget{}),
 		ComponentWithKey("counter", counterWidget{}),
 	)
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 
 	// Tick — only the animator should advance.
 	running := r.TickAnimators(100 * time.Millisecond)
@@ -614,8 +614,8 @@ func TestReconcileChangedDetectsRemovedChild(t *testing.T) {
 	r := NewReconciler()
 	th := theme.Default
 
-	r.Reconcile(Column(Text("a"), Text("b"), Text("c")), th, noopSend, nil, nil, "")
-	_, changed := r.Reconcile(Column(Text("a"), Text("c")), th, noopSend, nil, nil, "")
+	r.Reconcile(Column(Text("a"), Text("b"), Text("c")), th, noopSend, nil, nil, "", nil)
+	_, changed := r.Reconcile(Column(Text("a"), Text("c")), th, noopSend, nil, nil, "", nil)
 	if !changed {
 		t.Error("removing a child should report changed")
 	}
@@ -625,8 +625,8 @@ func TestReconcileChangedDetectsReplacedElement(t *testing.T) {
 	r := NewReconciler()
 	th := theme.Default
 
-	r.Reconcile(Column(Text("a")), th, noopSend, nil, nil, "")
-	_, changed := r.Reconcile(Column(Spacer(10)), th, noopSend, nil, nil, "")
+	r.Reconcile(Column(Text("a")), th, noopSend, nil, nil, "", nil)
+	_, changed := r.Reconcile(Column(Spacer(10)), th, noopSend, nil, nil, "", nil)
 	if !changed {
 		t.Error("replacing element type should report changed")
 	}
@@ -644,21 +644,21 @@ func TestReconcileRapidWidgetTypeSwitchingABA(t *testing.T) {
 	uid := MakeUID(0, "slot", 0)
 
 	// Frame 1: alphaWidget
-	r.Reconcile(ComponentWithKey("slot", alphaWidget{}), th, noopSend, nil, nil, "")
+	r.Reconcile(ComponentWithKey("slot", alphaWidget{}), th, noopSend, nil, nil, "", nil)
 	s1 := r.StateFor(uid).(*alphaState)
 	if s1.Alpha != 1 {
 		t.Fatalf("frame 1: Alpha = %d, want 1", s1.Alpha)
 	}
 
 	// Frame 2: betaWidget replaces alpha → state must be fresh betaState
-	r.Reconcile(ComponentWithKey("slot", betaWidget{}), th, noopSend, nil, nil, "")
+	r.Reconcile(ComponentWithKey("slot", betaWidget{}), th, noopSend, nil, nil, "", nil)
 	s2 := r.StateFor(uid).(*betaState)
 	if s2.Beta != "b" {
 		t.Fatalf("frame 2: Beta = %q, want %q", s2.Beta, "b")
 	}
 
 	// Frame 3: alphaWidget returns → state must be fresh (Alpha == 1, not 2)
-	r.Reconcile(ComponentWithKey("slot", alphaWidget{}), th, noopSend, nil, nil, "")
+	r.Reconcile(ComponentWithKey("slot", alphaWidget{}), th, noopSend, nil, nil, "", nil)
 	s3, ok := r.StateFor(uid).(*alphaState)
 	if !ok {
 		t.Fatalf("frame 3: expected *alphaState, got %T", r.StateFor(uid))
@@ -711,7 +711,7 @@ func TestReconcileEquatableSkipDoesNotBlockAnimator(t *testing.T) {
 	tree := ComponentWithKey("ea", eqAnimWidget{Label: "anim"})
 
 	// Frame 1: initial render, animation starts.
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 	uid := MakeUID(0, "ea", 0)
 	s := r.StateFor(uid).(*eqAnimState)
 	if s.renderCount != 1 {
@@ -719,7 +719,7 @@ func TestReconcileEquatableSkipDoesNotBlockAnimator(t *testing.T) {
 	}
 
 	// Frame 2: same props → Equatable skip (Render not called).
-	r.Reconcile(tree, th, noopSend, nil, nil, "")
+	r.Reconcile(tree, th, noopSend, nil, nil, "", nil)
 	s = r.StateFor(uid).(*eqAnimState)
 	if s.renderCount != 1 {
 		t.Fatalf("renderCount = %d after skip, want 1 (Render should not run)", s.renderCount)
@@ -748,13 +748,13 @@ func TestReconcileMassOrphanCleanup(t *testing.T) {
 	}
 
 	// Frame 1: establish all widgets.
-	r.Reconcile(Column(children...), th, noopSend, nil, nil, "")
+	r.Reconcile(Column(children...), th, noopSend, nil, nil, "", nil)
 	if r.StateCount() != n {
 		t.Fatalf("frame 1: StateCount = %d, want %d", r.StateCount(), n)
 	}
 
 	// Frame 2: replace entire subtree.
-	r.Reconcile(Column(Text("empty")), th, noopSend, nil, nil, "")
+	r.Reconcile(Column(Text("empty")), th, noopSend, nil, nil, "", nil)
 	if r.StateCount() != 0 {
 		t.Errorf("frame 2: StateCount = %d, want 0 (all orphans must be cleaned up)", r.StateCount())
 	}

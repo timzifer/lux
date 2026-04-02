@@ -45,7 +45,7 @@ func TestAccessTreeFocusTrapHidesBackground(t *testing.T) {
 		},
 	)
 
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 
 	// Build access tree WITH active trap — background should be excluded.
 	b := AccessTreeBuilder{
@@ -92,7 +92,7 @@ func TestAccessTreeNoTrapShowsEverything(t *testing.T) {
 		},
 	)
 
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	bg := findByRoleAndLabel(accessTree, a11y.RoleButton, "Background")
@@ -117,7 +117,7 @@ func TestAccessTreeModalOverlayRoleDialog(t *testing.T) {
 		Backdrop: true,
 	}
 
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	dialogs := accessTree.FindByRole(a11y.RoleDialog)
@@ -139,7 +139,7 @@ func TestAccessTreeNonModalOverlayRoleGroup(t *testing.T) {
 		Backdrop: false,
 	}
 
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	// Non-modal overlay should use RoleGroup, not RoleDialog.
@@ -174,7 +174,7 @@ func TestAccessTreeNestedOverlays(t *testing.T) {
 	}
 
 	tree := Column(Text("Background"), outerOverlay)
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 
 	// Build with trap on inner dialog — only inner content should be visible.
 	b := AccessTreeBuilder{
@@ -246,7 +246,7 @@ func TestAccessTreeWidgetWithAllStates(t *testing.T) {
 
 	reconciler := NewReconciler()
 	tree := Component(w)
-	resolved, _ := reconciler.Reconcile(tree, theme.LuxLight, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, theme.LuxLight, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	sliders := accessTree.FindByRole(a11y.RoleSlider)
@@ -344,7 +344,7 @@ func TestAccessTreeMixedWidgetAndLeafElements(t *testing.T) {
 		Slider(0.5, nil),
 	)
 
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	// Check all expected nodes exist.
@@ -389,7 +389,7 @@ func TestAccessTreeWidgetBoundsFromDispatcher(t *testing.T) {
 	}
 
 	tree := ComponentWithKey("pos", w)
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, d, fm, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, d, fm, "", nil)
 
 	// Register bounds for the widget.
 	uid := MakeUID(0, "pos", 0)
@@ -421,7 +421,7 @@ func TestAccessTreeThemedSubtree(t *testing.T) {
 		},
 	}
 
-	resolved, _ := reconciler.Reconcile(tree, theme.Default, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, theme.Default, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	buttons := accessTree.FindByRole(a11y.RoleButton)
@@ -502,7 +502,7 @@ func TestAccessTreeZeroBoundsFallsBackToWindow(t *testing.T) {
 	}
 
 	tree := Component(w)
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 
 	windowBounds := a11y.Rect{Width: 1024, Height: 768}
 	accessTree := BuildAccessTree(resolved, reconciler, windowBounds)
@@ -630,7 +630,7 @@ func TestAccessTreeActionTriggerRoundTrip(t *testing.T) {
 
 	reconciler := NewReconciler()
 	tree := Component(w)
-	resolved, _ := reconciler.Reconcile(tree, theme.LuxLight, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, theme.LuxLight, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	buttons := accessTree.FindByRole(a11y.RoleButton)
@@ -672,7 +672,7 @@ func TestAccessTreeFocusTrapPushPopSameFrame(t *testing.T) {
 		},
 	)
 
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 
 	// Phase 1: trap active → background hidden.
 	b1 := AccessTreeBuilder{
@@ -738,7 +738,7 @@ func TestAccessTreeEmptyWidgetWithAccessibility(t *testing.T) {
 
 	w := testEmptyAccessWidget{label: "Hidden Control", role: a11y.RoleButton}
 	tree := Component(w)
-	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(tree, th, func(any) {}, nil, nil, "", nil)
 	accessTree := BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 
 	buttons := accessTree.FindByRole(a11y.RoleButton)

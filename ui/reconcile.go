@@ -11,6 +11,7 @@ import (
 	"hash/fnv"
 	"time"
 
+	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -42,9 +43,9 @@ func NewReconciler() *Reconciler {
 // If dispatcher is non-nil, each widget's RenderCtx.Events is populated
 // from the dispatcher's per-UID event buffers (RFC-002 §2.6). If fm is
 // non-nil, Focusable widgets are registered for tab-order tracking.
-func (r *Reconciler) Reconcile(newTree Element, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager, locale string) (Element, bool) {
+func (r *Reconciler) Reconcile(newTree Element, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager, locale string, profile *interaction.InteractionProfile) (Element, bool) {
 	seen := make(map[UID]bool)
-	resolved := r.resolveTree(newTree, 0, 0, seen, th, send, dispatcher, fm, locale)
+	resolved := r.resolveTree(newTree, 0, 0, seen, th, send, dispatcher, fm, locale, profile)
 
 	changed := !treeEqual(r.prevTree, resolved)
 	r.prevTree = resolved
@@ -128,11 +129,11 @@ func MakeUID(parent UID, key string, index int) UID {
 }
 
 // resolveTree recursively walks the element tree, expanding widgets.
-func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[UID]bool, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager, locale string) Element {
+func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[UID]bool, th theme.Theme, send func(any), dispatcher *EventDispatcher, fm *FocusManager, locale string, profile *interaction.InteractionProfile) Element {
 	// Interface-based dispatch for sub-package element types.
 	if cr, ok := el.(ChildResolver); ok {
 		return cr.ResolveChildren(func(child Element, childIndex int) Element {
-			return r.resolveTree(child, parentUID, childIndex, seen, th, send, dispatcher, fm, locale)
+			return r.resolveTree(child, parentUID, childIndex, seen, th, send, dispatcher, fm, locale, profile)
 		})
 	}
 	switch node := el.(type) {
@@ -160,7 +161,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		state := r.states[uid]
 
 		// Build RenderCtx with dispatched events.
-		ctx := RenderCtx{UID: uid, Theme: th, Send: send, Locale: locale}
+		ctx := RenderCtx{UID: uid, Theme: th, Send: send, Locale: locale, InteractionProfile: profile}
 		if dispatcher != nil {
 			ctx.Events = dispatcher.EventsFor(uid)
 		}
@@ -177,7 +178,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		r.widgets[uid] = node.W
 
 		// Recursively resolve the widget's output (it may contain more widgets).
-		resolved := r.resolveTree(child, uid, 0, seen, th, send, dispatcher, fm, locale)
+		resolved := r.resolveTree(child, uid, 0, seen, th, send, dispatcher, fm, locale, profile)
 		r.resolvedSub[uid] = resolved
 
 		// Wrap in WidgetBoundsElement so layout can track screen bounds.
@@ -185,7 +186,7 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 
 	case KeyedElement:
 		uid := MakeUID(parentUID, node.Key, index)
-		child := r.resolveTree(node.Child, uid, 0, seen, th, send, dispatcher, fm, locale)
+		child := r.resolveTree(node.Child, uid, 0, seen, th, send, dispatcher, fm, locale, profile)
 		return KeyedElement{Key: node.Key, Child: child}
 
 	case ThemedElement:
@@ -199,14 +200,14 @@ func (r *Reconciler) resolveTree(el Element, parentUID UID, index int, seen map[
 		}
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, sub, send, dispatcher, fm, locale)
+			children[i] = r.resolveTree(c, parentUID, i, seen, sub, send, dispatcher, fm, locale, profile)
 		}
 		return ThemedElement{Theme: sub, Children: children}
 
 	case CustomLayoutElement:
 		children := make([]Element, len(node.Children))
 		for i, c := range node.Children {
-			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm, locale)
+			children[i] = r.resolveTree(c, parentUID, i, seen, th, send, dispatcher, fm, locale, profile)
 		}
 		return CustomLayoutElement{Layout: node.Layout, Children: children}
 
