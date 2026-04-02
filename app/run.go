@@ -791,9 +791,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				renderer.EndFrame()
 			}
 
-			// Request continued rendering while animations are active,
-			// so platforms that idle between frames keep ticking.
-			if animDirty || hoverDirty {
+			// Request continued rendering while animations, tick-driven
+			// model changes, or dirty-tracked widgets are active, so
+			// platforms that idle between frames keep ticking.
+			if animDirty || hoverDirty || tickDirty || stateDirty {
 				plat.RequestFrame()
 			}
 		},

@@ -17,7 +17,7 @@ import (
 )
 
 type Model struct {
-	ScrollY float32
+	Scroll *ui.ScrollState
 }
 
 func update(m Model, msg app.Msg) Model {
@@ -25,7 +25,7 @@ func update(m Model, msg app.Msg) Model {
 }
 
 func view(m Model) ui.Element {
-	return nav.ScrollView(m.ScrollY, 800,
+	return nav.NewScrollView(
 		layout.Pad(draw.Insets{Top: 24, Right: 24, Bottom: 24, Left: 24},
 			layout.Column(
 				display.Text("Charting Widget Gallery"),
@@ -116,12 +116,12 @@ func view(m Model) ui.Element {
 					{Label: "Other", Value: 5},
 				}),
 			),
-		),
+		), 800, m.Scroll,
 	)
 }
 
 func main() {
-	if err := app.Run(Model{}, update, view,
+	if err := app.Run(Model{Scroll: &ui.ScrollState{}}, update, view,
 		app.WithTheme(theme.Default),
 		app.WithTitle("Chart Gallery"),
 	); err != nil {

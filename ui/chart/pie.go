@@ -14,6 +14,7 @@ type PieChartElement struct {
 	PieWidth  float32
 	PieHeight float32
 	Slices    []PieSlice
+	Palette   []draw.Color // custom slice colors; nil = DefaultPalette
 }
 
 func (n *PieChartElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
@@ -30,7 +31,7 @@ func (n *PieChartElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		h = 300
 	}
 
-	palette := defaultPalette(tokens)
+	palette := resolvePalette(n.Palette)
 
 	// Background.
 	outer := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
@@ -64,10 +65,7 @@ func (n *PieChartElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		fraction := s.Value / total
 		sweepAngle := fraction * 2 * math.Pi
 
-		c := s.Color
-		if c == (draw.Color{}) && i < len(palette) {
-			c = palette[i]
-		}
+		c := sliceColor(s, i, palette)
 
 		drawPieSlice(canvas, cx, cy, radius, float32(startAngle), float32(sweepAngle), c)
 
