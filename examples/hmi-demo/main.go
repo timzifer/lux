@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/interaction"
@@ -41,23 +42,29 @@ type Model struct {
 	ConveyorSpeed float32 // 0–1.0
 
 	// Toggle animation states
-	MotorToggle    *form.ToggleState
-	PumpToggle     *form.ToggleState
-	ValveToggle    *form.ToggleState
+	MotorToggle *form.ToggleState
+	PumpToggle  *form.ToggleState
+	ValveToggle *form.ToggleState
+
+	// Touch feedback states (RFC-004 §4)
+	ConfirmMotorState *button.ConfirmButtonState
+	HoldStopState     *button.HoldButtonState
 }
 
 func initialModel() Model {
 	return Model{
-		Dark:            true,
-		ProfileName:     "HMI",
-		Temperature:     42,
-		Pressure:        0.65,
-		ProductionCount: 1247,
-		FanSpeed:        0.5,
-		ConveyorSpeed:   0.3,
-		MotorToggle:     form.NewToggleState(),
-		PumpToggle:      form.NewToggleState(),
-		ValveToggle:     form.NewToggleState(),
+		Dark:              true,
+		ProfileName:       "HMI",
+		Temperature:       42,
+		Pressure:          0.65,
+		ProductionCount:   1247,
+		FanSpeed:          0.5,
+		ConveyorSpeed:     0.3,
+		MotorToggle:       form.NewToggleState(),
+		PumpToggle:        form.NewToggleState(),
+		ValveToggle:       form.NewToggleState(),
+		ConfirmMotorState: button.NewConfirmButtonState(),
+		HoldStopState:     button.NewHoldButtonState(),
 	}
 }
 
@@ -76,6 +83,10 @@ type ToggleValveMsg struct{}
 type SetFanSpeedMsg struct{ V float32 }
 type SetConveyorSpeedMsg struct{ V float32 }
 
+// Touch-feedback messages (RFC-004 §4)
+type ConfirmMotorStartMsg struct{}
+type EmergencyHoldCompleteMsg struct{}
+
 // ── Update ───────────────────────────────────────────────────────
 
 func update(m Model, msg app.Msg) Model {
@@ -85,6 +96,8 @@ func update(m Model, msg app.Msg) Model {
 		m.MotorToggle.Tick(dt)
 		m.PumpToggle.Tick(dt)
 		m.ValveToggle.Tick(dt)
+		m.ConfirmMotorState.Tick(dt)
+		m.HoldStopState.Tick(dt)
 		// Simulate slow temperature drift
 		if m.MotorRunning {
 			m.Temperature += float32(dt.Seconds()) * 2
@@ -126,6 +139,13 @@ func update(m Model, msg app.Msg) Model {
 		m.FanSpeed = msg.V
 	case SetConveyorSpeedMsg:
 		m.ConveyorSpeed = msg.V
+
+	case ConfirmMotorStartMsg:
+		m.MotorRunning = true
+
+	case EmergencyHoldCompleteMsg:
+		m.MotorRunning = false
+		m.PumpActive = false
 	}
 	return m
 }
@@ -140,6 +160,7 @@ func view(m Model) ui.Element {
 			[]nav.TabItem{
 				{Header: display.Text("Dashboard"), Content: viewDashboard(m)},
 				{Header: display.Text("Controls"), Content: viewControls(m)},
+				{Header: display.Text("Touch Feedback"), Content: viewTouchFeedback(m)},
 				{Header: display.Text("Alarms"), Content: viewAlarms(m)},
 			},
 			m.ActiveTab,
@@ -284,11 +305,60 @@ func viewControls(m Model) ui.Element {
 
 		display.Divider(),
 
-		// Emergency stop
-		button.Text("EMERGENCY STOP", func() {
-			app.Send(ToggleMotorMsg{})
-			app.Send(TogglePumpMsg{})
-		}),
+		// Emergency stop — requires 2s hold (RFC-004 §4.3 Stufe 3)
+		button.Hold("EMERGENCY STOP — HOLD 2s", 2*time.Second, func() {
+			app.Send(EmergencyHoldCompleteMsg{})
+		}, m.HoldStopState),
+	)
+}
+
+// ── Touch Feedback Tab (RFC-004 §4 Demo) ────────────────────────
+
+func viewTouchFeedback(m Model) ui.Element {
+	motorLabel := "Motor starten"
+	if m.MotorRunning {
+		motorLabel = "Motor läuft bereits"
+	}
+
+	return layout.Column(
+		display.Text("Touch-Feedback Demo (RFC-004 §4)"),
+		display.Divider(),
+
+		// ConfirmButton demo — two-step confirmation
+		display.Card(
+			layout.Column(
+				display.Text("ConfirmButton — Zwei-Schritt-Bestätigung"),
+				display.Text("Erster Tap wechselt in Confirm-Modus, zweiter Tap bestätigt."),
+				button.Confirm(motorLabel, "Bestätigen: Motor starten!", func() {
+					app.Send(ConfirmMotorStartMsg{})
+				}, m.ConfirmMotorState),
+			),
+		),
+
+		display.Divider(),
+
+		// HoldButton demo — hold-to-confirm
+		display.Card(
+			layout.Column(
+				display.Text("HoldButton — Halten zum Bestätigen"),
+				display.Text("Gedrückt halten bis der Fortschrittsring voll ist."),
+				button.Hold("NOTFALL-STOPP — 2s HALTEN", 2*time.Second, func() {
+					app.Send(EmergencyHoldCompleteMsg{})
+				}, m.HoldStopState),
+			),
+		),
+
+		display.Divider(),
+
+		// Status display
+		display.Card(
+			layout.Row(
+				display.Text("Motor"),
+				statusBadge(fmt.Sprintf("%v", m.MotorRunning), m.MotorRunning),
+				display.Text("Pump"),
+				statusBadge(fmt.Sprintf("%v", m.PumpActive), m.PumpActive),
+			),
+		),
 	)
 }
 
