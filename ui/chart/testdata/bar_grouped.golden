@@ -1,0 +1,33 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (10)
+  0: rect(24,24 400x250) color(15,17,21,255)
+  1: rect(74,58 340x166) color(23,26,32,255)
+  2: rect(85,133 45x90) color(76,141,255,255) r=2.0
+  3: rect(198,73 45x150) color(76,141,255,255) r=2.0
+  4: rect(312,103 45x120) color(76,141,255,255) r=2.0
+  5: rect(130,118 45x105) color(122,168,255,255) r=2.0
+  6: rect(244,58 45x166) color(122,168,255,255) r=2.0
+  7: rect(357,73 45x150) color(122,168,255,255) r=2.0
+  8: rect(74,256 8x8) color(76,141,255,255)
+  9: rect(121,256 8x8) color(122,168,255,255)
+
+[Glyphs] (11)
+  0: glyph(64,230) scale=1 color(168,176,188,255) "0"
+  1: glyph(149,230) scale=1 color(168,176,188,255) "0.5"
+  2: glyph(234,230) scale=1 color(168,176,188,255) "1"
+  3: glyph(319,230) scale=1 color(168,176,188,255) "1.5"
+  4: glyph(404,230) scale=1 color(168,176,188,255) "2"
+  5: glyph(26,219) scale=1 color(168,176,188,255) "0"
+  6: glyph(26,158) scale=1 color(168,176,188,255) "20"
+  7: glyph(26,98) scale=1 color(168,176,188,255) "40"
+  8: glyph(172,34) scale=2 color(238,242,247,255) "Grouped Bars"
+  9: glyph(85,255) scale=1 color(168,176,188,255) "2024"
+  10: glyph(132,255) scale=1 color(168,176,188,255) "2025"
+
+[ClipBatches] (3)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  1: clip(74,58 340x166) rects@2 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  2: clip(0,0 800x600) full-viewport rects@8 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+
