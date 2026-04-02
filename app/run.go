@@ -623,6 +623,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					modelDirty = true
 					return true
 
+				case input.ResizeMsg:
+					// Window resize must force a full layout + repaint even if
+					// the user's update function doesn't handle the message.
+					modelDirty = true
+
 				case input.MouseMsg:
 					dispatcher.Collect(m)
 				case input.ScrollMsg:

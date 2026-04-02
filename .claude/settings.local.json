@@ -118,7 +118,11 @@
       "Bash(find /g/golang/lux -name *editor* -o -name *vellum* -o -name *inspector*)",
       "Bash(find /g/golang/lux -name *.go -exec grep -l \"SVG\\\\|svg\" {})",
       "Bash(2)",
-      "Bash(find /g/golang/lux -name *editor* -o -name *code*)"
+      "Bash(find /g/golang/lux -name *editor* -o -name *code*)",
+      "WebFetch(domain:codeberg.org)",
+      "WebFetch(domain:star-tex.org)",
+      "WebFetch(domain:git.sr.ht)",
+      "Bash(find /g/golang/lux -path */ui/html* -name *.go)"
     ]
   }
 }
