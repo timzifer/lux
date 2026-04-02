@@ -1,0 +1,15 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (1)
+  0: rect(24,24 300x300) color(15,17,21,255)
+
+[Glyphs] (4)
+  0: glyph(244,142) scale=1 color(238,242,247,255) "A"
+  1: glyph(137,249) scale=1 color(238,242,247,255) "B"
+  2: glyph(83,142) scale=1 color(238,242,247,255) "C"
+  3: glyph(137,88) scale=1 color(238,242,247,255) "D"
+
+[ClipBatches] (1)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+
