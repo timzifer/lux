@@ -18,6 +18,6 @@ import (
 // The returned tree uses default window bounds of 800×600.
 func RenderToAccessTree(el Element) a11y.AccessTree {
 	reconciler := NewReconciler()
-	resolved, _ := reconciler.Reconcile(el, theme.LuxLight, func(any) {}, nil, nil, "")
+	resolved, _ := reconciler.Reconcile(el, theme.LuxLight, func(any) {}, nil, nil, "", nil)
 	return BuildAccessTree(resolved, reconciler, a11y.Rect{Width: 800, Height: 600})
 }
