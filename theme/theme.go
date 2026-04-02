@@ -58,6 +58,8 @@ const (
 	WidgetKindDataTable
 	// Link (HTML <a> semantics)
 	WidgetKindLink
+	// On-Screen Keyboard (RFC-004 §5)
+	WidgetKindOSK
 )
 
 // DrawFunc is a custom rendering function for a widget kind (RFC §5.3).

@@ -1,0 +1,34 @@
+=== Scene ===
+
+[Rects] (14)
+  0: rect(0,308 400x292) color(23,26,32,247)
+  1: rect(0,308 400x1) color(255,255,255,15)
+  2: rect(4,312 128x68) color(15,17,21,255) r=4.0
+  3: rect(136,312 128x68) color(15,17,21,255) r=4.0
+  4: rect(268,312 128x68) color(15,17,21,255) r=4.0
+  5: rect(4,384 128x68) color(15,17,21,255) r=4.0
+  6: rect(136,384 128x68) color(15,17,21,255) r=4.0
+  7: rect(268,384 128x68) color(15,17,21,255) r=4.0
+  8: rect(4,456 128x68) color(15,17,21,255) r=4.0
+  9: rect(136,456 128x68) color(15,17,21,255) r=4.0
+  10: rect(268,456 128x68) color(15,17,21,255) r=4.0
+  11: rect(4,528 128x68) color(15,17,21,255) r=4.0
+  12: rect(136,528 128x68) color(15,17,21,255) r=4.0
+  13: rect(268,528 128x68) color(29,34,42,255) r=4.0
+
+[Glyphs] (11)
+  0: glyph(59,335) scale=3 color(238,242,247,255) "1"
+  1: glyph(191,335) scale=3 color(238,242,247,255) "2"
+  2: glyph(323,335) scale=3 color(238,242,247,255) "3"
+  3: glyph(59,407) scale=3 color(238,242,247,255) "4"
+  4: glyph(191,407) scale=3 color(238,242,247,255) "5"
+  5: glyph(323,407) scale=3 color(238,242,247,255) "6"
+  6: glyph(59,479) scale=3 color(238,242,247,255) "7"
+  7: glyph(191,479) scale=3 color(238,242,247,255) "8"
+  8: glyph(323,479) scale=3 color(238,242,247,255) "9"
+  9: glyph(191,551) scale=3 color(238,242,247,255) "0"
+  10: glyph(323,551) scale=3 color(238,242,247,255) "⌫"
+
+[ClipBatches] (1)
+  0: clip(0,0 400x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

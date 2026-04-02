@@ -43,6 +43,15 @@ type ModelRestoredMsg struct{}
 // Use this to drive animations, timers, or physics.
 type TickMsg struct{ DeltaTime time.Duration }
 
+// ShowOSKMsg programmatically shows the on-screen keyboard with a specific layout (RFC-004 §5.7).
+type ShowOSKMsg struct{ Layout uint8 }
+
+// DismissOSKMsg programmatically hides the on-screen keyboard (RFC-004 §5.7).
+type DismissOSKMsg struct{}
+
+// SetOSKModeMsg changes the OSK presentation mode at runtime.
+type SetOSKModeMsg struct{ Mode uint8 }
+
 // Cmd is a function that performs a side effect and optionally returns a Msg (RFC §3.6).
 // A nil Cmd means "no command".
 type Cmd func() Msg

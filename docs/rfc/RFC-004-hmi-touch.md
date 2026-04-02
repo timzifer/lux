@@ -16,7 +16,7 @@
 | §2 Interaction-Profile | ✅ Integriert | `interaction/profile.go` — ProfileDesktop, ProfileTouch, ProfileHMI; RenderCtx-Propagation, Hover-Elimination, GestureConfig-Ableitung |
 | §3 Gesture-Recognizer | ✅ Integriert | `input/gesture.go`, `ui/gesture.go` — Tap, LongPress, Pan, Pinch; Arena-basierte Disambiguierung |
 | §4 Touch-Feedback & Bestätigung | ⏳ Wartend | |
-| §5 On-Screen-Keyboard | ⏳ Wartend | |
+| §5 On-Screen-Keyboard | ✅ Integriert | `ui/osk/` — OSKLayout, OSKAction, OSKKey, 4 Modi (Alpha, NumPad, Full, Condensed); DPI-aware Sizing; Framework-Overlay in `app/run.go` |
 | §6 Spezialisierte Input-Widgets | ⏳ Wartend | |
 | §7 HMI-Theme-Profil | ⏳ Wartend | |
 | §8 Navigation & Layout-Patterns | ⏳ Wartend | |
