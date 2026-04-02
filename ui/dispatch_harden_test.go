@@ -291,7 +291,7 @@ func TestReconcileDispatchEndToEnd(t *testing.T) {
 	)
 
 	// Frame 1: establish widgets.
-	r.Reconcile(tree, th, noopSend, d, fm, "")
+	r.Reconcile(tree, th, noopSend, d, fm, "", nil)
 
 	uid1 := MakeUID(0, "w1", 0)
 	uid2 := MakeUID(0, "w2", 0)
@@ -302,7 +302,7 @@ func TestReconcileDispatchEndToEnd(t *testing.T) {
 	d.Dispatch()
 
 	// Frame 2: reconcile with dispatch.
-	r.Reconcile(tree, th, noopSend, d, fm, "")
+	r.Reconcile(tree, th, noopSend, d, fm, "", nil)
 
 	s1 := r.StateFor(uid1).(*eventCaptureState)
 	s2 := r.StateFor(uid2).(*eventCaptureState)
@@ -320,7 +320,7 @@ func TestReconcileDispatchEndToEnd(t *testing.T) {
 	d.Collect(input.KeyMsg{Key: input.KeyB, Action: input.KeyPress})
 	d.Dispatch()
 
-	r.Reconcile(tree, th, noopSend, d, fm, "")
+	r.Reconcile(tree, th, noopSend, d, fm, "", nil)
 
 	s1 = r.StateFor(uid1).(*eventCaptureState)
 	s2 = r.StateFor(uid2).(*eventCaptureState)
