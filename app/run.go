@@ -191,6 +191,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	reconciler := ui.NewReconciler()
 	currentModel := model
 	currentLocale := cfg.locale // BCP 47 tag, propagated to RenderCtx (RFC-003 §3.8)
+	activeProfile := cfg.profile // interaction profile, propagated to RenderCtx (RFC-004 §2.4)
+	if activeProfile != nil {
+		dispatcher.SetGestureConfig(ui.GestureConfigFromProfile(activeProfile))
+	}
 
 	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
 	dispatchCmd := func(cmd Cmd) {
@@ -234,6 +238,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					cachedTheme.WarmUp()
 					activeTheme = cachedTheme
 					updateBgColor()
+				case SetInteractionProfileMsg:
+					p := m.Profile
+					activeProfile = &p
 				default:
 					// Non-theme messages: feed through update normally.
 					newModel, cmd := update(currentModel, msg)
@@ -245,7 +252,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		}
 	}
 
-	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil, currentLocale)
+	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil, currentLocale, activeProfile)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
@@ -297,6 +304,12 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				case SetLocaleMsg:
 					currentLocale = m.Locale
 					applyLocale(m.Locale)
+					modelDirty = true // triggers full layout invalidation
+
+				case SetInteractionProfileMsg:
+					p := m.Profile
+					activeProfile = &p
+					dispatcher.SetGestureConfig(ui.GestureConfigFromProfile(activeProfile))
 					modelDirty = true // triggers full layout invalidation
 
 				case SetSizeMsg:
@@ -686,7 +699,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				dispatcher.Dispatch()
 
 				newTree := view(currentModel)
-				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm, currentLocale)
+				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm, currentLocale, activeProfile)
 
 				// Sort tab order derived from layout tree (RFC-002 §2.3).
 				fm.SortOrder()
@@ -710,7 +723,12 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			}
 
 			// 3. Update hover target from previous frame's hitMap.
+			// When the interaction profile disables hover (touch/HMI), always
+			// report no hover so widgets never show hover feedback (RFC-004 §2.6).
 			hoveredIdx := hitMap.HitTestIndex(mouseX, mouseY)
+			if activeProfile != nil && !activeProfile.HasHover {
+				hoveredIdx = -1
+			}
 			hoverState.SetHovered(hoveredIdx, activeTheme.Tokens().Motion.Quick.Duration)
 
 			// 4. Tick hover animations (RFC §12.2: AnimationTick before paint).

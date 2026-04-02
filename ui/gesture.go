@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/interaction"
 )
 
 // ── GestureConfig ────────────────────────────────────────────────
@@ -54,6 +55,21 @@ var DefaultGestureConfig = GestureConfig{
 	DragThreshold:     10,
 	SwipeVelocityMin:  300,
 	DebounceInterval:  0,
+}
+
+// GestureConfigFromProfile derives a GestureConfig from an InteractionProfile
+// (RFC-004 §2.2). If profile is nil, DefaultGestureConfig is returned.
+func GestureConfigFromProfile(profile *interaction.InteractionProfile) GestureConfig {
+	if profile == nil {
+		return DefaultGestureConfig
+	}
+	return GestureConfig{
+		LongPressDuration: profile.LongPressDuration,
+		DoubleTapInterval: profile.DoubleTapInterval,
+		DragThreshold:     profile.DragThreshold,
+		SwipeVelocityMin:  DefaultGestureConfig.SwipeVelocityMin, // not in profile
+		DebounceInterval:  profile.DebounceInterval,
+	}
 }
 
 // ── touchState ───────────────────────────────────────────────────
@@ -122,6 +138,13 @@ func NewGestureRecognizer(config GestureConfig) *GestureRecognizer {
 		touches:       make(map[int64]*touchState),
 		lastTapPerUID: make(map[UID]time.Time),
 	}
+}
+
+// SetConfig updates the gesture configuration at runtime (e.g. after
+// SetInteractionProfileMsg). Active touch sequences use the new config
+// from the next frame.
+func (g *GestureRecognizer) SetConfig(config GestureConfig) {
+	g.config = config
 }
 
 // Process takes the raw touch events for this frame and returns
