@@ -1,0 +1,28 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (7)
+  0: rect(24,24 400x250) color(15,17,21,255)
+  1: rect(74,58 340x186) color(23,26,32,255)
+  2: rect(80,151 54x93) color(76,141,255,255) r=2.0
+  3: rect(148,89 54x155) color(76,141,255,255) r=2.0
+  4: rect(216,120 54x124) color(76,141,255,255) r=2.0
+  5: rect(284,58 54x186) color(76,141,255,255) r=2.0
+  6: rect(352,104 54x139) color(76,141,255,255) r=2.0
+
+[Glyphs] (10)
+  0: glyph(64,250) scale=1 color(168,176,188,255) "0"
+  1: glyph(149,250) scale=1 color(168,176,188,255) "1"
+  2: glyph(234,250) scale=1 color(168,176,188,255) "2"
+  3: glyph(319,250) scale=1 color(168,176,188,255) "3"
+  4: glyph(404,250) scale=1 color(168,176,188,255) "4"
+  5: glyph(26,239) scale=1 color(168,176,188,255) "0"
+  6: glyph(26,177) scale=1 color(168,176,188,255) "20"
+  7: glyph(26,115) scale=1 color(168,176,188,255) "40"
+  8: glyph(26,53) scale=1 color(168,176,188,255) "60"
+  9: glyph(214,34) scale=2 color(238,242,247,255) "Sales"
+
+[ClipBatches] (2)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  1: clip(74,58 340x186) rects@2 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+
