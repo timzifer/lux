@@ -56,6 +56,21 @@ type Model struct {
 	OSKTextField1 string
 	OSKTextField2 string
 	OSKMode       osk.OSKMode
+
+	// HMI Widgets demo (RFC-004 §6)
+	NumericVal      float64
+	StepperVal      int
+	DrumPickerIdx   int
+	PinValue        string
+	HexValue        uint64
+	IPValue         string
+	UnitValue       float64
+	UnitSymbol      string
+	UnitState       *form.UnitInputState
+	RangeLow        float64
+	RangeHigh       float64
+	TimeValue       time.Time
+	DateValue       time.Time
 }
 
 func initialModel() Model {
@@ -72,6 +87,18 @@ func initialModel() Model {
 		ValveToggle:       form.NewToggleState(),
 		ConfirmMotorState: button.NewConfirmButtonState(),
 		HoldStopState:     button.NewHoldButtonState(),
+		// HMI Widgets defaults
+		NumericVal:  23.5,
+		StepperVal:  5,
+		HexValue:    0x00FF,
+		IPValue:     "192.168.1.1",
+		UnitValue:   25.0,
+		UnitSymbol:  "mm",
+		UnitState:   form.NewUnitInputState(),
+		RangeLow:    20,
+		RangeHigh:   80,
+		TimeValue:   time.Date(2026, 1, 1, 14, 30, 0, 0, time.UTC),
+		DateValue:   time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC),
 	}
 }
 
@@ -98,6 +125,24 @@ type EmergencyHoldCompleteMsg struct{}
 type SetOSKField1Msg struct{ V string }
 type SetOSKField2Msg struct{ V string }
 type SetDemoOSKModeMsg struct{ Mode osk.OSKMode }
+
+// HMI Widget messages (RFC-004 §6)
+type SetNumericValMsg struct{ V float64 }
+type SetStepperValMsg struct{ V int }
+type SetDrumPickerIdxMsg struct{ V int }
+type SetPinValueMsg struct{ V string }
+type SetHexValueMsg struct{ V uint64 }
+type SetIPValueMsg struct{ V string }
+type SetUnitValueMsg struct {
+	Value float64
+	Unit  string
+}
+type SetRangeMsg struct {
+	Low  float64
+	High float64
+}
+type SetTimeValueMsg struct{ V time.Time }
+type SetDateValueMsg struct{ V time.Time }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -166,6 +211,30 @@ func update(m Model, msg app.Msg) Model {
 	case SetDemoOSKModeMsg:
 		m.OSKMode = msg.Mode
 		app.Send(app.SetOSKModeMsg{Mode: uint8(msg.Mode)})
+
+	// HMI Widget messages
+	case SetNumericValMsg:
+		m.NumericVal = msg.V
+	case SetStepperValMsg:
+		m.StepperVal = msg.V
+	case SetDrumPickerIdxMsg:
+		m.DrumPickerIdx = msg.V
+	case SetPinValueMsg:
+		m.PinValue = msg.V
+	case SetHexValueMsg:
+		m.HexValue = msg.V
+	case SetIPValueMsg:
+		m.IPValue = msg.V
+	case SetUnitValueMsg:
+		m.UnitValue = msg.Value
+		m.UnitSymbol = msg.Unit
+	case SetRangeMsg:
+		m.RangeLow = msg.Low
+		m.RangeHigh = msg.High
+	case SetTimeValueMsg:
+		m.TimeValue = msg.V
+	case SetDateValueMsg:
+		m.DateValue = msg.V
 	}
 	return m
 }
@@ -182,6 +251,7 @@ func view(m Model) ui.Element {
 				{Header: display.Text("Controls"), Content: viewControls(m)},
 				{Header: display.Text("Touch Feedback"), Content: viewTouchFeedback(m)},
 				{Header: display.Text("Keyboard"), Content: viewKeyboard(m)},
+				{Header: display.Text("HMI Widgets"), Content: viewHMIWidgets(m)},
 				{Header: display.Text("Alarms"), Content: viewAlarms(m)},
 			},
 			m.ActiveTab,
@@ -450,6 +520,151 @@ func viewKeyboard(m Model) ui.Element {
 					button.TextRipple("Dismiss OSK", func() {
 						app.Send(app.DismissOSKMsg{})
 					}),
+				),
+			),
+		),
+	)
+}
+
+// ── HMI Widgets Tab (RFC-004 §6 Demo) ───────────────────────────
+
+func viewHMIWidgets(m Model) ui.Element {
+	units := []form.UnitDef{
+		{Symbol: "mm", Label: "Millimeter", Factor: 1},
+		{Symbol: "cm", Label: "Centimeter", Factor: 10},
+		{Symbol: "m", Label: "Meter", Factor: 1000},
+	}
+
+	drumItems := form.IntItems(0, 23)
+
+	return layout.Column(
+		display.Text("Spezialisierte HMI-Widgets (RFC-004 §6)"),
+		display.Divider(),
+
+		// NumericInput
+		display.Card(
+			layout.Column(
+				display.Text("NumericInput — Zahlenwert-Eingabe"),
+				form.NewNumericInput(m.NumericVal,
+					form.WithNumericLabel("Temperatur"),
+					form.WithUnit("°C"),
+					form.WithNumericRange(0, 100),
+					form.WithNumericStep(0.5),
+					form.WithNumericKind(form.NumericFloat),
+					form.WithPrecision(1),
+					form.WithOnNumericChange(func(v float64) { app.Send(SetNumericValMsg{V: v}) }),
+				),
+			),
+		),
+
+		// Stepper
+		display.Card(
+			layout.Column(
+				display.Text("Stepper — Inkrement/Dekrement"),
+				layout.Row(
+					form.NewStepper(m.StepperVal,
+						form.WithStepperRange(0, 20),
+						form.WithStepperStep(1),
+						form.WithOnStepperChange(func(v int) { app.Send(SetStepperValMsg{V: v}) }),
+					),
+					display.Text(fmt.Sprintf("Wert: %d", m.StepperVal)),
+				),
+			),
+		),
+
+		// DrumPicker
+		display.Card(
+			layout.Column(
+				display.Text("DrumPicker — Rollen-Auswahl"),
+				form.NewDrumPicker(drumItems, m.DrumPickerIdx,
+					form.WithOnDrumSelect(func(i int) { app.Send(SetDrumPickerIdxMsg{V: i}) }),
+					form.WithDrumLooping(),
+				),
+			),
+		),
+
+		// PinInput
+		display.Card(
+			layout.Column(
+				display.Text("PinInput — PIN-Eingabe"),
+				form.NewPinInput(4, m.PinValue,
+					form.WithPinMasked(),
+					form.WithOnPinChange(func(v string) { app.Send(SetPinValueMsg{V: v}) }),
+				),
+			),
+		),
+
+		// HexInput
+		display.Card(
+			layout.Column(
+				display.Text("HexInput — Hexadezimal-Eingabe"),
+				form.NewHexInput(m.HexValue,
+					form.WithHexDigits(4),
+					form.WithHexPrefix(),
+					form.WithHexUpper(),
+					form.WithOnHexChange(func(v uint64) { app.Send(SetHexValueMsg{V: v}) }),
+				),
+			),
+		),
+
+		// IPInput
+		display.Card(
+			layout.Column(
+				display.Text("IPInput — IPv4-Adresse"),
+				form.NewIPInput(m.IPValue,
+					form.WithOnIPChange(func(v string) { app.Send(SetIPValueMsg{V: v}) }),
+				),
+			),
+		),
+
+		// UnitInput
+		display.Card(
+			layout.Column(
+				display.Text("UnitInput — Wert mit Einheit"),
+				form.NewUnitInput(m.UnitValue, m.UnitSymbol, units,
+					form.WithUnitRange(0, 1000),
+					form.WithUnitStep(0.5),
+					form.WithUnitState(m.UnitState),
+					form.WithOnUnitChange(func(v float64, u string) {
+						app.Send(SetUnitValueMsg{Value: v, Unit: u})
+					}),
+				),
+			),
+		),
+
+		// RangeInput
+		display.Card(
+			layout.Column(
+				display.Text(fmt.Sprintf("RangeInput — Bereich: %.0f – %.0f", m.RangeLow, m.RangeHigh)),
+				form.NewRangeInput(m.RangeLow, m.RangeHigh, 0, 100,
+					form.WithRangeStep(5),
+					form.WithRangeLabels(),
+					form.WithOnRangeChange(func(lo, hi float64) {
+						app.Send(SetRangeMsg{Low: lo, High: hi})
+					}),
+				),
+			),
+		),
+
+		// TimeInput
+		display.Card(
+			layout.Column(
+				display.Text("TimeInput — Uhrzeit-Eingabe"),
+				form.NewTimeInput(m.TimeValue,
+					form.WithTimeFormat(form.TimeFormatHHMM),
+					form.WithMinuteStep(5),
+					form.WithOnTimeInputChange(func(t time.Time) { app.Send(SetTimeValueMsg{V: t}) }),
+				),
+			),
+		),
+
+		// DateInput
+		display.Card(
+			layout.Column(
+				display.Text("DateInput — Datum-Eingabe"),
+				form.NewDateInput(m.DateValue,
+					form.WithDateMode(form.DateModeDrum),
+					form.WithOnDateInputChange(func(t time.Time) { app.Send(SetDateValueMsg{V: t}) }),
 				),
 			),
 		),
