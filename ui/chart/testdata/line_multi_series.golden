@@ -1,0 +1,29 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (4)
+  0: rect(24,24 400x250) color(15,17,21,255)
+  1: rect(74,58 340x166) color(23,26,32,255)
+  2: rect(74,256 8x8) color(78,121,167,255)
+  3: rect(121,256 8x8) color(242,142,43,255)
+
+[Glyphs] (13)
+  0: glyph(64,230) scale=1 color(168,176,188,255) "0"
+  1: glyph(149,230) scale=1 color(168,176,188,255) "1"
+  2: glyph(234,230) scale=1 color(168,176,188,255) "2"
+  3: glyph(319,230) scale=1 color(168,176,188,255) "3"
+  4: glyph(404,230) scale=1 color(168,176,188,255) "4"
+  5: glyph(26,214) scale=1 color(168,176,188,255) "20"
+  6: glyph(26,174) scale=1 color(168,176,188,255) "30"
+  7: glyph(26,133) scale=1 color(168,176,188,255) "40"
+  8: glyph(26,93) scale=1 color(168,176,188,255) "50"
+  9: glyph(26,53) scale=1 color(168,176,188,255) "60"
+  10: glyph(172,34) scale=2 color(238,242,247,255) "Multi-Series"
+  11: glyph(85,255) scale=1 color(168,176,188,255) "Temp"
+  12: glyph(132,255) scale=1 color(168,176,188,255) "Humidity"
+
+[ClipBatches] (3)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  1: clip(74,58 340x166) rects@2 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+  2: clip(0,0 800x600) full-viewport rects@2 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

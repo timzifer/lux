@@ -14,6 +14,7 @@ import (
 
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/platform"
@@ -29,6 +30,9 @@ type SetThemeMsg struct{ Theme theme.Theme }
 
 // SetDarkModeMsg toggles between the built-in dark and light themes (RFC §5.5).
 type SetDarkModeMsg struct{ Dark bool }
+
+// SetInteractionProfileMsg switches the active interaction profile at runtime (RFC-004 §2.4).
+type SetInteractionProfileMsg struct{ Profile interaction.InteractionProfile }
 
 // ModelRestoredMsg is sent once after a persisted model is successfully loaded (RFC §3.4).
 // Handle this in your update function to apply side effects from the restored state
@@ -104,6 +108,7 @@ type options struct {
 	maxFrameDelta   time.Duration
 	theme           theme.Theme
 	locale          string // BCP 47 language tag (RFC-003 §3.8)
+	profile         *interaction.InteractionProfile // RFC-004 §2.4
 	platformFactory func() platform.Platform
 	rendererFactory func() gpu.Renderer
 	shortcuts       []shortcutEntry
@@ -178,6 +183,13 @@ func WithMaxFrameDelta(d time.Duration) Option {
 // WithTheme sets the application theme (RFC §5).
 func WithTheme(t theme.Theme) Option {
 	return func(o *options) { o.theme = t }
+}
+
+// WithInteractionProfile sets the interaction profile (RFC-004 §2.4).
+// The profile influences layout sizing (MinTouchTarget), gesture thresholds,
+// hover behavior, and typography scaling. Defaults to nil (desktop behavior).
+func WithInteractionProfile(p interaction.InteractionProfile) Option {
+	return func(o *options) { o.profile = &p }
 }
 
 // WithPlatform overrides the platform backend.

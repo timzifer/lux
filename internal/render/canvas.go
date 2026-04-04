@@ -382,11 +382,13 @@ func (c *SceneCanvas) FillPath(p draw.Path, paint draw.Paint) {
 	if len(verts) == 0 {
 		return
 	}
-	if off.X != 0 || off.Y != 0 {
-		for i := range verts {
-			verts[i].X += off.X
-			verts[i].Y += off.Y
-		}
+	for i := range verts {
+		verts[i].X += off.X
+		verts[i].Y += off.Y
+		verts[i].R = color.R
+		verts[i].G = color.G
+		verts[i].B = color.B
+		verts[i].A = color.A
 	}
 	c.emitClipIfChanged()
 	batch := draw.DrawPathBatch{
@@ -424,11 +426,13 @@ func (c *SceneCanvas) StrokePath(p draw.Path, stroke draw.Stroke) {
 	if len(verts) == 0 {
 		return
 	}
-	if off.X != 0 || off.Y != 0 {
-		for i := range verts {
-			verts[i].X += off.X
-			verts[i].Y += off.Y
-		}
+	for i := range verts {
+		verts[i].X += off.X
+		verts[i].Y += off.Y
+		verts[i].R = color.R
+		verts[i].G = color.G
+		verts[i].B = color.B
+		verts[i].A = color.A
 	}
 	c.emitClipIfChanged()
 	batch := draw.DrawPathBatch{
