@@ -20,6 +20,7 @@ import (
 	"github.com/timzifer/lux/ui/form"
 	"github.com/timzifer/lux/ui/layout"
 	"github.com/timzifer/lux/ui/nav"
+	"github.com/timzifer/lux/ui/osk"
 )
 
 // ── Model ────────────────────────────────────────────────────────
@@ -49,6 +50,11 @@ type Model struct {
 	// Touch feedback states (RFC-004 §4)
 	ConfirmMotorState *button.ConfirmButtonState
 	HoldStopState     *button.HoldButtonState
+
+	// On-Screen Keyboard demo (RFC-004 §5)
+	OSKTextField1 string
+	OSKTextField2 string
+	OSKMode       osk.OSKMode
 }
 
 func initialModel() Model {
@@ -86,6 +92,11 @@ type SetConveyorSpeedMsg struct{ V float32 }
 // Touch-feedback messages (RFC-004 §4)
 type ConfirmMotorStartMsg struct{}
 type EmergencyHoldCompleteMsg struct{}
+
+// On-Screen Keyboard messages (RFC-004 §5)
+type SetOSKField1Msg struct{ V string }
+type SetOSKField2Msg struct{ V string }
+type SetDemoOSKModeMsg struct{ Mode osk.OSKMode }
 
 // ── Update ───────────────────────────────────────────────────────
 
@@ -146,6 +157,14 @@ func update(m Model, msg app.Msg) Model {
 	case EmergencyHoldCompleteMsg:
 		m.MotorRunning = false
 		m.PumpActive = false
+
+	case SetOSKField1Msg:
+		m.OSKTextField1 = msg.V
+	case SetOSKField2Msg:
+		m.OSKTextField2 = msg.V
+	case SetDemoOSKModeMsg:
+		m.OSKMode = msg.Mode
+		app.Send(app.SetOSKModeMsg{Mode: uint8(msg.Mode)})
 	}
 	return m
 }
@@ -161,6 +180,7 @@ func view(m Model) ui.Element {
 				{Header: display.Text("Dashboard"), Content: viewDashboard(m)},
 				{Header: display.Text("Controls"), Content: viewControls(m)},
 				{Header: display.Text("Touch Feedback"), Content: viewTouchFeedback(m)},
+				{Header: display.Text("Keyboard"), Content: viewKeyboard(m)},
 				{Header: display.Text("Alarms"), Content: viewAlarms(m)},
 			},
 			m.ActiveTab,
@@ -357,6 +377,79 @@ func viewTouchFeedback(m Model) ui.Element {
 				statusBadge(fmt.Sprintf("%v", m.MotorRunning), m.MotorRunning),
 				display.Text("Pump"),
 				statusBadge(fmt.Sprintf("%v", m.PumpActive), m.PumpActive),
+			),
+		),
+	)
+}
+
+// ── Keyboard Tab (RFC-004 §5 Demo) ──────────────────────────────
+
+func viewKeyboard(m Model) ui.Element {
+	modeLabel := func(mode osk.OSKMode) string {
+		switch mode {
+		case osk.ModeAlpha:
+			return "Alpha"
+		case osk.ModeNumPad:
+			return "NumPad"
+		case osk.ModeFull:
+			return "Full"
+		case osk.ModeCondensed:
+			return "Condensed"
+		default:
+			return "?"
+		}
+	}
+
+	return layout.Column(
+		display.Text("On-Screen Keyboard Demo (RFC-004 §5)"),
+		display.Divider(),
+
+		display.Card(
+			layout.Column(
+				display.Text("Tap a text field to open the OSK (works in Touch/HMI profile)."),
+				display.Text("Text Field 1:"),
+				form.NewTextField(m.OSKTextField1, "Type here...",
+					form.WithOnChange(func(v string) { app.Send(SetOSKField1Msg{V: v}) }),
+					form.WithFocus(app.Focus()),
+				),
+				display.Text("Text Field 2:"),
+				form.NewTextField(m.OSKTextField2, "Or here...",
+					form.WithOnChange(func(v string) { app.Send(SetOSKField2Msg{V: v}) }),
+					form.WithFocus(app.Focus()),
+				),
+			),
+		),
+
+		display.Divider(),
+
+		display.Card(
+			layout.Column(
+				display.Text(fmt.Sprintf("OSK Mode: %s", modeLabel(m.OSKMode))),
+				layout.Row(
+					button.Text("Alpha", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeAlpha}) }),
+					button.Text("NumPad", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeNumPad}) }),
+					button.Text("Full", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeFull}) }),
+					button.Text("Condensed", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeCondensed}) }),
+				),
+			),
+		),
+
+		display.Divider(),
+
+		display.Card(
+			layout.Column(
+				display.Text("Programmatic OSK Control:"),
+				layout.Row(
+					button.Text("Show OSK (Alpha)", func() {
+						app.Send(app.ShowOSKMsg{Layout: uint8(osk.OSKLayoutAlpha)})
+					}),
+					button.Text("Show OSK (Numeric)", func() {
+						app.Send(app.ShowOSKMsg{Layout: uint8(osk.OSKLayoutNumeric)})
+					}),
+					button.Text("Dismiss OSK", func() {
+						app.Send(app.DismissOSKMsg{})
+					}),
+				),
 			),
 		),
 	)
