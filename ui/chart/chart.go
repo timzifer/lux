@@ -1,46 +1,57 @@
 package chart
 
-import (
-	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/theme"
-)
+import "github.com/timzifer/lux/draw"
+
+// DefaultPalette provides 10 high-contrast, perceptually distinct colors
+// suitable for differentiating data series on both light and dark backgrounds.
+// Inspired by the Tableau 10 categorical palette.
+var DefaultPalette = []draw.Color{
+	draw.Hex("#4e79a7"), // blue
+	draw.Hex("#f28e2b"), // orange
+	draw.Hex("#e15759"), // red
+	draw.Hex("#76b7b2"), // teal
+	draw.Hex("#59a14f"), // green
+	draw.Hex("#edc948"), // gold
+	draw.Hex("#b07aa1"), // purple
+	draw.Hex("#ff9da7"), // pink
+	draw.Hex("#9c755f"), // brown
+	draw.Hex("#bab0ac"), // grey
+}
 
 // ChartConfig is the common configuration for Cartesian chart types.
 type ChartConfig struct {
-	Width    float32 // desired width in dp; 0 = fill parent
-	Height   float32 // desired height in dp; 0 = 300
+	Width    float32      // desired width in dp; 0 = fill parent
+	Height   float32      // desired height in dp; 0 = 300
 	XAxis    Axis
 	YAxis    Axis
-	Viewport *Viewport // nil = auto-range; non-nil = controlled pan/zoom
+	Viewport *Viewport    // nil = auto-range; non-nil = controlled pan/zoom
 	Title    string
+	Palette  []draw.Color // custom series colors; nil = DefaultPalette
 }
 
-// defaultPalette returns a set of distinguishable colors derived from theme tokens.
-func defaultPalette(tokens theme.TokenSet) []draw.Color {
-	return []draw.Color{
-		tokens.Colors.Accent.Primary,
-		tokens.Colors.Accent.Secondary,
-		tokens.Colors.Status.Success,
-		tokens.Colors.Status.Warning,
-		tokens.Colors.Status.Error,
-		tokens.Colors.Status.Info,
-		// Extended palette via hue shifts.
-		draw.RGBA(0x9C, 0x27, 0xB0, 0xFF), // purple
-		draw.RGBA(0x00, 0x96, 0x88, 0xFF), // teal
-		draw.RGBA(0xFF, 0x57, 0x22, 0xFF), // deep orange
-		draw.RGBA(0x60, 0x7D, 0x8B, 0xFF), // blue-grey
+// resolvePalette returns the custom palette if non-empty, else DefaultPalette.
+func resolvePalette(custom []draw.Color) []draw.Color {
+	if len(custom) > 0 {
+		return custom
 	}
+	return DefaultPalette
 }
 
-// seriesColor returns the effective color for a series at index i.
+// seriesColor returns the effective color for a series at index i,
+// cycling through the palette when there are more series than colors.
 func seriesColor(s Series, i int, palette []draw.Color) draw.Color {
 	if s.Color != (draw.Color{}) {
 		return s.Color
 	}
-	if i < len(palette) {
-		return palette[i]
+	return palette[i%len(palette)]
+}
+
+// sliceColor returns the effective color for a pie slice at index i.
+func sliceColor(s PieSlice, i int, palette []draw.Color) draw.Color {
+	if s.Color != (draw.Color{}) {
+		return s.Color
 	}
-	return draw.RGBA(0x42, 0x42, 0x42, 0xFF)
+	return palette[i%len(palette)]
 }
 
 // withAlpha returns the given color with a modified alpha.

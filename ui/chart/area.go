@@ -19,12 +19,16 @@ func (n *AreaChartElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	tokens := ctx.Tokens
 
 	w, h := chartSize(n.Config, area.W)
-	palette := defaultPalette(tokens)
+	palette := resolvePalette(n.Config.Palette)
 	hasLegend := len(n.Series) > 1
 	pa := computePlotArea(float32(area.X), float32(area.Y), w, h, n.Config.Title, hasLegend)
 
 	xMin, xMax := resolveRange(n.Config.XAxis, n.Config.Viewport, n.Series, 'x')
 	yMin, yMax := resolveRange(n.Config.YAxis, n.Config.Viewport, n.Series, 'y')
+	// Area fill should start from zero on Y-axis when auto-ranging.
+	if n.Config.YAxis.Min == nil && n.Config.Viewport == nil && yMin > 0 {
+		yMin = 0
+	}
 	t := transform{xMin: xMin, xMax: xMax, yMin: yMin, yMax: yMax, plot: pa.inner}
 
 	drawBackground(canvas, pa, tokens)

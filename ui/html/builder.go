@@ -322,14 +322,24 @@ func (b *builder) collectChildren(node *dom.Node) []floatChild {
 				childFloat := resolveFloat(childStyle)
 				childClear := resolveClear(childStyle)
 
-				el := b.buildElementNode(child)
-				if el != nil {
-					fc := floatChild{
-						element: el,
-						float:   childFloat,
-						clear:   childClear,
+				// CSS float propagation: floats escape non-BFC containers
+				// to the nearest BFC ancestor. If this child is a non-BFC,
+				// non-visual block with floated descendants, hoist them.
+				if childFloat == FloatNone && childClear == ClearNone &&
+					!b.nodeEstablishesBFC(child) && !b.hasVisualBoxStyle(child) &&
+					b.hasFloatedDescendants(child) {
+					hoisted := b.hoistFloats(child)
+					result = append(result, hoisted...)
+				} else {
+					el := b.buildElementNode(child)
+					if el != nil {
+						fc := floatChild{
+							element: el,
+							float:   childFloat,
+							clear:   childClear,
+						}
+						result = append(result, fc)
 					}
-					result = append(result, fc)
 				}
 			}
 		}
@@ -444,9 +454,9 @@ func (b *builder) hoistFloats(node *dom.Node) []floatChild {
 		}
 		el = applyBoxStyle(el, style, fontSize)
 		result = append(result, floatChild{element: el})
-	} else {
-		// Even with no non-floated content, the parent may have
-		// padding/border/background that needs rendering.
+	} else if b.hasVisualBoxStyle(node) {
+		// The parent has padding/border/background that needs rendering
+		// even without non-floated content.
 		el := applyBoxStyle(display.Text(""), style, fontSize)
 		if _, ok := el.(StyledBox); ok {
 			result = append(result, floatChild{element: el})
