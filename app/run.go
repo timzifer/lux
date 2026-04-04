@@ -19,6 +19,7 @@ import (
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/osk"
 )
 
 // msdfReadyMsg is an internal message sent when background MSDF rasterization
@@ -263,6 +264,13 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var dragRelease func(x, y float32)  // called once when drag ends
 	var currentCursor input.CursorKind
 	var dynamicHandlers []globalHandlerEntry
+
+	// On-Screen Keyboard state (RFC-004 §5).
+	var oskState osk.OSKState
+	osk.SetSendFunc(Send)
+	defer osk.SetSendFunc(nil)
+	// Track previous focus input to detect focus changes for auto-show/dismiss.
+	var prevHadInput bool
 
 	// State persistence: save persisted model on shutdown (RFC §3.4).
 	if cfg.persistence != nil {
@@ -636,6 +644,56 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					modelDirty = true
 					return true
 
+				// OSK framework messages (RFC-004 §5).
+				case ShowOSKMsg:
+					oskState.Visible = true
+					oskState.Layout = osk.OSKLayout(m.Layout)
+					oskState.Mode = osk.ModeForLayout(osk.OSKLayout(m.Layout))
+					modelDirty = true
+					return true
+				case DismissOSKMsg:
+					oskState.Visible = false
+					modelDirty = true
+					return true
+				case SetOSKModeMsg:
+					oskState.Mode = osk.OSKMode(m.Mode)
+					modelDirty = true
+					return true
+				case osk.OSKToggleShiftMsg:
+					oskState.Shifted = !oskState.Shifted
+					modelDirty = true
+					return true
+				case osk.OSKSwitchLayerMsg:
+					// Toggle between alpha and numpad.
+					if oskState.Mode == osk.ModeAlpha || oskState.Mode == osk.ModeCondensed {
+						oskState.Mode = osk.ModeNumPad
+					} else {
+						oskState.Mode = osk.ModeAlpha
+					}
+					oskState.Shifted = false
+					modelDirty = true
+					return true
+				case osk.OSKDismissMsg:
+					oskState.Visible = false
+					modelDirty = true
+					return true
+				case osk.OSKSignMsg:
+					// Toggle sign on numeric input: inject +/- at start of value.
+					if is := fm.Input; is != nil {
+						if len(is.Value) > 0 && is.Value[0] == '-' {
+							is.Value = is.Value[1:]
+							if is.CursorOffset > 0 {
+								is.CursorOffset--
+							}
+						} else {
+							is.Value = "-" + is.Value
+							is.CursorOffset++
+						}
+						is.ClearSelection()
+						is.OnChange(is.Value)
+						modelDirty = true
+					}
+					return true
 				case input.ResizeMsg:
 					// Window resize must force a full layout + repaint even if
 					// the user's update function doesn't handle the message.
@@ -680,6 +738,25 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			currentModel = tickModel
 			dispatchCmd(tickCmd)
 			focusDirty := fm.ConsumeDirty()
+
+			// OSK auto-show/dismiss (RFC-004 §5.1): when a text field gains
+			// focus and there is no physical keyboard, show the OSK.
+			hasInput := fm.Input != nil
+			if hasInput != prevHadInput {
+				prevHadInput = hasInput
+				if activeProfile != nil && !activeProfile.HasPhysicalKeyboard {
+					if hasInput && !oskState.Visible {
+						oskState.Visible = true
+						oskState.Mode = osk.ModeForLayout(oskState.Layout)
+						oskState.Shifted = false
+						modelDirty = true
+					} else if !hasInput && oskState.Visible {
+						oskState.Visible = false
+						modelDirty = true
+					}
+				}
+			}
+
 			modelDirty = modelDirty || tickDirty || animDirty || stateDirty || focusDirty
 
 			// Re-run view and reconcile only when the model changed.
@@ -768,8 +845,25 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				hitMap.Reset()
 				ix := ui.NewInteractor(&hitMap, &hoverState)
 
+				// If the OSK is visible, reduce the content area by the OSK height (RFC-004 §5.2).
+				contentH := h
+				oskH := oskState.Height(w, h, canvas.DPR())
+				if oskState.Visible && oskH > 0 {
+					contentH = h - int(oskH)
+					if contentH < 100 {
+						contentH = 100
+					}
+				}
+
 				paintStart := time.Now()
-				scene := ui.BuildScene(currentTree, canvas, activeTheme, w, h, ix, fm)
+
+				// Build the OSK element (if visible) so BuildScene can render it (RFC-004 §5.5).
+				var oskEl ui.Element
+				if oskState.Visible {
+					oskEl = osk.NewOSKElement(&oskState, w, h)
+				}
+				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl)
+
 				paintTime := time.Since(paintStart)
 
 				// Inspector: finalize frame and send to client.
