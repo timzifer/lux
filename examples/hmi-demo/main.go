@@ -51,6 +51,7 @@ type Model struct {
 	ConfirmMotorState *button.ConfirmButtonState
 	HoldStopState     *button.HoldButtonState
 
+
 	// On-Screen Keyboard demo (RFC-004 §5)
 	OSKTextField1 string
 	OSKTextField2 string
@@ -197,16 +198,16 @@ func viewToolbar(m Model) ui.Element {
 	}
 	return layout.Row(
 		display.Text(fmt.Sprintf("Profile: %s", m.ProfileName)),
-		button.Text("Desktop", func() {
+		button.TextRipple("Desktop", func() {
 			app.Send(SetProfileMsg{"Desktop", interaction.ProfileDesktop})
 		}),
-		button.Text("Touch", func() {
+		button.TextRipple("Touch", func() {
 			app.Send(SetProfileMsg{"Touch", interaction.ProfileTouch})
 		}),
-		button.Text("HMI", func() {
+		button.TextRipple("HMI", func() {
 			app.Send(SetProfileMsg{"HMI", interaction.ProfileHMI})
 		}),
-		button.Text(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
+		button.TextRipple(themeLabel, func() { app.Send(ToggleThemeMsg{}) }),
 	)
 }
 
@@ -426,10 +427,10 @@ func viewKeyboard(m Model) ui.Element {
 			layout.Column(
 				display.Text(fmt.Sprintf("OSK Mode: %s", modeLabel(m.OSKMode))),
 				layout.Row(
-					button.Text("Alpha", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeAlpha}) }),
-					button.Text("NumPad", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeNumPad}) }),
-					button.Text("Full", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeFull}) }),
-					button.Text("Condensed", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeCondensed}) }),
+					button.TextRipple("Alpha", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeAlpha}) }),
+					button.TextRipple("NumPad", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeNumPad}) }),
+					button.TextRipple("Full", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeFull}) }),
+					button.TextRipple("Condensed", func() { app.Send(SetDemoOSKModeMsg{Mode: osk.ModeCondensed}) }),
 				),
 			),
 		),
@@ -440,13 +441,13 @@ func viewKeyboard(m Model) ui.Element {
 			layout.Column(
 				display.Text("Programmatic OSK Control:"),
 				layout.Row(
-					button.Text("Show OSK (Alpha)", func() {
+					button.TextRipple("Show OSK (Alpha)", func() {
 						app.Send(app.ShowOSKMsg{Layout: uint8(osk.OSKLayoutAlpha)})
 					}),
-					button.Text("Show OSK (Numeric)", func() {
+					button.TextRipple("Show OSK (Numeric)", func() {
 						app.Send(app.ShowOSKMsg{Layout: uint8(osk.OSKLayoutNumeric)})
 					}),
-					button.Text("Dismiss OSK", func() {
+					button.TextRipple("Dismiss OSK", func() {
 						app.Send(app.DismissOSKMsg{})
 					}),
 				),

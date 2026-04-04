@@ -476,6 +476,7 @@ type FocusState = FocusManager
 type HoverState struct {
 	hoveredIdx int                  // currently hovered button index, -1 = none
 	anims      []anim.Anim[float32] // per-button hover opacity [0,1]
+	ripples    []RippleState        // per-button touch ripple state
 	buttonIdx  int                  // counter during BuildScene
 	inited     bool                 // tracks whether hoveredIdx has been set
 }
@@ -504,12 +505,17 @@ func (h *HoverState) SetHovered(idx int, dur time.Duration) {
 	}
 }
 
-// Tick advances all hover animations by dt.
+// Tick advances all hover and ripple animations by dt.
 // Returns true if any animation is still running.
 func (h *HoverState) Tick(dt time.Duration) bool {
 	running := false
 	for i := range h.anims {
 		if h.anims[i].Tick(dt) {
+			running = true
+		}
+	}
+	for i := range h.ripples {
+		if h.ripples[i].Tick(dt) {
 			running = true
 		}
 	}
@@ -526,6 +532,20 @@ func (h *HoverState) nextButtonHoverOpacity() float32 {
 	h.buttonIdx++
 	h.ensureSize(h.buttonIdx)
 	return h.anims[idx].Value()
+}
+
+// currentButtonRipple returns a pointer to the ripple for the button that
+// was most recently allocated via nextButtonHoverOpacity. The caller must
+// have called nextButtonHoverOpacity before this.
+func (h *HoverState) currentButtonRipple() *RippleState {
+	idx := h.buttonIdx - 1 // buttonIdx was already incremented
+	if idx < 0 {
+		return nil
+	}
+	for len(h.ripples) <= idx {
+		h.ripples = append(h.ripples, RippleState{})
+	}
+	return &h.ripples[idx]
 }
 
 func (h *HoverState) ensureSize(n int) {

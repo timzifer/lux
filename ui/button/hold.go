@@ -23,17 +23,24 @@ const (
 	holdFlashCycles     = 3.0                    // number of blink cycles
 	progressRingStroke  = 4.0                    // ring stroke width (dp)
 	progressRingGap     = 6.0                    // gap between button edge and ring
+
+	// Minimum ring radius based on a standard finger pad (~10 mm).
+	// At the baseline density (160 dpi) 1 dp ≈ 0.16 mm, so 10 mm ≈ 63 dp
+	// → radius ≈ 28 dp.  The ring is drawn at least this large so it
+	// always encloses the touch area regardless of button dimensions.
+	fingerRadius = 28.0 // dp – half of a ~10 mm finger pad
 )
 
 // HoldButtonState holds mutable animation state for a HoldButton.
 // Allocate with NewHoldButtonState and store in your Model.
 type HoldButtonState struct {
-	holding   bool
-	progress  anim.Anim[float32] // 0→1 (fill) or 1→0 (release snap-back)
-	flashAnim anim.Anim[float32] // 0→1 over ~900ms for completion blink
-	flashing  bool               // true during post-completion flash
-	ripple    RippleState
-	completed bool // latched on completion, reset on next press
+	holding    bool
+	touchX, touchY float32              // touch origin for ring centering
+	progress   anim.Anim[float32]      // 0→1 (fill) or 1→0 (release snap-back)
+	flashAnim  anim.Anim[float32]      // 0→1 over ~900ms for completion blink
+	flashing   bool                    // true during post-completion flash
+	ripple     ui.RippleState
+	completed  bool // latched on completion, reset on next press
 }
 
 // NewHoldButtonState creates a ready-to-use state.
@@ -130,6 +137,7 @@ func (n HoldButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			// On first drag call, start the hold.
 			if !st.holding && !st.completed {
 				st.holding = true
+				st.touchX, st.touchY = x, y
 				st.progress.SetImmediate(0)
 				st.progress.SetTarget(1, holdDur, anim.Linear)
 				st.ripple.Trigger(x, y, maxRippleRadius(x, y, buttonRect.X, buttonRect.Y, buttonRect.W, buttonRect.H))
@@ -185,50 +193,49 @@ func (n HoldButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		ui.DrawFocusRing(canvas, buttonRect, tokens.Radii.Button, tokens)
 	}
 
-	// Ripple overlay.
-	st.ripple.Draw(canvas, buttonRect, tokens.Radii.Button, tokens.Colors.Accent.Primary)
+	// Ripple overlay — use text colour so the pulse contrasts with the button fill.
+	st.ripple.Draw(canvas, buttonRect, tokens.Radii.Button, textColor)
 
 	// Draw label centred.
 	canvas.DrawText(n.Label,
 		draw.Pt(float32(area.X+(w-contentW)/2), float32(area.Y+(h-contentH)/2)),
 		style, textColor)
 
-	// ── Radial progress ring ───────────────────────────────────
+	// ── Radial progress ring (centered on touch point) ────────
 	if st.flashing {
-		// Completion flash: full ring with blinking opacity.
 		flashT := st.flashAnim.Value()
 		blinkOpacity := float32(math.Abs(math.Sin(float64(flashT) * holdFlashCycles * math.Pi)))
-		drawProgressRing(canvas, buttonRect, 1.0, blinkOpacity, tokens.Colors.Accent.Primary)
+		drawProgressRing(canvas, st.touchX, st.touchY, 1.0, blinkOpacity, tokens.Colors.Accent.Primary)
 	} else if progress := st.progress.Value(); progress > 0.001 {
-		drawProgressRing(canvas, buttonRect, progress, 1.0, tokens.Colors.Accent.Primary)
+		drawProgressRing(canvas, st.touchX, st.touchY, progress, 1.0, tokens.Colors.Accent.Primary)
 	}
 
-	// Total bounds include the ring outside the button.
-	ringMargin := int(progressRingGap + progressRingStroke + 1)
+	// Total bounds include the fixed-size ring outside the button.
+	ringR := fingerRadius + progressRingGap + progressRingStroke + 1
+	ringMarginX := int(ringR) - w/2
+	ringMarginY := int(ringR) - h/2
+	if ringMarginX < 0 {
+		ringMarginX = 0
+	}
+	if ringMarginY < 0 {
+		ringMarginY = 0
+	}
 	return ui.Bounds{
-		X: area.X - ringMargin, Y: area.Y - ringMargin,
-		W: w + ringMargin*2, H: h + ringMargin*2,
-		Baseline: ringMargin + ui.ButtonPadY + contentH,
+		X: area.X - ringMarginX, Y: area.Y - ringMarginY,
+		W: w + ringMarginX*2, H: h + ringMarginY*2,
+		Baseline: ringMarginY + ui.ButtonPadY + contentH,
 	}
 }
 
-// drawProgressRing draws a clockwise circular arc from 12-o'clock around the button.
-// opacity modulates the ring alpha (0–1), used for the completion flash blink.
-func drawProgressRing(canvas draw.Canvas, rect draw.Rect, progress, opacity float32, color draw.Color) {
+// drawProgressRing draws a clockwise circular arc from 12-o'clock,
+// centered on (cx, cy) — typically the touch origin.
+func drawProgressRing(canvas draw.Canvas, cx, cy, progress, opacity float32, color draw.Color) {
 	if progress <= 0 || opacity <= 0 {
 		return
 	}
 
-	cx := rect.X + rect.W/2
-	cy := rect.Y + rect.H/2
-	// Circular radius: use the larger half-dimension so the ring encloses the button.
-	halfW := rect.W / 2
-	halfH := rect.H / 2
-	r := halfW
-	if halfH > r {
-		r = halfH
-	}
-	r += progressRingGap
+	// Fixed radius based on a standard finger pad (~10 mm ≈ 28 dp).
+	r := float32(fingerRadius) + progressRingGap
 
 	ringColor := draw.Color{R: color.R, G: color.G, B: color.B, A: 0.9 * opacity}
 

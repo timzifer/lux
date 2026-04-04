@@ -18,6 +18,7 @@ type Button struct {
 	OnClick  func()
 	Variant  ui.ButtonVariant
 	Disabled bool
+	Ripple   bool // enable touch ripple feedback (HMI/touch mode)
 }
 
 // Text creates a filled button with a text label.
@@ -26,6 +27,16 @@ func Text(label string, onClick func()) ui.Element {
 		Content: display.TextElement{Content: label},
 		OnClick: onClick,
 		Variant: ui.ButtonFilled,
+	}
+}
+
+// TextRipple creates a filled button with a text label and touch ripple feedback.
+func TextRipple(label string, onClick func()) ui.Element {
+	return Button{
+		Content: display.TextElement{Content: label},
+		OnClick: onClick,
+		Variant: ui.ButtonFilled,
+		Ripple:  true,
 	}
 }
 
@@ -96,9 +107,13 @@ func (n Button) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Register hit target and get hover opacity atomically.
 	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 	var hoverOpacity float32
+	var ripple *ui.RippleState
 	if n.Disabled {
 		// Disabled: register no-op to keep hover index aligned.
 		ix.RegisterHit(buttonRect, nil)
+	} else if n.Ripple {
+		// Positional click with framework-managed ripple.
+		hoverOpacity, ripple = ix.RegisterHitRipple(buttonRect, n.OnClick)
 	} else {
 		hoverOpacity = ix.RegisterHit(buttonRect, n.OnClick)
 	}
@@ -157,6 +172,11 @@ func (n Button) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		// Focus glow.
 		if focused {
 			ui.DrawFocusRing(canvas, buttonRect, tokens.Radii.Button, tokens)
+		}
+
+		// Ripple overlay — use text colour so the pulse contrasts with the button fill.
+		if ripple != nil {
+			ripple.Draw(canvas, buttonRect, tokens.Radii.Button, textColor)
 		}
 
 		// Pass 2: render content centered.
