@@ -694,6 +694,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 						modelDirty = true
 					}
 					return true
+				case input.ResizeMsg:
+					// Window resize must force a full layout + repaint even if
+					// the user's update function doesn't handle the message.
+					modelDirty = true
 
 				case input.MouseMsg:
 					dispatcher.Collect(m)
@@ -881,9 +885,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				renderer.EndFrame()
 			}
 
-			// Request continued rendering while animations are active,
-			// so platforms that idle between frames keep ticking.
-			if animDirty || hoverDirty {
+			// Request continued rendering while animations, tick-driven
+			// model changes, or dirty-tracked widgets are active, so
+			// platforms that idle between frames keep ticking.
+			if animDirty || hoverDirty || tickDirty || stateDirty {
 				plat.RequestFrame()
 			}
 		},

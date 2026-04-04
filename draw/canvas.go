@@ -228,7 +228,8 @@ type DrawShaderRect struct {
 
 // PathVertex is a single vertex in a tessellated path triangle mesh.
 type PathVertex struct {
-	X, Y float32
+	X, Y       float32
+	R, G, B, A float32 // per-vertex color
 }
 
 // DrawPathBatch describes a batch of triangles for a filled or stroked path.

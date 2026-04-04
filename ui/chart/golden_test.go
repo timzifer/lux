@@ -1,6 +1,7 @@
 package chart_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/timzifer/lux/ui/chart"
@@ -112,4 +113,66 @@ func TestGoldenPieChart(t *testing.T) {
 		testW, testH,
 	)
 	uitest.AssertScene(t, scene, "testdata/pie.golden")
+}
+
+// TestPiePathBatchColors verifies that each pie slice produces a
+// DrawPathBatch with a distinct color from the palette.
+func TestPiePathBatchColors(t *testing.T) {
+	scene := uitest.BuildScene(
+		chart.Pie(300, 300, []chart.PieSlice{
+			{Label: "A", Value: 40},
+			{Label: "B", Value: 30},
+			{Label: "C", Value: 20},
+			{Label: "D", Value: 10},
+		}),
+		testW, testH,
+	)
+	// Each slice produces 2 path batches: fill + stroke border.
+	// So 4 slices → 8 batches.
+	if len(scene.PathBatches) < 4 {
+		t.Fatalf("expected ≥4 PathBatches for 4 slices, got %d", len(scene.PathBatches))
+	}
+	// Collect fill colors (even indices: 0, 2, 4, 6).
+	var fills []string
+	for i := 0; i < len(scene.PathBatches); i += 2 {
+		c := scene.PathBatches[i].Color
+		key := fmt.Sprintf("%.2f,%.2f,%.2f", c.R, c.G, c.B)
+		fills = append(fills, key)
+	}
+	// All fill colors must be distinct.
+	seen := map[string]bool{}
+	for _, f := range fills {
+		if seen[f] {
+			t.Errorf("duplicate fill color %s — slices should have distinct palette colors", f)
+		}
+		seen[f] = true
+	}
+	t.Logf("pie fill colors: %v", fills)
+}
+
+// TestLineMultiSeriesPathColors verifies that each line series
+// produces a DrawPathBatch with a distinct stroke color.
+func TestLineMultiSeriesPathColors(t *testing.T) {
+	scene := uitest.BuildScene(
+		chart.Line(chart.ChartConfig{Width: 400, Height: 250},
+			chart.Series{
+				Name:   "A",
+				Points: []chart.DataPoint{{0, 10}, {1, 20}, {2, 15}},
+			},
+			chart.Series{
+				Name:   "B",
+				Points: []chart.DataPoint{{0, 30}, {1, 25}, {2, 35}},
+			},
+		),
+		testW, testH,
+	)
+	if len(scene.PathBatches) < 2 {
+		t.Fatalf("expected ≥2 PathBatches for 2 series, got %d", len(scene.PathBatches))
+	}
+	c0 := scene.PathBatches[0].Color
+	c1 := scene.PathBatches[1].Color
+	if c0 == c1 {
+		t.Errorf("both line series have same color %v — should be different palette entries", c0)
+	}
+	t.Logf("line series colors: [0]=%v [1]=%v", c0, c1)
 }

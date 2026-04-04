@@ -774,8 +774,7 @@ fn fs_main(in: CustomVertexOutput) -> @location(0) vec4<f32> {
 `
 
 // wgslPathShader renders tessellated path triangles.
-// Each vertex carries position (x, y) and the color is passed per-draw via
-// a uniform buffer. This is a simple solid-color triangle pipeline.
+// Each vertex carries position (x, y) and per-vertex color (r, g, b, a).
 const wgslPathShader = `
 struct Uniforms {
     proj: mat4x4<f32>,
@@ -783,28 +782,26 @@ struct Uniforms {
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
-struct PathUniforms {
-    color: vec4<f32>,
-};
-@group(1) @binding(0) var<uniform> pathUniforms: PathUniforms;
-
 struct VertexInput {
     @location(0) pos: vec2<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.position = uniforms.proj * vec4<f32>(in.pos, 0.0, 1.0);
+    out.color = in.color;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return pathUniforms.color;
+    return in.color;
 }
 `
