@@ -693,3 +693,99 @@ func TestGoldenRichTextInlineLinkBaseline(t *testing.T) {
 	)
 	AssertScene(t, scene, "testdata/richtext_inline_link_baseline.golden")
 }
+
+// ── HMI Widgets (RFC-004 §6) ───────────────────────────────────
+
+func TestGoldenStepper(t *testing.T) {
+	scene := BuildScene(
+		form.NewStepper(42, form.WithStepperRange(0, 100)),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/stepper.golden")
+}
+
+func TestGoldenStepperVertical(t *testing.T) {
+	scene := BuildScene(
+		form.NewStepper(10, form.WithStepperRange(0, 50), form.WithStepperOrientation(form.Vertical)),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/stepper_vertical.golden")
+}
+
+func TestGoldenDrumPicker(t *testing.T) {
+	items := form.IntItems(0, 23)
+	scene := BuildScene(
+		form.NewDrumPicker(items, 10),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/drum_picker.golden")
+}
+
+func TestGoldenPinInput(t *testing.T) {
+	scene := BuildScene(
+		form.NewPinInput(4, "12"),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/pin_input.golden")
+}
+
+func TestGoldenPinInputMasked(t *testing.T) {
+	scene := BuildScene(
+		form.NewPinInput(4, "123", form.WithPinMasked()),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/pin_input_masked.golden")
+}
+
+func TestGoldenHexInput(t *testing.T) {
+	scene := BuildScene(
+		form.NewHexInput(0x00FF),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/hex_input.golden")
+}
+
+func TestGoldenIPInput(t *testing.T) {
+	scene := BuildScene(
+		form.NewIPInput("192.168.1.1"),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/ip_input.golden")
+}
+
+func TestGoldenUnitInput(t *testing.T) {
+	units := []form.UnitDef{
+		{Symbol: "mm", Label: "Millimeter", Factor: 1},
+		{Symbol: "cm", Label: "Centimeter", Factor: 10},
+		{Symbol: "m", Label: "Meter", Factor: 1000},
+	}
+	scene := BuildScene(
+		form.NewUnitInput(25.0, "mm", units),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/unit_input.golden")
+}
+
+func TestGoldenRangeInput(t *testing.T) {
+	scene := BuildScene(
+		form.NewRangeInput(20, 80, 0, 100, form.WithRangeLabels()),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/range_input.golden")
+}
+
+func TestGoldenTimeInput(t *testing.T) {
+	scene := BuildScene(
+		form.NewTimeInput(time.Date(2026, 1, 1, 14, 30, 0, 0, time.UTC)),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/time_input.golden")
+}
+
+func TestGoldenDateInputDrum(t *testing.T) {
+	scene := BuildScene(
+		form.NewDateInput(time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC)),
+		testW, testH,
+	)
+	AssertScene(t, scene, "testdata/date_input_drum.golden")
+}
