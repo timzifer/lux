@@ -82,6 +82,36 @@ func TestIPInput_ValidateSegment_IPv6(t *testing.T) {
 	}
 }
 
+func TestFilterIPChars(t *testing.T) {
+	tests := []struct {
+		in      string
+		version IPVersion
+		want    string
+	}{
+		{"192.168.1.1", IPVersion4, "192.168.1.1"},
+		{"192abc168", IPVersion4, "192168"},       // letters filtered
+		{"abc:def:123", IPVersion6, "abc:def:123"}, // hex + colon
+	}
+	for _, tt := range tests {
+		got := filterIPChars(tt.in, tt.version)
+		if got != tt.want {
+			t.Errorf("filterIPChars(%q, %d) = %q, want %q", tt.in, tt.version, got, tt.want)
+		}
+	}
+}
+
+func TestIsCompleteIP(t *testing.T) {
+	if !isCompleteIP("192.168.1.1", IPVersion4) {
+		t.Error("192.168.1.1 should be complete IPv4")
+	}
+	if isCompleteIP("192.168.1.", IPVersion4) {
+		t.Error("trailing dot should not be complete")
+	}
+	if isCompleteIP("192.168.1.999", IPVersion4) {
+		t.Error("999 segment should not be complete")
+	}
+}
+
 func TestIPInput_AutoDetect(t *testing.T) {
 	// Contains colon → IPv6.
 	ip := IPInput{Value: "::1", Version: IPVersionAuto}

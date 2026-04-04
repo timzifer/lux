@@ -170,10 +170,11 @@ func (ip IPInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Focus management.
 	var focused bool
+	var focusUID ui.UID
 	if focus != nil && !ip.Disabled {
-		uid := focus.NextElementUID()
-		focus.RegisterFocusable(uid, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
-		focused = focus.IsElementFocused(uid)
+		focusUID = focus.NextElementUID()
+		focus.RegisterFocusable(focusUID, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(focusUID)
 	}
 
 	borderColor := tokens.Colors.Stroke.Border
@@ -213,11 +214,6 @@ func (ip IPInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		textY := float32(area.Y) + float32(h)/2 - style.Size/2
 		canvas.DrawText(seg, draw.Pt(textX, textY), style, textColor)
 
-		// Hit target.
-		if !ip.Disabled {
-			ix.RegisterHit(segRect, nil)
-		}
-
 		// Separator.
 		if i < segCount-1 {
 			sepX := segX + ipSegmentW
@@ -232,8 +228,45 @@ func (ip IPInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 	}
 
+	outerRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(h))
+
+	// InputState: connect keyboard/OSK input to the widget.
+	if focused && focus != nil {
+		cursorOff := len(ip.Value)
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			if cursorOff > len(ip.Value) {
+				cursorOff = len(ip.Value)
+			}
+		}
+		onChange := ip.OnChange
+		onCommit := ip.OnCommit
+		version := ip.effectiveVersion()
+		focus.Input = &ui.InputState{
+			Value: ip.Value,
+			OnChange: func(newVal string) {
+				filtered := filterIPChars(newVal, version)
+				if onChange != nil {
+					onChange(filtered)
+				}
+				if onCommit != nil && isCompleteIP(filtered, version) {
+					onCommit(filtered)
+				}
+			},
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: -1,
+		}
+	}
+
+	// Hit target for focus acquisition.
+	if focus != nil && !ip.Disabled {
+		uid := focusUID
+		fm := focus
+		ix.RegisterHit(outerRect, func() { fm.SetFocusedUID(uid) })
+	}
+
 	if focused {
-		outerRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(h))
 		ui.DrawFocusRing(canvas, outerRect, tokens.Radii.Input, tokens)
 	}
 
@@ -263,6 +296,46 @@ func (ip IPInput) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 		Value:  ip.Value,
 		States: a11y.AccessStates{Disabled: ip.Disabled},
 	}, parentIdx, a11y.Rect{})
+}
+
+// filterIPChars filters input to only valid IP characters.
+func filterIPChars(s string, version IPVersion) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.' && version != IPVersion6:
+			b.WriteRune(r)
+		case r == ':' && version == IPVersion6:
+			b.WriteRune(r)
+		case version == IPVersion6 && IsValidHexChar(r):
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isCompleteIP checks if the IP string has all segments filled.
+func isCompleteIP(s string, version IPVersion) bool {
+	if version == IPVersion6 {
+		parts := strings.Split(s, ":")
+		return len(parts) == 8 && parts[7] != ""
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 || n > 255 {
+			return false
+		}
+	}
+	return true
 }
 
 // Compile-time interface checks.

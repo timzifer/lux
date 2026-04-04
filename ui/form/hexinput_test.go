@@ -40,6 +40,27 @@ func TestHexInput_FormatHex(t *testing.T) {
 	}
 }
 
+func TestFilterHexChars(t *testing.T) {
+	tests := []struct {
+		in    string
+		upper bool
+		max   int
+		want  string
+	}{
+		{"00FF", true, 4, "00FF"},
+		{"00ffgg", true, 4, "00FF"},   // filtered + uppercased
+		{"abcd", false, 4, "abcd"},
+		{"ABCD", false, 4, "abcd"},    // lowercased
+		{"12345678", true, 4, "1234"}, // truncated
+	}
+	for _, tt := range tests {
+		got := filterHexChars(tt.in, tt.upper, tt.max)
+		if got != tt.want {
+			t.Errorf("filterHexChars(%q, upper=%v, %d) = %q, want %q", tt.in, tt.upper, tt.max, got, tt.want)
+		}
+	}
+}
+
 func TestParseHex(t *testing.T) {
 	tests := []struct {
 		input string
