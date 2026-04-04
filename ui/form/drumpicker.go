@@ -196,23 +196,18 @@ func (d DrumPicker) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		canvas.DrawText(itemLabel, draw.Pt(textX, textY), style, textColor)
 	}
 
-	// Scroll up/down via drag.
+	// Mouse-wheel scrolling (does not block touch taps).
 	if !d.Disabled && d.OnSelect != nil && n > 0 {
 		onSelect := d.OnSelect
 		sel := d.SelectedIndex
 		looping := d.Looping
 		count := n
-		pressY := float32(-1)
-		ix.RegisterDrag(outerRect, func(_, y float32) {
-			if pressY < 0 {
-				pressY = y
-				return
+		ix.RegisterScroll(outerRect, float32(n*drumItemH), float32(totalH), func(deltaY float32) {
+			dir := 1
+			if deltaY < 0 {
+				dir = -1
 			}
-			delta := int((pressY - y) / float32(drumItemH))
-			if delta == 0 {
-				return
-			}
-			newIdx := sel + delta
+			newIdx := sel + dir
 			if looping {
 				newIdx = ((newIdx % count) + count) % count
 			} else {
