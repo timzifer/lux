@@ -9,6 +9,7 @@ import (
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -77,11 +78,12 @@ type Widget interface {
 
 // RenderCtx is the context passed to Widget.Render (RFC §4.2).
 type RenderCtx struct {
-	UID    UID
-	Theme  theme.Theme
-	Send   func(any)    // local Send bound to this UID
-	Events []InputEvent // input events dispatched to this widget (RFC-002 §2.6)
-	Locale string       // BCP 47 language tag, e.g. "de", "en-US" (RFC-003 §3.8)
+	UID                UID
+	Theme              theme.Theme
+	Send               func(any)                       // local Send bound to this UID
+	Events             []InputEvent                     // input events dispatched to this widget (RFC-002 §2.6)
+	Locale             string                           // BCP 47 language tag, e.g. "de", "en-US" (RFC-003 §3.8)
+	InteractionProfile *interaction.InteractionProfile  // active profile, nil = desktop default (RFC-004 §2.4)
 }
 
 // AdoptState is a generic helper that type-asserts the raw state or
