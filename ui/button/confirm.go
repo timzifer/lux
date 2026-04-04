@@ -35,7 +35,7 @@ const (
 type ConfirmButtonState struct {
 	phase       confirmPhase
 	timeoutAnim anim.Anim[float32] // 1 → 0 over ConfirmTimeout
-	ripple      RippleState
+	ripple      ui.RippleState
 }
 
 // NewConfirmButtonState creates a ready-to-use state.
@@ -163,8 +163,8 @@ func (n ConfirmButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		ui.DrawFocusRing(canvas, buttonRect, tokens.Radii.Button, tokens)
 	}
 
-	// Ripple overlay.
-	st.ripple.Draw(canvas, buttonRect, tokens.Radii.Button, tokens.Colors.Accent.Primary)
+	// Ripple overlay — use text colour so the pulse contrasts with the button fill.
+	st.ripple.Draw(canvas, buttonRect, tokens.Radii.Button, textColor)
 
 	// Timeout countdown bar at bottom of button.
 	if st.phase == confirmPending {

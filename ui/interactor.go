@@ -130,6 +130,33 @@ func (ix *Interactor) RegisterSurfaceDrag(bounds draw.Rect, onDrag func(x, y flo
 	return opacity
 }
 
+// RegisterHitRipple registers a clickable hit target with automatic touch
+// ripple feedback. Returns hover opacity and the ripple state for drawing.
+// The ripple is triggered on click at the touch position.
+func (ix *Interactor) RegisterHitRipple(bounds draw.Rect, onClick func()) (float32, *RippleState) {
+	if ix == nil {
+		return 0, nil
+	}
+	var opacity float32
+	var ripple *RippleState
+	if ix.hover != nil {
+		opacity = ix.hover.nextButtonHoverOpacity()
+		ripple = ix.hover.currentButtonRipple()
+	}
+	if ix.hitMap != nil {
+		rs := ripple // capture for closure
+		ix.hitMap.AddAt(bounds, func(x, y float32) {
+			if rs != nil {
+				rs.Trigger(x, y, MaxRippleRadius(x, y, bounds.X, bounds.Y, bounds.W, bounds.H))
+			}
+			if onClick != nil {
+				onClick()
+			}
+		})
+	}
+	return opacity, ripple
+}
+
 // RegisterScroll registers a scrollable viewport region. Scroll targets use
 // a separate target list in hit.Map, so they do NOT consume a hover slot and
 // cannot cause index misalignment.
