@@ -3,11 +3,13 @@ package form
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/icons"
+	"github.com/timzifer/lux/ui/osk"
 )
 
 // Layout constants for numeric input.
@@ -19,16 +21,69 @@ const (
 	numericStepperBorder = 1
 )
 
+// NumericKind distinguishes integer from floating-point input (RFC-004 §6.2).
+type NumericKind uint8
+
+const (
+	NumericInteger NumericKind = iota // Integer input
+	NumericFloat                      // Floating-point input
+)
+
+// ClampBehavior controls when values are clamped to [Min, Max] (RFC-004 §6.2).
+type ClampBehavior uint8
+
+const (
+	// ClampOnCommit clamps the value when the field loses focus (blur).
+	ClampOnCommit ClampBehavior = iota
+
+	// ClampOnInput rejects any input that would place the value outside [Min, Max].
+	ClampOnInput
+
+	// ClampOnStep clamps only +/- button increments; direct entry may exceed bounds
+	// (shown with error styling).
+	ClampOnStep
+)
+
 // NumericInput is a number input with stepper buttons and optional unit suffix.
+// Implements RFC-004 §6.2.
 type NumericInput struct {
 	ui.BaseElement
-	Value    float64
-	Min      float64
-	Max      float64
-	Step     float64
-	Unit     string
+
+	// Value is the current numeric value.
+	Value float64
+
+	// Kind selects integer or floating-point mode. Affects validation and OSK layout.
+	Kind NumericKind
+
+	// Min, Max define the value range. nil = unbounded.
+	Min *float64
+	Max *float64
+
+	// Step is the increment/decrement size for +/- buttons.
+	// 0 means no +/- buttons (direct entry only).
+	Step float64
+
+	// Precision is the number of decimal places for float display.
+	// Only relevant when Kind == NumericFloat.
+	Precision int
+
+	// Unit is an optional suffix displayed after the value (e.g. "mm", "°C").
+	Unit string
+
+	// Placeholder is shown when Value == 0 and the field has no focus.
+	Placeholder string
+
+	// Label is displayed above the input field.
+	Label string
+
+	// OnChange is called when the value changes.
 	OnChange func(float64)
+
+	// Disabled disables the widget.
 	Disabled bool
+
+	// Clamping controls when bounds are enforced.
+	Clamping ClampBehavior
 }
 
 // NumericInputOption configures a NumericInput element.
@@ -36,7 +91,10 @@ type NumericInputOption func(*NumericInput)
 
 // WithNumericRange sets the min and max bounds.
 func WithNumericRange(min, max float64) NumericInputOption {
-	return func(n *NumericInput) { n.Min = min; n.Max = max }
+	return func(n *NumericInput) {
+		n.Min = &min
+		n.Max = &max
+	}
 }
 
 // WithNumericStep sets the increment/decrement step.
@@ -59,10 +117,36 @@ func WithNumericDisabled() NumericInputOption {
 	return func(n *NumericInput) { n.Disabled = true }
 }
 
+// WithNumericKind sets integer or float mode.
+func WithNumericKind(kind NumericKind) NumericInputOption {
+	return func(n *NumericInput) { n.Kind = kind }
+}
+
+// WithPrecision sets the decimal places for float display.
+func WithPrecision(p int) NumericInputOption {
+	return func(n *NumericInput) { n.Precision = p }
+}
+
+// WithPlaceholder sets the placeholder text.
+func WithPlaceholder(s string) NumericInputOption {
+	return func(n *NumericInput) { n.Placeholder = s }
+}
+
+// WithNumericLabel sets the label displayed above the field.
+func WithNumericLabel(s string) NumericInputOption {
+	return func(n *NumericInput) { n.Label = s }
+}
+
+// WithClamping sets the clamping behavior.
+func WithClamping(c ClampBehavior) NumericInputOption {
+	return func(n *NumericInput) { n.Clamping = c }
+}
+
 // NewNumericInput creates a numeric input element.
 // Defaults: Min=0, Max=100, Step=1.
 func NewNumericInput(value float64, opts ...NumericInputOption) ui.Element {
-	el := NumericInput{Value: value, Min: 0, Max: 100, Step: 1}
+	min, max := 0.0, 100.0
+	el := NumericInput{Value: value, Min: &min, Max: &max, Step: 1}
 	for _, o := range opts {
 		o(&el)
 	}
@@ -71,19 +155,36 @@ func NewNumericInput(value float64, opts ...NumericInputOption) ui.Element {
 
 // NumericInputDisabled creates a disabled numeric input.
 func NumericInputDisabled(value float64, opts ...NumericInputOption) ui.Element {
-	el := NumericInput{Value: value, Min: 0, Max: 100, Step: 1, Disabled: true}
+	min, max := 0.0, 100.0
+	el := NumericInput{Value: value, Min: &min, Max: &max, Step: 1, Disabled: true}
 	for _, o := range opts {
 		o(&el)
 	}
 	return el
 }
 
-func (n NumericInput) clamp(v float64) float64 {
-	if v < n.Min {
-		return n.Min
+// minVal returns the effective minimum, or -Inf if unbounded.
+func (n NumericInput) minVal() float64 {
+	if n.Min != nil {
+		return *n.Min
 	}
-	if v > n.Max {
-		return n.Max
+	return math.Inf(-1)
+}
+
+// maxVal returns the effective maximum, or +Inf if unbounded.
+func (n NumericInput) maxVal() float64 {
+	if n.Max != nil {
+		return *n.Max
+	}
+	return math.Inf(1)
+}
+
+func (n NumericInput) clamp(v float64) float64 {
+	if v < n.minVal() {
+		return n.minVal()
+	}
+	if v > n.maxVal() {
+		return n.maxVal()
 	}
 	return v
 }
@@ -94,7 +195,44 @@ func (n NumericInput) snapToStep(v float64) float64 {
 	if n.Step <= 0 {
 		return v
 	}
-	return math.Round((v-n.Min)/n.Step)*n.Step + n.Min
+	base := 0.0
+	if n.Min != nil {
+		base = *n.Min
+	}
+	return math.Round((v-base)/n.Step)*n.Step + base
+}
+
+// IsValidChar checks whether a character is allowed in the current input context (RFC-004 §6.2).
+func (n NumericInput) IsValidChar(ch rune, buffer string, cursorPos int) bool {
+	switch {
+	case ch >= '0' && ch <= '9':
+		return true
+	case ch == '-' || ch == '+':
+		return cursorPos == 0
+	case ch == '.' || ch == ',':
+		return n.Kind == NumericFloat && !strings.ContainsAny(buffer, ".,")
+	default:
+		return false
+	}
+}
+
+// formatValue formats the current value for display.
+func (n NumericInput) formatValue() string {
+	if n.Kind == NumericFloat && n.Precision > 0 {
+		return fmt.Sprintf("%.*f", n.Precision, n.Value)
+	}
+	if n.Step == math.Trunc(n.Step) && n.Step >= 1 {
+		return fmt.Sprintf("%.0f", n.Value)
+	}
+	return fmt.Sprintf("%.2f", n.Value)
+}
+
+// OSKLayout implements osk.OSKRequester (RFC-004 §6.11).
+func (n NumericInput) OSKLayout() osk.OSKLayout {
+	if n.Kind == NumericInteger {
+		return osk.OSKLayoutNumericInteger
+	}
+	return osk.OSKLayoutNumeric
 }
 
 // LayoutSelf implements ui.Layouter.
@@ -106,11 +244,24 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	focus := ctx.Focus
 
 	style := tokens.Typography.Body
+	labelStyle := tokens.Typography.Label
 	h := int(style.Size) + numericInputPadY*2
+	y := area.Y
 
 	w := numericInputW
 	if area.W < w {
 		w = area.W
+	}
+
+	// Label above the field.
+	if n.Label != "" {
+		labelColor := tokens.Colors.Text.Secondary
+		if n.Disabled {
+			labelColor = tokens.Colors.Text.Disabled
+		}
+		canvas.DrawText(n.Label, draw.Pt(float32(area.X), float32(y)), labelStyle, labelColor)
+		m := canvas.MeasureText(n.Label, labelStyle)
+		y += int(math.Ceil(float64(m.Ascent))) + 4
 	}
 
 	// Focus management.
@@ -121,7 +272,7 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		focused = focus.IsElementFocused(uid)
 	}
 
-	fieldRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+	fieldRect := draw.R(float32(area.X), float32(y), float32(w), float32(h))
 
 	// Border
 	borderColor := tokens.Colors.Stroke.Border
@@ -136,7 +287,7 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		fillColor = ui.DisabledColor(fillColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(
-		draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
+		draw.R(float32(area.X+1), float32(y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
 		maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(fillColor))
 
 	// Focus glow.
@@ -146,101 +297,109 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Value text + unit.
 	textX := area.X + numericInputPadX
-	textY := area.Y + numericInputPadY
+	textY := y + numericInputPadY
 	textColor := tokens.Colors.Text.Primary
 	if n.Disabled {
 		textColor = tokens.Colors.Text.Disabled
 	}
 
-	displayText := formatNumeric(n.Value, n.Step)
-	if n.Unit != "" {
+	displayText := n.formatValue()
+	if n.Value == 0 && n.Placeholder != "" && !focused {
+		displayText = n.Placeholder
+		textColor = tokens.Colors.Text.Secondary
+	} else if n.Unit != "" {
 		displayText += " " + n.Unit
 	}
 	canvas.DrawText(displayText, draw.Pt(float32(textX), float32(textY)), style, textColor)
 
-	// Stepper divider line.
-	stepperX := area.X + w - numericStepperW
-	canvas.FillRect(
-		draw.R(float32(stepperX), float32(area.Y+1), 1, float32(max(h-2, 0))),
-		draw.SolidPaint(borderColor))
+	// Stepper buttons (only if Step > 0).
+	if n.Step > 0 {
+		// Stepper divider line.
+		stepperX := area.X + w - numericStepperW
+		canvas.FillRect(
+			draw.R(float32(stepperX), float32(y+1), 1, float32(max(h-2, 0))),
+			draw.SolidPaint(borderColor))
 
-	// Up button (top half of stepper area).
-	halfH := h / 2
-	upRect := draw.R(float32(stepperX), float32(area.Y), float32(numericStepperW), float32(halfH))
-	var upHover float32
-	if n.Disabled {
-		ix.RegisterHit(upRect, nil)
-	} else {
-		var upFn func()
-		if n.OnChange != nil {
-			onChange := n.OnChange
-			val := n.clamp(n.snapToStep(n.Value + n.Step))
-			upFn = func() { onChange(val) }
+		// Up button (top half of stepper area).
+		halfH := h / 2
+		upRect := draw.R(float32(stepperX), float32(y), float32(numericStepperW), float32(halfH))
+		var upHover float32
+		if n.Disabled {
+			ix.RegisterHit(upRect, nil)
+		} else {
+			var upFn func()
+			if n.OnChange != nil {
+				onChange := n.OnChange
+				val := n.clamp(n.snapToStep(n.Value + n.Step))
+				upFn = func() { onChange(val) }
+			}
+			upHover = ix.RegisterHit(upRect, upFn)
 		}
-		upHover = ix.RegisterHit(upRect, upFn)
-	}
-	if upHover > 0 {
-		canvas.FillRect(upRect, draw.SolidPaint(draw.Color{R: 0, G: 0, B: 0, A: upHover * 0.08}))
-	}
-
-	// Down button (bottom half of stepper area).
-	downRect := draw.R(float32(stepperX), float32(area.Y+halfH), float32(numericStepperW), float32(h-halfH))
-	var downHover float32
-	if n.Disabled {
-		ix.RegisterHit(downRect, nil)
-	} else {
-		var downFn func()
-		if n.OnChange != nil {
-			onChange := n.OnChange
-			val := n.clamp(n.snapToStep(n.Value - n.Step))
-			downFn = func() { onChange(val) }
+		if upHover > 0 {
+			canvas.FillRect(upRect, draw.SolidPaint(draw.Color{R: 0, G: 0, B: 0, A: upHover * 0.08}))
 		}
-		downHover = ix.RegisterHit(downRect, downFn)
-	}
-	if downHover > 0 {
-		canvas.FillRect(downRect, draw.SolidPaint(draw.Color{R: 0, G: 0, B: 0, A: downHover * 0.08}))
-	}
 
-	// Stepper mid-divider.
-	canvas.FillRect(
-		draw.R(float32(stepperX), float32(area.Y+halfH), float32(numericStepperW), 1),
-		draw.SolidPaint(borderColor))
+		// Down button (bottom half of stepper area).
+		downRect := draw.R(float32(stepperX), float32(y+halfH), float32(numericStepperW), float32(h-halfH))
+		var downHover float32
+		if n.Disabled {
+			ix.RegisterHit(downRect, nil)
+		} else {
+			var downFn func()
+			if n.OnChange != nil {
+				onChange := n.OnChange
+				val := n.clamp(n.snapToStep(n.Value - n.Step))
+				downFn = func() { onChange(val) }
+			}
+			downHover = ix.RegisterHit(downRect, downFn)
+		}
+		if downHover > 0 {
+			canvas.FillRect(downRect, draw.SolidPaint(draw.Color{R: 0, G: 0, B: 0, A: downHover * 0.08}))
+		}
 
-	// Up/Down arrow icons.
-	arrowStyle := tokens.Typography.LabelSmall
-	arrowStyle.FontFamily = "Phosphor"
-	arrowColor := tokens.Colors.Text.Secondary
-	if n.Disabled {
-		arrowColor = tokens.Colors.Text.Disabled
+		// Stepper mid-divider.
+		canvas.FillRect(
+			draw.R(float32(stepperX), float32(y+halfH), float32(numericStepperW), 1),
+			draw.SolidPaint(borderColor))
+
+		// Up/Down arrow icons.
+		arrowStyle := tokens.Typography.LabelSmall
+		arrowStyle.FontFamily = "Phosphor"
+		arrowColor := tokens.Colors.Text.Secondary
+		if n.Disabled {
+			arrowColor = tokens.Colors.Text.Disabled
+		}
+		arrowCenterX := float32(stepperX) + float32(numericStepperW)/2 - arrowStyle.Size/2
+		upArrowY := float32(y) + float32(halfH)/2 - arrowStyle.Size/2
+		canvas.DrawText(icons.CaretUp, draw.Pt(arrowCenterX, upArrowY), arrowStyle, arrowColor)
+		downArrowY := float32(y+halfH) + float32(h-halfH)/2 - arrowStyle.Size/2
+		canvas.DrawText(icons.CaretDown, draw.Pt(arrowCenterX, downArrowY), arrowStyle, arrowColor)
 	}
-	arrowCenterX := float32(stepperX) + float32(numericStepperW)/2 - arrowStyle.Size/2
-	upArrowY := float32(area.Y) + float32(halfH)/2 - arrowStyle.Size/2
-	canvas.DrawText(icons.CaretUp, draw.Pt(arrowCenterX, upArrowY), arrowStyle, arrowColor)
-	downArrowY := float32(area.Y+halfH) + float32(h-halfH)/2 - arrowStyle.Size/2
-	canvas.DrawText(icons.CaretDown, draw.Pt(arrowCenterX, downArrowY), arrowStyle, arrowColor)
 
 	// Drag on value area for continuous adjustment.
-	// Uses delta from press origin so the initial click doesn't jump the value.
-	valueRect := draw.R(float32(area.X), float32(area.Y), float32(max(w-numericStepperW, 0)), float32(h))
+	stepperW := 0
+	if n.Step > 0 {
+		stepperW = numericStepperW
+	}
+	valueRect := draw.R(float32(area.X), float32(y), float32(max(w-stepperW, 0)), float32(h))
 	if !n.Disabled && n.OnChange != nil {
-		valueW := float32(max(w-numericStepperW, 1))
+		valueW := float32(max(w-stepperW, 1))
 		onChange := n.OnChange
 		baseVal := n.Value
-		minV := n.Min
-		maxV := n.Max
+		minV := n.minVal()
+		maxV := n.maxVal()
 		step := n.Step
-		minVal := n.Min
-		pressX := float32(-1) // sentinel: set on first call (press)
+		minBase := n.minVal()
+		pressX := float32(-1)
 		ix.RegisterDrag(valueRect, func(x, _ float32) {
 			if pressX < 0 {
-				// First call is the initial press — record origin, don't change value.
 				pressX = x
 				return
 			}
 			delta := float64((x - pressX) / valueW)
 			newVal := baseVal + delta*(maxV-minV)*0.5
 			if step > 0 {
-				newVal = math.Round((newVal-minVal)/step)*step + minVal
+				newVal = math.Round((newVal-minBase)/step)*step + minBase
 			}
 			if newVal < minV {
 				newVal = minV
@@ -252,21 +411,29 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		})
 	}
 
-	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: h}
-}
-
-// formatNumeric formats a float value for display. If step is integer-like, show no decimals.
-func formatNumeric(value, step float64) string {
-	if step == math.Trunc(step) && step >= 1 {
-		return fmt.Sprintf("%.0f", value)
-	}
-	return fmt.Sprintf("%.2f", value)
+	totalH := (y - area.Y) + h
+	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: totalH}
 }
 
 // TreeEqual implements ui.TreeEqualizer.
 func (n NumericInput) TreeEqual(other ui.Element) bool {
 	nb, ok := other.(NumericInput)
-	return ok && n.Value == nb.Value && n.Unit == nb.Unit && n.Min == nb.Min && n.Max == nb.Max
+	if !ok {
+		return false
+	}
+	return n.Value == nb.Value && n.Unit == nb.Unit &&
+		ptrF64Eq(n.Min, nb.Min) && ptrF64Eq(n.Max, nb.Max) &&
+		n.Kind == nb.Kind && n.Label == nb.Label
+}
+
+func ptrF64Eq(a, b *float64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 // ResolveChildren implements ui.ChildResolver. NumericInput is a leaf.
@@ -281,13 +448,21 @@ func (n NumericInput) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 		States: a11y.AccessStates{Disabled: n.Disabled},
 		NumericValue: &a11y.AccessNumericValue{
 			Current: n.Value,
-			Min:     n.Min,
-			Max:     n.Max,
+			Min:     n.minVal(),
+			Max:     n.maxVal(),
 			Step:    n.Step,
 		},
 	}
-	if n.Unit != "" {
+	if n.Label != "" {
+		an.Label = n.Label
+	} else if n.Unit != "" {
 		an.Label = n.Unit
 	}
 	b.AddNode(an, parentIdx, a11y.Rect{})
 }
+
+// Compile-time interface checks.
+var (
+	_ osk.OSKRequester = NumericInput{}
+	_ ui.Layouter      = NumericInput{}
+)
