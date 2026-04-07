@@ -56,6 +56,14 @@ type Model struct {
 	OSKTextField2 string
 	OSKMode       osk.OSKMode
 
+	// Controls — Checkbox demo
+	AutoMode     bool
+	AlarmEnabled bool
+
+	// Navigation demo — WindowTabPanel
+	NavPanel       *nav.WindowTabPanel
+	NavSelectedTab uint32
+
 	// HMI Widgets demo (RFC-004 §6)
 	NumericVal      float64
 	StepperVal      int
@@ -73,6 +81,15 @@ type Model struct {
 }
 
 func initialModel() Model {
+	// Set up demo WindowTabPanel for Navigation tab.
+	navPanel := nav.NewWindowTabPanel(nil, nil)
+	navPanel.AddTab(0, "Main View", false)
+	navPanel.AddTab(1, "Settings", false)
+	navPanel.AddTab(2, "Diagnostics", false)
+	navPanel.SetContent(0, display.Text("Main View — this panel adapts to the active interaction profile."))
+	navPanel.SetContent(1, display.Text("Settings — tab headers scale to MinTouchTarget in Touch/HMI mode."))
+	navPanel.SetContent(2, display.Text("Diagnostics — close buttons and spacing grow for glove operation."))
+
 	return Model{
 		Dark:              true,
 		ProfileName:       "HMI",
@@ -86,6 +103,9 @@ func initialModel() Model {
 		ValveToggle:       form.NewToggleState(),
 		ConfirmMotorState: button.NewConfirmButtonState(),
 		HoldStopState:     button.NewHoldButtonState(),
+		AutoMode:          true,
+		AlarmEnabled:      true,
+		NavPanel:          navPanel,
 		// HMI Widgets defaults
 		NumericVal:  23.5,
 		StepperVal:  5,
@@ -120,6 +140,13 @@ type SetConveyorSpeedMsg struct{ V float32 }
 // Touch-feedback messages (RFC-004 §4)
 type ConfirmMotorStartMsg struct{}
 type EmergencyHoldCompleteMsg struct{}
+
+// Checkbox messages
+type ToggleAutoModeMsg struct{}
+type ToggleAlarmEnabledMsg struct{}
+
+// Navigation demo messages
+type SelectNavTabMsg struct{ ID uint32 }
 
 // On-Screen Keyboard messages (RFC-004 §5)
 type SetOSKField1Msg struct{ V string }
@@ -203,6 +230,15 @@ func update(m Model, msg app.Msg) Model {
 		m.MotorRunning = false
 		m.PumpActive = false
 
+	case ToggleAutoModeMsg:
+		m.AutoMode = !m.AutoMode
+	case ToggleAlarmEnabledMsg:
+		m.AlarmEnabled = !m.AlarmEnabled
+
+	case SelectNavTabMsg:
+		m.NavPanel.SelectTab(msg.ID)
+		m.NavSelectedTab = msg.ID
+
 	case SetOSKField1Msg:
 		m.OSKTextField1 = msg.V
 	case SetOSKField2Msg:
@@ -249,6 +285,7 @@ func view(m Model) ui.Element {
 				{Header: display.Text("Touch Feedback"), Content: viewTouchFeedback(m)},
 				{Header: display.Text("Keyboard"), Content: viewKeyboard(m)},
 				{Header: display.Text("HMI Widgets"), Content: viewHMIWidgets(m)},
+				{Header: display.Text("Navigation"), Content: viewNavigation(m)},
 				{Header: display.Text("Alarms"), Content: viewAlarms(m)},
 			},
 			m.ActiveTab,
@@ -368,6 +405,19 @@ func viewControls(m Model) ui.Element {
 				form.NewToggle(m.ValveOpen, func(v bool) {
 					app.Send(ToggleValveMsg{})
 				}, m.ValveToggle),
+			),
+		),
+
+		// Checkboxes — demonstrate touch-adaptive sizing
+		display.Card(
+			layout.Column(
+				display.Text("Optionen (Checkbox)"),
+				form.NewCheckbox("Auto-Modus", m.AutoMode, func(v bool) {
+					app.Send(ToggleAutoModeMsg{})
+				}),
+				form.NewCheckbox("Alarm aktiv", m.AlarmEnabled, func(v bool) {
+					app.Send(ToggleAlarmEnabledMsg{})
+				}),
 			),
 		),
 
@@ -520,6 +570,19 @@ func viewKeyboard(m Model) ui.Element {
 				),
 			),
 		),
+
+		display.Divider(),
+
+		// Keyboard navigation info
+		display.Card(
+			layout.Column(
+				display.Text("Keyboard Navigation (Focus Management)"),
+				display.Text("Tab / Shift+Tab — Move focus between interactive elements"),
+				display.Text("Space / Enter — Activate focused button, toggle, or checkbox"),
+				display.Text("Arrow keys — Adjust sliders, navigate lists and steppers"),
+				display.Text("Escape — Dismiss OSK, close overlays"),
+			),
+		),
 	)
 }
 
@@ -654,6 +717,48 @@ func viewHMIWidgets(m Model) ui.Element {
 		),
 	)
 	return nav.NewScrollView(content, 0, m.HMIWidgetsScroll)
+}
+
+// ── Navigation Tab (WindowNavBar Demo) ──────────────────────────
+
+func viewNavigation(m Model) ui.Element {
+	// Update panel content with profile-aware descriptions.
+	m.NavPanel.SetContent(0, layout.Column(
+		display.Text("Main View"),
+		display.Text(fmt.Sprintf("Active Profile: %s — Tab headers scale to %.0fdp.",
+			m.ProfileName, profileFor(m.ProfileName).MinTouchTarget)),
+	))
+
+	return layout.Column(
+		display.Text("WindowNavBar Demo — Tab-basiertes Fenstermanagement"),
+		display.Divider(),
+
+		display.Card(
+			layout.Column(
+				display.Text("Diese Komponente verwaltet logische Fenster als Tabs."),
+				display.Text("Im Touch/HMI-Profil wachsen Tab-Header, Schließ-Buttons und Abstände."),
+			),
+		),
+
+		display.Divider(),
+
+		// Render the WindowTabPanel.
+		nav.NewWindowTabPanelElement(m.NavPanel),
+
+		display.Divider(),
+
+		// Manual tab selection buttons (for demo purposes).
+		display.Card(
+			layout.Column(
+				display.Text("Tab-Auswahl:"),
+				layout.Row(
+					button.Text("Main View", func() { app.Send(SelectNavTabMsg{ID: 0}) }),
+					button.Text("Settings", func() { app.Send(SelectNavTabMsg{ID: 1}) }),
+					button.Text("Diagnostics", func() { app.Send(SelectNavTabMsg{ID: 2}) }),
+				),
+			),
+		),
+	)
 }
 
 // ── Alarms Tab ───────────────────────────────────────────────────
