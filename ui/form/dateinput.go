@@ -6,92 +6,70 @@ import (
 
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/osk"
 )
 
 // Layout constants for date input.
 const (
-	dateInputDrumW   = 80
-	dateInputSepW    = 8
+	dateInputDrumW = 80
+	dateInputSepW  = 8
 )
 
 // DateFormat selects the date display format (RFC-004 §6.8).
 type DateFormat uint8
 
 const (
-	DateFormatDMY  DateFormat = iota // DD.MM.YYYY
-	DateFormatMDY                    // MM/DD/YYYY
-	DateFormatYMD                    // YYYY-MM-DD
+	DateFormatDMY DateFormat = iota // DD.MM.YYYY
+	DateFormatMDY                   // MM/DD/YYYY
+	DateFormatYMD                   // YYYY-MM-DD
 )
 
 // DateInputMode selects the input method (RFC-004 §6.8).
 type DateInputMode uint8
 
 const (
-	// DateModeDrum uses DrumPickers (Day | Month | Year). Ideal for Touch/HMI.
-	DateModeDrum DateInputMode = iota
-
-	// DateModeCalendar uses a calendar popup. Better for Desktop.
-	DateModeCalendar
-
-	// DateModeDirect uses direct numeric entry with mask.
-	DateModeDirect
+	DateModeDrum     DateInputMode = iota // DrumPickers (Day | Month | Year)
+	DateModeCalendar                      // Calendar popup
+	DateModeDirect                        // Direct numeric entry
 )
 
 // DateInput is an HMI-optimized date entry widget (RFC-004 §6.8).
+// Composes DrumPicker children via ctx.LayoutChild().
 type DateInput struct {
 	ui.BaseElement
-
-	// Value is the current date.
-	Value time.Time
-
-	// OnChange is called when the date changes.
+	Value    time.Time
 	OnChange func(time.Time)
-
-	// Format selects the display format.
-	Format DateFormat
-
-	// Mode selects the input method.
-	Mode DateInputMode
-
-	// Min, Max restrict the selectable range.
-	Min *time.Time
-	Max *time.Time
-
+	Format   DateFormat
+	Mode     DateInputMode
+	Min      *time.Time
+	Max      *time.Time
 	Disabled bool
 }
 
 // DateInputOption configures a DateInput element.
 type DateInputOption func(*DateInput)
 
-// WithDateFormat sets the date format.
 func WithDateFormat(f DateFormat) DateInputOption {
 	return func(d *DateInput) { d.Format = f }
 }
 
-// WithDateMode sets the input mode.
 func WithDateMode(m DateInputMode) DateInputOption {
 	return func(d *DateInput) { d.Mode = m }
 }
 
-// WithOnDateInputChange sets the change callback.
 func WithOnDateInputChange(fn func(time.Time)) DateInputOption {
 	return func(d *DateInput) { d.OnChange = fn }
 }
 
-// WithDateRange restricts the selectable date range.
 func WithDateRange(min, max time.Time) DateInputOption {
 	return func(d *DateInput) { d.Min = &min; d.Max = &max }
 }
 
-// WithDateInputDisabled disables the widget.
 func WithDateInputDisabled() DateInputOption {
 	return func(d *DateInput) { d.Disabled = true }
 }
 
-// NewDateInput creates an HMI date input. Default mode: DateModeDrum.
 func NewDateInput(value time.Time, opts ...DateInputOption) ui.Element {
 	el := DateInput{Value: value}
 	for _, o := range opts {
@@ -111,14 +89,9 @@ var MonthNames = [13]string{
 	"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 }
 
-// OSKLayout implements osk.OSKRequester (RFC-004 §6.11).
-// Only relevant in DateModeDirect.
 func (d DateInput) OSKLayout() osk.OSKLayout { return osk.OSKLayoutNumericInteger }
 
-// LayoutSelf implements ui.Layouter.
 func (d DateInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
-	// DateModeDrum: three drum columns (Day, Month, Year).
-	// DateModeCalendar/DateModeDirect: fall back to simple display for now.
 	if d.Mode == DateModeDrum || d.Mode == 0 {
 		return d.layoutDrum(ctx)
 	}
@@ -127,160 +100,91 @@ func (d DateInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 func (d DateInput) layoutDrum(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
-	canvas := ctx.Canvas
-	tokens := ctx.Tokens
-	ix := ctx.IX
-	focus := ctx.Focus
 
-	style := tokens.Typography.Body
 	vis := drumDefaultVisible
-
 	totalW := 3*dateInputDrumW + 2*dateInputSepW
 	if area.W < totalW {
 		totalW = area.W
 	}
 	totalH := vis * drumItemH
 
-	// Focus management.
-	var focused bool
-	if focus != nil && !d.Disabled {
-		uid := focus.NextElementUID()
-		focus.RegisterFocusable(uid, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
-		focused = focus.IsElementFocused(uid)
-	}
-
 	year := d.Value.Year()
 	month := int(d.Value.Month())
 	day := d.Value.Day()
-
-	borderColor := tokens.Colors.Stroke.Border
-	if d.Disabled {
-		borderColor = ui.DisabledColor(borderColor, tokens.Colors.Surface.Base)
-	}
-
 	onChange := d.OnChange
 	val := d.Value
 
-	// Day column.
+	// ── Day DrumPicker ──
 	daysInMonth := DaysInMonth(year, time.Month(month))
-	d.drawDateDrumColumn(ctx, area.X, area.Y, dateInputDrumW, totalH, vis,
-		day, 1, daysInMonth, func(v int) {
-			if onChange != nil {
-				clamped := v
-				if clamped > daysInMonth {
-					clamped = daysInMonth
-				}
-				newT := time.Date(year, time.Month(month), clamped, 0, 0, 0, 0, val.Location())
+	dayItems := IntItems(1, daysInMonth)
+	dayDrum := NewDrumPicker(dayItems, day-1, // 0-indexed
+		WithDrumPickerVisible(vis),
+		WithOnDrumSelect(func(idx int) {
+			if onChange != nil && idx < len(dayItems) {
+				newDay := dayItems[idx].Value.(int)
+				newT := time.Date(year, time.Month(month), newDay, 0, 0, 0, 0, val.Location())
 				onChange(newT)
 			}
-		}, func(v int) string { return fmt.Sprintf("%02d", v) },
-		canvas, tokens, ix, style, borderColor)
+		}),
+	)
+	if d.Disabled {
+		dayDrum = NewDrumPicker(dayItems, day-1, WithDrumPickerVisible(vis), WithDrumDisabled())
+	}
+	ctx.LayoutChild(dayDrum, ui.Bounds{X: area.X, Y: area.Y, W: dateInputDrumW, H: totalH})
 
-	// Month column.
+	// ── Month DrumPicker ──
+	var monthItems []DrumItem
+	for m := 1; m <= 12; m++ {
+		monthItems = append(monthItems, DrumItem{Label: MonthNames[m], Value: m})
+	}
 	monthX := area.X + dateInputDrumW + dateInputSepW
-	d.drawDateDrumColumn(ctx, monthX, area.Y, dateInputDrumW, totalH, vis,
-		month, 1, 12, func(v int) {
-			if onChange != nil {
-				newDays := DaysInMonth(year, time.Month(v))
+	monthDrum := NewDrumPicker(monthItems, month-1, // 0-indexed
+		WithDrumPickerVisible(vis),
+		WithOnDrumSelect(func(idx int) {
+			if onChange != nil && idx < len(monthItems) {
+				newMonth := monthItems[idx].Value.(int)
+				newDays := DaysInMonth(year, time.Month(newMonth))
 				newDay := day
 				if newDay > newDays {
 					newDay = newDays
 				}
-				newT := time.Date(year, time.Month(v), newDay, 0, 0, 0, 0, val.Location())
+				newT := time.Date(year, time.Month(newMonth), newDay, 0, 0, 0, 0, val.Location())
 				onChange(newT)
 			}
-		}, func(v int) string {
-			if v >= 1 && v <= 12 {
-				return MonthNames[v]
-			}
-			return fmt.Sprintf("%d", v)
-		},
-		canvas, tokens, ix, style, borderColor)
+		}),
+	)
+	if d.Disabled {
+		monthDrum = NewDrumPicker(monthItems, month-1, WithDrumPickerVisible(vis), WithDrumDisabled())
+	}
+	ctx.LayoutChild(monthDrum, ui.Bounds{X: monthX, Y: area.Y, W: dateInputDrumW, H: totalH})
 
-	// Year column.
-	yearX := monthX + dateInputDrumW + dateInputSepW
+	// ── Year DrumPicker ──
 	minYear := year - 10
 	maxYear := year + 10
-	d.drawDateDrumColumn(ctx, yearX, area.Y, dateInputDrumW, totalH, vis,
-		year, minYear, maxYear, func(v int) {
-			if onChange != nil {
-				newDays := DaysInMonth(v, time.Month(month))
+	yearItems := IntItems(minYear, maxYear)
+	yearIdx := year - minYear
+	yearX := monthX + dateInputDrumW + dateInputSepW
+	yearDrum := NewDrumPicker(yearItems, yearIdx,
+		WithDrumPickerVisible(vis),
+		WithOnDrumSelect(func(idx int) {
+			if onChange != nil && idx < len(yearItems) {
+				newYear := yearItems[idx].Value.(int)
+				newDays := DaysInMonth(newYear, time.Month(month))
 				newDay := day
 				if newDay > newDays {
 					newDay = newDays
 				}
-				newT := time.Date(v, time.Month(month), newDay, 0, 0, 0, 0, val.Location())
+				newT := time.Date(newYear, time.Month(month), newDay, 0, 0, 0, 0, val.Location())
 				onChange(newT)
 			}
-		}, func(v int) string { return fmt.Sprintf("%d", v) },
-		canvas, tokens, ix, style, borderColor)
-
-	if focused {
-		outerRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH))
-		ui.DrawFocusRing(canvas, outerRect, tokens.Radii.Input, tokens)
+		}),
+	)
+	if d.Disabled {
+		yearDrum = NewDrumPicker(yearItems, yearIdx, WithDrumPickerVisible(vis), WithDrumDisabled())
 	}
+	ctx.LayoutChild(yearDrum, ui.Bounds{X: yearX, Y: area.Y, W: dateInputDrumW, H: totalH})
 
 	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
-}
-
-func (d DateInput) drawDateDrumColumn(_ *ui.LayoutContext, x, y, w, h, vis int,
-	selected, minVal, maxVal int,
-	onSelect func(int), format func(int) string,
-	canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor,
-	style draw.TextStyle, borderColor draw.Color) {
-
-	outerRect := draw.R(float32(x), float32(y), float32(w), float32(h))
-	fillColor := tokens.Colors.Surface.Elevated
-	if d.Disabled {
-		fillColor = ui.DisabledColor(fillColor, tokens.Colors.Surface.Base)
-	}
-	canvas.FillRoundRect(outerRect, tokens.Radii.Input, draw.SolidPaint(borderColor))
-	canvas.FillRoundRect(
-		draw.R(float32(x+1), float32(y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
-		maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(fillColor))
-
-	half := vis / 2
-	selBandY := y + half*drumItemH
-	canvas.FillRect(
-		draw.R(float32(x+1), float32(selBandY), float32(max(w-2, 0)), float32(drumItemH)),
-		draw.SolidPaint(draw.Color{
-			R: tokens.Colors.Accent.Primary.R,
-			G: tokens.Colors.Accent.Primary.G,
-			B: tokens.Colors.Accent.Primary.B,
-			A: 0.15,
-		}))
-
-	for i := 0; i < vis; i++ {
-		val := selected - half + i
-		if val < minVal || val > maxVal {
-			continue
-		}
-
-		itemY := y + i*drumItemH
-		itemRect := draw.R(float32(x), float32(itemY), float32(w), float32(drumItemH))
-
-		if !d.Disabled && onSelect != nil {
-			v := val
-			fn := onSelect
-			ho := ix.RegisterHit(itemRect, func() { fn(v) })
-			if ho > 0 && i != half {
-				canvas.FillRect(itemRect, draw.SolidPaint(draw.Color{A: ho * 0.05}))
-			}
-		}
-
-		textColor := tokens.Colors.Text.Primary
-		if d.Disabled {
-			textColor = tokens.Colors.Text.Disabled
-		} else if i != half {
-			textColor = tokens.Colors.Text.Secondary
-		}
-
-		label := format(val)
-		m := canvas.MeasureText(label, style)
-		textX := float32(x) + float32(w)/2 - m.Width/2
-		textY := float32(itemY) + float32(drumItemH)/2 - style.Size/2
-		canvas.DrawText(label, draw.Pt(textX, textY), style, textColor)
-	}
 }
 
 func (d DateInput) layoutSimple(ctx *ui.LayoutContext) ui.Bounds {
@@ -297,7 +201,6 @@ func (d DateInput) layoutSimple(ctx *ui.LayoutContext) ui.Bounds {
 		w = area.W
 	}
 
-	// Focus management.
 	var focused bool
 	if focus != nil && !d.Disabled {
 		uid := focus.NextElementUID()
@@ -311,7 +214,6 @@ func (d DateInput) layoutSimple(ctx *ui.LayoutContext) ui.Bounds {
 		borderColor = ui.DisabledColor(borderColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(fieldRect, tokens.Radii.Input, draw.SolidPaint(borderColor))
-
 	fillColor := tokens.Colors.Surface.Elevated
 	if d.Disabled {
 		fillColor = ui.DisabledColor(fillColor, tokens.Colors.Surface.Base)
@@ -320,7 +222,6 @@ func (d DateInput) layoutSimple(ctx *ui.LayoutContext) ui.Bounds {
 		draw.R(float32(area.X+1), float32(area.Y+1), float32(max(w-2, 0)), float32(max(h-2, 0))),
 		maxf(tokens.Radii.Input-1, 0), draw.SolidPaint(fillColor))
 
-	// Date text.
 	var dateText string
 	switch d.Format {
 	case DateFormatDMY:
@@ -339,7 +240,6 @@ func (d DateInput) layoutSimple(ctx *ui.LayoutContext) ui.Bounds {
 	if !d.Disabled {
 		ix.RegisterHit(fieldRect, nil)
 	}
-
 	if focused {
 		ui.DrawFocusRing(canvas, fieldRect, tokens.Radii.Input, tokens)
 	}
@@ -347,18 +247,15 @@ func (d DateInput) layoutSimple(ctx *ui.LayoutContext) ui.Bounds {
 	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: h}
 }
 
-// TreeEqual implements ui.TreeEqualizer.
 func (d DateInput) TreeEqual(other ui.Element) bool {
 	db, ok := other.(DateInput)
 	return ok && d.Value.Equal(db.Value) && d.Format == db.Format && d.Mode == db.Mode
 }
 
-// ResolveChildren implements ui.ChildResolver. DateInput is a leaf.
 func (d DateInput) ResolveChildren(resolve func(ui.Element, int) ui.Element) ui.Element {
 	return d
 }
 
-// WalkAccess implements ui.AccessWalker.
 func (d DateInput) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	b.AddNode(a11y.AccessNode{
 		Role:   a11y.RoleCombobox,
@@ -368,5 +265,4 @@ func (d DateInput) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	}, parentIdx, a11y.Rect{})
 }
 
-// Compile-time interface checks.
 var _ osk.OSKRequester = DateInput{}

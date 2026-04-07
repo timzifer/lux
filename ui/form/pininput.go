@@ -116,10 +116,11 @@ func (p PinInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Focus management.
 	var focused bool
+	var focusUID ui.UID
 	if focus != nil && !p.Disabled {
-		uid := focus.NextElementUID()
-		focus.RegisterFocusable(uid, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
-		focused = focus.IsElementFocused(uid)
+		focusUID = focus.NextElementUID()
+		focus.RegisterFocusable(focusUID, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(focusUID)
 	}
 
 	borderColor := tokens.Colors.Stroke.Border
@@ -178,10 +179,46 @@ func (p PinInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 	}
 
-	// Hit target for the whole PIN area.
 	wholeRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(h))
-	if !p.Disabled {
-		ix.RegisterHit(wholeRect, nil)
+
+	// InputState: connect keyboard/OSK input to the widget (like passwordfield.go:187-204).
+	if focused && focus != nil {
+		cursorOff := len(p.Value)
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			if cursorOff > len(p.Value) {
+				cursorOff = len(p.Value)
+			}
+		}
+		onChange := p.OnChange
+		onComplete := p.OnComplete
+		allowedChars := p.AllowedChars
+		if allowedChars == nil {
+			allowedChars = DefaultPinChars
+		}
+		maxLen := length
+		focus.Input = &ui.InputState{
+			Value: p.Value,
+			OnChange: func(newVal string) {
+				filtered := filterPinChars(newVal, allowedChars, maxLen)
+				if onChange != nil {
+					onChange(filtered)
+				}
+				if len([]rune(filtered)) == maxLen && onComplete != nil {
+					onComplete(filtered)
+				}
+			},
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: -1,
+		}
+	}
+
+	// Hit target for focus acquisition (like passwordfield.go:207-212).
+	if focus != nil && !p.Disabled {
+		uid := focusUID
+		fm := focus
+		ix.RegisterHit(wholeRect, func() { fm.SetFocusedUID(uid) })
 	}
 
 	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: h}
@@ -209,6 +246,23 @@ func (p PinInput) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 		Value:  value,
 		States: a11y.AccessStates{Disabled: p.Disabled},
 	}, parentIdx, a11y.Rect{})
+}
+
+// filterPinChars filters a string to only contain allowed characters,
+// truncated to maxLen runes.
+func filterPinChars(s string, allowed *regexp.Regexp, maxLen int) string {
+	var b strings.Builder
+	count := 0
+	for _, r := range s {
+		if count >= maxLen {
+			break
+		}
+		if allowed.MatchString(string(r)) {
+			b.WriteRune(r)
+			count++
+		}
+	}
+	return b.String()
 }
 
 // Compile-time interface checks.
