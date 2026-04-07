@@ -317,6 +317,8 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			SelectionStart: selStart,
 			Multiline:      true,
 		}
+		r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+		focus.FocusedBounds = &r
 	}
 
 	// Register scroll for mouse wheel.

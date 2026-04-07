@@ -257,6 +257,7 @@ func (ip IPInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			CursorOffset:   cursorOff,
 			SelectionStart: -1,
 		}
+		focus.FocusedBounds = &outerRect
 	}
 
 	// Hit target for focus acquisition.

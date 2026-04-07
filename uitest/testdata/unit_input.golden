@@ -14,7 +14,7 @@ grain: 0.0300
   1: glyph(146,25) scale=1 color(168,176,188,255) "\ue13c"
   2: glyph(146,40) scale=1 color(168,176,188,255) "\ue136"
   3: glyph(168,32) scale=1 color(168,176,188,255) "mm"
-  4: glyph(205,32) scale=1 color(168,176,188,255) "\ue136"
+  4: glyph(205,33) scale=1 color(168,176,188,255) "\ue136"
 
 [ClipBatches] (1)
   0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0

@@ -163,7 +163,11 @@ func (u UnitInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	numChild := NewNumericInput(u.Value, numOpts...)
-	ctx.LayoutChild(numChild, ui.Bounds{X: area.X, Y: area.Y, W: numericW, H: h})
+	numBounds := ctx.LayoutChild(numChild, ui.Bounds{X: area.X, Y: area.Y, W: numericW, H: area.H})
+	// In touch mode the NumericInput grows taller (full-width inc/dec buttons).
+	if numBounds.H > h {
+		h = numBounds.H
+	}
 
 	// ── Right part: unit dropdown button ──
 	unitBtnX := area.X + numericW
@@ -195,8 +199,8 @@ func (u UnitInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		canvas.FillRect(unitBtnRect, draw.SolidPaint(draw.Color{A: unitHover * 0.08}))
 	}
 
-	// Unit symbol + caret.
-	textY := area.Y + textFieldPadY
+	// Unit symbol + caret (vertically centered in the button).
+	textY := area.Y + (h-int(style.Size))/2
 	arrowStyle := tokens.Typography.LabelSmall
 	arrowStyle.FontFamily = "Phosphor"
 	unitColor := tokens.Colors.Text.Secondary
@@ -205,7 +209,8 @@ func (u UnitInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	canvas.DrawText(u.Unit, draw.Pt(float32(unitBtnX+4), float32(textY)), style, unitColor)
 	arrowX := float32(area.X+w-textFieldPadX) - arrowStyle.Size
-	canvas.DrawText(icons.CaretDown, draw.Pt(arrowX, float32(textY)), arrowStyle, unitColor)
+	arrowY := area.Y + (h-int(arrowStyle.Size))/2
+	canvas.DrawText(icons.CaretDown, draw.Pt(arrowX, float32(arrowY)), arrowStyle, unitColor)
 
 	// ── Dropdown overlay ──
 	if isOpen && u.State != nil && overlays != nil {
