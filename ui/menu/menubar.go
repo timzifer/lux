@@ -2,6 +2,7 @@ package menu
 
 import (
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -15,7 +16,8 @@ type MenuItem struct {
 
 // MenuBarState tracks which top-level menu is open (-1 = all closed).
 type MenuBarState struct {
-	OpenIndex int
+	OpenIndex   int
+	TouchScroll ui.ScrollState // scroll offset for touch action sheet
 }
 
 // NewMenuBarState creates a MenuBarState with all menus closed.
@@ -43,11 +45,31 @@ func NewMenuBar(items []MenuItem, state *MenuBarState) ui.Element {
 	return MenuBar{Items: items, State: state}
 }
 
+// menuBarHeightForProfile returns the bar height adapted to the interaction profile.
+// Touch/HMI profiles use MinTouchTarget; desktop uses the default 32dp.
+func menuBarHeightForProfile(p *interaction.InteractionProfile) int {
+	if p != nil && p.PointerKind != interaction.PointerMouse {
+		return int(p.MinTouchTarget) // 48 (touch) or 64 (HMI)
+	}
+	return menuBarHeight // 32
+}
+
+// menuBarItemPadForProfile returns horizontal item padding adapted to the profile.
+func menuBarItemPadForProfile(p *interaction.InteractionProfile) int {
+	if p != nil && p.PointerKind != interaction.PointerMouse {
+		return menuBarItemPadX + int(p.TouchTargetSpacing) // 20 (touch) or 24 (HMI)
+	}
+	return menuBarItemPadX // 12
+}
+
 // LayoutSelf implements ui.Layouter.
 func (n MenuBar) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	if len(n.Items) == 0 {
 		return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y}
 	}
+
+	barH := menuBarHeightForProfile(ctx.Profile)
+	padX := menuBarItemPadForProfile(ctx.Profile)
 
 	// Backdrop: when a dropdown is open, a full-screen hit target closes it
 	// on any click outside menu bar items or dropdown items.
@@ -60,20 +82,20 @@ func (n MenuBar) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Background strip.
 	ctx.Canvas.FillRect(
-		draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(ctx.Area.W), float32(menuBarHeight)),
+		draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(ctx.Area.W), float32(barH)),
 		draw.SolidPaint(ctx.Tokens.Colors.Surface.Elevated))
 
 	// Bottom border.
 	ctx.Canvas.FillRect(
-		draw.R(float32(ctx.Area.X), float32(ctx.Area.Y+menuBarHeight-1), float32(ctx.Area.W), 1),
+		draw.R(float32(ctx.Area.X), float32(ctx.Area.Y+barH-1), float32(ctx.Area.W), 1),
 		draw.SolidPaint(ctx.Tokens.Colors.Stroke.Border))
 
 	cursorX := ctx.Area.X
 
 	for i, item := range n.Items {
 		// Measure label.
-		cb := ctx.MeasureChild(item.Label, ui.Bounds{X: 0, Y: 0, W: ctx.Area.W, H: menuBarHeight})
-		itemW := cb.W + menuBarItemPadX*2
+		cb := ctx.MeasureChild(item.Label, ui.Bounds{X: 0, Y: 0, W: ctx.Area.W, H: barH})
+		itemW := cb.W + padX*2
 
 		hasAction := item.OnClick != nil || len(item.Items) > 0
 
@@ -84,13 +106,14 @@ func (n MenuBar) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			state := n.State
 			subItems := item.Items
 			onClick := item.OnClick
-			hoverOpacity = ctx.IX.RegisterHit(draw.R(float32(cursorX), float32(ctx.Area.Y), float32(itemW), float32(menuBarHeight)),
+			hoverOpacity = ctx.IX.RegisterHit(draw.R(float32(cursorX), float32(ctx.Area.Y), float32(itemW), float32(barH)),
 				func() {
 					if len(subItems) > 0 && state != nil {
 						if state.OpenIndex == idx {
 							state.OpenIndex = -1
 						} else {
 							state.OpenIndex = idx
+							state.TouchScroll = ui.ScrollState{} // reset scroll on open
 						}
 					}
 					if onClick != nil {
@@ -107,32 +130,68 @@ func (n MenuBar) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				op = 1.0
 			}
 			ctx.Canvas.FillRect(
-				draw.R(float32(cursorX), float32(ctx.Area.Y), float32(itemW), float32(menuBarHeight)),
+				draw.R(float32(cursorX), float32(ctx.Area.Y), float32(itemW), float32(barH)),
 				draw.SolidPaint(ui.LerpColor(ctx.Tokens.Colors.Surface.Elevated, ctx.Tokens.Colors.Surface.Hovered, op)))
 		}
 
 		// Draw label.
-		labelArea := ui.Bounds{X: cursorX + menuBarItemPadX, Y: ctx.Area.Y + (menuBarHeight-cb.H)/2, W: cb.W, H: cb.H}
+		labelArea := ui.Bounds{X: cursorX + padX, Y: ctx.Area.Y + (barH-cb.H)/2, W: cb.W, H: cb.H}
 		ctx.LayoutChild(item.Label, labelArea)
 
 		// Dropdown overlay for open submenu.
 		if isOpen && len(item.Items) > 0 {
-			dropdownX := cursorX
-			dropdownY := ctx.Area.Y + menuBarHeight
-			subItems := item.Items
-			th := ctx.Theme
-			ctx.Overlays.Push(ui.OverlayEntry{
-				Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
-					nc := ui.NullCanvas{Delegate: canvas}
-					layoutMenuDropdown(subItems, dropdownX, dropdownY, nc, canvas, th, tokens, ix)
-				},
-			})
+			if ctx.IsTouch() {
+				// Touch/HMI: action sheet overlay.
+				n.layoutTouchSubmenu(ctx, item.Items)
+			} else {
+				// Desktop: anchor-relative dropdown (unchanged).
+				dropdownX := cursorX
+				dropdownY := ctx.Area.Y + barH
+				subItems := item.Items
+				th := ctx.Theme
+				ctx.Overlays.Push(ui.OverlayEntry{
+					Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
+						nc := ui.NullCanvas{Delegate: canvas}
+						layoutMenuDropdown(subItems, dropdownX, dropdownY, nc, canvas, th, tokens, ix)
+					},
+				})
+			}
 		}
 
 		cursorX += itemW
 	}
 
-	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: ctx.Area.W, H: menuBarHeight}
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: ctx.Area.W, H: barH}
+}
+
+// layoutTouchSubmenu renders a submenu as a centralized action sheet for touch/HMI profiles.
+func (n MenuBar) layoutTouchSubmenu(ctx *ui.LayoutContext, subItems []MenuItem) {
+	profile := ctx.Profile
+	state := n.State
+	winW := ctx.Overlays.WindowW
+	winH := ctx.Overlays.WindowH
+	th := ctx.Theme
+
+	ctx.Overlays.Push(ui.OverlayEntry{
+		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
+			asItems := make([]ActionSheetItem, len(subItems))
+			for i, si := range subItems {
+				asItems[i] = ActionSheetItem{
+					Element: si.Label,
+					OnClick: si.OnClick,
+				}
+			}
+			RenderActionSheet(ActionSheetConfig{
+				Items:       asItems,
+				Profile:     profile,
+				WinW:        winW,
+				WinH:        winH,
+				OnDismiss:   func() { state.OpenIndex = -1 },
+				ScrollState: &state.TouchScroll,
+				Theme:       th,
+			}, canvas, tokens, ix)
+		},
+	})
 }
 
 // layoutMenuDropdown renders a dropdown menu at the given position.
