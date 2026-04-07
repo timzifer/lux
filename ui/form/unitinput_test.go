@@ -56,17 +56,22 @@ func TestUnitInput_ConvertToBase(t *testing.T) {
 	}
 }
 
-func TestUnitInput_Clamp(t *testing.T) {
+func TestUnitInput_MinMaxVal(t *testing.T) {
 	min, max := 0.0, 100.0
 	u := UnitInput{Min: &min, Max: &max}
 
-	if got := u.clamp(-5); got != 0 {
-		t.Errorf("clamp(-5) = %v, want 0", got)
+	if got := u.minVal(); got != 0 {
+		t.Errorf("minVal() = %v, want 0", got)
 	}
-	if got := u.clamp(150); got != 100 {
-		t.Errorf("clamp(150) = %v, want 100", got)
+	if got := u.maxVal(); got != 100 {
+		t.Errorf("maxVal() = %v, want 100", got)
 	}
-	if got := u.clamp(50); got != 50 {
-		t.Errorf("clamp(50) = %v, want 50", got)
+
+	u2 := UnitInput{Min: nil, Max: nil}
+	if got := u2.minVal(); got > -1e300 {
+		t.Errorf("nil min: minVal() = %v, want -Inf", got)
+	}
+	if got := u2.maxVal(); got < 1e300 {
+		t.Errorf("nil max: maxVal() = %v, want +Inf", got)
 	}
 }
