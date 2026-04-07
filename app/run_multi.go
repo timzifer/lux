@@ -20,10 +20,11 @@ type windowContext struct {
 	mouseY      float32
 	dragCB      func(x, y float32)
 	dragRelease func(x, y float32)
-	cursor      input.CursorKind
-	currentTree ui.Element
-	width       int
-	height      int
+	cursor           input.CursorKind
+	interactionDirty bool // set when hit.Map callbacks mutate state
+	currentTree      ui.Element
+	width            int
+	height           int
 }
 
 // newWindowContext creates a windowContext for a secondary window.
