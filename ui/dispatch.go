@@ -75,9 +75,15 @@ func NewEventDispatcher(fm *FocusManager) *EventDispatcher {
 	}
 }
 
-// SetGestureConfig replaces the gesture recognizer configuration.
+// SetGestureConfig updates the gesture recognizer configuration.
+// If a recognizer already exists, its config is updated in-place to
+// preserve active touch-tracking state across profile switches.
 func (d *EventDispatcher) SetGestureConfig(config GestureConfig) {
-	d.gesture = NewGestureRecognizer(config)
+	if d.gesture != nil {
+		d.gesture.SetConfig(config)
+	} else {
+		d.gesture = NewGestureRecognizer(config)
+	}
 }
 
 // GestureRecognizer returns the dispatcher's gesture recognizer.

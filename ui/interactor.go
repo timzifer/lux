@@ -17,6 +17,10 @@ type Interactor struct {
 	hitMap *hit.Map
 	hover  *HoverState
 
+	// Dispatcher is the EventDispatcher used during layout to register
+	// widget bounds for hit-testing. May be nil during measure-only passes.
+	Dispatcher *EventDispatcher
+
 	// NeedsFrame is set by widgets that have active animations not managed
 	// by the reconciler (e.g. button.HoldButtonState). When non-nil and
 	// set to true during BuildScene, the framework requests another frame

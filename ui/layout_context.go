@@ -9,15 +9,16 @@ import (
 // LayoutContext bundles all parameters needed during element layout.
 // Sub-packages use this to implement LayoutSelf on their element types.
 type LayoutContext struct {
-	Area     Bounds
-	Canvas   draw.Canvas
-	Theme    theme.Theme
-	Tokens   theme.TokenSet
-	IX       *Interactor
-	Overlays *OverlayStack
-	Focus    *FocusManager
-	Profile  *interaction.InteractionProfile // active profile, nil = desktop default (RFC-004 §2.4)
-	SafeArea SafeAreaInsets                   // viewport insets from system UI (OSK, notch, etc.)
+	Area       Bounds
+	Canvas     draw.Canvas
+	Theme      theme.Theme
+	Tokens     theme.TokenSet
+	IX         *Interactor
+	Overlays   *OverlayStack
+	Focus      *FocusManager
+	Dispatcher *EventDispatcher                 // for registering widget bounds during layout
+	Profile    *interaction.InteractionProfile   // active profile, nil = desktop default (RFC-004 §2.4)
+	SafeArea   SafeAreaInsets                    // viewport insets from system UI (OSK, notch, etc.)
 }
 
 // IsTouch reports whether the active interaction profile uses touch input

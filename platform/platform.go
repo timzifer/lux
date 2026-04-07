@@ -106,8 +106,12 @@ type Callbacks struct {
 	// OnIMECommit is called when the IME commits final text (RFC-002 §2.2).
 	OnIMECommit func(text string)
 
+	// OnTouch is called when a touch event occurs (RFC-004).
+	// phase: 0=began, 1=moved, 2=ended, 3=cancelled.
+	OnTouch func(id int64, x, y float32, phase int, force float32)
+
 	// ── Multi-window callbacks ────────────────────────────────────
-	OnWindowResize      func(windowID uint32, width, height int)
+	OnWindowResize func(windowID uint32, width, height int)
 	OnWindowClose       func(windowID uint32)
 	OnWindowMouseButton func(windowID uint32, x, y float32, button int, pressed bool)
 	OnWindowMouseMove   func(windowID uint32, x, y float32)
