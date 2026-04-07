@@ -640,7 +640,14 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 
 			// Skip scene build + GPU draw when nothing changed.
 			var widgetNeedsFrame bool
-			needsPaint := modelDirty || hoverDirty || needsInitialPaint
+			anyInteractionDirty := false
+			for _, wc := range windows {
+				if wc.interactionDirty {
+					anyInteractionDirty = true
+					wc.interactionDirty = false
+				}
+			}
+			needsPaint := modelDirty || hoverDirty || needsInitialPaint || anyInteractionDirty
 			if needsPaint {
 				needsInitialPaint = false
 
@@ -651,8 +658,11 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 				mainWC.hitMap.Reset()
 				ix := ui.NewInteractor(&mainWC.hitMap, &mainWC.hoverState)
+				ix.Dispatcher = mainWC.dispatcher
 				ix.NeedsFrame = &widgetNeedsFrame
 				scene := ui.BuildScene(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm)
+				mainWC.dispatcher.SwapBounds()
+				mainWC.hoverState.Trim(mainWC.hitMap.Len())
 
 				syncImages(cfg.imageStore, renderer)
 
@@ -680,7 +690,10 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					winCanvas := render.NewSceneCanvas(wc.width, wc.height, render.WithShaper(shaper), render.WithAtlas(atlas))
 					wc.hitMap.Reset()
 					winIx := ui.NewInteractor(&wc.hitMap, &wc.hoverState)
+					winIx.Dispatcher = wc.dispatcher
 					winScene := ui.BuildScene(wc.currentTree, winCanvas, activeTheme, wc.width, wc.height, winIx)
+					wc.dispatcher.SwapBounds()
+					wc.hoverState.Trim(wc.hitMap.Len())
 
 					if hasWR {
 						wr.BeginFrameWindow(uint32(winID))
@@ -719,25 +732,30 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 
 			if button == 0 {
 				if pressed {
-					oldUID := fm.FocusedUID()
-					fm.Blur()
-					if oldUID != 0 {
-						mainWC.dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+					if mainWC.dragCB == nil {
+						oldUID := fm.FocusedUID()
+						if oldUID != 0 {
+							fm.Blur()
+							mainWC.dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+						}
 					}
 					if target := mainWC.hitMap.HitTest(x, y); target != nil {
 						if target.OnClickAt != nil {
 							target.OnClickAt(x, y)
+							mainWC.interactionDirty = true
 							if target.Draggable {
 								mainWC.dragCB = target.OnClickAt
 								mainWC.dragRelease = target.OnRelease
 							}
 						} else if target.OnClick != nil {
 							target.OnClick()
+							mainWC.interactionDirty = true
 						}
 					}
 				} else {
 					if mainWC.dragRelease != nil {
 						mainWC.dragRelease(x, y)
+						mainWC.interactionDirty = true
 					}
 					mainWC.dragCB = nil
 					mainWC.dragRelease = nil
@@ -751,6 +769,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 			Send(input.MouseMsg{X: x, Y: y, Action: input.MouseMove})
 			if mainWC.dragCB != nil {
 				mainWC.dragCB(x, y)
+				mainWC.interactionDirty = true
 			}
 			newCursor := input.CursorDefault
 			if target := mainWC.hitMap.HitTest(x, y); target != nil {
@@ -766,6 +785,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 			Send(input.ScrollMsg{X: mainWC.mouseX, Y: mainWC.mouseY, DeltaX: deltaX, DeltaY: deltaY})
 			if target := mainWC.hitMap.HitTestScroll(mainWC.mouseX, mainWC.mouseY); target != nil {
 				target.OnScroll(deltaY * 30)
+				mainWC.interactionDirty = true
 			}
 		},
 
@@ -837,17 +857,20 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					if target := wc.hitMap.HitTest(x, y); target != nil {
 						if target.OnClickAt != nil {
 							target.OnClickAt(x, y)
+							wc.interactionDirty = true
 							if target.Draggable {
 								wc.dragCB = target.OnClickAt
 								wc.dragRelease = target.OnRelease
 							}
 						} else if target.OnClick != nil {
 							target.OnClick()
+							wc.interactionDirty = true
 						}
 					}
 				} else {
 					if wc.dragRelease != nil {
 						wc.dragRelease(x, y)
+						wc.interactionDirty = true
 					}
 					wc.dragCB = nil
 					wc.dragRelease = nil
@@ -864,6 +887,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 			wc.mouseY = y
 			if wc.dragCB != nil {
 				wc.dragCB(x, y)
+				wc.interactionDirty = true
 			}
 		},
 
@@ -894,6 +918,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 			Send(input.ScrollMsg{X: wc.mouseX, Y: wc.mouseY, DeltaX: deltaX, DeltaY: deltaY})
 			if target := wc.hitMap.HitTestScroll(wc.mouseX, wc.mouseY); target != nil {
 				target.OnScroll(deltaY * 30)
+				wc.interactionDirty = true
 			}
 		},
 	})

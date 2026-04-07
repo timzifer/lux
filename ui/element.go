@@ -549,6 +549,14 @@ func (h *HoverState) ensureSize(n int) {
 	}
 }
 
+// Trim discards hover animations beyond n entries, preventing stale
+// animations from accumulating when the element tree shrinks.
+func (h *HoverState) Trim(n int) {
+	if len(h.anims) > n {
+		h.anims = h.anims[:n]
+	}
+}
+
 // ── Overlay System (Tier 3) ──────────────────────────────────────
 
 // OverlayEntry is a deferred render operation drawn after the main tree.
@@ -738,7 +746,11 @@ func layoutElementCtx(el Element, area Bounds, canvas draw.Canvas, th theme.Them
 	// Interface-based dispatch: sub-package element types implement Layouter
 	// and bypass the type switch entirely.
 	if l, ok := el.(Layouter); ok {
-		ctx := &LayoutContext{Area: area, Canvas: canvas, Theme: th, Tokens: tokens, IX: ix, Overlays: overlays, Focus: focus, Profile: profile, SafeArea: safeArea}
+		dispatcher := (*EventDispatcher)(nil)
+		if ix != nil {
+			dispatcher = ix.Dispatcher
+		}
+		ctx := &LayoutContext{Area: area, Canvas: canvas, Theme: th, Tokens: tokens, IX: ix, Overlays: overlays, Focus: focus, Dispatcher: dispatcher, Profile: profile, SafeArea: safeArea}
 		return l.LayoutSelf(ctx)
 	}
 	switch node := el.(type) {
@@ -747,7 +759,14 @@ func layoutElementCtx(el Element, area Bounds, canvas draw.Canvas, th theme.Them
 		return Bounds{X: area.X, Y: area.Y}
 
 	case WidgetBoundsElement:
-		return layoutElementCtx(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile, safeArea)
+		childBounds := layoutElementCtx(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile, safeArea)
+		if ix != nil && ix.Dispatcher != nil {
+			ix.Dispatcher.RegisterWidgetBounds(node.WidgetUID, draw.R(
+				float32(childBounds.X), float32(childBounds.Y),
+				float32(childBounds.W), float32(childBounds.H),
+			))
+		}
+		return childBounds
 
 	case KeyedElement:
 		return layoutElementCtx(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile, safeArea)

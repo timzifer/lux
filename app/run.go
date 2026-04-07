@@ -289,6 +289,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
 	var dragRelease func(x, y float32)  // called once when drag ends
 	var currentCursor input.CursorKind
+	var interactionDirty bool // set when hit.Map callbacks mutate state (scroll, drag, click)
 	var dynamicHandlers []globalHandlerEntry
 
 	// On-Screen Keyboard state (RFC-004 §5).
@@ -864,7 +865,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// entire widget tree and renderer.Draw submits GPU commands —
 			// both are expensive relative to the cheap message-drain above.
 			var widgetNeedsFrame bool
-			needsPaint := modelDirty || hoverDirty || needsInitialPaint
+			needsPaint := modelDirty || hoverDirty || needsInitialPaint || interactionDirty
+			interactionDirty = false
 			if needsPaint {
 				needsInitialPaint = false
 
@@ -893,6 +895,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 				hitMap.Reset()
 				ix := ui.NewInteractor(&hitMap, &hoverState)
+				ix.Dispatcher = dispatcher
 				ix.NeedsFrame = &widgetNeedsFrame
 
 				// If the OSK is visible, choose presentation mode (RFC-004 §5.2).
@@ -922,6 +925,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				paintStart := time.Now()
 
 				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl, activeProfile, safeArea)
+				dispatcher.SwapBounds()
+				hoverState.Trim(hitMap.Len())
 
 				paintTime := time.Since(paintStart)
 
@@ -975,29 +980,34 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Left-click hit-test and drag tracking.
 			if button == 0 {
 				if pressed {
-					// Blur focus first; if the click lands on a focusable element,
-					// its hit target will re-focus it.
-					oldUID := fm.FocusedUID()
-					fm.Blur()
-					if oldUID != 0 {
-						dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+					// Only blur focus if no drag is active (prevents focus loss
+					// during scroll-bar drags and similar interactions).
+					if dragCallback == nil {
+						oldUID := fm.FocusedUID()
+						if oldUID != 0 {
+							fm.Blur()
+							dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+						}
 					}
 
 					if target := hitMap.HitTest(x, y); target != nil {
 						if target.OnClickAt != nil {
 							target.OnClickAt(x, y)
+							interactionDirty = true
 							if target.Draggable {
 								dragCallback = target.OnClickAt
 								dragRelease = target.OnRelease
 							}
 						} else if target.OnClick != nil {
 							target.OnClick()
+							interactionDirty = true
 						}
 					}
 				} else {
 					// Release ends any active drag.
 					if dragRelease != nil {
 						dragRelease(x, y)
+						interactionDirty = true
 					}
 					dragCallback = nil
 					dragRelease = nil
@@ -1012,6 +1022,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Continue firing positional callback while dragging.
 			if dragCallback != nil {
 				dragCallback(x, y)
+				interactionDirty = true
 			}
 			// Update cursor based on hovered hit target (RFC-002 §2.7).
 			newCursor := input.CursorDefault
@@ -1029,6 +1040,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Route scroll events directly to the ScrollView under the cursor.
 			if target := hitMap.HitTestScroll(mouseX, mouseY); target != nil {
 				target.OnScroll(deltaY * 30) // 30dp per scroll unit
+				interactionDirty = true
 			}
 		},
 
@@ -1057,6 +1069,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 		OnIMECommit: func(text string) {
 			Send(input.IMECommitMsg{Text: text})
+		},
+
+		OnTouch: func(id int64, x, y float32, phase int, force float32) {
+			p := input.TouchPhase(phase)
+			Send(input.TouchMsg{ID: id, X: x, Y: y, Phase: p, Force: force})
 		},
 
 		// Multi-window: when the user closes a secondary window via the X button,
