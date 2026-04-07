@@ -40,6 +40,9 @@ type RippleState struct {
 	active bool
 }
 
+// Active reports whether the ripple animation is still running.
+func (rs *RippleState) Active() bool { return rs.active }
+
 // NewRippleState creates a ready-to-use RippleState.
 func NewRippleState() *RippleState { return &RippleState{} }
 

@@ -639,6 +639,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 			}
 
 			// Skip scene build + GPU draw when nothing changed.
+			var widgetNeedsFrame bool
 			needsPaint := modelDirty || hoverDirty || needsInitialPaint
 			if needsPaint {
 				needsInitialPaint = false
@@ -650,6 +651,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				canvas := render.NewSceneCanvas(w, h, render.WithShaper(shaper), render.WithAtlas(atlas))
 				mainWC.hitMap.Reset()
 				ix := ui.NewInteractor(&mainWC.hitMap, &mainWC.hoverState)
+				ix.NeedsFrame = &widgetNeedsFrame
 				scene := ui.BuildScene(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm)
 
 				syncImages(cfg.imageStore, renderer)
@@ -689,7 +691,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 			}
 
 			// Request continued rendering while animations are active.
-			if animDirty || hoverDirty {
+			if animDirty || hoverDirty || widgetNeedsFrame {
 				plat.RequestFrame()
 			}
 		},

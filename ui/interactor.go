@@ -16,6 +16,12 @@ import (
 type Interactor struct {
 	hitMap *hit.Map
 	hover  *HoverState
+
+	// NeedsFrame is set by widgets that have active animations not managed
+	// by the reconciler (e.g. button.HoldButtonState). When non-nil and
+	// set to true during BuildScene, the framework requests another frame
+	// so animations keep rendering.
+	NeedsFrame *bool
 }
 
 // NewInteractor creates an Interactor for use during a single BuildScene pass.
@@ -138,6 +144,14 @@ func (ix *Interactor) RegisterScroll(bounds draw.Rect, contentH, viewportH float
 		return
 	}
 	ix.hitMap.AddScroll(bounds, contentH, viewportH, onScroll)
+}
+
+// SetNeedsFrame signals that the current widget has active animations and
+// the framework should schedule another render frame.
+func (ix *Interactor) SetNeedsFrame() {
+	if ix != nil && ix.NeedsFrame != nil {
+		*ix.NeedsFrame = true
+	}
 }
 
 // resetCounter resets the hover animation counter for a new BuildScene pass.

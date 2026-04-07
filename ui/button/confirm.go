@@ -172,6 +172,11 @@ func (n ConfirmButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Ripple overlay.
 	st.ripple.Draw(canvas, buttonRect, tokens.Radii.Button, tokens.Colors.Accent.Primary)
 
+	// Request continued frames while animations are active.
+	if st.phase == confirmPending || st.ripple.Active() {
+		ix.SetNeedsFrame()
+	}
+
 	// Timeout countdown bar at bottom of button.
 	if st.phase == confirmPending {
 		progress := st.timeoutAnim.Value() // 1 → 0
