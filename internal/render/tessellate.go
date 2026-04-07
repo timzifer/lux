@@ -12,7 +12,7 @@ import (
 
 // flattenTolerance controls the maximum error when flattening curves to
 // line segments. Smaller values produce smoother curves with more vertices.
-const flattenTolerance = 0.25
+const flattenTolerance = 0.1
 
 // TessellateFill converts a filled path into triangles using ear-clipping
 // on the flattened polygon. The path is first flattened (curves → lines),
@@ -308,18 +308,15 @@ func strokePoly(poly []draw.Point, halfW float32, cap draw.StrokeCap, join draw.
 	for i := 1; i < len(segs); i++ {
 		prev := segs[i-1]
 		curr := segs[i]
-		center := poly[i] // approximate — works for the segment index mapping
-		// Find the right index: segs may have skipped degenerate segments.
-		// For simplicity, use the join point as the segment endpoint.
-		_ = center
-		verts = append(verts, joinTriangles(prev.l1, prev.r1, curr.l0, curr.r0, join)...)
+		center := poly[i]
+		verts = append(verts, joinTriangles(prev.l1, prev.r1, curr.l0, curr.r0, center, halfW, join)...)
 	}
 
 	// Join last↔first for closed paths.
 	if closed && len(segs) > 1 {
 		prev := segs[len(segs)-1]
 		curr := segs[0]
-		verts = append(verts, joinTriangles(prev.l1, prev.r1, curr.l0, curr.r0, join)...)
+		verts = append(verts, joinTriangles(prev.l1, prev.r1, curr.l0, curr.r0, poly[0], halfW, join)...)
 	}
 
 	// Emit caps for open paths.
@@ -333,17 +330,77 @@ func strokePoly(poly []draw.Point, halfW float32, cap draw.StrokeCap, join draw.
 }
 
 // joinTriangles emits triangles for a line join between two consecutive segments.
-func joinTriangles(prevL, prevR, currL, currR draw.Point, join draw.StrokeJoin) []draw.PathVertex {
-	// Simple bevel join: connect the four offset points with two triangles.
-	_ = join // miter/round can be added later; bevel is the baseline
-	return []draw.PathVertex{
-		{X: prevL.X, Y: prevL.Y},
-		{X: prevR.X, Y: prevR.Y},
-		{X: currL.X, Y: currL.Y},
-		{X: currL.X, Y: currL.Y},
-		{X: prevR.X, Y: prevR.Y},
-		{X: currR.X, Y: currR.Y},
+func joinTriangles(prevL, prevR, currL, currR, center draw.Point, halfW float32, join draw.StrokeJoin) []draw.PathVertex {
+	if join != draw.StrokeJoinRound {
+		// Bevel (and miter fallback): connect the four offset points with two triangles.
+		return []draw.PathVertex{
+			{X: prevL.X, Y: prevL.Y},
+			{X: prevR.X, Y: prevR.Y},
+			{X: currL.X, Y: currL.Y},
+			{X: currL.X, Y: currL.Y},
+			{X: prevR.X, Y: prevR.Y},
+			{X: currR.X, Y: currR.Y},
+		}
 	}
+
+	// Round join: determine which side is the outside of the turn,
+	// then fill it with a fan of triangles.
+	// Cross product of (prevL - center) × (currL - center) tells turn direction.
+	cross := (prevL.X-center.X)*(currL.Y-center.Y) - (prevL.Y-center.Y)*(currL.X-center.X)
+
+	var from, to draw.Point
+	if cross > 0 {
+		// Left side is outside — fan from prevL to currL.
+		from, to = prevL, currL
+	} else {
+		// Right side is outside — fan from prevR to currR.
+		from, to = prevR, currR
+	}
+
+	// Compute angles of from/to relative to center.
+	a0 := math.Atan2(float64(from.Y-center.Y), float64(from.X-center.X))
+	a1 := math.Atan2(float64(to.Y-center.Y), float64(to.X-center.X))
+
+	// Ensure we sweep the shorter arc.
+	da := a1 - a0
+	if da > math.Pi {
+		da -= 2 * math.Pi
+	} else if da < -math.Pi {
+		da += 2 * math.Pi
+	}
+
+	const roundSteps = 8
+	r := float64(halfW)
+	var verts []draw.PathVertex
+
+	for i := 0; i < roundSteps; i++ {
+		t0 := a0 + da*float64(i)/float64(roundSteps)
+		t1 := a0 + da*float64(i+1)/float64(roundSteps)
+		p0 := draw.Point{X: center.X + float32(r*math.Cos(t0)), Y: center.Y + float32(r*math.Sin(t0))}
+		p1 := draw.Point{X: center.X + float32(r*math.Cos(t1)), Y: center.Y + float32(r*math.Sin(t1))}
+		verts = append(verts,
+			draw.PathVertex{X: center.X, Y: center.Y},
+			draw.PathVertex{X: p0.X, Y: p0.Y},
+			draw.PathVertex{X: p1.X, Y: p1.Y},
+		)
+	}
+
+	// Also fill the inner side with a simple bevel triangle to avoid gaps.
+	if cross > 0 {
+		verts = append(verts,
+			draw.PathVertex{X: center.X, Y: center.Y},
+			draw.PathVertex{X: prevR.X, Y: prevR.Y},
+			draw.PathVertex{X: currR.X, Y: currR.Y},
+		)
+	} else {
+		verts = append(verts,
+			draw.PathVertex{X: center.X, Y: center.Y},
+			draw.PathVertex{X: prevL.X, Y: prevL.Y},
+			draw.PathVertex{X: currL.X, Y: currL.Y},
+		)
+	}
+
+	return verts
 }
 
 // capTriangles emits triangles for a line cap.

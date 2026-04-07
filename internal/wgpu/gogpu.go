@@ -173,7 +173,17 @@ func (d *goDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) RenderPi
 			CullMode:  mapCullMode(desc.Primitive.CullMode),
 			FrontFace: mapFrontFace(desc.Primitive.FrontFace),
 		},
-		Multisample: gputypes.DefaultMultisampleState(),
+		Multisample: func() gputypes.MultisampleState {
+			sc := desc.SampleCount
+			if sc == 0 {
+				sc = 1
+			}
+			return gputypes.MultisampleState{
+				Count:                  sc,
+				Mask:                   0xFFFFFFFF,
+				AlphaToCoverageEnabled: false,
+			}
+		}(),
 	}
 	if desc.DepthStencil != nil {
 		stencilFace := gpuwgpu.StencilFaceState{
@@ -226,6 +236,10 @@ func (d *goDevice) CreateBuffer(desc *BufferDescriptor) Buffer {
 }
 
 func (d *goDevice) CreateTexture(desc *TextureDescriptor) Texture {
+	sc := desc.SampleCount
+	if sc == 0 {
+		sc = 1
+	}
 	tex, err := d.device.CreateTexture(&gpuwgpu.TextureDescriptor{
 		Label:         desc.Label,
 		Size:          gpuwgpu.Extent3D(desc.Size),
@@ -233,7 +247,7 @@ func (d *goDevice) CreateTexture(desc *TextureDescriptor) Texture {
 		Usage:         mapTextureUsage(desc.Usage),
 		Dimension:     gpuwgpu.TextureDimension2D,
 		MipLevelCount: 1,
-		SampleCount:   1,
+		SampleCount:   sc,
 	})
 	if err != nil {
 		log.Printf("wgpu/gogpu: CreateTexture failed: %v", err)
@@ -666,6 +680,11 @@ func (e *goCommandEncoder) BeginRenderPass(desc *RenderPassDescriptor) RenderPas
 		}
 		if gv, ok := ca.View.(*goTextureView); ok && gv.view != nil {
 			colorAttachments[i].View = gv.view
+		}
+		if ca.ResolveTarget != nil {
+			if gv, ok := ca.ResolveTarget.(*goTextureView); ok && gv.view != nil {
+				colorAttachments[i].ResolveTarget = gv.view
+			}
 		}
 	}
 	rpDesc := &gpuwgpu.RenderPassDescriptor{
