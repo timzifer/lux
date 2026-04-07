@@ -400,6 +400,21 @@ func (s *ScrollState) ScrollBy(delta float32, contentHeight, viewportHeight floa
 	}
 }
 
+// ── Safe Area Insets ────────────────────────────────────────────
+
+// SafeAreaInsets describes regions of the viewport that are partially
+// obscured by system UI (on-screen keyboard, notch, status bar, etc.).
+// Layouts should avoid placing interactive content within these insets.
+// Values are in dp. Zero means no inset on that edge.
+type SafeAreaInsets struct {
+	Top, Right, Bottom, Left float32
+}
+
+// IsZero reports whether all insets are zero.
+func (s SafeAreaInsets) IsZero() bool {
+	return s.Top == 0 && s.Right == 0 && s.Bottom == 0 && s.Left == 0
+}
+
 // ── Focus State ──────────────────────────────────────────────────
 
 // InputState tracks the focused TextField's value and callback so that
@@ -650,7 +665,8 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 // BuildSceneWithOSK is like BuildScene but also renders an on-screen keyboard
 // overlay element after all other overlays (RFC-004 §5.5).
 // If oskOverlay is nil, it behaves identically to BuildScene.
-func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, height int, ix *Interactor, focus *FocusManager, oskOverlay Element, profile *interaction.InteractionProfile) draw.Scene {
+// safeArea propagates viewport insets (e.g. OSK height) through the layout tree.
+func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, height int, ix *Interactor, focus *FocusManager, oskOverlay Element, profile *interaction.InteractionProfile, safeArea ...SafeAreaInsets) draw.Scene {
 	if width <= 0 {
 		width = 800
 	}
@@ -665,7 +681,11 @@ func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, 
 	var overlays OverlayStack
 	overlays.WindowW = width
 	overlays.WindowH = height
-	layoutElement(root, area, canvas, th, tokens, ix, &overlays, focus, profile)
+	var sa SafeAreaInsets
+	if len(safeArea) > 0 {
+		sa = safeArea[0]
+	}
+	layoutElementCtx(root, area, canvas, th, tokens, ix, &overlays, focus, profile, sa)
 
 	// Switch canvas to overlay mode so overlay draw commands go to
 	// separate scene lists, rendered after all main content.
@@ -710,10 +730,15 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 	if len(profileOpt) > 0 {
 		profile = profileOpt[0]
 	}
+	return layoutElementCtx(el, area, canvas, th, tokens, ix, overlays, focus, profile, SafeAreaInsets{})
+}
+
+// layoutElementCtx is the core layout dispatch that also propagates SafeAreaInsets.
+func layoutElementCtx(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager, profile *interaction.InteractionProfile, safeArea SafeAreaInsets) Bounds {
 	// Interface-based dispatch: sub-package element types implement Layouter
 	// and bypass the type switch entirely.
 	if l, ok := el.(Layouter); ok {
-		ctx := &LayoutContext{Area: area, Canvas: canvas, Theme: th, Tokens: tokens, IX: ix, Overlays: overlays, Focus: focus, Profile: profile}
+		ctx := &LayoutContext{Area: area, Canvas: canvas, Theme: th, Tokens: tokens, IX: ix, Overlays: overlays, Focus: focus, Profile: profile, SafeArea: safeArea}
 		return l.LayoutSelf(ctx)
 	}
 	switch node := el.(type) {
@@ -722,10 +747,10 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		return Bounds{X: area.X, Y: area.Y}
 
 	case WidgetBoundsElement:
-		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile)
+		return layoutElementCtx(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile, safeArea)
 
 	case KeyedElement:
-		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile)
+		return layoutElementCtx(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile, safeArea)
 
 	case ThemedElement:
 		// Switch theme and tokens for this subtree, lay out children as a column.
@@ -734,7 +759,7 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		cursorY := area.Y
 		maxW := 0
 		for _, child := range node.Children {
-			cb := layoutElement(child, Bounds{X: area.X, Y: cursorY, W: area.W, H: area.H}, canvas, subTh, subTokens, ix, overlays, focus, profile)
+			cb := layoutElementCtx(child, Bounds{X: area.X, Y: cursorY, W: area.W, H: area.H}, canvas, subTh, subTokens, ix, overlays, focus, profile, safeArea)
 			if cb.W > maxW {
 				maxW = cb.W
 			}

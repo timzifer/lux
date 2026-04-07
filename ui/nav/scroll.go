@@ -26,6 +26,17 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	if viewportH <= 0 || viewportH > area.H {
 		viewportH = area.H
 	}
+	// Reduce effective viewport by bottom safe-area inset (e.g. OSK height)
+	// so content is not obscured by system overlays.
+	if sa := ctx.SafeArea; sa.Bottom > 0 {
+		reduced := viewportH - int(sa.Bottom)
+		if reduced < 100 {
+			reduced = 100
+		}
+		if reduced < viewportH {
+			viewportH = reduced
+		}
+	}
 
 	// Determine scroll offset from state.
 	var offset float32
