@@ -815,6 +815,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// This is the main idle-CPU optimisation: BuildScene walks the
 			// entire widget tree and renderer.Draw submits GPU commands —
 			// both are expensive relative to the cheap message-drain above.
+			var widgetNeedsFrame bool
 			needsPaint := modelDirty || hoverDirty || needsInitialPaint
 			if needsPaint {
 				needsInitialPaint = false
@@ -844,6 +845,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 				hitMap.Reset()
 				ix := ui.NewInteractor(&hitMap, &hoverState)
+				ix.NeedsFrame = &widgetNeedsFrame
 
 				// If the OSK is visible, reduce the content area by the OSK height (RFC-004 §5.2).
 				contentH := h
@@ -888,7 +890,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Request continued rendering while animations, tick-driven
 			// model changes, or dirty-tracked widgets are active, so
 			// platforms that idle between frames keep ticking.
-			if animDirty || hoverDirty || tickDirty || stateDirty {
+			if animDirty || hoverDirty || tickDirty || stateDirty || widgetNeedsFrame {
 				plat.RequestFrame()
 			}
 		},
