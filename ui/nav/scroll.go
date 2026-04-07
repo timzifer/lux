@@ -41,8 +41,10 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	contentW := area.W // width available for child content
 
-	// Pre-measure to detect whether scrollbar is needed.
-	measureArea := ui.Bounds{X: area.X, Y: area.Y, W: contentW, H: area.H}
+	// Pre-measure with unconstrained height to detect the child's natural
+	// height. Using area.H would let the child clamp to the viewport,
+	// hiding overflow and making needsScroll incorrectly false.
+	measureArea := ui.Bounds{X: area.X, Y: area.Y, W: contentW, H: 1 << 20}
 	mb := ctx.MeasureChild(n.Child, measureArea)
 	needsScroll := mb.H > viewportH
 
@@ -60,6 +62,13 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	ctx.Canvas.PopClip()
 
 	contentH := childBounds.H
+
+	// Correct needsScroll based on actual rendered content in case
+	// the pre-measurement was inaccurate (e.g. touch-mode widgets
+	// grow taller during the real layout pass than during measurement).
+	if contentH > viewportH && !needsScroll {
+		needsScroll = true
+	}
 
 	// Only clamp scroll state during actual render passes (ctx.IX != nil),
 	// not during measurement passes. Measurement passes may run with a
