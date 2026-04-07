@@ -126,6 +126,14 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	ix := ctx.IX
 	focus := ctx.Focus
 
+	// Touch-adaptive sizing: grow thumbs to meet MinTouchTarget.
+	thumbD := rangeThumbD
+	height := rangeHeight
+	if ctx.IsTouch() && ctx.Profile != nil {
+		thumbD = int(ctx.Profile.MinTouchTarget)
+		height = thumbD + 8
+	}
+
 	trackW := rangeInputW
 	if area.W < trackW {
 		trackW = area.W
@@ -135,7 +143,7 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	if r.ShowLabels {
 		labelH = int(tokens.Typography.LabelSmall.Size) + rangeLabelOffset
 	}
-	totalH := rangeHeight + labelH
+	totalH := height + labelH
 
 	// Focus management.
 	var focused bool
@@ -145,7 +153,7 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		focused = focus.IsElementFocused(uid)
 	}
 
-	trackY := area.Y + (rangeHeight-rangeTrackH)/2
+	trackY := area.Y + (height-rangeTrackH)/2
 
 	// Full track background.
 	trackColor := tokens.Colors.Surface.Pressed
@@ -182,9 +190,9 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Low handle.
-	lowThumbX := lowX - float32(rangeThumbD)/2
-	lowThumbY := float32(area.Y) + float32(rangeHeight-rangeThumbD)/2
-	lowThumbRect := draw.R(lowThumbX, lowThumbY, float32(rangeThumbD), float32(rangeThumbD))
+	lowThumbX := lowX - float32(thumbD)/2
+	lowThumbY := float32(area.Y) + float32(height-thumbD)/2
+	lowThumbRect := draw.R(lowThumbX, lowThumbY, float32(thumbD), float32(thumbD))
 	thumbColor := tokens.Colors.Accent.Primary
 	if r.Disabled {
 		thumbColor = ui.DisabledColor(thumbColor, tokens.Colors.Surface.Base)
@@ -222,9 +230,9 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// High handle.
-	highThumbX := highX - float32(rangeThumbD)/2
-	highThumbY := float32(area.Y) + float32(rangeHeight-rangeThumbD)/2
-	highThumbRect := draw.R(highThumbX, highThumbY, float32(rangeThumbD), float32(rangeThumbD))
+	highThumbX := highX - float32(thumbD)/2
+	highThumbY := float32(area.Y) + float32(height-thumbD)/2
+	highThumbRect := draw.R(highThumbX, highThumbY, float32(thumbD), float32(thumbD))
 	canvas.FillEllipse(highThumbRect, draw.SolidPaint(thumbColor))
 
 	if !r.Disabled && r.OnChange != nil {
@@ -264,7 +272,7 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		if r.Disabled {
 			labelColor = tokens.Colors.Text.Disabled
 		}
-		labelY := float32(area.Y + rangeHeight + rangeLabelOffset)
+		labelY := float32(area.Y + height + rangeLabelOffset)
 
 		lowLabel := r.formatVal(r.Low)
 		lm := canvas.MeasureText(lowLabel, labelStyle)

@@ -613,6 +613,12 @@ func (n NumericInput) setupInputState(focus *ui.FocusManager, focusUID ui.UID, f
 		fm := focus
 		ix.RegisterHit(valueRect, func() { fm.SetFocusedUID(uid) })
 	}
+
+	// Store focused bounds for scroll-into-view (OSK visibility).
+	if focused && focus != nil {
+		r := valueRect
+		focus.FocusedBounds = &r
+	}
 }
 
 // TreeEqual implements ui.TreeEqualizer.

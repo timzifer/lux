@@ -217,6 +217,7 @@ func (h HexInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			CursorOffset:   cursorOff,
 			SelectionStart: -1,
 		}
+		focus.FocusedBounds = &wholeRect
 	}
 
 	// Hit target for focus acquisition.
