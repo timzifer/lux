@@ -125,10 +125,11 @@ func (h HexInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Focus management.
 	var focused bool
+	var focusUID ui.UID
 	if focus != nil && !h.Disabled {
-		uid := focus.NextElementUID()
-		focus.RegisterFocusable(uid, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
-		focused = focus.IsElementFocused(uid)
+		focusUID = focus.NextElementUID()
+		focus.RegisterFocusable(focusUID, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(focusUID)
 	}
 
 	borderColor := tokens.Colors.Stroke.Border
@@ -187,10 +188,42 @@ func (h HexInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		canvas.DrawText(ch, draw.Pt(textX, textY), style, textColor)
 	}
 
-	// Hit target.
 	wholeRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(height))
-	if !h.Disabled {
-		ix.RegisterHit(wholeRect, nil)
+
+	// InputState: connect keyboard/OSK input to the widget.
+	if focused && focus != nil {
+		hexStr := h.FormatHex()
+		cursorOff := len(hexStr)
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			if cursorOff > len(hexStr) {
+				cursorOff = len(hexStr)
+			}
+		}
+		onChange := h.OnChange
+		upper := h.Upper
+		maxDigits := digits
+		focus.Input = &ui.InputState{
+			Value: hexStr,
+			OnChange: func(newVal string) {
+				filtered := filterHexChars(newVal, upper, maxDigits)
+				if onChange != nil {
+					if v, ok := ParseHex(filtered); ok {
+						onChange(v)
+					}
+				}
+			},
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: -1,
+		}
+	}
+
+	// Hit target for focus acquisition.
+	if focus != nil && !h.Disabled {
+		uid := focusUID
+		fm := focus
+		ix.RegisterHit(wholeRect, func() { fm.SetFocusedUID(uid) })
 	}
 
 	if focused {
@@ -247,6 +280,27 @@ func ParseHex(s string) (uint64, bool) {
 		val = val*16 + d
 	}
 	return val, true
+}
+
+// filterHexChars filters a string to only valid hex characters, truncated to maxDigits.
+func filterHexChars(s string, upper bool, maxDigits int) string {
+	var b strings.Builder
+	count := 0
+	for _, r := range s {
+		if count >= maxDigits {
+			break
+		}
+		if IsValidHexChar(r) {
+			if upper && r >= 'a' && r <= 'f' {
+				r = r - 'a' + 'A'
+			} else if !upper && r >= 'A' && r <= 'F' {
+				r = r - 'A' + 'a'
+			}
+			b.WriteRune(r)
+			count++
+		}
+	}
+	return b.String()
 }
 
 // Compile-time interface checks.

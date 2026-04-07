@@ -3,6 +3,7 @@ package form
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/timzifer/lux/a11y"
@@ -266,10 +267,11 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Focus management.
 	var focused bool
+	var focusUID ui.UID
 	if focus != nil && !n.Disabled {
-		uid := focus.NextElementUID()
-		focus.RegisterFocusable(uid, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
-		focused = focus.IsElementFocused(uid)
+		focusUID = focus.NextElementUID()
+		focus.RegisterFocusable(focusUID, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(focusUID)
 	}
 
 	fieldRect := draw.R(float32(area.X), float32(y), float32(w), float32(h))
@@ -376,39 +378,54 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		canvas.DrawText(icons.CaretDown, draw.Pt(arrowCenterX, downArrowY), arrowStyle, arrowColor)
 	}
 
-	// Drag on value area for continuous adjustment.
+	// Value area for direct text entry.
 	stepperW := 0
 	if n.Step > 0 {
 		stepperW = numericStepperW
 	}
 	valueRect := draw.R(float32(area.X), float32(y), float32(max(w-stepperW, 0)), float32(h))
-	if !n.Disabled && n.OnChange != nil {
-		valueW := float32(max(w-stepperW, 1))
+
+	// InputState: connect keyboard/OSK input for direct numeric entry.
+	if focused && focus != nil && n.OnChange != nil {
+		displayStr := n.formatValue()
+		cursorOff := len(displayStr)
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			if cursorOff > len(displayStr) {
+				cursorOff = len(displayStr)
+			}
+		}
 		onChange := n.OnChange
-		baseVal := n.Value
+		kind := n.Kind
 		minV := n.minVal()
 		maxV := n.maxVal()
-		step := n.Step
-		minBase := n.minVal()
-		pressX := float32(-1)
-		ix.RegisterDrag(valueRect, func(x, _ float32) {
-			if pressX < 0 {
-				pressX = x
-				return
-			}
-			delta := float64((x - pressX) / valueW)
-			newVal := baseVal + delta*(maxV-minV)*0.5
-			if step > 0 {
-				newVal = math.Round((newVal-minBase)/step)*step + minBase
-			}
-			if newVal < minV {
-				newVal = minV
-			}
-			if newVal > maxV {
-				newVal = maxV
-			}
-			onChange(newVal)
-		})
+		focus.Input = &ui.InputState{
+			Value: displayStr,
+			OnChange: func(newVal string) {
+				filtered := filterNumericChars(newVal, kind)
+				v, err := strconv.ParseFloat(filtered, 64)
+				if err != nil {
+					return
+				}
+				if v < minV {
+					v = minV
+				}
+				if v > maxV {
+					v = maxV
+				}
+				onChange(v)
+			},
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: -1,
+		}
+	}
+
+	// Hit target for focus acquisition on value area.
+	if focus != nil && !n.Disabled {
+		uid := focusUID
+		fm := focus
+		ix.RegisterHit(valueRect, func() { fm.SetFocusedUID(uid) })
 	}
 
 	totalH := (y - area.Y) + h
@@ -459,6 +476,24 @@ func (n NumericInput) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 		an.Label = n.Unit
 	}
 	b.AddNode(an, parentIdx, a11y.Rect{})
+}
+
+// filterNumericChars filters a string to only valid numeric characters.
+func filterNumericChars(s string, kind NumericKind) string {
+	var b strings.Builder
+	hasDot := false
+	for i, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case (r == '-' || r == '+') && i == 0:
+			b.WriteRune(r)
+		case (r == '.' || r == ',') && kind == NumericFloat && !hasDot:
+			b.WriteRune('.')
+			hasDot = true
+		}
+	}
+	return b.String()
 }
 
 // Compile-time interface checks.

@@ -142,6 +142,28 @@ func TestNumericInput_FormatValue(t *testing.T) {
 	}
 }
 
+func TestFilterNumericChars(t *testing.T) {
+	tests := []struct {
+		in   string
+		kind NumericKind
+		want string
+	}{
+		{"123", NumericInteger, "123"},
+		{"-42", NumericInteger, "-42"},
+		{"12.5", NumericFloat, "12.5"},
+		{"12.5.6", NumericFloat, "12.5"},   // second dot filtered
+		{"abc123", NumericInteger, "123"},   // letters filtered
+		{"-3.14", NumericFloat, "-3.14"},
+		{"12,5", NumericFloat, "12.5"},      // comma → dot
+	}
+	for _, tt := range tests {
+		got := filterNumericChars(tt.in, tt.kind)
+		if got != tt.want {
+			t.Errorf("filterNumericChars(%q, %d) = %q, want %q", tt.in, tt.kind, got, tt.want)
+		}
+	}
+}
+
 func TestNumericInput_NilBounds(t *testing.T) {
 	n := NumericInput{Value: 50, Min: nil, Max: nil, Step: 1}
 	// With nil bounds, clamp should not restrict.
