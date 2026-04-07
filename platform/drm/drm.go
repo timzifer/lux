@@ -149,6 +149,10 @@ func New() *Platform {
 	return &Platform{fd: -1, liFd: -1}
 }
 
+// HasCompositor implements platform.CompositorChecker.
+// DRM/KMS always runs without a compositor.
+func (p *Platform) HasCompositor() bool { return false }
+
 // Init opens the DRM device, finds a suitable connector and CRTC, and initializes libinput.
 func (p *Platform) Init(cfg platform.Config) error {
 	p.config = cfg

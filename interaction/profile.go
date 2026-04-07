@@ -9,6 +9,21 @@ package interaction
 
 import "time"
 
+// OSKPresentation controls how the on-screen keyboard is presented
+// when HasPhysicalKeyboard is false (RFC-004 §5).
+type OSKPresentation uint8
+
+const (
+	// OSKPresentationInline shrinks the app viewport to make room for the
+	// keyboard at the bottom of the screen (current/legacy behavior).
+	OSKPresentationInline OSKPresentation = iota
+
+	// OSKPresentationActionSheet opens an ActionSheet overlay containing
+	// an interactive copy (input proxy) of the focused widget at the top
+	// and the keyboard at the bottom. The app viewport is not shrunk.
+	OSKPresentationActionSheet
+)
+
 // PointerKind describes the primary input device (RFC-004 §2.2).
 type PointerKind uint8
 
@@ -67,6 +82,17 @@ type InteractionProfile struct {
 	// immediate state changes. Only essential animations (progress rings,
 	// alarm blinks) remain active (RFC-004 §10.2).
 	ReducedMotion bool
+
+	// OSKPresentation controls how the on-screen keyboard appears.
+	// Default (zero value) is OSKPresentationInline for backward compatibility.
+	// Touch and HMI profiles default to OSKPresentationActionSheet.
+	OSKPresentation OSKPresentation
+
+	// NoCompositor indicates the app runs without a window compositor
+	// (e.g. DRM/KMS direct rendering). When true, multi-window calls
+	// are redirected to an internal tab panel instead of creating
+	// real OS windows.
+	NoCompositor bool
 }
 
 // ProfileDesktop is the standard desktop profile with mouse and keyboard.
@@ -97,6 +123,7 @@ var ProfileTouch = InteractionProfile{
 	DebounceInterval:    200 * time.Millisecond,
 	ScaleTypography:     1.3,
 	ReducedMotion:       false,
+	OSKPresentation:     OSKPresentationActionSheet,
 }
 
 // ProfileHMI is for industrial touch panels with glove operation.
@@ -112,4 +139,5 @@ var ProfileHMI = InteractionProfile{
 	DebounceInterval:    250 * time.Millisecond,
 	ScaleTypography:     1.5,
 	ReducedMotion:       false,
+	OSKPresentation:     OSKPresentationActionSheet,
 }
