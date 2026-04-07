@@ -57,3 +57,7 @@ func CloseWindow(id WindowID) Cmd {
 		return CloseWindowMsg{ID: id}
 	}
 }
+
+// SelectWindowTabMsg is an internal message used by the no-compositor tab
+// panel to switch the active tab.
+type SelectWindowTabMsg struct{ ID WindowID }
