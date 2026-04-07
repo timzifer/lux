@@ -17,6 +17,7 @@ type LayoutContext struct {
 	Overlays *OverlayStack
 	Focus    *FocusManager
 	Profile  *interaction.InteractionProfile // active profile, nil = desktop default (RFC-004 §2.4)
+	SafeArea SafeAreaInsets                   // viewport insets from system UI (OSK, notch, etc.)
 }
 
 // IsTouch reports whether the active interaction profile uses touch input
@@ -28,12 +29,13 @@ func (ctx *LayoutContext) IsTouch() bool {
 
 // LayoutChild dispatches layout for a child element within the given area.
 // It delegates to layoutElement which handles both Layouter-implementing types
-// and legacy types via the type switch.
+// and legacy types via the type switch. SafeArea insets are propagated from
+// the parent context so child layouts can respect viewport-level insets.
 func (ctx *LayoutContext) LayoutChild(el Element, area Bounds) Bounds {
 	if el == nil {
 		return Bounds{X: area.X, Y: area.Y}
 	}
-	return layoutElement(el, area, ctx.Canvas, ctx.Theme, ctx.Tokens, ctx.IX, ctx.Overlays, ctx.Focus, ctx.Profile)
+	return layoutElementCtx(el, area, ctx.Canvas, ctx.Theme, ctx.Tokens, ctx.IX, ctx.Overlays, ctx.Focus, ctx.Profile, ctx.SafeArea)
 }
 
 // WithArea returns a copy of the context with a different area.

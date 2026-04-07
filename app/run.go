@@ -10,6 +10,8 @@ import (
 	"github.com/timzifer/lux/fonts"
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/interaction"
+	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
@@ -197,6 +199,23 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		dispatcher.SetGestureConfig(ui.GestureConfigFromProfile(activeProfile))
 	}
 
+	// No-compositor mode: detect whether the platform has a compositor.
+	// When running without a compositor (e.g. DRM/KMS), multi-window calls
+	// are redirected to an internal tab panel.
+	noCompositorMode := activeProfile != nil && activeProfile.NoCompositor
+	if !noCompositorMode {
+		if cc, ok := plat.(platform.CompositorChecker); ok {
+			noCompositorMode = !cc.HasCompositor()
+		}
+	}
+	var windowTabPanel *nav.WindowTabPanel
+	if noCompositorMode {
+		windowTabPanel = nav.NewWindowTabPanel(
+			func(id uint32) { Send(SelectWindowTabMsg{ID: WindowID(id)}) },
+			func(id uint32) { Send(CloseWindowMsg{ID: WindowID(id)}) },
+		)
+	}
+
 	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
 	dispatchCmd := func(cmd Cmd) {
 		if cmd != nil {
@@ -253,7 +272,14 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		}
 	}
 
-	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil, currentLocale, activeProfile)
+	initialView := view(currentModel)
+	// In no-compositor mode, initialize the main tab and wrap the view.
+	if noCompositorMode && windowTabPanel != nil {
+		windowTabPanel.AddTab(0, cfg.title, false)
+		windowTabPanel.SetContent(0, initialView)
+		initialView = nav.NewWindowTabPanelElement(windowTabPanel)
+	}
+	currentTree, _ := reconciler.Reconcile(initialView, activeTheme, Send, nil, nil, currentLocale, activeProfile)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
@@ -326,10 +352,27 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					plat.SetFullscreen(m.Fullscreen)
 
 				case OpenWindowMsg:
-					handleOpenWindow(m, plat, renderer, fm)
+					if noCompositorMode && windowTabPanel != nil {
+						modal := m.Config.Type == WindowTypeDialog
+						windowTabPanel.AddTab(uint32(m.ID), m.Config.Title, modal)
+						modelDirty = true
+					} else {
+						handleOpenWindow(m, plat, renderer, fm)
+					}
 					return true
 				case CloseWindowMsg:
-					handleCloseWindow(m, plat, renderer)
+					if noCompositorMode && windowTabPanel != nil {
+						windowTabPanel.RemoveTab(uint32(m.ID))
+						modelDirty = true
+					} else {
+						handleCloseWindow(m, plat, renderer)
+					}
+					return true
+				case SelectWindowTabMsg:
+					if windowTabPanel != nil {
+						windowTabPanel.SelectTab(uint32(m.ID))
+						modelDirty = true
+					}
 					return true
 
 				case ui.RequestFocusMsg:
@@ -776,6 +819,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				dispatcher.Dispatch()
 
 				newTree := view(currentModel)
+				// In no-compositor mode, wrap the view in the tab panel.
+				if noCompositorMode && windowTabPanel != nil && windowTabPanel.TabCount() > 0 {
+					windowTabPanel.SetContent(0, newTree)
+					newTree = nav.NewWindowTabPanelElement(windowTabPanel)
+				}
 				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm, currentLocale, activeProfile)
 
 				// Sort tab order derived from layout tree (RFC-002 §2.3).
@@ -845,24 +893,33 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				hitMap.Reset()
 				ix := ui.NewInteractor(&hitMap, &hoverState)
 
-				// If the OSK is visible, reduce the content area by the OSK height (RFC-004 §5.2).
+				// If the OSK is visible, choose presentation mode (RFC-004 §5.2).
 				contentH := h
-				oskH := oskState.Height(w, h, canvas.DPR())
-				if oskState.Visible && oskH > 0 {
-					contentH = h - int(oskH)
-					if contentH < 100 {
-						contentH = 100
+				var safeArea ui.SafeAreaInsets
+				var oskEl ui.Element
+				if oskState.Visible {
+					useActionSheet := activeProfile != nil &&
+						activeProfile.OSKPresentation == interaction.OSKPresentationActionSheet
+					if useActionSheet {
+						// ActionSheet mode: no viewport shrink, OSK rendered as modal overlay.
+						oskEl = osk.NewKeyboardActionSheet(&oskState, w, h, fm.Input, activeProfile)
+					} else {
+						// Inline mode (legacy): shrink viewport, render OSK at bottom.
+						oskH := oskState.Height(w, h, canvas.DPR())
+						if oskH > 0 {
+							contentH = h - int(oskH)
+							if contentH < 100 {
+								contentH = 100
+							}
+							safeArea.Bottom = oskH
+						}
+						oskEl = osk.NewOSKElement(&oskState, w, h)
 					}
 				}
 
 				paintStart := time.Now()
 
-				// Build the OSK element (if visible) so BuildScene can render it (RFC-004 §5.5).
-				var oskEl ui.Element
-				if oskState.Visible {
-					oskEl = osk.NewOSKElement(&oskState, w, h)
-				}
-				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl, activeProfile)
+				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl, activeProfile, safeArea)
 
 				paintTime := time.Since(paintStart)
 

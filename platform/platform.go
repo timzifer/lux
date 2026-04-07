@@ -116,6 +116,14 @@ type Callbacks struct {
 	OnWindowScroll      func(windowID uint32, deltaX, deltaY float32)
 }
 
+// CompositorChecker is an optional interface that platforms can implement
+// to indicate whether a window compositor is available. Platforms without
+// a compositor (e.g. DRM/KMS direct rendering) return false, causing the
+// framework to redirect multi-window calls to an internal tab panel.
+type CompositorChecker interface {
+	HasCompositor() bool
+}
+
 // MultiWindowPlatform extends Platform with multi-window support.
 // Implementations that support multiple windows should implement this interface.
 type MultiWindowPlatform interface {
