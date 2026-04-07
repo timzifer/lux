@@ -107,6 +107,8 @@ var (
 
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
 
+	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
+
 	windowClassName = syscall.StringToUTF16Ptr("LuxM1Window")
 	wndProc         = syscall.NewCallback(windowProc)
 
@@ -117,6 +119,12 @@ var (
 
 func init() {
 	runtime.LockOSThread()
+
+	// Enable per-monitor DPI awareness so the framebuffer matches physical
+	// pixels. Without this, Windows scales (stretches) the rendered output,
+	// causing pixelated/blurry appearance on high-DPI displays.
+	// DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (DPI_AWARENESS_CONTEXT)-4
+	procSetProcessDpiAwarenessContext.Call(^uintptr(3)) // -4 in two's complement
 }
 
 // Platform implements the Win32 desktop backend.

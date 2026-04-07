@@ -196,6 +196,7 @@ type RenderPipelineDescriptor struct {
 	Primitive        PrimitiveState
 	DepthStencil     *DepthStencilState
 	BindGroupLayouts []BindGroupLayout
+	SampleCount      uint32 // MSAA sample count (0 or 1 = no MSAA)
 }
 
 // VertexState describes vertex processing.
@@ -317,10 +318,11 @@ type BufferDescriptor struct {
 
 // TextureDescriptor describes a texture to create.
 type TextureDescriptor struct {
-	Label  string
-	Size   Extent3D
-	Format TextureFormat
-	Usage  TextureUsage
+	Label       string
+	Size        Extent3D
+	Format      TextureFormat
+	Usage       TextureUsage
+	SampleCount uint32 // MSAA sample count (0 or 1 = no MSAA)
 }
 
 // TextureUsage describes how a texture will be used.
@@ -567,10 +569,11 @@ type RenderPassDepthStencilAttachment struct {
 
 // RenderPassColorAttachment describes a color attachment for a render pass.
 type RenderPassColorAttachment struct {
-	View       TextureView
-	LoadOp     LoadOp
-	StoreOp    StoreOp
-	ClearValue Color
+	View          TextureView
+	ResolveTarget TextureView // optional MSAA resolve target
+	LoadOp        LoadOp
+	StoreOp       StoreOp
+	ClearValue    Color
 }
 
 // IndexFormat describes the format of index buffer data.
