@@ -67,8 +67,9 @@ type Model struct {
 	UnitState       *form.UnitInputState
 	RangeLow        float64
 	RangeHigh       float64
-	TimeValue       time.Time
-	DateValue       time.Time
+	TimeValue        time.Time
+	DateValue        time.Time
+	HMIWidgetsScroll *ui.ScrollState
 }
 
 func initialModel() Model {
@@ -96,7 +97,8 @@ func initialModel() Model {
 		RangeLow:    20,
 		RangeHigh:   80,
 		TimeValue:   time.Date(2026, 1, 1, 14, 30, 0, 0, time.UTC),
-		DateValue:   time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC),
+		DateValue:        time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC),
+		HMIWidgetsScroll: &ui.ScrollState{},
 	}
 }
 
@@ -530,7 +532,7 @@ func viewHMIWidgets(m Model) ui.Element {
 		{Symbol: "m", Label: "Meter", Factor: 1000},
 	}
 
-	return layout.Column(
+	content := layout.Column(
 		display.Text("Spezialisierte HMI-Widgets (RFC-004 §6)"),
 		display.Divider(),
 
@@ -651,6 +653,7 @@ func viewHMIWidgets(m Model) ui.Element {
 			),
 		),
 	)
+	return nav.NewScrollView(content, 0, m.HMIWidgetsScroll)
 }
 
 // ── Alarms Tab ───────────────────────────────────────────────────

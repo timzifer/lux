@@ -40,13 +40,21 @@ func (n Slider) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	ix := ctx.IX
 	focus := ctx.Focus
 
+	// Touch-adaptive sizing: grow thumb to meet MinTouchTarget.
+	thumbD := sliderThumbD
+	height := sliderHeight
+	if ctx.IsTouch() && ctx.Profile != nil {
+		thumbD = int(ctx.Profile.MinTouchTarget)
+		height = thumbD + 4
+	}
+
 	trackW := sliderMaxWidth
 	if area.W < trackW {
 		trackW = area.W
 	}
 
 	// Register draggable hit target and get hover opacity atomically.
-	sliderRect := draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(sliderHeight))
+	sliderRect := draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(height))
 	var hoverOpacity float32
 	if n.Disabled {
 		ix.RegisterDrag(sliderRect, nil)
@@ -78,7 +86,7 @@ func (n Slider) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		focused = focus.IsElementFocused(uid)
 	}
 
-	trackY := area.Y + (sliderHeight-sliderTrackH)/2
+	trackY := area.Y + (height-sliderTrackH)/2
 
 	// Track background
 	trackColor := tokens.Colors.Surface.Pressed
@@ -109,12 +117,12 @@ func (n Slider) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Thumb — pressed visual differentiation (RFC-008 §9.3).
-	thumbX := area.X + filledW - sliderThumbD/2
+	thumbX := area.X + filledW - thumbD/2
 	if thumbX < area.X {
 		thumbX = area.X
 	}
-	thumbY := area.Y + (sliderHeight-sliderThumbD)/2
-	thumbRect := draw.R(float32(thumbX), float32(thumbY), float32(sliderThumbD), float32(sliderThumbD))
+	thumbY := area.Y + (height-thumbD)/2
+	thumbRect := draw.R(float32(thumbX), float32(thumbY), float32(thumbD), float32(thumbD))
 	thumbColor := tokens.Colors.Accent.Primary
 	if hoverOpacity >= 0.9 {
 		pressedT := (hoverOpacity - 0.9) / 0.1
@@ -127,10 +135,10 @@ func (n Slider) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Focus glow on the slider thumb (RFC-008 §9.4).
 	if focused {
-		ui.DrawFocusRing(canvas, thumbRect, float32(sliderThumbD)/2, tokens)
+		ui.DrawFocusRing(canvas, thumbRect, float32(thumbD)/2, tokens)
 	}
 
-	return ui.Bounds{X: area.X, Y: area.Y, W: trackW, H: sliderHeight}
+	return ui.Bounds{X: area.X, Y: area.Y, W: trackW, H: height}
 }
 
 // TreeEqual implements ui.TreeEqualizer.

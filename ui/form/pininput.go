@@ -212,6 +212,7 @@ func (p PinInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			CursorOffset:   cursorOff,
 			SelectionStart: -1,
 		}
+		focus.FocusedBounds = &wholeRect
 	}
 
 	// Hit target for focus acquisition (like passwordfield.go:207-212).
