@@ -862,7 +862,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				if oskState.Visible {
 					oskEl = osk.NewOSKElement(&oskState, w, h)
 				}
-				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl)
+				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl, activeProfile)
 
 				paintTime := time.Since(paintStart)
 

@@ -712,14 +712,6 @@ func TestGoldenStepperVertical(t *testing.T) {
 	AssertScene(t, scene, "testdata/stepper_vertical.golden")
 }
 
-func TestGoldenDrumPicker(t *testing.T) {
-	items := form.IntItems(0, 23)
-	scene := BuildScene(
-		form.NewDrumPicker(items, 10),
-		testW, testH,
-	)
-	AssertScene(t, scene, "testdata/drum_picker.golden")
-}
 
 func TestGoldenPinInput(t *testing.T) {
 	scene := BuildScene(

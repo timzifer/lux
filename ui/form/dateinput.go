@@ -1,7 +1,6 @@
 package form
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/timzifer/lux/a11y"
@@ -12,8 +11,8 @@ import (
 
 // Layout constants for date input.
 const (
-	dateInputDrumW = 80
-	dateInputSepW  = 8
+	dateInputFieldW = 80
+	dateInputSepW   = 8
 )
 
 // DateFormat selects the date display format (RFC-004 §6.8).
@@ -29,13 +28,19 @@ const (
 type DateInputMode uint8
 
 const (
-	DateModeDrum     DateInputMode = iota // DrumPickers (Day | Month | Year)
-	DateModeCalendar                      // Calendar popup
+	DateModeNumeric  DateInputMode = iota // Three NumericInputs (Day | Month | Year)
+	DateModeCalendar                      // Calendar popup (not yet implemented)
 	DateModeDirect                        // Direct numeric entry
 )
 
+// DateModeDrum is kept as an alias for backward compatibility.
+const DateModeDrum = DateModeNumeric
+
 // DateInput is an HMI-optimized date entry widget (RFC-004 §6.8).
-// Composes DrumPicker children via ctx.LayoutChild().
+// Composes NumericInput children via ctx.LayoutChild() — each column
+// (day, month, year) is a NumericInput with appropriate bounds.
+// In touch mode the NumericInputs automatically use large increment/decrement
+// buttons above and below the value.
 type DateInput struct {
 	ui.BaseElement
 	Value    time.Time
@@ -92,21 +97,22 @@ var MonthNames = [13]string{
 func (d DateInput) OSKLayout() osk.OSKLayout { return osk.OSKLayoutNumericInteger }
 
 func (d DateInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
-	if d.Mode == DateModeDrum || d.Mode == 0 {
-		return d.layoutDrum(ctx)
+	if d.Mode == DateModeNumeric || d.Mode == 0 {
+		return d.layoutNumeric(ctx)
 	}
 	return d.layoutSimple(ctx)
 }
 
-func (d DateInput) layoutDrum(ctx *ui.LayoutContext) ui.Bounds {
+func (d DateInput) layoutNumeric(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
+	canvas := ctx.Canvas
+	tokens := ctx.Tokens
 
-	vis := drumDefaultVisible
-	totalW := 3*dateInputDrumW + 2*dateInputSepW
+	style := tokens.Typography.Body
+	totalW := 3*dateInputFieldW + 2*dateInputSepW
 	if area.W < totalW {
 		totalW = area.W
 	}
-	totalH := vis * drumItemH
 
 	year := d.Value.Year()
 	month := int(d.Value.Month())
@@ -114,35 +120,37 @@ func (d DateInput) layoutDrum(ctx *ui.LayoutContext) ui.Bounds {
 	onChange := d.OnChange
 	val := d.Value
 
-	// ── Day DrumPicker ──
 	daysInMonth := DaysInMonth(year, time.Month(month))
-	dayItems := IntItems(1, daysInMonth)
-	dayDrum := NewDrumPicker(dayItems, day-1, // 0-indexed
-		WithDrumPickerVisible(vis),
-		WithOnDrumSelect(func(idx int) {
-			if onChange != nil && idx < len(dayItems) {
-				newDay := dayItems[idx].Value.(int)
-				newT := time.Date(year, time.Month(month), newDay, 0, 0, 0, 0, val.Location())
+
+	sepColor := tokens.Colors.Text.Secondary
+	if d.Disabled {
+		sepColor = tokens.Colors.Text.Disabled
+	}
+
+	// Column order depends on format.
+	type column struct {
+		value float64
+		min   float64
+		max   float64
+		step  float64
+		wrap  bool
+		fn    func(float64)
+	}
+
+	dayCol := column{
+		value: float64(day), min: 1, max: float64(daysInMonth), step: 1, wrap: true,
+		fn: func(v float64) {
+			if onChange != nil {
+				newT := time.Date(year, time.Month(month), int(v), 0, 0, 0, 0, val.Location())
 				onChange(newT)
 			}
-		}),
-	)
-	if d.Disabled {
-		dayDrum = NewDrumPicker(dayItems, day-1, WithDrumPickerVisible(vis), WithDrumDisabled())
+		},
 	}
-	ctx.LayoutChild(dayDrum, ui.Bounds{X: area.X, Y: area.Y, W: dateInputDrumW, H: totalH})
-
-	// ── Month DrumPicker ──
-	var monthItems []DrumItem
-	for m := 1; m <= 12; m++ {
-		monthItems = append(monthItems, DrumItem{Label: MonthNames[m], Value: m})
-	}
-	monthX := area.X + dateInputDrumW + dateInputSepW
-	monthDrum := NewDrumPicker(monthItems, month-1, // 0-indexed
-		WithDrumPickerVisible(vis),
-		WithOnDrumSelect(func(idx int) {
-			if onChange != nil && idx < len(monthItems) {
-				newMonth := monthItems[idx].Value.(int)
+	monthCol := column{
+		value: float64(month), min: 1, max: 12, step: 1, wrap: true,
+		fn: func(v float64) {
+			if onChange != nil {
+				newMonth := int(v)
 				newDays := DaysInMonth(year, time.Month(newMonth))
 				newDay := day
 				if newDay > newDays {
@@ -151,24 +159,15 @@ func (d DateInput) layoutDrum(ctx *ui.LayoutContext) ui.Bounds {
 				newT := time.Date(year, time.Month(newMonth), newDay, 0, 0, 0, 0, val.Location())
 				onChange(newT)
 			}
-		}),
-	)
-	if d.Disabled {
-		monthDrum = NewDrumPicker(monthItems, month-1, WithDrumPickerVisible(vis), WithDrumDisabled())
+		},
 	}
-	ctx.LayoutChild(monthDrum, ui.Bounds{X: monthX, Y: area.Y, W: dateInputDrumW, H: totalH})
-
-	// ── Year DrumPicker ──
-	minYear := year - 10
-	maxYear := year + 10
-	yearItems := IntItems(minYear, maxYear)
-	yearIdx := year - minYear
-	yearX := monthX + dateInputDrumW + dateInputSepW
-	yearDrum := NewDrumPicker(yearItems, yearIdx,
-		WithDrumPickerVisible(vis),
-		WithOnDrumSelect(func(idx int) {
-			if onChange != nil && idx < len(yearItems) {
-				newYear := yearItems[idx].Value.(int)
+	minYear := year - 50
+	maxYear := year + 50
+	yearCol := column{
+		value: float64(year), min: float64(minYear), max: float64(maxYear), step: 1, wrap: false,
+		fn: func(v float64) {
+			if onChange != nil {
+				newYear := int(v)
 				newDays := DaysInMonth(newYear, time.Month(month))
 				newDay := day
 				if newDay > newDays {
@@ -177,14 +176,60 @@ func (d DateInput) layoutDrum(ctx *ui.LayoutContext) ui.Bounds {
 				newT := time.Date(newYear, time.Month(month), newDay, 0, 0, 0, 0, val.Location())
 				onChange(newT)
 			}
-		}),
-	)
-	if d.Disabled {
-		yearDrum = NewDrumPicker(yearItems, yearIdx, WithDrumPickerVisible(vis), WithDrumDisabled())
+		},
 	}
-	ctx.LayoutChild(yearDrum, ui.Bounds{X: yearX, Y: area.Y, W: dateInputDrumW, H: totalH})
 
-	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
+	var cols [3]column
+	var seps [2]string
+	switch d.Format {
+	case DateFormatMDY:
+		cols = [3]column{monthCol, dayCol, yearCol}
+		seps = [2]string{"/", "/"}
+	case DateFormatYMD:
+		cols = [3]column{yearCol, monthCol, dayCol}
+		seps = [2]string{"-", "-"}
+	default: // DMY
+		cols = [3]column{dayCol, monthCol, yearCol}
+		seps = [2]string{".", "."}
+	}
+
+	x := area.X
+	var firstH int
+	for i, col := range cols {
+		var opts []NumericInputOption
+		opts = append(opts,
+			WithNumericRange(col.min, col.max),
+			WithNumericStep(col.step),
+			WithNumericKind(NumericInteger),
+		)
+		if col.wrap {
+			opts = append(opts, WithWrapping())
+		}
+		if d.Disabled {
+			opts = append(opts, WithNumericDisabled())
+		}
+		if col.fn != nil {
+			fn := col.fn
+			opts = append(opts, WithOnNumericChange(fn))
+		}
+
+		el := NewNumericInput(col.value, opts...)
+		cb := ctx.LayoutChild(el, ui.Bounds{X: x, Y: area.Y, W: dateInputFieldW, H: area.H})
+		if i == 0 {
+			firstH = cb.H
+		}
+		x += dateInputFieldW
+
+		// Separator between columns.
+		if i < 2 {
+			sm := canvas.MeasureText(seps[i], style)
+			sepY := float32(area.Y) + float32(cb.H)/2 - style.Size/2
+			canvas.DrawText(seps[i], draw.Pt(float32(x)+float32(dateInputSepW)/2-sm.Width/2, sepY), style, sepColor)
+			x += dateInputSepW
+		}
+	}
+
+	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: firstH}
 }
 
 func (d DateInput) layoutSimple(ctx *ui.LayoutContext) ui.Bounds {

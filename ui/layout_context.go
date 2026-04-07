@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/theme"
 )
 
@@ -15,6 +16,14 @@ type LayoutContext struct {
 	IX       *Interactor
 	Overlays *OverlayStack
 	Focus    *FocusManager
+	Profile  *interaction.InteractionProfile // active profile, nil = desktop default (RFC-004 §2.4)
+}
+
+// IsTouch reports whether the active interaction profile uses touch input
+// (finger or glove). Widgets use this to switch to touch-optimized layouts
+// with larger hit targets.
+func (ctx *LayoutContext) IsTouch() bool {
+	return ctx.Profile != nil && ctx.Profile.PointerKind != interaction.PointerMouse
 }
 
 // LayoutChild dispatches layout for a child element within the given area.
@@ -24,7 +33,7 @@ func (ctx *LayoutContext) LayoutChild(el Element, area Bounds) Bounds {
 	if el == nil {
 		return Bounds{X: area.X, Y: area.Y}
 	}
-	return layoutElement(el, area, ctx.Canvas, ctx.Theme, ctx.Tokens, ctx.IX, ctx.Overlays, ctx.Focus)
+	return layoutElement(el, area, ctx.Canvas, ctx.Theme, ctx.Tokens, ctx.IX, ctx.Overlays, ctx.Focus, ctx.Profile)
 }
 
 // WithArea returns a copy of the context with a different area.
@@ -46,5 +55,5 @@ func (ctx *LayoutContext) WithTheme(th theme.Theme) *LayoutContext {
 // using a NullCanvas for the measurement pass.
 func (ctx *LayoutContext) MeasureChild(el Element, area Bounds) Bounds {
 	nc := NullCanvas{Delegate: ctx.Canvas}
-	return layoutElement(el, area, nc, ctx.Theme, ctx.Tokens, nil, nil)
+	return layoutElement(el, area, nc, ctx.Theme, ctx.Tokens, nil, nil, nil, ctx.Profile)
 }
