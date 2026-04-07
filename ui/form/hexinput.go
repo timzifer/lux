@@ -208,9 +208,11 @@ func (h HexInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			OnChange: func(newVal string) {
 				filtered := filterHexChars(newVal, upper, maxDigits)
 				if onChange != nil {
-					if v, ok := ParseHex(filtered); ok {
-						onChange(v)
+					v, ok := ParseHex(filtered)
+					if !ok {
+						v = 0
 					}
+					onChange(v)
 				}
 			},
 			FocusUID:       focusUID,
@@ -283,25 +285,27 @@ func ParseHex(s string) (uint64, bool) {
 	return val, true
 }
 
-// filterHexChars filters a string to only valid hex characters, truncated to maxDigits.
+// filterHexChars filters a string to only valid hex characters.
+// If the result exceeds maxDigits, the last maxDigits characters are kept
+// (shift-register behavior: new digits push old ones out on the left).
 func filterHexChars(s string, upper bool, maxDigits int) string {
 	var b strings.Builder
-	count := 0
 	for _, r := range s {
-		if count >= maxDigits {
-			break
+		if !IsValidHexChar(r) {
+			continue
 		}
-		if IsValidHexChar(r) {
-			if upper && r >= 'a' && r <= 'f' {
-				r = r - 'a' + 'A'
-			} else if !upper && r >= 'A' && r <= 'F' {
-				r = r - 'A' + 'a'
-			}
-			b.WriteRune(r)
-			count++
+		if upper && r >= 'a' && r <= 'f' {
+			r = r - 'a' + 'A'
+		} else if !upper && r >= 'A' && r <= 'F' {
+			r = r - 'A' + 'a'
 		}
+		b.WriteRune(r)
 	}
-	return b.String()
+	result := b.String()
+	if maxDigits > 0 && len(result) > maxDigits {
+		result = result[len(result)-maxDigits:]
+	}
+	return result
 }
 
 // Compile-time interface checks.

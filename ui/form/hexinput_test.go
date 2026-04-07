@@ -51,7 +51,7 @@ func TestFilterHexChars(t *testing.T) {
 		{"00ffgg", true, 4, "00FF"},   // filtered + uppercased
 		{"abcd", false, 4, "abcd"},
 		{"ABCD", false, 4, "abcd"},    // lowercased
-		{"12345678", true, 4, "1234"}, // truncated
+		{"12345678", true, 4, "5678"}, // shift-register: keep last maxDigits
 	}
 	for _, tt := range tests {
 		got := filterHexChars(tt.in, tt.upper, tt.max)
