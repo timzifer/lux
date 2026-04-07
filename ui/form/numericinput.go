@@ -85,6 +85,11 @@ type NumericInput struct {
 
 	// Clamping controls when bounds are enforced.
 	Clamping ClampBehavior
+
+	// Wrapping enables cyclic value behavior: incrementing past Max wraps to Min,
+	// decrementing below Min wraps to Max. Used by TimeInput (hours 23→0) and
+	// DateInput (months 12→1).
+	Wrapping bool
 }
 
 // NumericInputOption configures a NumericInput element.
@@ -143,6 +148,11 @@ func WithClamping(c ClampBehavior) NumericInputOption {
 	return func(n *NumericInput) { n.Clamping = c }
 }
 
+// WithWrapping enables cyclic value wrapping (Max→Min on increment, Min→Max on decrement).
+func WithWrapping() NumericInputOption {
+	return func(n *NumericInput) { n.Wrapping = true }
+}
+
 // NewNumericInput creates a numeric input element.
 // Defaults: Min=0, Max=100, Step=1.
 func NewNumericInput(value float64, opts ...NumericInputOption) ui.Element {
@@ -181,11 +191,21 @@ func (n NumericInput) maxVal() float64 {
 }
 
 func (n NumericInput) clamp(v float64) float64 {
-	if v < n.minVal() {
-		return n.minVal()
+	lo, hi := n.minVal(), n.maxVal()
+	if n.Wrapping && n.Min != nil && n.Max != nil {
+		if v > hi {
+			return lo
+		}
+		if v < lo {
+			return hi
+		}
+		return v
 	}
-	if v > n.maxVal() {
-		return n.maxVal()
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
 	}
 	return v
 }
@@ -238,6 +258,14 @@ func (n NumericInput) OSKLayout() osk.OSKLayout {
 
 // LayoutSelf implements ui.Layouter.
 func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	if ctx.IsTouch() && n.Step > 0 {
+		return n.layoutTouch(ctx)
+	}
+	return n.layoutDesktop(ctx)
+}
+
+// layoutDesktop renders the classic layout: text field with narrow stepper column on the right.
+func (n NumericInput) layoutDesktop(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
 	canvas := ctx.Canvas
 	tokens := ctx.Tokens
@@ -385,6 +413,164 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	valueRect := draw.R(float32(area.X), float32(y), float32(max(w-stepperW, 0)), float32(h))
 
+	n.setupInputState(focus, focusUID, focused, valueRect, ix)
+
+	totalH := (y - area.Y) + h
+	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: totalH}
+}
+
+// layoutTouch renders the touch-optimized layout: full-width increment button above,
+// value text field in the middle, full-width decrement button below.
+// Button heights are derived from the interaction profile's MinTouchTarget.
+func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
+	area := ctx.Area
+	canvas := ctx.Canvas
+	tokens := ctx.Tokens
+	ix := ctx.IX
+	focus := ctx.Focus
+
+	style := tokens.Typography.Body
+	labelStyle := tokens.Typography.Label
+
+	w := numericInputW
+	if area.W < w {
+		w = area.W
+	}
+
+	// Button height from profile (minimum touch target).
+	btnH := 48
+	if ctx.Profile != nil && int(ctx.Profile.MinTouchTarget) > btnH {
+		btnH = int(ctx.Profile.MinTouchTarget)
+	}
+
+	y := area.Y
+
+	// Label above the field.
+	if n.Label != "" {
+		labelColor := tokens.Colors.Text.Secondary
+		if n.Disabled {
+			labelColor = tokens.Colors.Text.Disabled
+		}
+		canvas.DrawText(n.Label, draw.Pt(float32(area.X), float32(y)), labelStyle, labelColor)
+		m := canvas.MeasureText(n.Label, labelStyle)
+		y += int(math.Ceil(float64(m.Ascent))) + 4
+	}
+
+	// Focus management.
+	var focused bool
+	var focusUID ui.UID
+	if focus != nil && !n.Disabled {
+		focusUID = focus.NextElementUID()
+		focus.RegisterFocusable(focusUID, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = focus.IsElementFocused(focusUID)
+	}
+
+	borderColor := tokens.Colors.Stroke.Border
+	fillColor := tokens.Colors.Surface.Elevated
+	if n.Disabled {
+		borderColor = ui.DisabledColor(borderColor, tokens.Colors.Surface.Base)
+		fillColor = ui.DisabledColor(fillColor, tokens.Colors.Surface.Base)
+	}
+
+	arrowStyle := tokens.Typography.Body
+	arrowStyle.FontFamily = "Phosphor"
+	arrowColor := tokens.Colors.Text.Secondary
+	if n.Disabled {
+		arrowColor = tokens.Colors.Text.Disabled
+	}
+
+	// ── Increment button (top, full width) ──
+	upRect := draw.R(float32(area.X), float32(y), float32(w), float32(btnH))
+	canvas.FillRoundRect(upRect, tokens.Radii.Button, draw.SolidPaint(borderColor))
+	canvas.FillRoundRect(
+		draw.R(float32(area.X+1), float32(y+1), float32(max(w-2, 0)), float32(max(btnH-2, 0))),
+		maxf(tokens.Radii.Button-1, 0), draw.SolidPaint(fillColor))
+
+	var upHover float32
+	if n.Disabled {
+		ix.RegisterHit(upRect, nil)
+	} else {
+		var upFn func()
+		if n.OnChange != nil {
+			onChange := n.OnChange
+			val := n.clamp(n.snapToStep(n.Value + n.Step))
+			upFn = func() { onChange(val) }
+		}
+		upHover = ix.RegisterHit(upRect, upFn)
+	}
+	if upHover > 0 {
+		canvas.FillRoundRect(upRect, tokens.Radii.Button, draw.SolidPaint(draw.Color{A: upHover * 0.08}))
+	}
+	arrowCX := float32(area.X) + float32(w)/2 - arrowStyle.Size/2
+	arrowCY := float32(y) + float32(btnH)/2 - arrowStyle.Size/2
+	canvas.DrawText(icons.CaretUp, draw.Pt(arrowCX, arrowCY), arrowStyle, arrowColor)
+	y += btnH
+
+	// ── Value text field (middle, full width) ──
+	fieldH := int(style.Size) + numericInputPadY*2
+	fieldRect := draw.R(float32(area.X), float32(y), float32(w), float32(fieldH))
+	canvas.FillRect(fieldRect, draw.SolidPaint(borderColor))
+	canvas.FillRect(
+		draw.R(float32(area.X+1), float32(y+1), float32(max(w-2, 0)), float32(max(fieldH-2, 0))),
+		draw.SolidPaint(fillColor))
+
+	if focused {
+		ui.DrawFocusRing(canvas, fieldRect, 0, tokens)
+	}
+
+	textColor := tokens.Colors.Text.Primary
+	if n.Disabled {
+		textColor = tokens.Colors.Text.Disabled
+	}
+	displayText := n.formatValue()
+	if n.Value == 0 && n.Placeholder != "" && !focused {
+		displayText = n.Placeholder
+		textColor = tokens.Colors.Text.Secondary
+	} else if n.Unit != "" {
+		displayText += " " + n.Unit
+	}
+	tm := canvas.MeasureText(displayText, style)
+	textX := float32(area.X) + float32(w)/2 - tm.Width/2
+	textY := float32(y) + float32(fieldH)/2 - style.Size/2
+	canvas.DrawText(displayText, draw.Pt(textX, textY), style, textColor)
+	y += fieldH
+
+	// ── Decrement button (bottom, full width) ──
+	downRect := draw.R(float32(area.X), float32(y), float32(w), float32(btnH))
+	canvas.FillRoundRect(downRect, tokens.Radii.Button, draw.SolidPaint(borderColor))
+	canvas.FillRoundRect(
+		draw.R(float32(area.X+1), float32(y+1), float32(max(w-2, 0)), float32(max(btnH-2, 0))),
+		maxf(tokens.Radii.Button-1, 0), draw.SolidPaint(fillColor))
+
+	var downHover float32
+	if n.Disabled {
+		ix.RegisterHit(downRect, nil)
+	} else {
+		var downFn func()
+		if n.OnChange != nil {
+			onChange := n.OnChange
+			val := n.clamp(n.snapToStep(n.Value - n.Step))
+			downFn = func() { onChange(val) }
+		}
+		downHover = ix.RegisterHit(downRect, downFn)
+	}
+	if downHover > 0 {
+		canvas.FillRoundRect(downRect, tokens.Radii.Button, draw.SolidPaint(draw.Color{A: downHover * 0.08}))
+	}
+	arrowCY = float32(y) + float32(btnH)/2 - arrowStyle.Size/2
+	canvas.DrawText(icons.CaretDown, draw.Pt(arrowCX, arrowCY), arrowStyle, arrowColor)
+	y += btnH
+
+	// InputState & focus hit target for the value area.
+	n.setupInputState(focus, focusUID, focused, fieldRect, ix)
+
+	totalH := y - area.Y
+	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: totalH}
+}
+
+// setupInputState connects keyboard/OSK input for direct numeric entry and
+// registers the focus hit target.
+func (n NumericInput) setupInputState(focus *ui.FocusManager, focusUID ui.UID, focused bool, valueRect draw.Rect, ix *ui.Interactor) {
 	// InputState: connect keyboard/OSK input for direct numeric entry.
 	if focused && focus != nil && n.OnChange != nil {
 		displayStr := n.formatValue()
@@ -427,9 +613,6 @@ func (n NumericInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		fm := focus
 		ix.RegisterHit(valueRect, func() { fm.SetFocusedUID(uid) })
 	}
-
-	totalH := (y - area.Y) + h
-	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: totalH}
 }
 
 // TreeEqual implements ui.TreeEqualizer.

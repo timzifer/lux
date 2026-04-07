@@ -1,7 +1,6 @@
 package form
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/timzifer/lux/a11y"
@@ -12,8 +11,8 @@ import (
 
 // Layout constants for time input.
 const (
-	timeInputDrumW   = 80
-	timeInputSepW    = 16
+	timeInputFieldW = 80
+	timeInputSepW   = 16
 )
 
 // TimeFormat selects the time display format (RFC-004 §6.8).
@@ -25,8 +24,11 @@ const (
 	TimeFormat12h                      // 2:30 PM
 )
 
-// TimeInput is an HMI-optimized time entry widget using DrumPickers (RFC-004 §6.8).
-// Composes DrumPicker children via ctx.LayoutChild().
+// TimeInput is an HMI-optimized time entry widget (RFC-004 §6.8).
+// Composes NumericInput children via ctx.LayoutChild() — each column
+// (hour, minute, optional second) is a NumericInput with Wrapping enabled.
+// In touch mode the NumericInputs automatically use large increment/decrement
+// buttons above and below the value (see NumericInput.layoutTouch).
 type TimeInput struct {
 	ui.BaseElement
 	Value      time.Time
@@ -82,110 +84,105 @@ func (t TimeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	style := tokens.Typography.Body
 	cols := t.columnCount()
-	vis := drumDefaultVisible
-	totalW := cols*timeInputDrumW + (cols-1)*timeInputSepW
+	totalW := cols*timeInputFieldW + (cols-1)*timeInputSepW
 	if area.W < totalW {
 		totalW = area.W
 	}
-	totalH := vis * drumItemH
 
 	hour := t.Value.Hour()
 	minute := t.Value.Minute()
 	second := t.Value.Second()
 	onChange := t.OnChange
 	val := t.Value
-
-	// ── Hour DrumPicker ──
-	hourItems := IntItems(0, 23)
-	hourDrum := NewDrumPicker(hourItems, hour,
-		WithDrumPickerVisible(vis),
-		WithDrumLooping(),
-		WithOnDrumSelect(func(idx int) {
-			if onChange != nil {
-				newT := time.Date(val.Year(), val.Month(), val.Day(),
-					idx, minute, second, 0, val.Location())
-				onChange(newT)
-			}
-		}),
-	)
-	if t.Disabled {
-		hourDrum = NewDrumPicker(hourItems, hour,
-			WithDrumPickerVisible(vis), WithDrumLooping(), WithDrumDisabled())
-	}
-	ctx.LayoutChild(hourDrum, ui.Bounds{X: area.X, Y: area.Y, W: timeInputDrumW, H: totalH})
-
-	// ":" separator
-	sepX := area.X + timeInputDrumW
-	sepColor := tokens.Colors.Text.Secondary
-	if t.Disabled {
-		sepColor = tokens.Colors.Text.Disabled
-	}
-	sepY := float32(area.Y) + float32(totalH)/2 - style.Size/2
-	sm := canvas.MeasureText(":", style)
-	canvas.DrawText(":", draw.Pt(float32(sepX)+float32(timeInputSepW)/2-sm.Width/2, sepY), style, sepColor)
-
-	// ── Minute DrumPicker ──
 	minuteStep := t.MinuteStep
 	if minuteStep < 1 {
 		minuteStep = 1
 	}
-	var minuteItems []DrumItem
-	for m := 0; m < 60; m += minuteStep {
-		minuteItems = append(minuteItems, DrumItem{Label: fmt.Sprintf("%02d", m), Value: m})
-	}
-	// Find the index matching the current minute.
-	minuteIdx := 0
-	for i, item := range minuteItems {
-		if item.Value.(int) == minute {
-			minuteIdx = i
-			break
-		}
-	}
-	minuteX := sepX + timeInputSepW
-	minuteDrum := NewDrumPicker(minuteItems, minuteIdx,
-		WithDrumPickerVisible(vis),
-		WithDrumLooping(),
-		WithOnDrumSelect(func(idx int) {
-			if onChange != nil && idx < len(minuteItems) {
-				newMin := minuteItems[idx].Value.(int)
-				newT := time.Date(val.Year(), val.Month(), val.Day(),
-					hour, newMin, second, 0, val.Location())
-				onChange(newT)
-			}
-		}),
+
+	// ── Hour NumericInput ──
+	hourMin, hourMax := 0.0, 23.0
+	var hourOpts []NumericInputOption
+	hourOpts = append(hourOpts,
+		WithNumericRange(hourMin, hourMax),
+		WithNumericStep(1),
+		WithNumericKind(NumericInteger),
+		WithWrapping(),
 	)
 	if t.Disabled {
-		minuteDrum = NewDrumPicker(minuteItems, minuteIdx,
-			WithDrumPickerVisible(vis), WithDrumLooping(), WithDrumDisabled())
+		hourOpts = append(hourOpts, WithNumericDisabled())
 	}
-	ctx.LayoutChild(minuteDrum, ui.Bounds{X: minuteX, Y: area.Y, W: timeInputDrumW, H: totalH})
+	if onChange != nil {
+		hourOpts = append(hourOpts, WithOnNumericChange(func(v float64) {
+			newT := time.Date(val.Year(), val.Month(), val.Day(),
+				int(v), minute, second, 0, val.Location())
+			onChange(newT)
+		}))
+	}
+	hourEl := NewNumericInput(float64(hour), hourOpts...)
+	hourBounds := ctx.LayoutChild(hourEl, ui.Bounds{X: area.X, Y: area.Y, W: timeInputFieldW, H: area.H})
 
-	// ── Second DrumPicker (if HH:MM:SS) ──
+	// ":" separator
+	sepX := area.X + timeInputFieldW
+	sepColor := tokens.Colors.Text.Secondary
+	if t.Disabled {
+		sepColor = tokens.Colors.Text.Disabled
+	}
+	sepY := float32(area.Y) + float32(hourBounds.H)/2 - style.Size/2
+	sm := canvas.MeasureText(":", style)
+	canvas.DrawText(":", draw.Pt(float32(sepX)+float32(timeInputSepW)/2-sm.Width/2, sepY), style, sepColor)
+
+	// ── Minute NumericInput ──
+	minuteMin, minuteMax := 0.0, float64(59)
+	var minuteOpts []NumericInputOption
+	minuteOpts = append(minuteOpts,
+		WithNumericRange(minuteMin, minuteMax),
+		WithNumericStep(float64(minuteStep)),
+		WithNumericKind(NumericInteger),
+		WithWrapping(),
+	)
+	if t.Disabled {
+		minuteOpts = append(minuteOpts, WithNumericDisabled())
+	}
+	if onChange != nil {
+		minuteOpts = append(minuteOpts, WithOnNumericChange(func(v float64) {
+			newT := time.Date(val.Year(), val.Month(), val.Day(),
+				hour, int(v), second, 0, val.Location())
+			onChange(newT)
+		}))
+	}
+	minuteX := sepX + timeInputSepW
+	minuteEl := NewNumericInput(float64(minute), minuteOpts...)
+	ctx.LayoutChild(minuteEl, ui.Bounds{X: minuteX, Y: area.Y, W: timeInputFieldW, H: area.H})
+
+	// ── Second NumericInput (if HH:MM:SS) ──
 	if cols == 3 {
-		sep2X := minuteX + timeInputDrumW
+		sep2X := minuteX + timeInputFieldW
 		canvas.DrawText(":", draw.Pt(float32(sep2X)+float32(timeInputSepW)/2-sm.Width/2, sepY), style, sepColor)
 
 		secondX := sep2X + timeInputSepW
-		secondItems := IntItems(0, 59)
-		secondDrum := NewDrumPicker(secondItems, second,
-			WithDrumPickerVisible(vis),
-			WithDrumLooping(),
-			WithOnDrumSelect(func(idx int) {
-				if onChange != nil {
-					newT := time.Date(val.Year(), val.Month(), val.Day(),
-						hour, minute, idx, 0, val.Location())
-					onChange(newT)
-				}
-			}),
+		secondMin, secondMax := 0.0, 59.0
+		var secondOpts []NumericInputOption
+		secondOpts = append(secondOpts,
+			WithNumericRange(secondMin, secondMax),
+			WithNumericStep(1),
+			WithNumericKind(NumericInteger),
+			WithWrapping(),
 		)
 		if t.Disabled {
-			secondDrum = NewDrumPicker(secondItems, second,
-				WithDrumPickerVisible(vis), WithDrumLooping(), WithDrumDisabled())
+			secondOpts = append(secondOpts, WithNumericDisabled())
 		}
-		ctx.LayoutChild(secondDrum, ui.Bounds{X: secondX, Y: area.Y, W: timeInputDrumW, H: totalH})
+		if onChange != nil {
+			secondOpts = append(secondOpts, WithOnNumericChange(func(v float64) {
+				newT := time.Date(val.Year(), val.Month(), val.Day(),
+					hour, minute, int(v), 0, val.Location())
+				onChange(newT)
+			}))
+		}
+		secondEl := NewNumericInput(float64(second), secondOpts...)
+		ctx.LayoutChild(secondEl, ui.Bounds{X: secondX, Y: area.Y, W: timeInputFieldW, H: area.H})
 	}
 
-	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: totalH}
+	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: hourBounds.H}
 }
 
 func (t TimeInput) TreeEqual(other ui.Element) bool {
