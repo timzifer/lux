@@ -151,8 +151,22 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	canvas := ctx.Canvas
 	tokens := ctx.Tokens
 
+	// Touch-adaptive sizing: scale tab headers to meet MinTouchTarget (RFC-004 §2).
+	padY := wtabHeaderPadY
+	closeW := wtabCloseW
+	minTabW := wtabMinTabW
+	if ctx.IsTouch() && ctx.Profile != nil {
+		minT := int(ctx.Profile.MinTouchTarget)
+		padY = (minT - int(ctx.Tokens.Typography.Label.Size)) / 2
+		if padY < wtabHeaderPadY {
+			padY = wtabHeaderPadY
+		}
+		closeW = minT / 2
+		minTabW = minT * 2
+	}
+
 	headerStyle := tokens.Typography.Label
-	headerH := int(headerStyle.Size) + wtabHeaderPadY*2
+	headerH := int(headerStyle.Size) + padY*2
 
 	// Draw tab header row.
 	cursorX := area.X
@@ -166,10 +180,10 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		m := canvas.MeasureText(tab.Title, headerStyle)
 		tw := int(m.Width) + wtabHeaderPadX*2
 		if len(panel.tabs) > 1 {
-			tw += wtabCloseGap + wtabCloseW // space for close button
+			tw += wtabCloseGap + closeW // space for close button
 		}
-		if tw < wtabMinTabW {
-			tw = wtabMinTabW
+		if tw < minTabW {
+			tw = minTabW
 		}
 
 		isBlocked := panel.blocked[tab.ID]
@@ -202,14 +216,14 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			textColor = tokens.Colors.Text.Disabled
 		}
 		textX := float32(cursorX + wtabHeaderPadX)
-		textY := float32(area.Y + wtabHeaderPadY)
+		textY := float32(area.Y + padY)
 		canvas.DrawText(tab.Title, draw.Pt(textX, textY), headerStyle, textColor)
 
 		// Close button (only if more than one tab and tab is selected).
 		if len(panel.tabs) > 1 && isSelected && tab.ID != 0 {
-			closeX := float32(cursorX+tw-wtabHeaderPadX-wtabCloseW)
+			closeX := float32(cursorX+tw-wtabHeaderPadX-closeW)
 			closeY := float32(area.Y) + float32(headerH-int(headerStyle.Size))/2
-			closeRect := draw.R(closeX, closeY, float32(wtabCloseW), headerStyle.Size)
+			closeRect := draw.R(closeX, closeY, float32(closeW), headerStyle.Size)
 			if ctx.IX != nil {
 				tabID := tab.ID
 				onCl := panel.onClose
@@ -220,7 +234,7 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				})
 			}
 			// Simple X icon.
-			cx := closeX + float32(wtabCloseW)/2
+			cx := closeX + float32(closeW)/2
 			cy := closeY + headerStyle.Size/2
 			sz := headerStyle.Size * 0.3
 			canvas.FillRect(draw.R(cx-sz, cy-0.5, sz*2, 1), draw.SolidPaint(textColor))
