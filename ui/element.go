@@ -650,7 +650,7 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 // BuildSceneWithOSK is like BuildScene but also renders an on-screen keyboard
 // overlay element after all other overlays (RFC-004 §5.5).
 // If oskOverlay is nil, it behaves identically to BuildScene.
-func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, height int, ix *Interactor, focus *FocusManager, oskOverlay Element) draw.Scene {
+func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, height int, ix *Interactor, focus *FocusManager, oskOverlay Element, profile *interaction.InteractionProfile) draw.Scene {
 	if width <= 0 {
 		width = 800
 	}
@@ -665,7 +665,7 @@ func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, 
 	var overlays OverlayStack
 	overlays.WindowW = width
 	overlays.WindowH = height
-	layoutElement(root, area, canvas, th, tokens, ix, &overlays, focus)
+	layoutElement(root, area, canvas, th, tokens, ix, &overlays, focus, profile)
 
 	// Switch canvas to overlay mode so overlay draw commands go to
 	// separate scene lists, rendered after all main content.
@@ -705,15 +705,15 @@ func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, 
 	return draw.Scene{}
 }
 
-func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus ...*FocusManager) Bounds {
-	var fs *FocusManager
-	if len(focus) > 0 {
-		fs = focus[0]
+func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager, profileOpt ...*interaction.InteractionProfile) Bounds {
+	var profile *interaction.InteractionProfile
+	if len(profileOpt) > 0 {
+		profile = profileOpt[0]
 	}
 	// Interface-based dispatch: sub-package element types implement Layouter
 	// and bypass the type switch entirely.
 	if l, ok := el.(Layouter); ok {
-		ctx := &LayoutContext{Area: area, Canvas: canvas, Theme: th, Tokens: tokens, IX: ix, Overlays: overlays, Focus: fs}
+		ctx := &LayoutContext{Area: area, Canvas: canvas, Theme: th, Tokens: tokens, IX: ix, Overlays: overlays, Focus: focus, Profile: profile}
 		return l.LayoutSelf(ctx)
 	}
 	switch node := el.(type) {
@@ -722,10 +722,10 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		return Bounds{X: area.X, Y: area.Y}
 
 	case WidgetBoundsElement:
-		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile)
 
 	case KeyedElement:
-		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, fs)
+		return layoutElement(node.Child, area, canvas, th, tokens, ix, overlays, focus, profile)
 
 	case ThemedElement:
 		// Switch theme and tokens for this subtree, lay out children as a column.
@@ -734,7 +734,7 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		cursorY := area.Y
 		maxW := 0
 		for _, child := range node.Children {
-			cb := layoutElement(child, Bounds{X: area.X, Y: cursorY, W: area.W, H: area.H}, canvas, subTh, subTokens, ix, overlays, fs)
+			cb := layoutElement(child, Bounds{X: area.X, Y: cursorY, W: area.W, H: area.H}, canvas, subTh, subTokens, ix, overlays, focus, profile)
 			if cb.W > maxW {
 				maxW = cb.W
 			}
@@ -746,10 +746,10 @@ func layoutElement(el Element, area Bounds, canvas draw.Canvas, th theme.Theme, 
 		return layoutSurface(node, area, canvas, tokens, ix)
 
 	case Overlay:
-		return layoutOverlay(node, area, canvas, th, tokens, ix, overlays, fs)
+		return layoutOverlay(node, area, canvas, th, tokens, ix, overlays, focus, profile)
 
 	case CustomLayoutElement:
-		return layoutCustom(node, area, canvas, th, tokens, ix, overlays, fs)
+		return layoutCustom(node, area, canvas, th, tokens, ix, overlays, focus, profile)
 
 	default:
 		return Bounds{X: area.X, Y: area.Y}
@@ -770,7 +770,7 @@ func (indexedChild) isElement() {}
 
 // layoutCustom implements the custom layout protocol (RFC-002 §4.3).
 // It delegates measurement and placement to the user-provided Layout.
-func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, fs *FocusManager) Bounds {
+func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, fs *FocusManager, profile *interaction.InteractionProfile) Bounds {
 	if node.Layout == nil || len(node.Children) == 0 {
 		return Bounds{X: area.X, Y: area.Y}
 	}
@@ -797,7 +797,7 @@ func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th 
 			actual = ic.child
 		}
 		measureArea := Bounds{X: 0, Y: 0, W: int(c.MaxWidth), H: int(c.MaxHeight)}
-		cb := layoutElement(actual, measureArea, nc, th, tokens, nil, nil)
+		cb := layoutElement(actual, measureArea, nc, th, tokens, nil, nil, nil, profile)
 		return Size{Width: float32(cb.W), Height: float32(cb.H)}
 	}
 
@@ -833,7 +833,7 @@ func layoutCustom(node CustomLayoutElement, area Bounds, canvas draw.Canvas, th 
 			W: area.W,
 			H: area.H,
 		}
-		cb := layoutElement(child, childArea, canvas, th, tokens, ix, overlays, fs)
+		cb := layoutElement(child, childArea, canvas, th, tokens, ix, overlays, fs, profile)
 		endX := int(p.offset.X) + cb.W
 		endY := int(p.offset.Y) + cb.H
 		if endX > maxW {
@@ -1036,7 +1036,7 @@ func minf(a, b float32) float32 {
 	return b
 }
 
-func layoutOverlay(node Overlay, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager) Bounds {
+func layoutOverlay(node Overlay, area Bounds, canvas draw.Canvas, th theme.Theme, tokens theme.TokenSet, ix *Interactor, overlays *OverlayStack, focus *FocusManager, profile *interaction.InteractionProfile) Bounds {
 	if node.Content == nil || overlays == nil {
 		return Bounds{X: area.X, Y: area.Y}
 	}
@@ -1076,7 +1076,7 @@ func layoutOverlay(node Overlay, area Bounds, canvas draw.Canvas, th theme.Theme
 
 			// Measure content with null canvas.
 			nc := NullCanvas{Delegate: canvas}
-			cb := layoutElement(content, Bounds{X: 0, Y: 0, W: 400, H: 300}, nc, th, tokens, nil, nil, nil)
+			cb := layoutElement(content, Bounds{X: 0, Y: 0, W: 400, H: 300}, nc, th, tokens, nil, nil, nil, profile)
 
 			pad := 8
 			contentSize := draw.Size{W: float32(cb.W + pad*2), H: float32(cb.H + pad*2)}
@@ -1096,7 +1096,7 @@ func layoutOverlay(node Overlay, area Bounds, canvas draw.Canvas, th theme.Theme
 			layoutElement(content, Bounds{
 				X: int(pos.X) + pad, Y: int(pos.Y) + pad,
 				W: max(int(contentSize.W)-pad*2, 0), H: max(int(contentSize.H)-pad*2, 0),
-			}, canvas, th, tokens, ix, nil, focus)
+			}, canvas, th, tokens, ix, nil, focus, profile)
 		},
 	})
 

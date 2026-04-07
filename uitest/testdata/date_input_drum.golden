@@ -1,0 +1,33 @@
+=== Scene ===
+grain: 0.0300
+
+[Rects] (12)
+  0: rect(24,24 80x29) color(255,255,255,26) r=4.0
+  1: rect(25,25 78x27) color(23,26,32,255) r=3.0
+  2: rect(80,25 1x27) color(255,255,255,26)
+  3: rect(80,38 24x1) color(255,255,255,26)
+  4: rect(112,24 80x29) color(255,255,255,26) r=4.0
+  5: rect(113,25 78x27) color(23,26,32,255) r=3.0
+  6: rect(168,25 1x27) color(255,255,255,26)
+  7: rect(168,38 24x1) color(255,255,255,26)
+  8: rect(200,24 80x29) color(255,255,255,26) r=4.0
+  9: rect(201,25 78x27) color(23,26,32,255) r=3.0
+  10: rect(256,25 1x27) color(255,255,255,26)
+  11: rect(256,38 24x1) color(255,255,255,26)
+
+[Glyphs] (11)
+  0: glyph(32,32) scale=1 color(238,242,247,255) "19"
+  1: glyph(86,25) scale=1 color(168,176,188,255) "\ue13c"
+  2: glyph(86,40) scale=1 color(168,176,188,255) "\ue136"
+  3: glyph(105,32) scale=1 color(168,176,188,255) "."
+  4: glyph(120,32) scale=1 color(238,242,247,255) "3"
+  5: glyph(174,25) scale=1 color(168,176,188,255) "\ue13c"
+  6: glyph(174,40) scale=1 color(168,176,188,255) "\ue136"
+  7: glyph(193,32) scale=1 color(168,176,188,255) "."
+  8: glyph(208,32) scale=1 color(238,242,247,255) "2026"
+  9: glyph(262,25) scale=1 color(168,176,188,255) "\ue13c"
+  10: glyph(262,40) scale=1 color(168,176,188,255) "\ue136"
+
+[ClipBatches] (1)
+  0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0
+

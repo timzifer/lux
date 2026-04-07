@@ -59,7 +59,6 @@ type Model struct {
 	// HMI Widgets demo (RFC-004 §6)
 	NumericVal      float64
 	StepperVal      int
-	DrumPickerIdx   int
 	PinValue        string
 	HexValue        uint64
 	IPValue         string
@@ -128,7 +127,6 @@ type SetDemoOSKModeMsg struct{ Mode osk.OSKMode }
 // HMI Widget messages (RFC-004 §6)
 type SetNumericValMsg struct{ V float64 }
 type SetStepperValMsg struct{ V int }
-type SetDrumPickerIdxMsg struct{ V int }
 type SetPinValueMsg struct{ V string }
 type SetHexValueMsg struct{ V uint64 }
 type SetIPValueMsg struct{ V string }
@@ -216,8 +214,6 @@ func update(m Model, msg app.Msg) Model {
 		m.NumericVal = msg.V
 	case SetStepperValMsg:
 		m.StepperVal = msg.V
-	case SetDrumPickerIdxMsg:
-		m.DrumPickerIdx = msg.V
 	case SetPinValueMsg:
 		m.PinValue = msg.V
 	case SetHexValueMsg:
@@ -534,8 +530,6 @@ func viewHMIWidgets(m Model) ui.Element {
 		{Symbol: "m", Label: "Meter", Factor: 1000},
 	}
 
-	drumItems := form.IntItems(0, 23)
-
 	return layout.Column(
 		display.Text("Spezialisierte HMI-Widgets (RFC-004 §6)"),
 		display.Divider(),
@@ -567,17 +561,6 @@ func viewHMIWidgets(m Model) ui.Element {
 						form.WithOnStepperChange(func(v int) { app.Send(SetStepperValMsg{V: v}) }),
 					),
 					display.Text(fmt.Sprintf("Wert: %d", m.StepperVal)),
-				),
-			),
-		),
-
-		// DrumPicker
-		display.Card(
-			layout.Column(
-				display.Text("DrumPicker — Rollen-Auswahl"),
-				form.NewDrumPicker(drumItems, m.DrumPickerIdx,
-					form.WithOnDrumSelect(func(i int) { app.Send(SetDrumPickerIdxMsg{V: i}) }),
-					form.WithDrumLooping(),
 				),
 			),
 		),
@@ -662,7 +645,7 @@ func viewHMIWidgets(m Model) ui.Element {
 			layout.Column(
 				display.Text("DateInput — Datum-Eingabe"),
 				form.NewDateInput(m.DateValue,
-					form.WithDateMode(form.DateModeDrum),
+					form.WithDateMode(form.DateModeNumeric),
 					form.WithOnDateInputChange(func(t time.Time) { app.Send(SetDateValueMsg{V: t}) }),
 				),
 			),
