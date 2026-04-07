@@ -108,6 +108,15 @@ func (n ConfirmButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 
+	// Focus — register before click handler so uid is available in closure.
+	var focused bool
+	var focusUID ui.UID
+	if fs != nil {
+		focusUID = fs.NextElementUID()
+		fs.RegisterFocusable(focusUID, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
+		focused = fs.IsElementFocused(focusUID)
+	}
+
 	// Register positional click for ripple origin.
 	var hoverOpacity float32
 	hoverOpacity = ix.RegisterClickAt(buttonRect, func(x, y float32) {
@@ -124,15 +133,12 @@ func (n ConfirmButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				n.OnConfirm()
 			}
 		}
+		// Focus the button on click to ensure a repaint is triggered,
+		// so the confirm-phase visual change becomes visible.
+		if fs != nil {
+			fs.SetFocusedUID(focusUID)
+		}
 	})
-
-	// Focus.
-	var focused bool
-	if fs != nil {
-		uid := fs.NextElementUID()
-		fs.RegisterFocusable(uid, ui.FocusOpts{Focusable: true, TabIndex: 0, FocusOnClick: true})
-		focused = fs.IsElementFocused(uid)
-	}
 
 	// Colours: idle = normal variant, pending = danger (red).
 	var fillColor, borderColor, textColor draw.Color
