@@ -79,7 +79,7 @@ type Model struct {
 
 func initialModel() Model {
 	// Set up demo WindowTabPanel for Navigation tab.
-	navPanel := nav.NewWindowTabPanel(nil, nil)
+	navPanel := nav.NewWindowTabPanel(nil, nil, nav.TabPositionTop)
 	navPanel.AddTab(0, "Main View", false)
 	navPanel.AddTab(1, "Settings", false)
 	navPanel.AddTab(2, "Diagnostics", false)
