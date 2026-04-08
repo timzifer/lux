@@ -2,18 +2,18 @@
 grain: 0.0300
 
 [Rects] (5)
-  0: rect(24,24 116x62) color(23,26,32,255) r=10.0
-  1: rect(24,24 116x1) color(255,255,255,26)
-  2: rect(24,85 116x1) color(255,255,255,26)
-  3: rect(24,25 1x60) color(255,255,255,26)
-  4: rect(139,25 1x60) color(255,255,255,26)
+  0: rect(36,33 116x62) color(23,26,32,255) r=10.0
+  1: rect(36,33 116x1) color(255,255,255,26)
+  2: rect(36,94 116x1) color(255,255,255,26)
+  3: rect(36,34 1x60) color(255,255,255,26)
+  4: rect(151,34 1x60) color(255,255,255,26)
 
 [Glyphs] (2)
-  0: glyph(40,40) scale=1 color(238,242,247,255) "Card Title"
-  1: glyph(40,63) scale=1 color(238,242,247,255) "Card body text"
+  0: glyph(52,49) scale=1 color(238,242,247,255) "Card Title"
+  1: glyph(52,72) scale=1 color(238,242,247,255) "Card body text"
 
 [ShadowRects] (1)
-  0: shadow(12,15 140x86) color(0,0,0,56) r=8.0 blur=12.0
+  0: shadow(24,24 140x86) color(0,0,0,56) r=8.0 blur=12.0
 
 [ClipBatches] (1)
   0: clip(0,0 800x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0

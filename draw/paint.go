@@ -211,6 +211,36 @@ type Shadow struct {
 	Inset        bool    // when true, shadow is drawn inside the rect (inner shadow)
 }
 
+// Extent returns how far the shadow extends beyond the source rect on each
+// side.  Layout code should reserve this space so the shadow is not clipped.
+// Inset shadows return zero extents (they are drawn inside the rect).
+func (s Shadow) Extent() Insets {
+	if s.Inset {
+		return Insets{}
+	}
+	spread := s.BlurRadius + s.SpreadRadius
+	return Insets{
+		Top:    max(spread-s.OffsetY, 0),
+		Right:  max(spread+s.OffsetX, 0),
+		Bottom: max(spread+s.OffsetY, 0),
+		Left:   max(spread-s.OffsetX, 0),
+	}
+}
+
+// MaxExtent returns the component-wise maximum of the extents of all given
+// shadows.  Useful when the shadow interpolates between several presets.
+func MaxExtent(shadows ...Shadow) Insets {
+	var out Insets
+	for _, s := range shadows {
+		e := s.Extent()
+		out.Top = max(out.Top, e.Top)
+		out.Right = max(out.Right, e.Right)
+		out.Bottom = max(out.Bottom, e.Bottom)
+		out.Left = max(out.Left, e.Left)
+	}
+	return out
+}
+
 // BlendMode controls layer compositing.
 type BlendMode uint8
 

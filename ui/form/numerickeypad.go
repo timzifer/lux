@@ -115,6 +115,9 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 			cfg.Focus.SetFocusedUID(cfg.FocusUID)
 		}
 	})
+	shadow := tokens.Elevation.Med
+	shadow.Radius = tokens.Radii.Input + 2
+	canvas.DrawShadow(bgRect, shadow)
 	canvas.FillRoundRect(bgRect, tokens.Radii.Input+2, draw.SolidPaint(tokens.Colors.Surface.Elevated))
 	canvas.StrokeRoundRect(bgRect, tokens.Radii.Input+2,
 		draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
