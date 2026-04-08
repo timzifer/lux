@@ -5,8 +5,13 @@
 package nav
 
 import (
+	"math"
+
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/button"
+	"github.com/timzifer/lux/ui/icons"
+	"github.com/timzifer/lux/ui/layout"
 )
 
 // WindowTab represents a single tab in the window tab panel,
@@ -44,7 +49,14 @@ func NewWindowTabPanel(onSelect func(uint32), onClose func(uint32), position Tab
 }
 
 // AddTab adds a new tab. If modal is true, the currently selected tab is blocked.
+// If a tab with the given ID already exists, it is selected instead of duplicated.
 func (p *WindowTabPanel) AddTab(id uint32, title string, modal bool) {
+	for _, tab := range p.tabs {
+		if tab.ID == id {
+			p.selected = id
+			return
+		}
+	}
 	parent := p.selected
 	p.tabs = append(p.tabs, WindowTab{
 		ID:       id,
@@ -92,9 +104,27 @@ func (p *WindowTabPanel) SetContent(id uint32, content ui.Element) {
 // Selected returns the currently selected tab ID.
 func (p *WindowTabPanel) Selected() uint32 { return p.selected }
 
+// isTabBlocked reports whether the given tab cannot be selected.
+// A tab is blocked when it is the direct parent of a modal child, or when
+// the currently selected tab is modal (blocking all other tabs).
+func (p *WindowTabPanel) isTabBlocked(id uint32) bool {
+	if p.blocked[id] {
+		return true
+	}
+	// When the selected tab is a modal dialog, all other tabs are blocked.
+	if id != p.selected {
+		for _, tab := range p.tabs {
+			if tab.Modal && tab.ID == p.selected {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // SelectTab switches to the tab with the given ID, if it exists and is not blocked.
 func (p *WindowTabPanel) SelectTab(id uint32) {
-	if p.blocked[id] {
+	if p.isTabBlocked(id) {
 		return
 	}
 	for _, tab := range p.tabs {
@@ -146,7 +176,6 @@ func NewWindowTabPanelElement(panel *WindowTabPanel) ui.Element {
 
 // Window tab layout constants.
 const (
-	wtabCloseW   = 20
 	wtabCloseGap = 6
 )
 
@@ -177,22 +206,26 @@ func (h windowTabHeaderElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	totalW := int(m.Width)
 
-	// Close button.
+	// Close button rendered as a standard IconButton.
 	if h.showClose {
-		closeX := float32(area.X + totalW + wtabCloseGap)
-		closeY := float32(area.Y) + (headerStyle.Size-float32(wtabCloseW))/2
-		closeRect := draw.R(closeX, closeY, float32(wtabCloseW), float32(wtabCloseW))
-		if ctx.IX != nil && h.onClose != nil {
-			ctx.IX.RegisterHit(closeRect, h.onClose)
+		closeBtn := button.Icon{
+			IconName: icons.X,
+			OnClick:  h.onClose,
+			Variant:  ui.ButtonGhost,
+			Size:     headerStyle.Size,
 		}
-		// Simple X icon: two crossing lines.
-		cx := closeX + float32(wtabCloseW)/2
-		cy := closeY + float32(wtabCloseW)/2
-		sz := float32(wtabCloseW) * 0.3
-		ctx.Canvas.FillRect(draw.R(cx-sz, cy-0.5, sz*2, 1), draw.SolidPaint(textColor))
-		ctx.Canvas.FillRect(draw.R(cx-0.5, cy-sz, 1, sz*2), draw.SolidPaint(textColor))
-
-		totalW += wtabCloseGap + wtabCloseW
+		// Vertically center the button relative to the text line.
+		// The button extends into the tab header's own padding, which is fine.
+		btnH := int(math.Ceil(float64(headerStyle.Size))) + ui.IconButtonPad*2
+		btnY := area.Y + (int(headerStyle.Size)-btnH)/2
+		btnArea := ui.Bounds{
+			X: area.X + totalW + wtabCloseGap,
+			Y: btnY,
+			W: area.W - totalW - wtabCloseGap,
+			H: btnH,
+		}
+		cb := ctx.LayoutChild(closeBtn, btnArea)
+		totalW += wtabCloseGap + cb.W
 	}
 
 	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: int(headerStyle.Size)}
@@ -216,13 +249,20 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		showClose := len(panel.tabs) > 1 && tab.ID == panel.selected && tab.ID != 0
-		isBlocked := panel.blocked[tab.ID]
+		isBlocked := panel.isTabBlocked(tab.ID)
 		tabID := tab.ID
 
 		var closeFn func()
 		if showClose && panel.onClose != nil {
 			onCl := panel.onClose
 			closeFn = func() { onCl(tabID) }
+		}
+
+		// Wrap content in FramePadding so the tab strip is edge-to-edge
+		// while tab content retains the normal application margin.
+		content := tab.Content
+		if content != nil {
+			content = layout.Pad(ui.UniformInsets(float32(ui.FramePadding)), content)
 		}
 
 		items[i] = TabItem{
@@ -232,7 +272,7 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				blocked:   isBlocked,
 				onClose:   closeFn,
 			},
-			Content: tab.Content,
+			Content: content,
 		}
 	}
 
@@ -241,7 +281,7 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	onSelect := func(idx int) {
 		if idx >= 0 && idx < len(panel.tabs) {
 			tab := panel.tabs[idx]
-			if !panel.blocked[tab.ID] && panel.onSelect != nil {
+			if !panel.isTabBlocked(tab.ID) && panel.onSelect != nil {
 				panel.onSelect(tab.ID)
 			}
 		}
