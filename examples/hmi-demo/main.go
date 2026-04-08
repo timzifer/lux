@@ -60,10 +60,6 @@ type Model struct {
 	AutoMode     bool
 	AlarmEnabled bool
 
-	// Navigation demo — WindowTabPanel
-	NavPanel       *nav.WindowTabPanel
-	NavSelectedTab uint32
-
 	// HMI Widgets demo (RFC-004 §6)
 	NumericVal      float64
 	StepperVal      int
@@ -78,15 +74,6 @@ type Model struct {
 }
 
 func initialModel() Model {
-	// Set up demo WindowTabPanel for Navigation tab.
-	navPanel := nav.NewWindowTabPanel(nil, nil, nav.TabPositionTop)
-	navPanel.AddTab(0, "Main View", false)
-	navPanel.AddTab(1, "Settings", false)
-	navPanel.AddTab(2, "Diagnostics", false)
-	navPanel.SetContent(0, display.Text("Main View — this panel adapts to the active interaction profile."))
-	navPanel.SetContent(1, display.Text("Settings — tab headers scale to MinTouchTarget in Touch/HMI mode."))
-	navPanel.SetContent(2, display.Text("Diagnostics — close buttons and spacing grow for glove operation."))
-
 	return Model{
 		Dark:              true,
 		ProfileName:       "HMI",
@@ -102,7 +89,6 @@ func initialModel() Model {
 		HoldStopState:     button.NewHoldButtonState(),
 		AutoMode:          true,
 		AlarmEnabled:      true,
-		NavPanel:          navPanel,
 		// HMI Widgets defaults
 		NumericVal:  23.5,
 		StepperVal:  5,
@@ -139,9 +125,6 @@ type EmergencyHoldCompleteMsg struct{}
 // Checkbox messages
 type ToggleAutoModeMsg struct{}
 type ToggleAlarmEnabledMsg struct{}
-
-// Navigation demo messages
-type SelectNavTabMsg struct{ ID uint32 }
 
 // On-Screen Keyboard messages (RFC-004 §5)
 type SetOSKField1Msg struct{ V string }
@@ -227,10 +210,6 @@ func update(m Model, msg app.Msg) Model {
 	case ToggleAlarmEnabledMsg:
 		m.AlarmEnabled = !m.AlarmEnabled
 
-	case SelectNavTabMsg:
-		m.NavPanel.SelectTab(msg.ID)
-		m.NavSelectedTab = msg.ID
-
 	case SetOSKField1Msg:
 		m.OSKTextField1 = msg.V
 	case SetOSKField2Msg:
@@ -271,8 +250,8 @@ func view(m Model) ui.Element {
 				{Header: display.Text("Touch Feedback"), Content: viewTouchFeedback(m)},
 				{Header: display.Text("Keyboard"), Content: viewKeyboard(m)},
 				{Header: display.Text("HMI Widgets"), Content: viewHMIWidgets(m)},
-				{Header: display.Text("Navigation"), Content: viewNavigation(m)},
 				{Header: display.Text("Alarms"), Content: viewAlarms(m)},
+				{Header: display.Text("Windows"), Content: viewWindows(m)},
 			},
 			m.ActiveTab,
 			func(i int) { app.Send(SelectTabMsg{Index: i}) },
@@ -671,42 +650,52 @@ func viewHMIWidgets(m Model) ui.Element {
 	return nav.NewScrollView(content, 0, m.HMIWidgetsScroll)
 }
 
-// ── Navigation Tab (WindowNavBar Demo) ──────────────────────────
+// ── Windows Tab (multi-window via tab bar) ──────────────────────
 
-func viewNavigation(m Model) ui.Element {
-	// Update panel content with profile-aware descriptions.
-	m.NavPanel.SetContent(0, layout.Column(
-		display.Text("Main View"),
-		display.Text(fmt.Sprintf("Active Profile: %s — Tab headers scale to %.0fdp.",
-			m.ProfileName, profileFor(m.ProfileName).MinTouchTarget)),
-	))
+// Window IDs for secondary windows.
+const (
+	windowSettings    app.WindowID = 1
+	windowDiagnostics app.WindowID = 2
+	windowAlarmDetail app.WindowID = 3
+)
 
+func viewWindows(m Model) ui.Element {
 	return layout.Column(
-		display.Text("WindowNavBar Demo — Tab-basiertes Fenstermanagement"),
+		display.Text("Fenster-Management (No-Compositor Tab-Bar)"),
 		display.Divider(),
 
 		display.Card(
 			layout.Column(
-				display.Text("Diese Komponente verwaltet logische Fenster als Tabs."),
-				display.Text("Im Touch/HMI-Profil wachsen Tab-Header, Schließ-Buttons und Abstände."),
+				display.Text("In diesem Modus erscheinen neue Fenster als Tabs in der globalen Tab-Bar."),
+				display.Text("Die Tab-Bar wird automatisch vom Framework gerendert."),
+				display.Text(fmt.Sprintf("Aktives Profil: %s — NoCompositor-Modus aktiv.", m.ProfileName)),
 			),
 		),
 
 		display.Divider(),
 
-		// Render the WindowTabPanel.
-		nav.NewWindowTabPanelElement(m.NavPanel),
-
-		display.Divider(),
-
-		// Manual tab selection buttons (for demo purposes).
 		display.Card(
 			layout.Column(
-				display.Text("Tab-Auswahl:"),
+				display.Text("Fenster öffnen:"),
 				layout.Row(
-					button.Text("Main View", func() { app.Send(SelectNavTabMsg{ID: 0}) }),
-					button.Text("Settings", func() { app.Send(SelectNavTabMsg{ID: 1}) }),
-					button.Text("Diagnostics", func() { app.Send(SelectNavTabMsg{ID: 2}) }),
+					button.Text("Settings", func() {
+						app.Send(app.OpenWindowMsg{
+							ID:     windowSettings,
+							Config: app.WindowConfig{Title: "Settings", Width: 800, Height: 500},
+						})
+					}),
+					button.Text("Diagnostics", func() {
+						app.Send(app.OpenWindowMsg{
+							ID:     windowDiagnostics,
+							Config: app.WindowConfig{Title: "Diagnostics", Width: 800, Height: 500},
+						})
+					}),
+					button.Text("Alarm Detail (Dialog)", func() {
+						app.Send(app.OpenWindowMsg{
+							ID:     windowAlarmDetail,
+							Config: app.WindowConfig{Title: "Alarm Detail", Type: app.WindowTypeDialog, Width: 600, Height: 400},
+						})
+					}),
 				),
 			),
 		),
@@ -772,11 +761,16 @@ func profileFor(name string) interaction.InteractionProfile {
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
+	// HMI profile with NoCompositor: windows appear as tabs in the global tab bar.
+	hmiProfile := interaction.ProfileHMI
+	hmiProfile.NoCompositor = true
+
 	if err := app.Run(initialModel(), update, view,
 		app.WithTheme(theme.Default),
 		app.WithTitle("HMI Demo — Industrial Control Panel"),
 		app.WithSize(1024, 600),
-		app.WithInteractionProfile(interaction.ProfileHMI),
+		app.WithInteractionProfile(hmiProfile),
+		app.WithTabBarPosition(nav.TabPositionTop),
 	); err != nil {
 		log.Fatal(err)
 	}
