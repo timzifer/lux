@@ -545,15 +545,20 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 		// Capture the InputState pointer so the keypad can write directly into it.
 		inputState := focus.Input
 
+		focusMgr := focus
+		fuid := focusUID
+
 		overlays.Push(ui.OverlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
 				renderNumericKeypad(numericKeypadConfig{
-					State:     kpState,
-					Input:     inputState,
-					Kind:      kind,
-					Step:      step,
-					Min:       minP,
-					Max:       maxP,
+					State:    kpState,
+					Input:    inputState,
+					Focus:    focusMgr,
+					FocusUID: fuid,
+					Kind:     kind,
+					Step:     step,
+					Min:      minP,
+					Max:      maxP,
 					Precision: prec,
 					OnSubmit: func(v float64) {
 						kpState.Open = false
