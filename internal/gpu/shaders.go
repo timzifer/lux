@@ -115,7 +115,11 @@ float roundedBoxSDF(vec2 p, vec2 b, float r) {
 }
 
 float noiseHash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    uint n = uint(p.x) * 1597334673u ^ uint(p.y) * 3812015801u;
+    n = (n ^ (n >> 16u)) * 2246822519u;
+    n = (n ^ (n >> 13u)) * 3266489917u;
+    n = n ^ (n >> 16u);
+    return float(n) / 4294967295.0;
 }
 
 void main() {
