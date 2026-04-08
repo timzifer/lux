@@ -98,29 +98,35 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		// Auto-scroll to keep the focused element visible (e.g. when the OSK
-		// appears and shrinks the viewport). The focused bounds are in screen
-		// space (post-scroll), so we convert to content space first.
+		// appears and shrinks the viewport). Only runs once per focus gain or
+		// viewport-height change so the user can scroll freely afterwards.
+		vH := float32(viewportH)
 		if ctx.Focus != nil && ctx.Focus.FocusedBounds != nil {
-			fb := ctx.Focus.FocusedBounds
-			areaY := float32(area.Y)
-			contentTop := fb.Y + n.State.Offset - areaY
-			contentBottom := contentTop + fb.H
-			vH := float32(viewportH)
-			padding := float32(16)
+			if n.State.AutoScrollVH != vH {
+				fb := ctx.Focus.FocusedBounds
+				areaY := float32(area.Y)
+				contentTop := fb.Y + n.State.Offset - areaY
+				contentBottom := contentTop + fb.H
+				padding := float32(16)
 
-			if contentBottom > n.State.Offset+vH {
-				n.State.Offset = contentBottom - vH + padding
-			}
-			if contentTop < n.State.Offset {
-				n.State.Offset = contentTop - padding
-				if n.State.Offset < 0 {
-					n.State.Offset = 0
+				if contentBottom > n.State.Offset+vH {
+					n.State.Offset = contentBottom - vH + padding
 				}
+				if contentTop < n.State.Offset {
+					n.State.Offset = contentTop - padding
+					if n.State.Offset < 0 {
+						n.State.Offset = 0
+					}
+				}
+				// Re-clamp after adjustment.
+				if n.State.Offset > maxScroll {
+					n.State.Offset = maxScroll
+				}
+				n.State.AutoScrollVH = vH
 			}
-			// Re-clamp after adjustment.
-			if n.State.Offset > maxScroll {
-				n.State.Offset = maxScroll
-			}
+		} else {
+			// Reset so the next focus gain triggers a fresh auto-scroll.
+			n.State.AutoScrollVH = -1
 		}
 	}
 
