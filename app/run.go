@@ -929,6 +929,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				// as an ActionSheet overlay without shrinking the viewport.
 				contentH := h
 				var safeArea ui.SafeAreaInsets
+				if noCompositorMode {
+					safeArea.NoFramePadding = true
+				}
 				var oskEl ui.Element
 				if oskState.Visible && oskState.Layout != osk.OSKLayoutNone {
 					oskEl = osk.NewKeyboardActionSheet(&oskState, w, h, fm.Input, activeProfile)

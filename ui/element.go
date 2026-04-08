@@ -415,6 +415,7 @@ func (s *ScrollState) ScrollBy(delta float32, contentHeight, viewportHeight floa
 // Values are in dp. Zero means no inset on that edge.
 type SafeAreaInsets struct {
 	Top, Right, Bottom, Left float32
+	NoFramePadding           bool // skip frame padding (e.g. no-compositor tab panel)
 }
 
 // IsZero reports whether all insets are zero.
@@ -697,14 +698,18 @@ func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, 
 	ix.resetCounter()
 
 	tokens := th.Tokens()
-	area := Bounds{X: framePadding, Y: framePadding, W: max(width-(framePadding*2), 0), H: max(height-(framePadding*2), 0)}
-	var overlays OverlayStack
-	overlays.WindowW = width
-	overlays.WindowH = height
 	var sa SafeAreaInsets
 	if len(safeArea) > 0 {
 		sa = safeArea[0]
 	}
+	pad := framePadding
+	if sa.NoFramePadding {
+		pad = 0
+	}
+	area := Bounds{X: pad, Y: pad, W: max(width-(pad*2), 0), H: max(height-(pad*2), 0)}
+	var overlays OverlayStack
+	overlays.WindowW = width
+	overlays.WindowH = height
 	layoutElementCtx(root, area, canvas, th, tokens, ix, &overlays, focus, profile, sa)
 
 	// Switch canvas to overlay mode so overlay draw commands go to
