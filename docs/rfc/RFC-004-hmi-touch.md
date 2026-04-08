@@ -1,9 +1,10 @@
 # RFC-004 — lux: HMI & Touch-Optimierung
 
 **Repository:** `github.com/timzifer/lux`
-**Status:** Entwurf
+**Status:** Teilweise integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-19
+**Zuletzt abgeglichen:** 2026-04-08
 **Abhängig von:** RFC-001 (Core), RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme)
 
 ---
@@ -15,9 +16,9 @@
 | §1 Motivation & Scope | — | Kontext, kein Code |
 | §2 Interaction-Profile | ✅ Integriert | `interaction/profile.go` — ProfileDesktop, ProfileTouch, ProfileHMI; RenderCtx-Propagation, Hover-Elimination, GestureConfig-Ableitung |
 | §3 Gesture-Recognizer | ✅ Integriert | `input/gesture.go`, `ui/gesture.go` — Tap, LongPress, Pan, Pinch; Arena-basierte Disambiguierung |
-| §4 Touch-Feedback & Bestätigung | ⏳ Wartend | |
+| §4 Touch-Feedback & Bestätigung | ✅ Integriert | `ui/button/confirm.go` (ConfirmButton), `ui/button/hold.go` (HoldButton), `ui/button/ripple.go` (Ripple), `platform/haptics.go` (Haptics-API) |
 | §5 On-Screen-Keyboard | ✅ Integriert | `ui/osk/` — OSKLayout, OSKAction, OSKKey, 4 Modi (Alpha, NumPad, Full, Condensed); DPI-aware Sizing; Framework-Overlay in `app/run.go` |
-| §6 Spezialisierte Input-Widgets | ⏳ Wartend | |
+| §6 Spezialisierte Input-Widgets | ✅ Größtenteils integriert | NumericInput, Stepper, UnitInput, TimeInput, DateInput, RangeInput implementiert; DrumPicker fehlt |
 | §7 HMI-Theme-Profil | ⏳ Wartend | |
 | §8 Navigation & Layout-Patterns | ⏳ Wartend | |
 | §9 Industrielle Anforderungen | ⏳ Wartend | |

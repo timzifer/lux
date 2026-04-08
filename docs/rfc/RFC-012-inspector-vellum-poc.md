@@ -5,7 +5,7 @@
 **Status:** Integriert (PoC)
 **Version:** 0.1.0
 **Datum:** 2026-03-28
-**Zuletzt abgeglichen:** 2026-03-31
+**Zuletzt abgeglichen:** 2026-04-08
 **Abhängig von:** RFC-001 (Core Architecture, §12), RFC-011 (Vellum-Protokoll)
 **Berührt:** RFC-002 (Interaction & Layout), RFC-006 (Surface Semantics), RFC-007 (WGPU Rendering)
 **Löst ab:** ToDo 6.7 (Inspector & Debugging)
@@ -25,7 +25,7 @@
 | §8 Phase B (Unix-Socket-Transport) | ✅ Implementiert + Tests |
 | §8 Phase C (Debug-Extensions) | ✅ Implementiert + Tests |
 | §8 Phase D (Inspector-UI) | ✅ Implementiert (Basis-Panels) |
-| §9 Verifikation | ✅ 20 Tests bestanden |
+| §9 Verifikation | ✅ 21 Tests bestanden |
 
 ---
 

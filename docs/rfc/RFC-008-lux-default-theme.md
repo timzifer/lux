@@ -4,6 +4,7 @@
 **Status:** Integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-20
+**Zuletzt abgeglichen:** 2026-04-08
 **Abhängig von:** RFC-001 (Core Architecture), RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme), RFC-007 (WGPU Rendering)
 
 ---

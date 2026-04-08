@@ -2,10 +2,24 @@
 
 **Repository:** `github.com/timzifer/lux`
 
-**Status:** Theoretical
+**Status:** Integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-19
+**Zuletzt abgeglichen:** 2026-04-08
 **Abhängigkeit:** RFC-001-lux.md §8 (Surface-Slots), §11 (Accessibility); RFC-004-lux-webview.md
+
+---
+
+### Implementierungsstatus
+
+| Abschnitt | Status | Anmerkung |
+|-----------|--------|-----------|
+| §5 SemanticProvider-Interface | ✅ Integriert | `ui/element.go` — `SemanticProvider` mit `SnapshotSemantics`, `HitTestSemantics`, `FocusSemanticNode`, `PerformSemanticAction` |
+| §5 SurfaceSemantics / SurfaceAccessNode | ✅ Integriert | `ui/element.go` — `SurfaceSemantics{Roots, Version}`, `SurfaceAccessNode` mit allen Feldern |
+| §6 AccessTree-Merge | ✅ Integriert | `ui/access_tree_builder.go` — `MergeSurfaceSemantics()`, Host-Node-Fallback für nicht-semantische Surfaces |
+| §7 Fokus, Aktionen, Hit-Testing | ✅ Integriert | Vollständig via SemanticProvider-Methoden |
+| §9 Fallback-Strategie | ✅ Integriert | Generischer `RoleGroup`-Node als Fallback |
+| §10 Testing | ✅ Integriert | `ui/semantic_provider_test.go` |
 
 ---
 
