@@ -10,7 +10,6 @@ import (
 	"github.com/timzifer/lux/fonts"
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/hit"
