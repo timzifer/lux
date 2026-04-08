@@ -34,13 +34,14 @@ func (n Box) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 func (n Box) layoutColumn(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
 	cursorY := area.Y
+	remainH := area.H // remaining height available for subsequent children
 	maxW := 0
 	maxH := 0
 	count := 0
 	firstBaseline := 0
 
 	for _, child := range n.Children {
-		childBounds := ctx.LayoutChild(child, ui.Bounds{X: area.X, Y: cursorY, W: area.W, H: area.H})
+		childBounds := ctx.LayoutChild(child, ui.Bounds{X: area.X, Y: cursorY, W: area.W, H: remainH})
 		if childBounds.W == 0 && childBounds.H == 0 {
 			continue
 		}
@@ -48,7 +49,12 @@ func (n Box) layoutColumn(ctx *ui.LayoutContext) ui.Bounds {
 			firstBaseline = childBounds.Baseline
 		}
 		count++
-		cursorY += childBounds.H + ui.ColumnGap
+		advance := childBounds.H + ui.ColumnGap
+		cursorY += advance
+		remainH -= advance
+		if remainH < 0 {
+			remainH = 0
+		}
 		if childBounds.W > maxW {
 			maxW = childBounds.W
 		}

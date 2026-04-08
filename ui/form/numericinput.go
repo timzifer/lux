@@ -414,7 +414,7 @@ func (n NumericInput) layoutDesktop(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	valueRect := draw.R(float32(area.X), float32(y), float32(max(w-stepperW, 0)), float32(h))
 
-	n.setupInputState(focus, focusUID, focused, valueRect, ix)
+	n.setupInputState(focus, focusUID, focused, valueRect, ix, false)
 
 	totalH := (y - area.Y) + h
 	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: totalH}
@@ -485,6 +485,21 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 		ui.DrawFocusRing(canvas, fieldRect, tokens.Radii.Input, tokens)
 	}
 
+	// Determine raw mode: when the keypad is open, defer validation to submit.
+	rawMode := false
+	if focused && !n.Disabled {
+		kpState := getKeypadState(focusUID)
+		rawMode = kpState.Open
+	}
+
+	// Register InputState BEFORE drawing text so the raw value is available.
+	n.setupInputState(focus, focusUID, focused, fieldRect, ix, rawMode)
+
+	// Suppress the global OSK — this widget provides its own keypad overlay.
+	if focused && focus != nil && focus.Input != nil {
+		focus.Input.SuppressOSK = true
+	}
+
 	// Value text + unit.
 	textX := area.X + numericInputPadX
 	textY := y + numericInputPadY
@@ -494,7 +509,9 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	displayText := n.formatValue()
-	if n.Value == 0 && n.Placeholder != "" && !focused {
+	if rawMode && focus != nil && focus.Input != nil && focus.Input.FocusUID == focusUID {
+		displayText = focus.Input.Value
+	} else if n.Value == 0 && n.Placeholder != "" && !focused {
 		displayText = n.Placeholder
 		textColor = tokens.Colors.Text.Secondary
 	} else if n.Unit != "" {
@@ -504,25 +521,17 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Draw caret when focused.
 	if focused && focus != nil {
-		cursorOff := len(n.formatValue())
+		cursorOff := len(displayText)
 		if focus.Input != nil && focus.Input.FocusUID == focusUID {
 			cursorOff = focus.Input.CursorOffset
-			if cursorOff > len(n.formatValue()) {
-				cursorOff = len(n.formatValue())
+			if cursorOff > len(displayText) {
+				cursorOff = len(displayText)
 			}
 		}
-		metrics := canvas.MeasureText(n.formatValue()[:cursorOff], style)
+		metrics := canvas.MeasureText(displayText[:cursorOff], style)
 		cursorX := float32(textX) + metrics.Width
 		canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
 			draw.SolidPaint(tokens.Colors.Text.Primary))
-	}
-
-	// Register InputState, hit target, and focus bounds via shared helper.
-	n.setupInputState(focus, focusUID, focused, fieldRect, ix)
-
-	// Suppress the global OSK — this widget provides its own keypad overlay.
-	if focused && focus != nil && focus.Input != nil {
-		focus.Input.SuppressOSK = true
 	}
 
 	// ── Keypad overlay (shown when focused) ──
@@ -576,25 +585,41 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 }
 
 // setupInputState connects keyboard/OSK input for direct numeric entry and
-// registers the focus hit target.
-func (n NumericInput) setupInputState(focus *ui.FocusManager, focusUID ui.UID, focused bool, valueRect draw.Rect, ix *ui.Interactor) {
+// registers the focus hit target. When rawMode is true (keypad open), the
+// raw text is preserved without validation; formatting/clamping only happens
+// on blur or submit.
+func (n NumericInput) setupInputState(focus *ui.FocusManager, focusUID ui.UID, focused bool, valueRect draw.Rect, ix *ui.Interactor, rawMode bool) {
 	// InputState: connect keyboard/OSK input for direct numeric entry.
 	if focused && focus != nil && n.OnChange != nil {
 		displayStr := n.formatValue()
 		cursorOff := len(displayStr)
-		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+		// In raw mode (keypad open), preserve the raw text from the previous
+		// frame so that intermediate input (e.g. "12.") is not reformatted.
+		if rawMode && focus.Input != nil && focus.Input.FocusUID == focusUID {
+			displayStr = focus.Input.Value
 			cursorOff = focus.Input.CursorOffset
-			if cursorOff > len(displayStr) {
-				cursorOff = len(displayStr)
-			}
+		} else if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+		}
+		if cursorOff > len(displayStr) {
+			cursorOff = len(displayStr)
 		}
 		onChange := n.OnChange
 		kind := n.Kind
 		minV := n.minVal()
 		maxV := n.maxVal()
-		focus.Input = &ui.InputState{
-			Value: displayStr,
-			OnChange: func(newVal string) {
+		is := &ui.InputState{
+			Value:          displayStr,
+			FocusUID:       focusUID,
+			CursorOffset:   cursorOff,
+			SelectionStart: -1,
+		}
+		if rawMode {
+			is.OnChange = func(newVal string) {
+				is.Value = newVal
+			}
+		} else {
+			is.OnChange = func(newVal string) {
 				filtered := filterNumericChars(newVal, kind)
 				v, err := strconv.ParseFloat(filtered, 64)
 				if err != nil {
@@ -607,11 +632,9 @@ func (n NumericInput) setupInputState(focus *ui.FocusManager, focusUID ui.UID, f
 					v = maxV
 				}
 				onChange(v)
-			},
-			FocusUID:       focusUID,
-			CursorOffset:   cursorOff,
-			SelectionStart: -1,
+			}
 		}
+		focus.Input = is
 	}
 
 	// Hit target for focus acquisition on value area.

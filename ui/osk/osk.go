@@ -45,10 +45,11 @@ const (
 
 // OSKKey represents a single key on the on-screen keyboard (RFC-004 §5.5).
 type OSKKey struct {
-	Label  string    // Display text ("Q", "123", "⌫")
+	Label  string    // Display text ("Q", "123", or Phosphor codepoint)
 	Action OSKAction // What happens on tap
 	Width  float32   // Relative width (1.0 = standard key)
 	Char   rune      // Character to insert (only for OSKActionChar)
+	IsIcon bool      // Label is a Phosphor icon codepoint
 }
 
 // OSKMode is a higher-level presentation mode controlling the overall

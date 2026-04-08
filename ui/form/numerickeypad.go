@@ -169,6 +169,15 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 		}
 	}
 
+	// Helper: clear all text.
+	clearAll := func() {
+		input.CursorOffset = 0
+		input.SelectionStart = -1
+		if input.OnChange != nil {
+			input.OnChange("")
+		}
+	}
+
 	// Digit keys (rows 0–2)
 	digitOrder := [3][3]rune{
 		{'7', '8', '9'},
@@ -185,10 +194,16 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 		}
 	}
 
-	// Row 2, col 3: Backspace
-	keys[2][3] = keyDef{
-		label:  "⌫",
+	// Row 0, col 3: Backspace
+	keys[0][3] = keyDef{
+		icon:   icons.Backspace,
 		action: backspace,
+	}
+
+	// Row 1, col 3: Clear (delete all)
+	keys[1][3] = keyDef{
+		icon:   icons.Eraser,
+		action: clearAll,
 	}
 
 	// Row 3: ±, 0, decimal, ✓ (submit)
@@ -239,8 +254,17 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 		},
 	}
 
-	// Row 0, col 3: Increment
-	keys[0][3] = keyDef{
+	// Row 4: ← ▲ ▼ →  (navigation + increment/decrement)
+	keys[4][0] = keyDef{
+		icon: icons.CaretLeft,
+		action: func() {
+			if input.CursorOffset > 0 {
+				input.CursorOffset--
+			}
+			input.SelectionStart = -1
+		},
+	}
+	keys[4][1] = keyDef{
 		icon: icons.CaretUp,
 		action: func() {
 			v := parseInputValue(input.Value, cfg)
@@ -253,9 +277,7 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 			}
 		},
 	}
-
-	// Row 1, col 3: Decrement
-	keys[1][3] = keyDef{
+	keys[4][2] = keyDef{
 		icon: icons.CaretDown,
 		action: func() {
 			v := parseInputValue(input.Value, cfg)
@@ -266,17 +288,6 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 			if input.OnChange != nil {
 				input.OnChange(newVal)
 			}
-		},
-	}
-
-	// Row 4: ← (col 0) and → (col 3), navigation
-	keys[4][0] = keyDef{
-		icon: icons.CaretLeft,
-		action: func() {
-			if input.CursorOffset > 0 {
-				input.CursorOffset--
-			}
-			input.SelectionStart = -1
 		},
 	}
 	keys[4][3] = keyDef{
@@ -322,6 +333,8 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 
 			// Hover + click — re-assert focus so the field stays focused
 			// after the click-blur that the framework applies.
+			// Skip re-assertion when the keypad was just closed (submit)
+			// to avoid immediately reopening on the next frame.
 			fn := kd.action
 			focusMgr := cfg.Focus
 			focusUID := cfg.FocusUID
@@ -329,7 +342,7 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 				if fn != nil {
 					fn()
 				}
-				if focusMgr != nil {
+				if focusMgr != nil && state.Open {
 					focusMgr.SetFocusedUID(focusUID)
 				}
 			})

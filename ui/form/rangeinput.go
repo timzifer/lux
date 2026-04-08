@@ -175,8 +175,13 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		highFrac = 1
 	}
 
-	lowX := float32(area.X) + float32(trackW)*float32(lowFrac)
-	highX := float32(area.X) + float32(trackW)*float32(highFrac)
+	thumbR := float32(thumbD) / 2
+	usableW := float32(trackW) - float32(thumbD)
+	if usableW < 0 {
+		usableW = 0
+	}
+	lowX := float32(area.X) + thumbR + usableW*float32(lowFrac)
+	highX := float32(area.X) + thumbR + usableW*float32(highFrac)
 
 	// Filled range between handles.
 	filledColor := tokens.Colors.Accent.Primary
@@ -205,10 +210,13 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		rMax := r.Max
 		high := r.High
 		step := r.Step
-		tw := float32(trackW)
-		areaX := float32(area.X)
+		trackStart := float32(area.X) + thumbR
+		uw := usableW
 		ix.RegisterDrag(lowThumbRect, func(x, _ float32) {
-			frac := float64((x - areaX) / tw)
+			frac := float64(0)
+			if uw > 0 {
+				frac = float64((x - trackStart) / uw)
+			}
 			if frac < 0 {
 				frac = 0
 			}
@@ -241,10 +249,13 @@ func (r RangeInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		rMax := r.Max
 		low := r.Low
 		step := r.Step
-		tw := float32(trackW)
-		areaX := float32(area.X)
+		trackStart := float32(area.X) + thumbR
+		uw := usableW
 		ix.RegisterDrag(highThumbRect, func(x, _ float32) {
-			frac := float64((x - areaX) / tw)
+			frac := float64(0)
+			if uw > 0 {
+				frac = float64((x - trackStart) / uw)
+			}
 			if frac < 0 {
 				frac = 0
 			}
