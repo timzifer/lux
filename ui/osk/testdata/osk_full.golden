@@ -119,7 +119,7 @@
   35: glyph(806,439) scale=3 color(76,141,255,255) "1"
   36: glyph(888,439) scale=3 color(76,141,255,255) "2"
   37: glyph(971,439) scale=3 color(76,141,255,255) "3"
-  38: glyph(49,498) scale=3 color(76,141,255,255) "⇧"
+  38: glyph(49,498) scale=3 color(76,141,255,255) "\ue12c"
   39: glyph(144,498) scale=3 color(76,141,255,255) "y"
   40: glyph(221,498) scale=3 color(76,141,255,255) "x"
   41: glyph(298,498) scale=3 color(76,141,255,255) "c"
@@ -127,7 +127,7 @@
   43: glyph(451,498) scale=3 color(76,141,255,255) "b"
   44: glyph(528,498) scale=3 color(76,141,255,255) "n"
   45: glyph(605,498) scale=3 color(76,141,255,255) "m"
-  46: glyph(700,498) scale=3 color(76,141,255,255) "⌫"
+  46: glyph(700,498) scale=3 color(76,141,255,255) "\ue0ae"
   47: glyph(821,498) scale=3 color(76,141,255,255) "±"
   48: glyph(897,498) scale=3 color(76,141,255,255) "0"
   49: glyph(974,498) scale=3 color(76,141,255,255) "."
@@ -135,8 +135,8 @@
   51: glyph(191,557) scale=3 color(76,141,255,255) ","
   52: glyph(436,557) scale=3 color(76,141,255,255) " "
   53: glyph(681,557) scale=3 color(76,141,255,255) "."
-  54: glyph(805,557) scale=3 color(255,255,255,255) "↵"
-  55: glyph(929,557) scale=3 color(76,141,255,255) "⌨"
+  54: glyph(805,557) scale=3 color(255,255,255,255) "\ue782"
+  55: glyph(929,557) scale=3 color(76,141,255,255) "\ue2d8"
 
 [ClipBatches] (1)
   0: clip(0,0 1024x600) full-viewport rects@0 text@0 msdf@0 emoji@0 grad@0 shadow@0 img@0 shader@0

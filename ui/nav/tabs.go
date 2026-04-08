@@ -40,14 +40,30 @@ func (n Tabs) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		return ui.Bounds{X: area.X, Y: area.Y}
 	}
 
+	// Touch/HMI-adaptive padding: ensure tab headers meet MinTouchTarget.
+	padX := tabHeaderPadX
+	padY := tabHeaderPadY
+	minTabW := 0
+	if ctx.IsTouch() && ctx.Profile != nil {
+		minT := int(ctx.Profile.MinTouchTarget)
+		padY = (minT - int(ctx.Tokens.Typography.Label.Size)) / 2
+		if padY < tabHeaderPadY {
+			padY = tabHeaderPadY
+		}
+		minTabW = minT * 2
+	}
+
 	// Pass 1: measure all headers to determine tab widths.
 	type tabMeasure struct{ w, h int }
 	measures := make([]tabMeasure, len(n.Items))
 	headerH := 0
 	for i, item := range n.Items {
 		cb := ctx.MeasureChild(item.Header, ui.Bounds{X: 0, Y: 0, W: area.W, H: area.H})
-		w := cb.W + tabHeaderPadX*2
-		h := cb.H + tabHeaderPadY*2
+		w := cb.W + padX*2
+		if w < minTabW {
+			w = minTabW
+		}
+		h := cb.H + padY*2
 		measures[i] = tabMeasure{w: w, h: h}
 		if h > headerH {
 			headerH = h
@@ -88,7 +104,7 @@ func (n Tabs) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		// Tab header content
-		headerArea := ui.Bounds{X: cursorX + tabHeaderPadX, Y: area.Y + tabHeaderPadY, W: max(tw-tabHeaderPadX*2, 0), H: max(headerH-tabHeaderPadY*2, 0)}
+		headerArea := ui.Bounds{X: cursorX + padX, Y: area.Y + padY, W: max(tw-padX*2, 0), H: max(headerH-padY*2, 0)}
 		ctx.LayoutChild(item.Header, headerArea)
 
 		// Selection indicator (underline)

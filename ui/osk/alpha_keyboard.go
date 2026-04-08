@@ -93,10 +93,14 @@ func RenderButtonKeyboard(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Inte
 
 			// Draw key label.
 			if key.Label != "" {
-				m := canvas.MeasureText(key.Label, keyStyle)
+				style := keyStyle
+				if key.IsIcon {
+					style.FontFamily = "Phosphor"
+				}
+				m := canvas.MeasureText(key.Label, style)
 				tx := x + (kw-m.Width)/2
-				ty := y + (keyH-keyStyle.Size)/2
-				canvas.DrawText(key.Label, draw.Pt(tx, ty), keyStyle, labelColor)
+				ty := y + (keyH-style.Size)/2
+				canvas.DrawText(key.Label, draw.Pt(tx, ty), style, labelColor)
 			}
 
 			x += kw + gap
