@@ -4,7 +4,7 @@
 **Status:** Integriert
 **Version:** 0.3.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-04-01
+**Zuletzt abgeglichen:** 2026-04-08
 **Abhängig von:** RFC-001, RFC-002
 
 ---
@@ -41,9 +41,9 @@
 | §5.2–5.4 RichText (Ebene 2) | ✅ Integriert | `ui/display/richtext.go` (897 LOC) — `RichParagraph` mit `ParagraphContent` (Span, InlineWidget, ImageSpan), CSS-Paragraph-Styling (Align, Indent, LineHeight, ParaSpacing), Listen-Rendering (ul/ol, Nesting, Marker-Stile) |
 | §5.5 Inline-Widgets | ✅ Integriert | `InlineWidget` mit Baseline-Alignment + Block-Modus (`Block bool`, `BlockElement()`); `ImageSpan` mit Float (None/Left/Right/Block); `ParagraphContent` Union (Span \| InlineWidget \| ImageSpan) |
 | §5.5a Link-Widget | ✅ Integriert | `ui/link/link.go` (235 LOC) — klickbarer Inline-Link mit Hover/Focus-States, A11y-URL, kann als `InlineWidget` in RichText eingebettet werden |
-| §5.6 RichTextEditor (Ebene 3) | ✅ Integriert | `richtext/` — Tagged-Range `AttributedString` (statt Run-Length), 17 Attribut-Typen (Span/Paragraph/List), Cursor, Selection, Undo/Redo, ToolbarCommands (Bold/Italic/Underline/Strikethrough/Align/List/Indent) |
+| §5.6 RichTextEditor (Ebene 3) | ✅ Integriert | `richtext/` — Tagged-Range `AttributedString` (statt Run-Length), 20 Attribut-Typen (13 Span + 3 Paragraph + 4 List), Cursor, Selection, Undo/Redo, ToolbarCommands (Bold/Italic/Underline/Strikethrough/Align/List/Indent) |
 | §5.7a HTML/CSS ↔ AttributedString | ✅ Integriert | `richtext/html.go` — bidirektionale Konvertierung HTML/CSS ↔ `AttributedString` via DOM/CSS-Modell (`FromHTML`, `ToHTML`) |
-| §5.8 HTML Viewer Widget (Ebene 3+) | ✅ Integriert | `ui/html/` (12 Dateien, ~67 KLOC) — nativer HTML-Viewer als Widget-Baum: DOM→Element-Konvertierung, CSS-Styling, Tabellen, Formulare, Inline-Elemente, Links; realisiert RFC-998 Phase 1 (Static HTML/CSS Viewer) |
+| §5.8 HTML Viewer Widget (Ebene 3+) | ✅ Integriert | `ui/html/` (12 Dateien, ~3,3 KLOC) — nativer HTML-Viewer als Widget-Baum: DOM→Element-Konvertierung, CSS-Styling, Tabellen, Formulare, Inline-Elemente, Links; realisiert RFC-998 Phase 1 (Static HTML/CSS Viewer) |
 
 ---
 
