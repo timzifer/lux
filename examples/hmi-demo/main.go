@@ -61,13 +61,13 @@ type Model struct {
 	AlarmEnabled bool
 
 	// HMI Widgets demo (RFC-004 §6)
-	NumericVal      float64
-	StepperVal      int
-	UnitValue       float64
-	UnitSymbol      string
-	UnitState       *form.UnitInputState
-	RangeLow        float64
-	RangeHigh       float64
+	NumericVal       float64
+	StepperVal       int
+	UnitValue        float64
+	UnitSymbol       string
+	UnitState        *form.UnitInputState
+	RangeLow         float64
+	RangeHigh        float64
 	TimeValue        time.Time
 	DateValue        time.Time
 	HMIWidgetsScroll *ui.ScrollState
@@ -90,14 +90,14 @@ func initialModel() Model {
 		AutoMode:          true,
 		AlarmEnabled:      true,
 		// HMI Widgets defaults
-		NumericVal:  23.5,
-		StepperVal:  5,
-		UnitValue:   25.0,
-		UnitSymbol:  "mm",
-		UnitState:   form.NewUnitInputState(),
-		RangeLow:    20,
-		RangeHigh:   80,
-		TimeValue:   time.Date(2026, 1, 1, 14, 30, 0, 0, time.UTC),
+		NumericVal:       23.5,
+		StepperVal:       5,
+		UnitValue:        25.0,
+		UnitSymbol:       "mm",
+		UnitState:        form.NewUnitInputState(),
+		RangeLow:         20,
+		RangeHigh:        80,
+		TimeValue:        time.Date(2026, 1, 1, 14, 30, 0, 0, time.UTC),
 		DateValue:        time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC),
 		HMIWidgetsScroll: &ui.ScrollState{},
 	}
@@ -771,6 +771,7 @@ func main() {
 		app.WithSize(1024, 600),
 		app.WithInteractionProfile(hmiProfile),
 		app.WithTabBarPosition(nav.TabPositionTop),
+		app.WithHideSingleTab(true),
 	); err != nil {
 		log.Fatal(err)
 	}

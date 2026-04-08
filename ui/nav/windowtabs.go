@@ -30,12 +30,13 @@ type WindowTab struct {
 // It wraps all window content in a single tab strip rendered at the
 // configured position of the main framebuffer.
 type WindowTabPanel struct {
-	tabs     []WindowTab
-	selected uint32 // ID of the currently visible tab
-	onSelect func(uint32)
-	onClose  func(uint32)
-	blocked  map[uint32]bool // tab IDs blocked by a modal child
-	position TabPosition
+	tabs          []WindowTab
+	selected      uint32 // ID of the currently visible tab
+	onSelect      func(uint32)
+	onClose       func(uint32)
+	blocked       map[uint32]bool // tab IDs blocked by a modal child
+	position      TabPosition
+	HideSingleTab bool // when true, hide the tab strip if only one tab is open
 }
 
 // NewWindowTabPanel creates a new panel with the given tab position.
@@ -238,6 +239,17 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
 	if panel == nil || len(panel.tabs) == 0 {
 		return ui.Bounds{X: area.X, Y: area.Y}
+	}
+
+	// When only one tab is open and HideSingleTab is set, render the
+	// content directly without the tab strip.
+	if panel.HideSingleTab && len(panel.tabs) == 1 {
+		content := panel.tabs[0].Content
+		if content == nil {
+			return ui.Bounds{X: area.X, Y: area.Y}
+		}
+		content = layout.Pad(ui.UniformInsets(float32(ui.FramePadding)), content)
+		return ctx.LayoutChild(content, area)
 	}
 
 	// Build TabItems from window tabs.

@@ -127,6 +127,7 @@ type options struct {
 	storagePath     string
 	fullscreen      bool
 	tabBarPosition  nav.TabPosition // tab bar position for no-compositor/fullscreen mode
+	hideSingleTab   bool            // hide tab strip when only one tab is open
 	imageStore      *luximage.Store
 	inspectorAddr   string // Vellum inspector socket address (empty = disabled)
 }
@@ -275,6 +276,13 @@ func WithFullscreen(fullscreen bool) Option {
 // The default is nav.TabPositionTop.
 func WithTabBarPosition(pos nav.TabPosition) Option {
 	return func(o *options) { o.tabBarPosition = pos }
+}
+
+// WithHideSingleTab hides the tab strip when only one tab is open in
+// no-compositor or fullscreen mode. This avoids a redundant tab bar when
+// the user hasn't opened any secondary windows.
+func WithHideSingleTab(hide bool) Option {
+	return func(o *options) { o.hideSingleTab = hide }
 }
 
 // WithInspector activates the Vellum Inspector server on the given address
