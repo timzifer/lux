@@ -215,6 +215,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			func(id uint32) { Send(CloseWindowMsg{ID: WindowID(id)}) },
 			cfg.tabBarPosition,
 		)
+		windowTabPanel.HideSingleTab = cfg.hideSingleTab
 	}
 
 	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
@@ -360,6 +361,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 							func(id uint32) { Send(CloseWindowMsg{ID: WindowID(id)}) },
 							cfg.tabBarPosition,
 						)
+						windowTabPanel.HideSingleTab = cfg.hideSingleTab
 						windowTabPanel.AddTab(0, cfg.title, false)
 						noCompositorMode = true
 						modelDirty = true
