@@ -2141,25 +2141,42 @@ func cardsSection() ui.Element {
 	)
 }
 
+func tabItems() []nav.TabItem {
+	return []nav.TabItem{
+		{
+			Header:  layout.Row(display.Icon(icons.Star), display.Text("General")),
+			Content: display.Text("General settings content goes here."),
+		},
+		{
+			Header:  layout.Row(display.Icon(icons.Gear), display.Text("Advanced"), display.BadgeText("3")),
+			Content: layout.Column(display.Text("Advanced settings."), display.Text("With multiple items.")),
+		},
+		{
+			Header:  layout.Row(display.Icon(icons.Eye), display.Text("Preview")),
+			Content: display.Card(display.Text("Preview content inside a Card.")),
+		},
+	}
+}
+
 func tabsSection(m Model) ui.Element {
+	onSelect := func(idx int) { app.Send(SetTabMsg{idx}) }
 	return layout.Column(
 		sectionHeader("Tabs"),
-		display.Text("Tabs with rich headers (Icon + Text + Badge):"),
+		display.Text("Top (default):"),
 		display.Spacer(4),
-		nav.New([]nav.TabItem{
-			{
-				Header:  layout.Row(display.Icon(icons.Star), display.Text("General")),
-				Content: display.Text("General settings content goes here."),
-			},
-			{
-				Header:  layout.Row(display.Icon(icons.Gear), display.Text("Advanced"), display.BadgeText("3")),
-				Content: layout.Column(display.Text("Advanced settings."), display.Text("With multiple items.")),
-			},
-			{
-				Header:  layout.Row(display.Icon(icons.Eye), display.Text("Preview")),
-				Content: display.Card(display.Text("Preview content inside a Card.")),
-			},
-		}, m.TabIndex, func(idx int) { app.Send(SetTabMsg{idx}) }),
+		nav.New(tabItems(), m.TabIndex, onSelect),
+		display.Spacer(8),
+		display.Text("Bottom:"),
+		display.Spacer(4),
+		nav.NewWithPosition(tabItems(), m.TabIndex, onSelect, nav.TabPositionBottom),
+		display.Spacer(8),
+		display.Text("Left:"),
+		display.Spacer(4),
+		nav.NewWithPosition(tabItems(), m.TabIndex, onSelect, nav.TabPositionLeft),
+		display.Spacer(8),
+		display.Text("Right:"),
+		display.Spacer(4),
+		nav.NewWithPosition(tabItems(), m.TabIndex, onSelect, nav.TabPositionRight),
 	)
 }
 

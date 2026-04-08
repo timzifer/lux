@@ -199,19 +199,21 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	}
 
 	// No-compositor mode: detect whether the platform has a compositor.
-	// When running without a compositor (e.g. DRM/KMS), multi-window calls
-	// are redirected to an internal tab panel.
-	noCompositorMode := activeProfile != nil && activeProfile.NoCompositor
-	if !noCompositorMode {
+	// When running without a compositor (e.g. DRM/KMS) or in fullscreen,
+	// multi-window calls are redirected to an internal tab panel.
+	baseNoCompositor := activeProfile != nil && activeProfile.NoCompositor
+	if !baseNoCompositor {
 		if cc, ok := plat.(platform.CompositorChecker); ok {
-			noCompositorMode = !cc.HasCompositor()
+			baseNoCompositor = !cc.HasCompositor()
 		}
 	}
+	noCompositorMode := baseNoCompositor || cfg.fullscreen
 	var windowTabPanel *nav.WindowTabPanel
 	if noCompositorMode {
 		windowTabPanel = nav.NewWindowTabPanel(
 			func(id uint32) { Send(SelectWindowTabMsg{ID: WindowID(id)}) },
 			func(id uint32) { Send(CloseWindowMsg{ID: WindowID(id)}) },
+			cfg.tabBarPosition,
 		)
 	}
 
@@ -351,6 +353,29 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					plat.SetSize(m.Width, m.Height)
 				case SetFullscreenMsg:
 					plat.SetFullscreen(m.Fullscreen)
+					// Activate/deactivate tab mode on fullscreen toggle.
+					if m.Fullscreen && windowTabPanel == nil {
+						windowTabPanel = nav.NewWindowTabPanel(
+							func(id uint32) { Send(SelectWindowTabMsg{ID: WindowID(id)}) },
+							func(id uint32) { Send(CloseWindowMsg{ID: WindowID(id)}) },
+							cfg.tabBarPosition,
+						)
+						windowTabPanel.AddTab(0, cfg.title, false)
+						noCompositorMode = true
+						modelDirty = true
+					} else if !m.Fullscreen && windowTabPanel != nil && !baseNoCompositor {
+						// Return to normal mode only if not inherently no-compositor (DRM).
+						windowTabPanel = nil
+						noCompositorMode = false
+						modelDirty = true
+					}
+
+				case SetTabBarPositionMsg:
+					if windowTabPanel != nil {
+						windowTabPanel.SetPosition(m.Position)
+						modelDirty = true
+					}
+					return true
 
 				case OpenWindowMsg:
 					if noCompositorMode && windowTabPanel != nil {
