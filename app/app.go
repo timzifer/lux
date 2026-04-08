@@ -20,6 +20,7 @@ import (
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/nav"
 )
 
 // Msg is any value sent through the app loop. Every type is a valid Msg.
@@ -125,6 +126,7 @@ type options struct {
 	persistence     *persistenceHooks
 	storagePath     string
 	fullscreen      bool
+	tabBarPosition  nav.TabPosition // tab bar position for no-compositor/fullscreen mode
 	imageStore      *luximage.Store
 	inspectorAddr   string // Vellum inspector socket address (empty = disabled)
 }
@@ -265,6 +267,14 @@ type SetFullscreenMsg struct{ Fullscreen bool }
 // WithFullscreen starts the application in fullscreen mode (RFC §7.1).
 func WithFullscreen(fullscreen bool) Option {
 	return func(o *options) { o.fullscreen = fullscreen }
+}
+
+// WithTabBarPosition sets the tab bar position for no-compositor and fullscreen modes.
+// When the application runs without a compositor (DRM/KMS) or in fullscreen,
+// windows are rendered as tabs. This option controls where the tab bar appears.
+// The default is nav.TabPositionTop.
+func WithTabBarPosition(pos nav.TabPosition) Option {
+	return func(o *options) { o.tabBarPosition = pos }
 }
 
 // WithInspector activates the Vellum Inspector server on the given address

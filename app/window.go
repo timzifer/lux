@@ -1,5 +1,7 @@
 package app
 
+import "github.com/timzifer/lux/ui/nav"
+
 // WindowID identifies a window in the multi-window system.
 type WindowID uint32
 
@@ -61,3 +63,7 @@ func CloseWindow(id WindowID) Cmd {
 // SelectWindowTabMsg is an internal message used by the no-compositor tab
 // panel to switch the active tab.
 type SelectWindowTabMsg struct{ ID WindowID }
+
+// SetTabBarPositionMsg changes the tab bar position at runtime.
+// Only effective when the application is in no-compositor or fullscreen mode.
+type SetTabBarPositionMsg struct{ Position nav.TabPosition }
