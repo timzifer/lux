@@ -502,17 +502,27 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	canvas.DrawText(displayText, draw.Pt(float32(textX), float32(textY)), style, textColor)
 
-	// Hit target for focus acquisition.
-	if focus != nil && !n.Disabled {
-		uid := focusUID
-		fm := focus
-		ix.RegisterHit(fieldRect, func() { fm.SetFocusedUID(uid) })
+	// Draw caret when focused.
+	if focused && focus != nil {
+		cursorOff := len(n.formatValue())
+		if focus.Input != nil && focus.Input.FocusUID == focusUID {
+			cursorOff = focus.Input.CursorOffset
+			if cursorOff > len(n.formatValue()) {
+				cursorOff = len(n.formatValue())
+			}
+		}
+		metrics := canvas.MeasureText(n.formatValue()[:cursorOff], style)
+		cursorX := float32(textX) + metrics.Width
+		canvas.FillRect(draw.R(cursorX, float32(textY), 2, style.Size),
+			draw.SolidPaint(tokens.Colors.Text.Primary))
 	}
 
-	// Store focused bounds for scroll-into-view.
-	if focused && focus != nil {
-		r := fieldRect
-		focus.FocusedBounds = &r
+	// Register InputState, hit target, and focus bounds via shared helper.
+	n.setupInputState(focus, focusUID, focused, fieldRect, ix)
+
+	// Suppress the global OSK — this widget provides its own keypad overlay.
+	if focused && focus != nil && focus.Input != nil {
+		focus.Input.SuppressOSK = true
 	}
 
 	// ── Keypad overlay (shown when focused) ──
@@ -521,7 +531,6 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 		if !kpState.Open {
 			kpState.Open = true
 			kpState.OriginalValue = n.Value
-			kpState.EditingValue = ""
 		}
 
 		anchor := fieldRect
@@ -533,11 +542,14 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 		prec := n.Precision
 		winW := overlays.WindowW
 		winH := overlays.WindowH
+		// Capture the InputState pointer so the keypad can write directly into it.
+		inputState := focus.Input
 
 		overlays.Push(ui.OverlayEntry{
 			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
 				renderNumericKeypad(numericKeypadConfig{
 					State:     kpState,
+					Input:     inputState,
 					Kind:      kind,
 					Step:      step,
 					Min:       minP,
@@ -545,14 +557,9 @@ func (n NumericInput) layoutTouch(ctx *ui.LayoutContext) ui.Bounds {
 					Precision: prec,
 					OnSubmit: func(v float64) {
 						kpState.Open = false
-						kpState.EditingValue = ""
 						if onChange != nil {
 							onChange(v)
 						}
-					},
-					OnCancel: func() {
-						kpState.Open = false
-						kpState.EditingValue = ""
 					},
 				}, anchor, canvas, tokens, ix, winW, winH)
 			},
