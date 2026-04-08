@@ -383,6 +383,13 @@ func (WidgetBoundsElement) isElement() {}
 type ScrollState struct {
 	Offset   float32 // current vertical scroll offset in dp
 	Velocity float32 // scroll velocity for momentum
+
+	// AutoScrollVH stores the viewport height at which auto-scroll was
+	// last applied for a focused element. While focus persists at the
+	// same viewport height the user can scroll freely without the
+	// auto-scroll pulling the view back. Reset to -1 when focus is lost
+	// so the next focus gain triggers a fresh auto-scroll.
+	AutoScrollVH float32
 }
 
 // ScrollBy adjusts the scroll offset, clamping to [0, maxScroll].

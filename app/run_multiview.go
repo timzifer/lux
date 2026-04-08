@@ -212,6 +212,8 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 
 	// needsInitialPaint ensures the first frame always paints the initial tree.
 	needsInitialPaint := true
+	// widgetNeedsFrame is set by widgets via ix.SetNeedsFrame(); persists across frames.
+	var widgetNeedsFrame bool
 
 	return plat.Run(platform.Callbacks{
 		OnFrame: func() {
@@ -639,7 +641,6 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 			}
 
 			// Skip scene build + GPU draw when nothing changed.
-			var widgetNeedsFrame bool
 			anyInteractionDirty := false
 			for _, wc := range windows {
 				if wc.interactionDirty {
@@ -647,7 +648,8 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					wc.interactionDirty = false
 				}
 			}
-			needsPaint := modelDirty || hoverDirty || needsInitialPaint || anyInteractionDirty
+			needsPaint := modelDirty || hoverDirty || needsInitialPaint || anyInteractionDirty || widgetNeedsFrame
+			widgetNeedsFrame = false // reset before BuildScene; widgets re-set via ix.SetNeedsFrame()
 			if needsPaint {
 				needsInitialPaint = false
 
@@ -660,7 +662,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				ix := ui.NewInteractor(&mainWC.hitMap, &mainWC.hoverState)
 				ix.Dispatcher = mainWC.dispatcher
 				ix.NeedsFrame = &widgetNeedsFrame
-				scene := ui.BuildScene(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm)
+				scene := ui.BuildSceneWithOSK(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm, nil, activeProfile)
 				mainWC.dispatcher.SwapBounds()
 				mainWC.hoverState.Trim(mainWC.hitMap.Len())
 
@@ -691,7 +693,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					wc.hitMap.Reset()
 					winIx := ui.NewInteractor(&wc.hitMap, &wc.hoverState)
 					winIx.Dispatcher = wc.dispatcher
-					winScene := ui.BuildScene(wc.currentTree, winCanvas, activeTheme, wc.width, wc.height, winIx)
+					winScene := ui.BuildSceneWithOSK(wc.currentTree, winCanvas, activeTheme, wc.width, wc.height, winIx, nil, nil, activeProfile)
 					wc.dispatcher.SwapBounds()
 					wc.hoverState.Trim(wc.hitMap.Len())
 

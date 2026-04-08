@@ -288,7 +288,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
 	var dragRelease func(x, y float32)  // called once when drag ends
 	var currentCursor input.CursorKind
-	var interactionDirty bool // set when hit.Map callbacks mutate state (scroll, drag, click)
+	var interactionDirty bool  // set when hit.Map callbacks mutate state (scroll, drag, click)
+	var widgetNeedsFrame bool  // set by widgets via ix.SetNeedsFrame(); persists across frames
 	var dynamicHandlers []globalHandlerEntry
 
 	// On-Screen Keyboard state (RFC-004 §5).
@@ -864,8 +865,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// This is the main idle-CPU optimisation: BuildScene walks the
 			// entire widget tree and renderer.Draw submits GPU commands —
 			// both are expensive relative to the cheap message-drain above.
-			var widgetNeedsFrame bool
-			needsPaint := modelDirty || hoverDirty || needsInitialPaint || interactionDirty
+			needsPaint := modelDirty || hoverDirty || needsInitialPaint || interactionDirty || widgetNeedsFrame
+			widgetNeedsFrame = false // reset before BuildScene; widgets re-set via ix.SetNeedsFrame()
 			interactionDirty = false
 			if needsPaint {
 				needsInitialPaint = false
