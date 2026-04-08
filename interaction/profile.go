@@ -14,13 +14,14 @@ import "time"
 type OSKPresentation uint8
 
 const (
-	// OSKPresentationInline shrinks the app viewport to make room for the
-	// keyboard at the bottom of the screen (current/legacy behavior).
+	// OSKPresentationInline is deprecated. The framework now always uses
+	// ActionSheet mode. Kept as the zero value for backward compatibility.
 	OSKPresentationInline OSKPresentation = iota
 
 	// OSKPresentationActionSheet opens an ActionSheet overlay containing
 	// an interactive copy (input proxy) of the focused widget at the top
 	// and the keyboard at the bottom. The app viewport is not shrunk.
+	// This is now the only supported mode.
 	OSKPresentationActionSheet
 )
 
@@ -84,8 +85,8 @@ type InteractionProfile struct {
 	ReducedMotion bool
 
 	// OSKPresentation controls how the on-screen keyboard appears.
-	// Default (zero value) is OSKPresentationInline for backward compatibility.
-	// Touch and HMI profiles default to OSKPresentationActionSheet.
+	// The framework now always uses ActionSheet mode regardless of this value.
+	// Kept for backward compatibility.
 	OSKPresentation OSKPresentation
 
 	// NoCompositor indicates the app runs without a window compositor

@@ -22,14 +22,9 @@ const (
 	// OSKLayoutPhone: telephone number layout (0–9, +, *, #).
 	OSKLayoutPhone
 
-	// OSKLayoutPin: PIN entry (0–9, large keys, no sign).
-	OSKLayoutPin
-
-	// OSKLayoutIP: IP address entry (0–9, dot, colon for IPv6).
-	OSKLayoutIP
-
-	// OSKLayoutHex: hexadecimal entry (0–9, A–F).
-	OSKLayoutHex
+	// OSKLayoutNone signals that the widget provides its own inline keypad
+	// and the global OSK should not appear.
+	OSKLayoutNone OSKLayout = 255
 )
 
 // OSKAction describes what happens when an OSK key is tapped (RFC-004 §5.5).
@@ -120,12 +115,10 @@ func (m OSKMode) rows() int {
 // ModeForLayout returns the default OSKMode for a given OSKLayout.
 func ModeForLayout(layout OSKLayout) OSKMode {
 	switch layout {
-	case OSKLayoutNumeric, OSKLayoutNumericInteger, OSKLayoutPin, OSKLayoutPhone:
+	case OSKLayoutNumeric, OSKLayoutNumericInteger, OSKLayoutPhone:
 		return ModeNumPad
-	case OSKLayoutIP:
-		return ModeNumPad
-	case OSKLayoutHex:
-		return ModeNumPad
+	case OSKLayoutNone:
+		return ModeNumPad // irrelevant — global OSK won't show
 	default:
 		return ModeAlpha
 	}
