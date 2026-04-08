@@ -55,6 +55,8 @@ func cleanupKeypadState(uid ui.UID) {
 type numericKeypadConfig struct {
 	State     *NumericKeypadState
 	Input     *ui.InputState // the text field's InputState (for direct editing)
+	Focus     *ui.FocusManager
+	FocusUID  ui.UID
 	Kind      NumericKind
 	Step      float64
 	Min       *float64
@@ -106,8 +108,13 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 
 	// Background
 	bgRect := draw.R(pos.X, pos.Y, totalW, totalH)
-	// Eat clicks on the keypad body so they don't trigger the backdrop.
-	ix.RegisterHit(bgRect, func() {})
+	// Eat clicks on the keypad body so they don't trigger the backdrop,
+	// and re-assert focus on the input field.
+	ix.RegisterHit(bgRect, func() {
+		if cfg.Focus != nil {
+			cfg.Focus.SetFocusedUID(cfg.FocusUID)
+		}
+	})
 	canvas.FillRoundRect(bgRect, tokens.Radii.Input+2, draw.SolidPaint(tokens.Colors.Surface.Elevated))
 	canvas.StrokeRoundRect(bgRect, tokens.Radii.Input+2,
 		draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
@@ -313,9 +320,19 @@ func renderNumericKeypad(cfg numericKeypadConfig, anchor draw.Rect,
 					draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
 			}
 
-			// Hover + click
+			// Hover + click — re-assert focus so the field stays focused
+			// after the click-blur that the framework applies.
 			fn := kd.action
-			ho := ix.RegisterHit(kr, fn)
+			focusMgr := cfg.Focus
+			focusUID := cfg.FocusUID
+			ho := ix.RegisterHit(kr, func() {
+				if fn != nil {
+					fn()
+				}
+				if focusMgr != nil {
+					focusMgr.SetFocusedUID(focusUID)
+				}
+			})
 			if ho > 0 {
 				canvas.FillRoundRect(kr, radius,
 					draw.SolidPaint(draw.Color{A: ho * 0.10}))
