@@ -7,7 +7,6 @@ package osk
 import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/interaction"
-	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
 
@@ -132,95 +131,12 @@ func (el KeyboardActionSheetElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds
 	proxy := NewInputProxy(el.Input, el.Profile)
 	ctx.LayoutChild(proxy, proxyArea)
 
-	// ── 5. OSK keyboard ───────────────────────────────────────────
+	// ── 5. OSK keyboard (button-based rendering) ─────────────────
 	oskY := proxyY + inputH + askbInputGap
 	_ = th // reserved for custom DrawFunc dispatch
-	renderOSKKeys(canvas, tokens, ix, state, el.ScreenW, el.ScreenH, dpr, sheetX, oskY, sheetW)
+	RenderButtonKeyboard(canvas, tokens, ix, state, el.ScreenW, el.ScreenH, dpr, sheetX, oskY, sheetW)
 
 	return ui.Bounds{X: int(sheetX), Y: int(sheetY), W: int(sheetW), H: int(contentH)}
-}
-
-// renderOSKKeys draws the keyboard keys at the given position.
-// This reuses the same key rendering logic as OSKElement but at a specified Y offset.
-func renderOSKKeys(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor, state *OSKState, screenW, screenH int, dpr float32, oskX, oskY, oskW float32) {
-	_, keyH, gap := ComputeKeySize(screenW, screenH, dpr, state.Mode)
-	rows := RowsForState(state)
-
-	keyStyle := tokens.Typography.Body
-	keyStyle.Size = keyH * 0.4
-	if keyStyle.Size < 12 {
-		keyStyle.Size = 12
-	}
-	if keyStyle.Size > 22 {
-		keyStyle.Size = 22
-	}
-
-	for rowIdx, row := range rows {
-		var totalRelW float32
-		for _, k := range row {
-			totalRelW += k.Width
-		}
-		if totalRelW == 0 {
-			continue
-		}
-
-		availRowW := oskW - gap*2
-		unit := (availRowW - gap*float32(len(row)-1)) / totalRelW
-		rowW := totalRelW*unit + gap*float32(len(row)-1)
-		startX := oskX + (oskW-rowW)/2
-
-		y := oskY + gap + float32(rowIdx)*(keyH+gap)
-		x := startX
-
-		for _, key := range row {
-			kw := key.Width * unit
-			if kw < 1 {
-				x += kw + gap
-				continue
-			}
-
-			keyRect := draw.R(x, y, kw, keyH)
-
-			keyBg := tokens.Colors.Surface.Base
-			switch key.Action {
-			case OSKActionShift, OSKActionSwitch:
-				keyBg = tokens.Colors.Surface.Hovered
-			case OSKActionEnter, OSKActionTab:
-				keyBg = tokens.Colors.Accent.Primary
-			case OSKActionBackspace:
-				keyBg = tokens.Colors.Surface.Hovered
-			case OSKActionDismiss:
-				keyBg = tokens.Colors.Surface.Hovered
-			}
-
-			radius := tokens.Radii.Input
-			if radius < 4 {
-				radius = 4
-			}
-
-			hoverOpacity := ix.RegisterHit(keyRect, keyAction(key, state))
-			if hoverOpacity > 0 {
-				hoverColor := tokens.Colors.Surface.Pressed
-				hoverColor.A = hoverOpacity * 0.3
-				canvas.FillRoundRect(keyRect, radius, draw.SolidPaint(blendColor(keyBg, hoverColor)))
-			} else {
-				canvas.FillRoundRect(keyRect, radius, draw.SolidPaint(keyBg))
-			}
-
-			if key.Label != "" {
-				labelColor := tokens.Colors.Text.Primary
-				if key.Action == OSKActionEnter || key.Action == OSKActionTab {
-					labelColor = tokens.Colors.Accent.PrimaryContrast
-				}
-				m := canvas.MeasureText(key.Label, keyStyle)
-				tx := x + (kw-m.Width)/2
-				ty := y + (keyH-keyStyle.Size)/2
-				canvas.DrawText(key.Label, draw.Pt(tx, ty), keyStyle, labelColor)
-			}
-
-			x += kw + gap
-		}
-	}
 }
 
 // TreeEqual implements ui.TreeEqualizer.

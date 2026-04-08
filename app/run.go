@@ -10,7 +10,6 @@ import (
 	"github.com/timzifer/lux/fonts"
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/hit"
@@ -898,28 +897,14 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				ix.Dispatcher = dispatcher
 				ix.NeedsFrame = &widgetNeedsFrame
 
-				// If the OSK is visible, choose presentation mode (RFC-004 §5.2).
+				// If the OSK is visible, always use ActionSheet mode (RFC-004 §5.2).
+				// The inline mode has been removed — the OSK is always rendered
+				// as an ActionSheet overlay without shrinking the viewport.
 				contentH := h
 				var safeArea ui.SafeAreaInsets
 				var oskEl ui.Element
-				if oskState.Visible {
-					useActionSheet := activeProfile != nil &&
-						activeProfile.OSKPresentation == interaction.OSKPresentationActionSheet
-					if useActionSheet {
-						// ActionSheet mode: no viewport shrink, OSK rendered as modal overlay.
-						oskEl = osk.NewKeyboardActionSheet(&oskState, w, h, fm.Input, activeProfile)
-					} else {
-						// Inline mode (legacy): shrink viewport, render OSK at bottom.
-						oskH := oskState.Height(w, h, canvas.DPR())
-						if oskH > 0 {
-							contentH = h - int(oskH)
-							if contentH < 100 {
-								contentH = 100
-							}
-							safeArea.Bottom = oskH
-						}
-						oskEl = osk.NewOSKElement(&oskState, w, h)
-					}
+				if oskState.Visible && oskState.Layout != osk.OSKLayoutNone {
+					oskEl = osk.NewKeyboardActionSheet(&oskState, w, h, fm.Input, activeProfile)
 				}
 
 				paintStart := time.Now()

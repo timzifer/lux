@@ -80,88 +80,8 @@ func (el OSKElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Divider line at the top of the OSK.
 	canvas.FillRect(draw.R(oskX, oskY, oskW, 1), draw.SolidPaint(tokens.Colors.Stroke.Divider))
 
-	keyStyle := tokens.Typography.Body
-	keyStyle.Size = keyH * 0.4
-	if keyStyle.Size < 12 {
-		keyStyle.Size = 12
-	}
-	if keyStyle.Size > 22 {
-		keyStyle.Size = 22
-	}
-
-	for rowIdx, row := range rows {
-		// Calculate total relative width of the row.
-		var totalRelW float32
-		for _, k := range row {
-			totalRelW += k.Width
-		}
-		if totalRelW == 0 {
-			continue
-		}
-
-		// One relative unit in dp.
-		availRowW := oskW - gap*2
-		unit := (availRowW - gap*float32(len(row)-1)) / totalRelW
-
-		// Center the row horizontally.
-		rowW := totalRelW*unit + gap*float32(len(row)-1)
-		startX := oskX + (oskW-rowW)/2
-
-		y := oskY + gap + float32(rowIdx)*(keyH+gap)
-		x := startX
-
-		for _, key := range row {
-			kw := key.Width * unit
-			if kw < 1 {
-				x += kw + gap
-				continue
-			}
-
-			keyRect := draw.R(x, y, kw, keyH)
-
-			// Key background.
-			keyBg := tokens.Colors.Surface.Base
-			switch key.Action {
-			case OSKActionShift, OSKActionSwitch:
-				keyBg = tokens.Colors.Surface.Hovered
-			case OSKActionEnter, OSKActionTab:
-				keyBg = tokens.Colors.Accent.Primary
-			case OSKActionBackspace:
-				keyBg = tokens.Colors.Surface.Hovered
-			case OSKActionDismiss:
-				keyBg = tokens.Colors.Surface.Hovered
-			}
-
-			radius := tokens.Radii.Input
-			if radius < 4 {
-				radius = 4
-			}
-
-			// Hover + draw.
-			hoverOpacity := ix.RegisterHit(keyRect, keyAction(key, state))
-			if hoverOpacity > 0 {
-				hoverColor := tokens.Colors.Surface.Pressed
-				hoverColor.A = hoverOpacity * 0.3
-				canvas.FillRoundRect(keyRect, radius, draw.SolidPaint(blendColor(keyBg, hoverColor)))
-			} else {
-				canvas.FillRoundRect(keyRect, radius, draw.SolidPaint(keyBg))
-			}
-
-			// Key label.
-			if key.Label != "" {
-				labelColor := tokens.Colors.Text.Primary
-				if key.Action == OSKActionEnter || key.Action == OSKActionTab {
-					labelColor = tokens.Colors.Accent.PrimaryContrast
-				}
-				m := canvas.MeasureText(key.Label, keyStyle)
-				tx := x + (kw-m.Width)/2
-				ty := y + (keyH-keyStyle.Size)/2
-				canvas.DrawText(key.Label, draw.Pt(tx, ty), keyStyle, labelColor)
-			}
-
-			x += kw + gap
-		}
-	}
+	// Render keys using button-variant styling.
+	RenderButtonKeyboard(canvas, tokens, ix, state, el.ScreenW, el.ScreenH, dpr, oskX, oskY, oskW)
 
 	return ui.Bounds{X: int(oskX), Y: int(oskY), W: int(oskW), H: int(oskH)}
 }
@@ -264,13 +184,3 @@ func (el OSKElement) WalkAccess(b *ui.AccessTreeBuilder, parentIdx int32) {
 	}, parentIdx, a11y.Rect{})
 }
 
-// blendColor blends src over dst using src.A as alpha.
-func blendColor(dst, src draw.Color) draw.Color {
-	a := src.A
-	return draw.Color{
-		R: dst.R*(1-a) + src.R*a,
-		G: dst.G*(1-a) + src.G*a,
-		B: dst.B*(1-a) + src.B*a,
-		A: dst.A,
-	}
-}

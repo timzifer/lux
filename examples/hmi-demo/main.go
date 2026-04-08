@@ -67,9 +67,6 @@ type Model struct {
 	// HMI Widgets demo (RFC-004 §6)
 	NumericVal      float64
 	StepperVal      int
-	PinValue        string
-	HexValue        uint64
-	IPValue         string
 	UnitValue       float64
 	UnitSymbol      string
 	UnitState       *form.UnitInputState
@@ -109,8 +106,6 @@ func initialModel() Model {
 		// HMI Widgets defaults
 		NumericVal:  23.5,
 		StepperVal:  5,
-		HexValue:    0x00FF,
-		IPValue:     "192.168.1.1",
 		UnitValue:   25.0,
 		UnitSymbol:  "mm",
 		UnitState:   form.NewUnitInputState(),
@@ -156,9 +151,6 @@ type SetDemoOSKModeMsg struct{ Mode osk.OSKMode }
 // HMI Widget messages (RFC-004 §6)
 type SetNumericValMsg struct{ V float64 }
 type SetStepperValMsg struct{ V int }
-type SetPinValueMsg struct{ V string }
-type SetHexValueMsg struct{ V uint64 }
-type SetIPValueMsg struct{ V string }
 type SetUnitValueMsg struct {
 	Value float64
 	Unit  string
@@ -252,12 +244,6 @@ func update(m Model, msg app.Msg) Model {
 		m.NumericVal = msg.V
 	case SetStepperValMsg:
 		m.StepperVal = msg.V
-	case SetPinValueMsg:
-		m.PinValue = msg.V
-	case SetHexValueMsg:
-		m.HexValue = msg.V
-	case SetIPValueMsg:
-		m.IPValue = msg.V
 	case SetUnitValueMsg:
 		m.UnitValue = msg.Value
 		m.UnitSymbol = msg.Unit
@@ -626,40 +612,6 @@ func viewHMIWidgets(m Model) ui.Element {
 						form.WithOnStepperChange(func(v int) { app.Send(SetStepperValMsg{V: v}) }),
 					),
 					display.Text(fmt.Sprintf("Wert: %d", m.StepperVal)),
-				),
-			),
-		),
-
-		// PinInput
-		display.Card(
-			layout.Column(
-				display.Text("PinInput — PIN-Eingabe"),
-				form.NewPinInput(4, m.PinValue,
-					form.WithPinMasked(),
-					form.WithOnPinChange(func(v string) { app.Send(SetPinValueMsg{V: v}) }),
-				),
-			),
-		),
-
-		// HexInput
-		display.Card(
-			layout.Column(
-				display.Text("HexInput — Hexadezimal-Eingabe"),
-				form.NewHexInput(m.HexValue,
-					form.WithHexDigits(4),
-					form.WithHexPrefix(),
-					form.WithHexUpper(),
-					form.WithOnHexChange(func(v uint64) { app.Send(SetHexValueMsg{V: v}) }),
-				),
-			),
-		),
-
-		// IPInput
-		display.Card(
-			layout.Column(
-				display.Text("IPInput — IPv4-Adresse"),
-				form.NewIPInput(m.IPValue,
-					form.WithOnIPChange(func(v string) { app.Send(SetIPValueMsg{V: v}) }),
 				),
 			),
 		),
