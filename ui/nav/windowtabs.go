@@ -22,22 +22,24 @@ type WindowTab struct {
 }
 
 // WindowTabPanel manages logical windows as tabs in no-compositor mode.
-// It wraps all window content in a single tab strip rendered at the top
-// of the main framebuffer.
+// It wraps all window content in a single tab strip rendered at the
+// configured position of the main framebuffer.
 type WindowTabPanel struct {
-	tabs       []WindowTab
-	selected   uint32 // ID of the currently visible tab
-	onSelect   func(uint32)
-	onClose    func(uint32)
-	blocked    map[uint32]bool // tab IDs blocked by a modal child
+	tabs     []WindowTab
+	selected uint32 // ID of the currently visible tab
+	onSelect func(uint32)
+	onClose  func(uint32)
+	blocked  map[uint32]bool // tab IDs blocked by a modal child
+	position TabPosition
 }
 
-// NewWindowTabPanel creates a new panel with a main tab.
-func NewWindowTabPanel(onSelect func(uint32), onClose func(uint32)) *WindowTabPanel {
+// NewWindowTabPanel creates a new panel with the given tab position.
+func NewWindowTabPanel(onSelect func(uint32), onClose func(uint32), position TabPosition) *WindowTabPanel {
 	return &WindowTabPanel{
 		onSelect: onSelect,
 		onClose:  onClose,
 		blocked:  make(map[uint32]bool),
+		position: position,
 	}
 }
 
@@ -103,6 +105,16 @@ func (p *WindowTabPanel) SelectTab(id uint32) {
 	}
 }
 
+// SetPosition changes the tab bar position at runtime.
+func (p *WindowTabPanel) SetPosition(pos TabPosition) {
+	p.position = pos
+}
+
+// Position returns the current tab bar position.
+func (p *WindowTabPanel) Position() TabPosition {
+	return p.position
+}
+
 // TabCount returns the number of tabs.
 func (p *WindowTabPanel) TabCount() int { return len(p.tabs) }
 
@@ -117,6 +129,8 @@ func (p *WindowTabPanel) HasTab(id uint32) bool {
 }
 
 // WindowTabPanelElement is the renderable element for the window tab panel.
+// It delegates tab header/content layout to the standard Tabs component
+// and adds window-specific overlays (modal scrim, blocked tab dimming).
 type WindowTabPanelElement struct {
 	ui.BaseElement
 	Panel *WindowTabPanel
@@ -132,15 +146,60 @@ func NewWindowTabPanelElement(panel *WindowTabPanel) ui.Element {
 
 // Window tab layout constants.
 const (
-	wtabHeaderPadX   = 12
-	wtabHeaderPadY   = 8
-	wtabCloseW       = 20
-	wtabCloseGap     = 6
-	wtabIndicatorH   = 2
-	wtabMinTabW      = 80
+	wtabCloseW   = 20
+	wtabCloseGap = 6
 )
 
-// LayoutSelf implements ui.Layouter.
+// windowTabHeaderElement renders a single window-tab header: title text,
+// optional close button, and respects blocked state for dimming.
+type windowTabHeaderElement struct {
+	ui.BaseElement
+	title    string
+	showClose bool
+	blocked  bool
+	onClose  func()
+}
+
+// LayoutSelf implements ui.Layouter for the window tab header.
+func (h windowTabHeaderElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	area := ctx.Area
+	tokens := ctx.Tokens
+	headerStyle := tokens.Typography.Label
+
+	textColor := tokens.Colors.Text.Primary
+	if h.blocked {
+		textColor = tokens.Colors.Text.Disabled
+	}
+
+	// Measure and draw title text.
+	m := ctx.Canvas.MeasureText(h.title, headerStyle)
+	ctx.Canvas.DrawText(h.title, draw.Pt(float32(area.X), float32(area.Y)), headerStyle, textColor)
+
+	totalW := int(m.Width)
+
+	// Close button.
+	if h.showClose {
+		closeX := float32(area.X + totalW + wtabCloseGap)
+		closeY := float32(area.Y) + (headerStyle.Size-float32(wtabCloseW))/2
+		closeRect := draw.R(closeX, closeY, float32(wtabCloseW), float32(wtabCloseW))
+		if ctx.IX != nil && h.onClose != nil {
+			ctx.IX.RegisterHit(closeRect, h.onClose)
+		}
+		// Simple X icon: two crossing lines.
+		cx := closeX + float32(wtabCloseW)/2
+		cy := closeY + float32(wtabCloseW)/2
+		sz := float32(wtabCloseW) * 0.3
+		ctx.Canvas.FillRect(draw.R(cx-sz, cy-0.5, sz*2, 1), draw.SolidPaint(textColor))
+		ctx.Canvas.FillRect(draw.R(cx-0.5, cy-sz, 1, sz*2), draw.SolidPaint(textColor))
+
+		totalW += wtabCloseGap + wtabCloseW
+	}
+
+	return ui.Bounds{X: area.X, Y: area.Y, W: totalW, H: int(headerStyle.Size)}
+}
+
+// LayoutSelf implements ui.Layouter for the window tab panel.
+// It builds TabItems from the window tabs and delegates to a Tabs element.
 func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	panel := n.Panel
 	area := ctx.Area
@@ -148,139 +207,65 @@ func (n WindowTabPanelElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		return ui.Bounds{X: area.X, Y: area.Y}
 	}
 
-	canvas := ctx.Canvas
-	tokens := ctx.Tokens
-
-	// Touch-adaptive sizing: scale tab headers to meet MinTouchTarget (RFC-004 §2).
-	padY := wtabHeaderPadY
-	closeW := wtabCloseW
-	minTabW := wtabMinTabW
-	if ctx.IsTouch() && ctx.Profile != nil {
-		minT := int(ctx.Profile.MinTouchTarget)
-		padY = (minT - int(ctx.Tokens.Typography.Label.Size)) / 2
-		if padY < wtabHeaderPadY {
-			padY = wtabHeaderPadY
-		}
-		closeW = minT / 2
-		minTabW = minT * 2
-	}
-
-	headerStyle := tokens.Typography.Label
-	headerH := int(headerStyle.Size) + padY*2
-
-	// Draw tab header row.
-	cursorX := area.X
+	// Build TabItems from window tabs.
+	items := make([]TabItem, len(panel.tabs))
 	selectedIdx := 0
 	for i, tab := range panel.tabs {
 		if tab.ID == panel.selected {
 			selectedIdx = i
 		}
 
-		// Measure tab title width.
-		m := canvas.MeasureText(tab.Title, headerStyle)
-		tw := int(m.Width) + wtabHeaderPadX*2
-		if len(panel.tabs) > 1 {
-			tw += wtabCloseGap + closeW // space for close button
-		}
-		if tw < minTabW {
-			tw = minTabW
-		}
-
+		showClose := len(panel.tabs) > 1 && tab.ID == panel.selected && tab.ID != 0
 		isBlocked := panel.blocked[tab.ID]
-		isSelected := tab.ID == panel.selected
+		tabID := tab.ID
 
-		// Tab background.
-		tabRect := draw.R(float32(cursorX), float32(area.Y), float32(tw), float32(headerH))
-		if isSelected {
-			tonalBg := ui.LerpColor(tokens.Colors.Surface.Base, tokens.Colors.Accent.Primary, 0.08)
-			canvas.FillRect(tabRect, draw.SolidPaint(tonalBg))
+		var closeFn func()
+		if showClose && panel.onClose != nil {
+			onCl := panel.onClose
+			closeFn = func() { onCl(tabID) }
 		}
 
-		// Hit target for tab selection (unless blocked by modal).
-		if !isBlocked && !isSelected && ctx.IX != nil {
-			tabID := tab.ID
-			onSel := panel.onSelect
-			ctx.IX.RegisterHit(tabRect, func() {
-				if onSel != nil {
-					onSel(tabID)
-				}
-			})
-		} else if ctx.IX != nil {
-			// Eat the click so it doesn't fall through.
-			ctx.IX.RegisterHit(tabRect, func() {})
+		items[i] = TabItem{
+			Header: windowTabHeaderElement{
+				title:     tab.Title,
+				showClose: showClose,
+				blocked:   isBlocked,
+				onClose:   closeFn,
+			},
+			Content: tab.Content,
 		}
+	}
 
-		// Tab title text.
-		textColor := tokens.Colors.Text.Primary
-		if isBlocked {
-			textColor = tokens.Colors.Text.Disabled
-		}
-		textX := float32(cursorX + wtabHeaderPadX)
-		textY := float32(area.Y + padY)
-		canvas.DrawText(tab.Title, draw.Pt(textX, textY), headerStyle, textColor)
-
-		// Close button (only if more than one tab and tab is selected).
-		if len(panel.tabs) > 1 && isSelected && tab.ID != 0 {
-			closeX := float32(cursorX+tw-wtabHeaderPadX-closeW)
-			closeY := float32(area.Y) + float32(headerH-int(headerStyle.Size))/2
-			closeRect := draw.R(closeX, closeY, float32(closeW), headerStyle.Size)
-			if ctx.IX != nil {
-				tabID := tab.ID
-				onCl := panel.onClose
-				ctx.IX.RegisterHit(closeRect, func() {
-					if onCl != nil {
-						onCl(tabID)
-					}
-				})
+	// Build a Tabs element with the configured position.
+	// We use a custom onSelect that respects blocked tabs.
+	onSelect := func(idx int) {
+		if idx >= 0 && idx < len(panel.tabs) {
+			tab := panel.tabs[idx]
+			if !panel.blocked[tab.ID] && panel.onSelect != nil {
+				panel.onSelect(tab.ID)
 			}
-			// Simple X icon.
-			cx := closeX + float32(closeW)/2
-			cy := closeY + headerStyle.Size/2
-			sz := headerStyle.Size * 0.3
-			canvas.FillRect(draw.R(cx-sz, cy-0.5, sz*2, 1), draw.SolidPaint(textColor))
-			canvas.FillRect(draw.R(cx-0.5, cy-sz, 1, sz*2), draw.SolidPaint(textColor))
 		}
-
-		// Selection indicator.
-		if isSelected {
-			canvas.FillRect(
-				draw.R(float32(cursorX), float32(area.Y+headerH-wtabIndicatorH), float32(tw), float32(wtabIndicatorH)),
-				draw.SolidPaint(tokens.Colors.Accent.Primary))
-		}
-
-		// Separator between tabs.
-		if i < len(panel.tabs)-1 {
-			canvas.FillRect(
-				draw.R(float32(cursorX+tw), float32(area.Y+2), 1, float32(headerH-4)),
-				draw.SolidPaint(tokens.Colors.Stroke.Divider))
-		}
-
-		cursorX += tw
 	}
 
-	// Divider below headers.
-	totalHeaderW := cursorX - area.X
-	canvas.FillRect(
-		draw.R(float32(area.X), float32(area.Y+headerH), float32(max(totalHeaderW, area.W)), 1),
-		draw.SolidPaint(tokens.Colors.Stroke.Divider))
+	tabsEl := Tabs{
+		Items:    items,
+		Selected: selectedIdx,
+		OnSelect: onSelect,
+		Position: panel.position,
+	}
 
-	// Selected tab content.
-	contentY := area.Y + headerH + 1
-	contentArea := ui.Bounds{X: area.X, Y: contentY, W: area.W, H: max(area.H-headerH-1, 0)}
+	// Delegate layout to the Tabs component.
+	bounds := ctx.LayoutChild(tabsEl, area)
+
+	// If the selected tab is blocked by a modal, draw a scrim overlay on the content area.
 	selectedTab := panel.tabs[selectedIdx]
-	var cb ui.Bounds
-	if selectedTab.Content != nil {
-		cb = ctx.LayoutChild(selectedTab.Content, contentArea)
-	}
-
-	// If the selected tab is blocked by a modal, draw a scrim overlay.
 	if panel.blocked[selectedTab.ID] {
-		scrimRect := draw.R(float32(area.X), float32(contentY), float32(area.W), float32(contentArea.H))
-		canvas.FillRect(scrimRect, draw.SolidPaint(tokens.Colors.Surface.Scrim))
+		// Calculate content area based on position to draw the scrim correctly.
+		scrimRect := draw.R(float32(area.X), float32(area.Y), float32(bounds.W), float32(bounds.H))
+		ctx.Canvas.FillRect(scrimRect, draw.SolidPaint(ctx.Tokens.Colors.Surface.Scrim))
 	}
 
-	totalH := headerH + 1 + cb.H
-	return ui.Bounds{X: area.X, Y: area.Y, W: area.W, H: totalH}
+	return bounds
 }
 
 // TreeEqual implements ui.TreeEqualizer.
