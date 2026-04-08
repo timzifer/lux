@@ -54,12 +54,6 @@ func alphaRowsShifted() [][]OSKKey {
 
 func numpadRows(layout OSKLayout, shifted bool) [][]OSKKey {
 	switch layout {
-	case OSKLayoutPin:
-		return pinRows()
-	case OSKLayoutIP:
-		return ipRows()
-	case OSKLayoutHex:
-		return hexRows()
 	case OSKLayoutPhone:
 		return phoneRows()
 	case OSKLayoutNumericInteger:
@@ -91,63 +85,6 @@ func numericIntegerRows() [][]OSKKey {
 			{Label: "±", Action: OSKActionSign, Width: 1.0},
 			{Label: "0", Action: OSKActionChar, Width: 1.0, Char: '0'},
 			{Label: "⌫", Action: OSKActionBackspace, Width: 1.0},
-		},
-	}
-}
-
-func pinRows() [][]OSKKey {
-	return [][]OSKKey{
-		charRow("123", 1.0),
-		charRow("456", 1.0),
-		charRow("789", 1.0),
-		{
-			{Label: "", Action: OSKActionChar, Width: 1.0},
-			{Label: "0", Action: OSKActionChar, Width: 1.0, Char: '0'},
-			{Label: "⌫", Action: OSKActionBackspace, Width: 1.0},
-		},
-	}
-}
-
-func ipRows() [][]OSKKey {
-	return [][]OSKKey{
-		charRow("789", 1.0),
-		charRow("456", 1.0),
-		charRow("123", 1.0),
-		{
-			{Label: ".", Action: OSKActionChar, Width: 1.0, Char: '.'},
-			{Label: "0", Action: OSKActionChar, Width: 1.0, Char: '0'},
-			{Label: ":", Action: OSKActionChar, Width: 1.0, Char: ':'},
-		},
-	}
-}
-
-func hexRows() [][]OSKKey {
-	return [][]OSKKey{
-		{
-			{Label: "7", Action: OSKActionChar, Width: 1.0, Char: '7'},
-			{Label: "8", Action: OSKActionChar, Width: 1.0, Char: '8'},
-			{Label: "9", Action: OSKActionChar, Width: 1.0, Char: '9'},
-			{Label: "A", Action: OSKActionChar, Width: 1.0, Char: 'A'},
-			{Label: "B", Action: OSKActionChar, Width: 1.0, Char: 'B'},
-		},
-		{
-			{Label: "4", Action: OSKActionChar, Width: 1.0, Char: '4'},
-			{Label: "5", Action: OSKActionChar, Width: 1.0, Char: '5'},
-			{Label: "6", Action: OSKActionChar, Width: 1.0, Char: '6'},
-			{Label: "C", Action: OSKActionChar, Width: 1.0, Char: 'C'},
-			{Label: "D", Action: OSKActionChar, Width: 1.0, Char: 'D'},
-		},
-		{
-			{Label: "1", Action: OSKActionChar, Width: 1.0, Char: '1'},
-			{Label: "2", Action: OSKActionChar, Width: 1.0, Char: '2'},
-			{Label: "3", Action: OSKActionChar, Width: 1.0, Char: '3'},
-			{Label: "E", Action: OSKActionChar, Width: 1.0, Char: 'E'},
-			{Label: "F", Action: OSKActionChar, Width: 1.0, Char: 'F'},
-		},
-		{
-			{Label: "0", Action: OSKActionChar, Width: 1.0, Char: '0'},
-			{Label: "⌫", Action: OSKActionBackspace, Width: 1.0},
-			{Label: "↵", Action: OSKActionEnter, Width: 1.0},
 		},
 	}
 }

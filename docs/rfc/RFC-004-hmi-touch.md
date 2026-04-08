@@ -516,15 +516,9 @@ const (
     // OSKLayoutPhone: Telefonnum­mer-Layout (0–9, +, *, #).
     OSKLayoutPhone
 
-    // OSKLayoutPin: PIN-Eingabe (0–9, große Tasten, kein Vorzeichen).
-    OSKLayoutPin
-
-    // OSKLayoutIP: IP-Adress-Eingabe (0–9, Punkt, Doppelpunkt für IPv6).
-    OSKLayoutIP
-
-    // OSKLayoutHex: Hexadezimal-Eingabe (0–9, A–F).
-    // Für Farbcodes, Adressen, Register-Werte.
-    OSKLayoutHex
+    // OSKLayoutNone: Das Widget stellt sein eigenes Inline-Keypad bereit.
+    // Das globale OSK wird unterdrückt.
+    OSKLayoutNone OSKLayout = 255
 )
 ```
 
@@ -601,12 +595,9 @@ Standard-Form-Widgets (TextField, Slider, Select) sind für Desktop-Nutzung mit 
 | `NumericInput` | Integer/Float-Eingabe mit Grenzen | Numeric/NumericInteger | HMI |
 | `Stepper` | Inkrement/Dekrement mit fester Schrittweite | — (kein OSK) | HMI |
 | `DrumPicker` | Auswahl aus diskreten Werten (Rollen-Metapher) | — | HMI |
-| `PinInput` | PIN/Code-Eingabe (feste Stellenanzahl) | Pin | HMI |
-| `IPInput` | IPv4/IPv6-Adress-Eingabe | IP | HMI |
 | `UnitInput` | Wert + Einheit (z.B. "12.5 mm", "200 °C") | Numeric | HMI |
 | `TimeInput` | Uhrzeit-Eingabe (HH:MM oder HH:MM:SS) | NumericInteger | HMI |
 | `DateInput` | Datum-Eingabe (DrumPicker oder Direkteingabe) | NumericInteger | HMI |
-| `HexInput` | Hex-Wert-Eingabe | Hex | HMI |
 | `RangeInput` | Min/Max-Bereichseingabe (Dual-Slider) | — | HMI |
 
 ### 6.2 NumericInput
@@ -868,79 +859,7 @@ ui.TimePicker{
 //   Stunde    Minute
 ```
 
-### 6.5 PinInput
-
-PIN- oder Bestätigungscode-Eingabe mit fester Stellenanzahl.
-
-```go
-type PinInput struct {
-    // Length: Anzahl der Stellen.
-    Length int
-
-    // Masked: Eingabe verbergen (Punkte statt Ziffern).
-    Masked bool
-
-    // OnComplete: Wird gesendet wenn alle Stellen ausgefüllt sind.
-    // Nicht erst bei Enter — sofort bei letzter Ziffer.
-    OnComplete func(pin string) Msg
-
-    // OnChange: Wird bei jeder Ziffer gesendet.
-    OnChange func(partial string) Msg
-
-    // AllowedChars: Erlaubte Zeichen. Default: nur Ziffern.
-    AllowedChars *regexp.Regexp
-}
-```
-
-```
-┌───┐ ┌───┐ ┌───┐ ┌───┐
-│ 1 │ │ 2 │ │ 3 │ │ _ │   ← 4-stellige PIN, 3 eingegeben
-└───┘ └───┘ └───┘ └───┘
-```
-
-**Verhalten:**
-- Jede Stelle ist ein eigenes visuelles Feld
-- Eingabe füllt automatisch die nächste leere Stelle
-- Backspace löscht die letzte gefüllte Stelle
-- Bei `Masked`: Eingegebene Ziffer wird 500ms angezeigt, dann durch `●` ersetzt
-- Bei `OnComplete`: Automatischer Commit ohne Enter-Taste
-- OSK-Layout: `OSKLayoutPin` (große Ziffern-Tasten, kein Dezimaltrenner)
-
-### 6.6 IPInput
-
-Spezialisiertes Widget für IPv4/IPv6-Adress-Eingabe.
-
-```go
-type IPInput struct {
-    Value    string    // "192.168.1.1" oder "::1"
-    Version  IPVersion // IPv4, IPv6, Auto
-    OnChange func(string) Msg
-    OnCommit func(string) Msg  // Nur bei valider IP
-    Disabled bool
-}
-
-type IPVersion uint8
-const (
-    IPVersionAuto IPVersion = iota  // Erkennung anhand Eingabe
-    IPVersion4
-    IPVersion6
-)
-```
-
-```
-IPv4:  ┌─────┐ . ┌─────┐ . ┌─────┐ . ┌─────┐
-       │ 192 │   │ 168 │   │   1 │   │   1 │
-       └─────┘   └─────┘   └─────┘   └─────┘
-```
-
-**Verhalten:**
-- Vier (IPv4) bzw. acht (IPv6) Segment-Felder
-- Punkt-Eingabe springt automatisch zum nächsten Segment
-- Jedes Segment validiert seinen Bereich (0–255 für IPv4)
-- Segment-Navigation mit Tab/Pfeil-Tasten
-- OSK-Layout: `OSKLayoutIP`
-
-### 6.7 UnitInput
+### 6.5 UnitInput
 
 Numerische Eingabe mit Einheiten-Auswahl.
 
@@ -974,7 +893,7 @@ type UnitDef struct {
 - Einheitenwechsel rechnet den Wert automatisch um (`Value * Factor`)
 - Der Wert im User-Model bleibt in der Basiseinheit (normalisiert)
 
-### 6.8 TimeInput / DateInput
+### 6.6 TimeInput / DateInput
 
 Zeitspezifische Eingabe-Widgets die DrumPicker und Direkteingabe kombinieren.
 
@@ -1046,31 +965,7 @@ const (
 - Monatsnamen kommen aus `RenderCtx.Locale`
 - Haptisches Feedback bei jedem Raster-Snap
 
-### 6.9 HexInput
-
-Hexadezimal-Eingabe für Register-Werte, Farbcodes, Speicheradressen.
-
-```go
-type HexInput struct {
-    Value    uint64
-    Digits   int       // Feste Stellenanzahl (z.B. 4, 8, 16). 0 = variabel.
-    Prefix   bool      // "0x"-Prefix anzeigen
-    Upper    bool      // A–F statt a–f
-    OnChange func(uint64) Msg
-    Disabled bool
-}
-```
-
-```
-┌─────────────────────────────┐
-│  0x  │ 0 │ 0 │ F │ F │ _ │ │   ← 4 Stellen Hex, 2 eingegeben
-└─────────────────────────────┘
-```
-
-- OSK-Layout: `OSKLayoutHex` (0–9 + A–F)
-- Eingabe füllt von rechts nach links (LSB-first) oder links nach rechts (MSB-first, Default)
-
-### 6.10 RangeInput (Dual-Slider)
+### 6.7 RangeInput (Dual-Slider)
 
 Zwei gekoppelte Slider-Handles für Min/Max-Bereiche.
 
@@ -1103,12 +998,14 @@ type RangeInput struct {
 - Handles können nicht übereinander gezogen werden (`Low ≤ High` ist invariant)
 - Tap auf die Schiene (zwischen den Handles) bewegt den nächstgelegenen Handle
 
-### 6.11 OSK-Integration der Input-Widgets
+### 6.8 OSK-Integration der Input-Widgets
 
 Alle spezialisierten Input-Widgets implementieren `OSKRequester`:
 
 ```go
 // NumericInput → OSKLayoutNumeric / OSKLayoutNumericInteger
+// Im Touch-Modus öffnet NumericInput stattdessen ein eigenes NumericKeypad-Overlay
+// und das globale OSK wird nicht angezeigt.
 func (n NumericInput) OSKLayout() OSKLayout {
     if n.Kind == NumericInteger {
         return OSKLayoutNumericInteger
@@ -1116,22 +1013,13 @@ func (n NumericInput) OSKLayout() OSKLayout {
     return OSKLayoutNumeric
 }
 
-// PinInput → OSKLayoutPin
-func (p PinInput) OSKLayout() OSKLayout { return OSKLayoutPin }
-
-// IPInput → OSKLayoutIP
-func (i IPInput) OSKLayout() OSKLayout { return OSKLayoutIP }
-
-// HexInput → OSKLayoutHex
-func (h HexInput) OSKLayout() OSKLayout { return OSKLayoutHex }
-
 // TimeInput, DateInput (im Direct-Mode) → OSKLayoutNumericInteger
 func (t TimeInput) OSKLayout() OSKLayout { return OSKLayoutNumericInteger }
 ```
 
-Das Framework öffnet das passende OSK-Layout automatisch wenn eines dieser Widgets Fokus erhält und `HasPhysicalKeyboard == false`.
+Das Framework öffnet das passende OSK-Layout automatisch wenn eines dieser Widgets Fokus erhält und `HasPhysicalKeyboard == false`. Widgets die `OSKLayoutNone` zurückgeben (oder ihr eigenes Keypad bereitstellen), unterdrücken das globale OSK.
 
-### 6.12 Focus-Kette & Tab-Navigation
+### 6.9 Focus-Kette & Tab-Navigation
 
 Auf Touch-HMI gibt es keine Tab-Taste — aber das OSK zeigt einen "Weiter"-Button (`OSKActionTab`). Dieser bewegt den Fokus zum nächsten Focusable in der Tab-Order. Das ermöglicht Formular-Durchlauf ohne OSK schließen/öffnen:
 
@@ -1470,7 +1358,7 @@ app.Run(myModel, myView, myUpdate,
 Die in diesem RFC definierten Widgets bilden einen eigenen Tier:
 
 **Tier HMI — Touch & Maschinen-Interfaces** *(v1.x)*
-`NumericInput`, `Stepper`, `DrumPicker`, `PinInput`, `IPInput`, `UnitInput`, `TimeInput`, `DateInput`, `HexInput`, `RangeInput`, `ConfirmButton`, `HoldButton`, `AlarmBanner`, `InfoButton`, `PageNavigator`
+`NumericInput`, `Stepper`, `DrumPicker`, `UnitInput`, `TimeInput`, `DateInput`, `RangeInput`, `ConfirmButton`, `HoldButton`, `AlarmBanner`, `InfoButton`, `PageNavigator`
 
 Diese Widgets hängen von den Tier-1/2-Widgets ab (Text, Button, Slider, ScrollView) und erweitern sie für Touch/HMI-Szenarien.
 
