@@ -785,10 +785,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// OSK auto-show/dismiss (RFC-004 §5.1): when a text field gains
 			// focus and there is no physical keyboard, show the OSK.
 			hasInput := fm.Input != nil
+			suppressOSK := hasInput && fm.Input.SuppressOSK
 			if hasInput != prevHadInput {
 				prevHadInput = hasInput
 				if activeProfile != nil && !activeProfile.HasPhysicalKeyboard {
-					if hasInput && !oskState.Visible {
+					if hasInput && !oskState.Visible && !suppressOSK {
 						oskState.Visible = true
 						oskState.Mode = osk.ModeForLayout(oskState.Layout)
 						oskState.Shifted = false

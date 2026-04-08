@@ -432,6 +432,11 @@ type InputState struct {
 	// [min(SelectionStart, CursorOffset), max(SelectionStart, CursorOffset)).
 	SelectionStart int
 
+	// SuppressOSK, when true, prevents the framework from auto-showing the
+	// global on-screen keyboard for this input. Used by widgets that provide
+	// their own inline keypad (e.g. NumericInput).
+	SuppressOSK bool
+
 	// IME composition state (RFC-002 §2.2).
 	ComposeText        string // current pre-edit text (empty when not composing)
 	ComposeCursorStart int    // cursor position within compose text (rune index)
