@@ -9,6 +9,7 @@ import (
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/icons"
+	"github.com/timzifer/lux/ui/menu"
 	"github.com/timzifer/lux/ui/osk"
 )
 
@@ -212,69 +213,121 @@ func (u UnitInput) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	arrowY := area.Y + (h-int(arrowStyle.Size))/2
 	canvas.DrawText(icons.CaretDown, draw.Pt(arrowX, float32(arrowY)), arrowStyle, unitColor)
 
-	// ── Dropdown overlay ──
+	// ── Unit selection overlay ──
 	if isOpen && u.State != nil && overlays != nil {
-		state := u.State
-		baseValue := u.Value
-		units := u.Units
-		curUnit := u.Unit
-		winW := overlays.WindowW
-		winH := overlays.WindowH
-		dropX := unitBtnX
-		dropY := area.Y + h
-		dropW := unitDropdownW + 40
-		dropH := len(units)*unitDropdownItemH + unitDropdownPad*2
-
-		if dropY+dropH > winH && area.Y-dropH >= 0 {
-			dropY = area.Y - dropH
+		if ctx.IsTouch() {
+			u.layoutUnitActionSheet(ctx, overlays, onChange)
+		} else {
+			u.layoutUnitDropdown(ctx, overlays, onChange, unitBtnX, area.Y, h, w)
 		}
+	}
 
-		overlays.Push(ui.OverlayEntry{
-			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
-				ix.RegisterHit(draw.R(0, 0, float32(winW), float32(winH)), func() {
-					state.Open = false
-				})
-				bgRect := draw.R(float32(dropX), float32(dropY), float32(dropW), float32(dropH))
-				canvas.FillRoundRect(bgRect, tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Surface.Elevated))
-				canvas.StrokeRoundRect(bgRect, tokens.Radii.Input,
-					draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
+	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: h}
+}
 
-				bodyStyle := tokens.Typography.Body
-				for i, ud := range units {
-					itemY := dropY + unitDropdownPad + i*unitDropdownItemH
-					itemRect := draw.R(float32(dropX), float32(itemY), float32(dropW), float32(unitDropdownItemH))
-					sym := ud.Symbol
-					itemClick := func() {
+// layoutUnitActionSheet renders the unit selection as a touch-optimized ActionSheet.
+func (u UnitInput) layoutUnitActionSheet(ctx *ui.LayoutContext, overlays *ui.OverlayStack, onChange func(float64, string)) {
+	state := u.State
+	baseValue := u.Value
+	units := u.Units
+	curUnit := u.Unit
+	profile := ctx.Profile
+	winW := overlays.WindowW
+	winH := overlays.WindowH
+	th := ctx.Theme
+
+	overlays.Push(ui.OverlayEntry{
+		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
+			items := make([]menu.ActionSheetItem, len(units))
+			for i, ud := range units {
+				sym := ud.Symbol
+				label := ud.Symbol
+				if ud.Label != "" {
+					label += " — " + ud.Label
+				}
+				items[i] = menu.ActionSheetItem{
+					Label:    label,
+					Selected: sym == curUnit,
+					OnClick: func() {
 						if onChange != nil {
 							onChange(baseValue, sym)
 						}
 						state.Open = false
-					}
-					ho := ix.RegisterHit(itemRect, itemClick)
-					if ho > 0 {
-						canvas.FillRect(itemRect, draw.SolidPaint(tokens.Colors.Surface.Hovered))
-					}
-					if ud.Symbol == curUnit {
-						canvas.FillRect(itemRect, draw.SolidPaint(draw.Color{
-							R: tokens.Colors.Accent.Primary.R,
-							G: tokens.Colors.Accent.Primary.G,
-							B: tokens.Colors.Accent.Primary.B,
-							A: 0.15,
-						}))
-					}
-					label := ud.Symbol
-					if ud.Label != "" {
-						label += " — " + ud.Label
-					}
-					canvas.DrawText(label,
-						draw.Pt(float32(dropX+unitDropdownPad), float32(itemY+4)),
-						bodyStyle, tokens.Colors.Text.Primary)
+					},
 				}
-			},
-		})
+			}
+			menu.RenderActionSheet(menu.ActionSheetConfig{
+				Title:     "Einheit",
+				Items:     items,
+				Profile:   profile,
+				WinW:      winW,
+				WinH:      winH,
+				OnDismiss: func() { state.Open = false },
+				Theme:     th,
+			}, canvas, tokens, ix)
+		},
+	})
+}
+
+// layoutUnitDropdown renders the unit selection as a desktop dropdown overlay.
+func (u UnitInput) layoutUnitDropdown(ctx *ui.LayoutContext, overlays *ui.OverlayStack, onChange func(float64, string), dropX, areaY, h, w int) {
+	state := u.State
+	baseValue := u.Value
+	units := u.Units
+	curUnit := u.Unit
+	winW := overlays.WindowW
+	winH := overlays.WindowH
+	dropY := areaY + h
+	dropW := unitDropdownW + 40
+	dropH := len(units)*unitDropdownItemH + unitDropdownPad*2
+
+	if dropY+dropH > winH && areaY-dropH >= 0 {
+		dropY = areaY - dropH
 	}
 
-	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: h}
+	overlays.Push(ui.OverlayEntry{
+		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
+			ix.RegisterHit(draw.R(0, 0, float32(winW), float32(winH)), func() {
+				state.Open = false
+			})
+			bgRect := draw.R(float32(dropX), float32(dropY), float32(dropW), float32(dropH))
+			canvas.FillRoundRect(bgRect, tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Surface.Elevated))
+			canvas.StrokeRoundRect(bgRect, tokens.Radii.Input,
+				draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
+
+			bodyStyle := tokens.Typography.Body
+			for i, ud := range units {
+				itemY := dropY + unitDropdownPad + i*unitDropdownItemH
+				itemRect := draw.R(float32(dropX), float32(itemY), float32(dropW), float32(unitDropdownItemH))
+				sym := ud.Symbol
+				itemClick := func() {
+					if onChange != nil {
+						onChange(baseValue, sym)
+					}
+					state.Open = false
+				}
+				ho := ix.RegisterHit(itemRect, itemClick)
+				if ho > 0 {
+					canvas.FillRect(itemRect, draw.SolidPaint(tokens.Colors.Surface.Hovered))
+				}
+				if ud.Symbol == curUnit {
+					canvas.FillRect(itemRect, draw.SolidPaint(draw.Color{
+						R: tokens.Colors.Accent.Primary.R,
+						G: tokens.Colors.Accent.Primary.G,
+						B: tokens.Colors.Accent.Primary.B,
+						A: 0.15,
+					}))
+				}
+				label := ud.Symbol
+				if ud.Label != "" {
+					label += " — " + ud.Label
+				}
+				canvas.DrawText(label,
+					draw.Pt(float32(dropX+unitDropdownPad), float32(itemY+4)),
+					bodyStyle, tokens.Colors.Text.Primary)
+			}
+		},
+	})
 }
 
 func (u UnitInput) TreeEqual(other ui.Element) bool {
