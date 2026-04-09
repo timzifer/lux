@@ -36,12 +36,20 @@ func (n Radio) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	ix := ctx.IX
 	focus := ctx.Focus
 
+	// Touch-adaptive sizing: grow radio to meet MinTouchTarget (RFC-004 §2).
+	boxSize := checkboxSize
+	gap := checkboxGap
+	if ctx.IsTouch() && ctx.Profile != nil {
+		boxSize = int(ctx.Profile.MinTouchTarget)
+		gap = int(ctx.Profile.TouchTargetSpacing) + 4
+	}
+
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(n.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
 	labelH := int(math.Ceil(float64(metrics.Ascent)))
-	totalH := max(checkboxSize, labelH)
-	totalW := checkboxSize + checkboxGap + labelW
+	totalH := max(boxSize, labelH)
+	totalW := boxSize + gap + labelW
 
 	// Register hit target and get hover opacity atomically.
 	radioRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH))
@@ -60,8 +68,8 @@ func (n Radio) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		focused = focus.IsElementFocused(uid)
 	}
 
-	boxY := area.Y + (totalH-checkboxSize)/2
-	circleRect := draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize))
+	boxY := area.Y + (totalH-boxSize)/2
+	circleRect := draw.R(float32(area.X), float32(boxY), float32(boxSize), float32(boxSize))
 
 	// Outer circle
 	outerColor := tokens.Colors.Stroke.Border
@@ -81,18 +89,18 @@ func (n Radio) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	canvas.FillEllipse(
 		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
-			float32(checkboxSize-checkboxBorder*2), float32(checkboxSize-checkboxBorder*2)),
+			float32(boxSize-checkboxBorder*2), float32(boxSize-checkboxBorder*2)),
 		draw.SolidPaint(fillColor))
 
 	// Focus glow on the radio circle (RFC-008 §9.4).
 	if focused {
-		ui.DrawFocusRing(canvas, circleRect, float32(checkboxSize)/2, tokens)
+		ui.DrawFocusRing(canvas, circleRect, float32(boxSize)/2, tokens)
 	}
 
-	// Selected dot
+	// Selected dot — proportional to box size.
 	if n.Selected {
-		dotSize := 8
-		dotOffset := (checkboxSize - dotSize) / 2
+		dotSize := boxSize / 2
+		dotOffset := (boxSize - dotSize) / 2
 		dotColor := tokens.Colors.Accent.Primary
 		if n.Disabled {
 			dotColor = ui.DisabledColor(dotColor, tokens.Colors.Surface.Base)
@@ -103,7 +111,7 @@ func (n Radio) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Label
-	labelX := area.X + checkboxSize + checkboxGap
+	labelX := area.X + boxSize + gap
 	labelY := area.Y + (totalH-labelH)/2
 	labelColor := tokens.Colors.Text.Primary
 	if n.Disabled {

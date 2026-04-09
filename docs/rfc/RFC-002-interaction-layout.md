@@ -4,7 +4,7 @@
 **Status:** Integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-03-31
+**Zuletzt abgeglichen:** 2026-04-08
 **Abhängig von:** RFC-001 (Core Architecture)
 **Folge-RFC:** RFC-003 (Widget Catalogue & Theme)
 
@@ -19,7 +19,7 @@
 | §1.4 `Anim[T]` | ✅ Integriert | `anim/anim.go` — `float32`/`float64` + `LerpAnim[T]` für alle draw-Typen |
 | §1.4 `Interpolatable` Constraint | ✅ Integriert | `LerpFunc[T]`/`LerpAnim[T]` Pattern; `LerpColor`, `LerpPoint`, `LerpSize`, `LerpRect`, `LerpCornerRadii` in `draw/lerp.go` |
 | §1.5 `SpringAnim[T]` | ✅ Integriert | `anim/spring.go` — Feder-Dämpfer mit SpringSpec, Presets: Gentle, Snappy, Bouncy |
-| §1.6 `MotionSpec` im Theme | ✅ Integriert | `DurationEasing{Duration, Easing}` pro Slot: Standard (250ms OutCubic), Emphasized (400ms InOutCubic), Quick (100ms OutExpo) |
+| §1.6 `MotionSpec` im Theme | ✅ Integriert | `DurationEasing{Duration, Easing}` pro Slot; Slate: Standard (250ms), Emphasized (400ms), Quick (100ms); Lux: Standard (220ms), Emphasized (320ms), Quick (110ms) |
 | §1.7 Easing-Funktionen | ✅ Integriert | Linear, OutCubic, InCubic, InOutCubic, OutExpo, CubicBezier |
 | §1.8 AnimationID / SetTargetWithID | ✅ Integriert | `AnimationID`, `AnimationEnded`, `SetTargetWithID()`, `anim.SendFunc` Wiring |
 | §1.9 AnimGroup / AnimSeq | ✅ Integriert | `anim/group.go` — `AnimGroup` (parallel), `AnimSeq` (sequential mit onDone-Hooks) |

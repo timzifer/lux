@@ -26,6 +26,17 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	if viewportH <= 0 || viewportH > area.H {
 		viewportH = area.H
 	}
+	// Reduce effective viewport by bottom safe-area inset (e.g. OSK height)
+	// so content is not obscured by system overlays.
+	if sa := ctx.SafeArea; sa.Bottom > 0 {
+		reduced := viewportH - int(sa.Bottom)
+		if reduced < 100 {
+			reduced = 100
+		}
+		if reduced < viewportH {
+			viewportH = reduced
+		}
+	}
 
 	// Determine scroll offset from state.
 	var offset float32
@@ -41,8 +52,10 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	contentW := area.W // width available for child content
 
-	// Pre-measure to detect whether scrollbar is needed.
-	measureArea := ui.Bounds{X: area.X, Y: area.Y, W: contentW, H: area.H}
+	// Pre-measure with unconstrained height to detect the child's natural
+	// height. Using area.H would let the child clamp to the viewport,
+	// hiding overflow and making needsScroll incorrectly false.
+	measureArea := ui.Bounds{X: area.X, Y: area.Y, W: contentW, H: 1 << 20}
 	mb := ctx.MeasureChild(n.Child, measureArea)
 	needsScroll := mb.H > viewportH
 
@@ -61,6 +74,13 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	contentH := childBounds.H
 
+	// Correct needsScroll based on actual rendered content in case
+	// the pre-measurement was inaccurate (e.g. touch-mode widgets
+	// grow taller during the real layout pass than during measurement).
+	if contentH > viewportH && !needsScroll {
+		needsScroll = true
+	}
+
 	// Only clamp scroll state during actual render passes (ctx.IX != nil),
 	// not during measurement passes. Measurement passes may run with a
 	// different viewport height (e.g. Flex measures children at full area.H
@@ -75,6 +95,38 @@ func (n ScrollView) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 		if n.State.Offset < 0 {
 			n.State.Offset = 0
+		}
+
+		// Auto-scroll to keep the focused element visible (e.g. when the OSK
+		// appears and shrinks the viewport). Only runs once per focus gain or
+		// viewport-height change so the user can scroll freely afterwards.
+		vH := float32(viewportH)
+		if ctx.Focus != nil && ctx.Focus.FocusedBounds != nil {
+			if n.State.AutoScrollVH != vH {
+				fb := ctx.Focus.FocusedBounds
+				areaY := float32(area.Y)
+				contentTop := fb.Y + n.State.Offset - areaY
+				contentBottom := contentTop + fb.H
+				padding := float32(16)
+
+				if contentBottom > n.State.Offset+vH {
+					n.State.Offset = contentBottom - vH + padding
+				}
+				if contentTop < n.State.Offset {
+					n.State.Offset = contentTop - padding
+					if n.State.Offset < 0 {
+						n.State.Offset = 0
+					}
+				}
+				// Re-clamp after adjustment.
+				if n.State.Offset > maxScroll {
+					n.State.Offset = maxScroll
+				}
+				n.State.AutoScrollVH = vH
+			}
+		} else {
+			// Reset so the next focus gain triggers a fresh auto-scroll.
+			n.State.AutoScrollVH = -1
 		}
 	}
 

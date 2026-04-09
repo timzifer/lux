@@ -6,11 +6,13 @@ import (
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/icons"
+	"github.com/timzifer/lux/ui/menu"
 )
 
 // SelectState holds the open/closed state for a Select dropdown.
 type SelectState struct {
-	Open bool
+	Open        bool
+	TouchScroll ui.ScrollState // scroll offset for touch action sheet
 }
 
 // Select is a dropdown selector.
@@ -63,6 +65,13 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	style := tokens.Typography.Body
 	h := int(style.Size) + textFieldPadY*2
 
+	// Enforce minimum touch target height (RFC-004).
+	if ctx.IsTouch() && ctx.Profile != nil {
+		if minH := int(ctx.Profile.MinTouchTarget); h < minH {
+			h = minH
+		}
+	}
+
 	w := textFieldW
 	if area.W < w {
 		w = area.W
@@ -77,7 +86,12 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		var selectClickFn func()
 		if n.State != nil {
 			state := n.State
-			selectClickFn = func() { state.Open = !state.Open }
+			selectClickFn = func() {
+				state.Open = !state.Open
+				if state.Open {
+					state.TouchScroll = ui.ScrollState{} // reset scroll on open
+				}
+			}
 		}
 		hoverOpacity = ix.RegisterHit(selectRect, selectClickFn)
 	}
@@ -152,74 +166,129 @@ func (n Select) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Dropdown overlay when open (skip during measurement passes where overlays is nil).
 	if isOpen && len(n.Options) > 0 && overlays != nil {
-		dropX := area.X
-		dropW := w
-		opts := n.Options
-		onSelect := n.OnSelect
-		state := n.State
-		winW := overlays.WindowW
-		winH := overlays.WindowH
-
-		// Flip dropdown above the select if it would overflow the viewport bottom.
-		itemH0 := int(tokens.Typography.Body.Size) + textFieldPadY*2
-		totalH0 := itemH0 * len(opts)
-		dropY := area.Y + h // default: open below
-		if dropY+totalH0 > winH && area.Y-totalH0 >= 0 {
-			dropY = area.Y - totalH0 // flip: open above
+		if ctx.IsTouch() {
+			// Touch/HMI: centralized action sheet overlay.
+			n.layoutTouchOverlay(ctx)
+		} else {
+			// Desktop: anchor-relative dropdown (existing behavior).
+			n.layoutDesktopDropdown(ctx, area, w, h)
 		}
-		overlays.Push(ui.OverlayEntry{
-			Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
-				// Full-screen backdrop: clicking outside the dropdown closes it.
-				ix.RegisterHit(draw.R(0, 0, float32(winW), float32(winH)), func() {
-					if state != nil {
-						state.Open = false
-					}
-				})
-
-				itemH := int(tokens.Typography.Body.Size) + textFieldPadY*2
-				totalH := itemH * len(opts)
-
-				// Dropdown background.
-				canvas.FillRoundRect(
-					draw.R(float32(dropX), float32(dropY), float32(dropW), float32(totalH)),
-					tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Surface.Elevated))
-				// Dropdown border.
-				canvas.StrokeRoundRect(
-					draw.R(float32(dropX), float32(dropY), float32(dropW), float32(totalH)),
-					tokens.Radii.Input, draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
-
-				for i, opt := range opts {
-					itemY := dropY + i*itemH
-					o := opt
-					var itemClickFn func()
-					if onSelect != nil || state != nil {
-						itemClickFn = func() {
-							if onSelect != nil {
-								onSelect(o)
-							}
-							if state != nil {
-								state.Open = false
-							}
-						}
-					}
-					ho := ix.RegisterHit(draw.R(float32(dropX), float32(itemY), float32(dropW), float32(itemH)), itemClickFn)
-					if ho > 0 {
-						canvas.FillRect(
-							draw.R(float32(dropX+1), float32(itemY), float32(max(dropW-2, 0)), float32(itemH)),
-							draw.SolidPaint(tokens.Colors.Surface.Hovered))
-					}
-					itemClip := draw.R(float32(dropX+textFieldPadX), float32(itemY), float32(dropW-textFieldPadX*2), float32(itemH))
-					canvas.PushClip(itemClip)
-					canvas.DrawText(opt,
-						draw.Pt(float32(dropX+textFieldPadX), float32(itemY+textFieldPadY)),
-						tokens.Typography.Body, tokens.Colors.Text.Primary)
-					canvas.PopClip()
-				}
-			},
-		})
 	}
 
 	return ui.Bounds{X: area.X, Y: area.Y, W: w, H: h}
+}
+
+// layoutDesktopDropdown renders the classic anchor-relative dropdown overlay
+// for desktop profiles (unchanged legacy behavior).
+func (n Select) layoutDesktopDropdown(ctx *ui.LayoutContext, area ui.Bounds, w, h int) {
+	dropX := area.X
+	dropW := w
+	opts := n.Options
+	onSelect := n.OnSelect
+	state := n.State
+	tokens := ctx.Tokens
+	winW := ctx.Overlays.WindowW
+	winH := ctx.Overlays.WindowH
+
+	// Flip dropdown above the select if it would overflow the viewport bottom.
+	itemH0 := int(tokens.Typography.Body.Size) + textFieldPadY*2
+	totalH0 := itemH0 * len(opts)
+	dropY := area.Y + h // default: open below
+	if dropY+totalH0 > winH && area.Y-totalH0 >= 0 {
+		dropY = area.Y - totalH0 // flip: open above
+	}
+	ctx.Overlays.Push(ui.OverlayEntry{
+		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
+			// Full-screen backdrop: clicking outside the dropdown closes it.
+			ix.RegisterHit(draw.R(0, 0, float32(winW), float32(winH)), func() {
+				if state != nil {
+					state.Open = false
+				}
+			})
+
+			itemH := int(tokens.Typography.Body.Size) + textFieldPadY*2
+			totalH := itemH * len(opts)
+
+			// Dropdown background.
+			canvas.FillRoundRect(
+				draw.R(float32(dropX), float32(dropY), float32(dropW), float32(totalH)),
+				tokens.Radii.Input, draw.SolidPaint(tokens.Colors.Surface.Elevated))
+			// Dropdown border.
+			canvas.StrokeRoundRect(
+				draw.R(float32(dropX), float32(dropY), float32(dropW), float32(totalH)),
+				tokens.Radii.Input, draw.Stroke{Paint: draw.SolidPaint(tokens.Colors.Stroke.Border), Width: 1})
+
+			for i, opt := range opts {
+				itemY := dropY + i*itemH
+				o := opt
+				var itemClickFn func()
+				if onSelect != nil || state != nil {
+					itemClickFn = func() {
+						if onSelect != nil {
+							onSelect(o)
+						}
+						if state != nil {
+							state.Open = false
+						}
+					}
+				}
+				ho := ix.RegisterHit(draw.R(float32(dropX), float32(itemY), float32(dropW), float32(itemH)), itemClickFn)
+				if ho > 0 {
+					canvas.FillRect(
+						draw.R(float32(dropX+1), float32(itemY), float32(max(dropW-2, 0)), float32(itemH)),
+						draw.SolidPaint(tokens.Colors.Surface.Hovered))
+				}
+				itemClip := draw.R(float32(dropX+textFieldPadX), float32(itemY), float32(dropW-textFieldPadX*2), float32(itemH))
+				canvas.PushClip(itemClip)
+				canvas.DrawText(opt,
+					draw.Pt(float32(dropX+textFieldPadX), float32(itemY+textFieldPadY)),
+					tokens.Typography.Body, tokens.Colors.Text.Primary)
+				canvas.PopClip()
+			}
+		},
+	})
+}
+
+// layoutTouchOverlay renders a centralized action sheet overlay for touch/HMI profiles.
+func (n Select) layoutTouchOverlay(ctx *ui.LayoutContext) {
+	profile := ctx.Profile
+	state := n.State
+	opts := n.Options
+	value := n.Value
+	onSelect := n.OnSelect
+	winW := ctx.Overlays.WindowW
+	winH := ctx.Overlays.WindowH
+	th := ctx.Theme
+
+	ctx.Overlays.Push(ui.OverlayEntry{
+		Render: func(canvas draw.Canvas, tokens theme.TokenSet, ix *ui.Interactor) {
+			items := make([]menu.ActionSheetItem, len(opts))
+			for i, opt := range opts {
+				o := opt
+				items[i] = menu.ActionSheetItem{
+					Label:    o,
+					Selected: o == value,
+					OnClick: func() {
+						if onSelect != nil {
+							onSelect(o)
+						}
+						if state != nil {
+							state.Open = false
+						}
+					},
+				}
+			}
+			menu.RenderActionSheet(menu.ActionSheetConfig{
+				Items:       items,
+				Profile:     profile,
+				WinW:        winW,
+				WinH:        winH,
+				OnDismiss:   func() { state.Open = false },
+				ScrollState: &state.TouchScroll,
+				Theme:       th,
+			}, canvas, tokens, ix)
+		},
+	})
 }
 
 // TreeEqual implements ui.TreeEqualizer.

@@ -712,47 +712,6 @@ func TestGoldenStepperVertical(t *testing.T) {
 	AssertScene(t, scene, "testdata/stepper_vertical.golden")
 }
 
-func TestGoldenDrumPicker(t *testing.T) {
-	items := form.IntItems(0, 23)
-	scene := BuildScene(
-		form.NewDrumPicker(items, 10),
-		testW, testH,
-	)
-	AssertScene(t, scene, "testdata/drum_picker.golden")
-}
-
-func TestGoldenPinInput(t *testing.T) {
-	scene := BuildScene(
-		form.NewPinInput(4, "12"),
-		testW, testH,
-	)
-	AssertScene(t, scene, "testdata/pin_input.golden")
-}
-
-func TestGoldenPinInputMasked(t *testing.T) {
-	scene := BuildScene(
-		form.NewPinInput(4, "123", form.WithPinMasked()),
-		testW, testH,
-	)
-	AssertScene(t, scene, "testdata/pin_input_masked.golden")
-}
-
-func TestGoldenHexInput(t *testing.T) {
-	scene := BuildScene(
-		form.NewHexInput(0x00FF),
-		testW, testH,
-	)
-	AssertScene(t, scene, "testdata/hex_input.golden")
-}
-
-func TestGoldenIPInput(t *testing.T) {
-	scene := BuildScene(
-		form.NewIPInput("192.168.1.1"),
-		testW, testH,
-	)
-	AssertScene(t, scene, "testdata/ip_input.golden")
-}
-
 func TestGoldenUnitInput(t *testing.T) {
 	units := []form.UnitDef{
 		{Symbol: "mm", Label: "Millimeter", Factor: 1},

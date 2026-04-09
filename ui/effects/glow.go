@@ -17,19 +17,32 @@ type GlowBoxElement struct {
 }
 
 func (n GlowBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
-	b := ctx.LayoutChild(n.Child, ctx.Area)
-	r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
 	glowColor := n.Color
 	if glowColor.A == 0 {
 		glowColor = ctx.Tokens.Colors.Accent.Primary
 		glowColor.A = 0.6
 	}
-	ctx.Canvas.DrawShadow(r, draw.Shadow{
+	shadow := draw.Shadow{
 		Color:      glowColor,
 		BlurRadius: n.BlurRadius,
 		Radius:     n.Radius,
-	})
-	return b
+	}
+	ext := shadow.Extent()
+
+	childArea := ui.Bounds{
+		X: ctx.Area.X + int(ext.Left),
+		Y: ctx.Area.Y + int(ext.Top),
+		W: max(ctx.Area.W-int(ext.Left)-int(ext.Right), 0),
+		H: max(ctx.Area.H-int(ext.Top)-int(ext.Bottom), 0),
+	}
+	b := ctx.LayoutChild(n.Child, childArea)
+	ctx.Canvas.DrawShadow(draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H)), shadow)
+	return ui.Bounds{
+		X: b.X - int(ext.Left),
+		Y: b.Y - int(ext.Top),
+		W: b.W + int(ext.Left) + int(ext.Right),
+		H: b.H + int(ext.Top) + int(ext.Bottom),
+	}
 }
 
 func (n GlowBoxElement) TreeEqual(other ui.Element) bool {

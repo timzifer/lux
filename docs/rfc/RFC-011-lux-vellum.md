@@ -2,10 +2,10 @@
 
 **Repository:** `github.com/timzifer/lux`
 
-**Status:** Theoretical
+**Status:** Integriert
 **Version:** 0.1.0
 **Datum:** 2026-03-26
-**Zuletzt abgeglichen:** 2026-03-26
+**Zuletzt abgeglichen:** 2026-04-08
 **Abhängig von:** RFC-001 (Core Architecture), RFC-002 (Interaction & Layout), RFC-006 (Surface Semantics), RFC-007 (WGPU Rendering)
 **Berührt:** RFC-004 (WebView), RFC-004-HMI (Touch/HMI), RFC-010 (Code-Editor), RFC-998 (Browser-Engine)
 
@@ -15,7 +15,10 @@
 
 | Abschnitt | Status |
 |-----------|--------|
-| Alle Abschnitte | ⏸ Theoretical — keine Umsetzung geplant |
+| §1–§5 Protokoll-Kern | ✅ Integriert | `internal/vellum/` — Encoder, Decoder, TLV-Wire-Format, Opcodes, FrameBuf (~3,1 KLOC) |
+| §6–§10 Session, Latenz, Assets, A11y, Sicherheit | ⏸ Theoretical | Nicht implementiert — nur für Vollausbau relevant |
+| §11 Integration in Lux | ✅ Integriert | `app.WithInspector()`, Server/Client in `internal/vellum/` |
+| §12 Abgeleitete Produkte | ✅ Teilweise | Inspector-PoC realisiert (RFC-012), weitere Produkte theoretical |
 
 ---
 

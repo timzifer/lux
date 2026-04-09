@@ -44,12 +44,20 @@ func (n Checkbox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	ix := ctx.IX
 	focus := ctx.Focus
 
+	// Touch-adaptive sizing: grow checkbox to meet MinTouchTarget (RFC-004 §2).
+	boxSize := checkboxSize
+	gap := checkboxGap
+	if ctx.IsTouch() && ctx.Profile != nil {
+		boxSize = int(ctx.Profile.MinTouchTarget)
+		gap = int(ctx.Profile.TouchTargetSpacing) + 4
+	}
+
 	style := tokens.Typography.Body
 	metrics := canvas.MeasureText(n.Label, style)
 	labelW := int(math.Ceil(float64(metrics.Width)))
 	labelH := int(math.Ceil(float64(metrics.Ascent)))
-	totalH := max(checkboxSize, labelH)
-	totalW := checkboxSize + checkboxGap + labelW
+	totalH := max(boxSize, labelH)
+	totalW := boxSize + gap + labelW
 
 	// Register hit target and get hover opacity atomically.
 	checkboxRect := draw.R(float32(area.X), float32(area.Y), float32(totalW), float32(totalH))
@@ -74,8 +82,8 @@ func (n Checkbox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		focused = focus.IsElementFocused(uid)
 	}
 
-	boxY := area.Y + (totalH-checkboxSize)/2
-	boxRect := draw.R(float32(area.X), float32(boxY), float32(checkboxSize), float32(checkboxSize))
+	boxY := area.Y + (totalH-boxSize)/2
+	boxRect := draw.R(float32(area.X), float32(boxY), float32(boxSize), float32(boxSize))
 
 	// Border
 	borderColor := tokens.Colors.Stroke.Border
@@ -102,7 +110,7 @@ func (n Checkbox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 	canvas.FillRoundRect(
 		draw.R(float32(area.X+checkboxBorder), float32(boxY+checkboxBorder),
-			float32(checkboxSize-checkboxBorder*2), float32(checkboxSize-checkboxBorder*2)),
+			float32(boxSize-checkboxBorder*2), float32(boxSize-checkboxBorder*2)),
 		maxf(tokens.Radii.Input-checkboxBorder, 0), draw.SolidPaint(fillColor))
 
 	// Focus glow on the checkbox box (RFC-008 §9.4).
@@ -114,7 +122,7 @@ func (n Checkbox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	if n.Checked {
 		checkStyle := draw.TextStyle{
 			FontFamily: "Phosphor",
-			Size:       float32(checkboxSize - checkboxBorder*2 - 2),
+			Size:       float32(boxSize - checkboxBorder*2 - 2),
 			Weight:     draw.FontWeightRegular,
 			LineHeight: 1.0,
 			Raster:     true,
@@ -125,7 +133,7 @@ func (n Checkbox) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Label
-	labelX := area.X + checkboxSize + checkboxGap
+	labelX := area.X + boxSize + gap
 	labelY := area.Y + (totalH-labelH)/2
 	labelColor := tokens.Colors.Text.Primary
 	if n.Disabled {

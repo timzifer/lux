@@ -4,7 +4,7 @@
 **Status:** Integriert
 **Version:** 0.2.0
 **Datum:** 2026-03-18
-**Zuletzt abgeglichen:** 2026-04-01
+**Zuletzt abgeglichen:** 2026-04-08
 **Folge-RFCs:** RFC-002 (Interaction & Layout), RFC-003 (Widget Catalogue & Theme)
 
 ---
@@ -2096,15 +2096,15 @@ var _ app.UpdateFunc[Model] = update  // kompiliert nur wenn Signatur stimmt
 Folgendes ist spezifiziert aber explizit für nach v1.0 vorgesehen:
 
 ```
-- RichTextEditor (§20.6)     — separates Paket lux/richtext, post-v1.0
-- Inspector / Hot-Reload (§17) — post-v1.0
-- gogpu/wgpu als Default     — sobald Produktionsreife erreicht
+- RichTextEditor (§20.6)     — ✅ vorgezogen und integriert (richtext/)
+- Inspector / Hot-Reload (§17) — ✅ vorgezogen und integriert (RFC-012 PoC, cmd/lux-inspector/)
+- gogpu/wgpu als Default     — ✅ integriert (gogpu ist Default-Backend)
 - PaintShader / PaintSurface (§6.2) — v2
 - -tags harfbuzz             — post-v1.0 wenn Bedarf besteht
 - WASM/Browser als Platform  — post-v1.0
 ```
 
-Diese Grenze explizit zu ziehen verhindert Scope-Creep in der ersten Implementierungsphase.
+Ursprünglich als post-v1.0 geplant, wurden RichTextEditor, Inspector und gogpu im Laufe der Entwicklung vorgezogen und sind bereits im main-Branch integriert.
 
 ---
 

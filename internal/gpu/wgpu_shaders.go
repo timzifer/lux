@@ -51,7 +51,11 @@ fn rounded_box_sdf(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 }
 
 fn noise_hash(p: vec2<f32>) -> f32 {
-    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+    var n = u32(p.x) * 1597334673u ^ u32(p.y) * 3812015801u;
+    n = (n ^ (n >> 16u)) * 2246822519u;
+    n = (n ^ (n >> 13u)) * 3266489917u;
+    n = n ^ (n >> 16u);
+    return f32(n) / 4294967295.0;
 }
 
 @fragment
@@ -197,7 +201,11 @@ fn rounded_box_sdf_g(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 }
 
 fn noise_hash_g(p: vec2<f32>) -> f32 {
-    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+    var n = u32(p.x) * 1597334673u ^ u32(p.y) * 3812015801u;
+    n = (n ^ (n >> 16u)) * 2246822519u;
+    n = (n ^ (n >> 13u)) * 3266489917u;
+    n = n ^ (n >> 16u);
+    return f32(n) / 4294967295.0;
 }
 
 fn sample_gradient(t_raw: f32) -> vec4<f32> {

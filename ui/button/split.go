@@ -47,8 +47,22 @@ func (n Split) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	mainW := labelW + ui.ButtonPadX*2
 	arrowW := ui.SplitArrowWidth
-	totalW := mainW + arrowW
 	h := labelH + ui.ButtonPadY*2
+
+	// Enforce MinTouchTarget for touch/HMI profiles (RFC-004 §2.5).
+	if ctx.Profile != nil && ctx.Profile.MinTouchTarget > 0 {
+		minT := int(ctx.Profile.MinTouchTarget)
+		if mainW < minT {
+			mainW = minT
+		}
+		if h < minT {
+			h = minT
+		}
+		if arrowW < minT {
+			arrowW = minT
+		}
+	}
+	totalW := mainW + arrowW
 
 	radius := tokens.Radii.Button
 

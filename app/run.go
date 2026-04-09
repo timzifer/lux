@@ -10,6 +10,7 @@ import (
 	"github.com/timzifer/lux/fonts"
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
@@ -197,6 +198,26 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		dispatcher.SetGestureConfig(ui.GestureConfigFromProfile(activeProfile))
 	}
 
+	// No-compositor mode: detect whether the platform has a compositor.
+	// When running without a compositor (e.g. DRM/KMS) or in fullscreen,
+	// multi-window calls are redirected to an internal tab panel.
+	baseNoCompositor := activeProfile != nil && activeProfile.NoCompositor
+	if !baseNoCompositor {
+		if cc, ok := plat.(platform.CompositorChecker); ok {
+			baseNoCompositor = !cc.HasCompositor()
+		}
+	}
+	noCompositorMode := baseNoCompositor || cfg.fullscreen
+	var windowTabPanel *nav.WindowTabPanel
+	if noCompositorMode {
+		windowTabPanel = nav.NewWindowTabPanel(
+			func(id uint32) { Send(SelectWindowTabMsg{ID: WindowID(id)}) },
+			func(id uint32) { Send(CloseWindowMsg{ID: WindowID(id)}) },
+			cfg.tabBarPosition,
+		)
+		windowTabPanel.HideSingleTab = cfg.hideSingleTab
+	}
+
 	// dispatchCmd runs a Cmd asynchronously, sending its result back into the loop.
 	dispatchCmd := func(cmd Cmd) {
 		if cmd != nil {
@@ -253,7 +274,14 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 		}
 	}
 
-	currentTree, _ := reconciler.Reconcile(view(currentModel), activeTheme, Send, nil, nil, currentLocale, activeProfile)
+	initialView := view(currentModel)
+	// In no-compositor mode, initialize the main tab and wrap the view.
+	if noCompositorMode && windowTabPanel != nil {
+		windowTabPanel.AddTab(0, cfg.title, false)
+		windowTabPanel.SetContent(0, initialView)
+		initialView = nav.NewWindowTabPanelElement(windowTabPanel)
+	}
+	currentTree, _ := reconciler.Reconcile(initialView, activeTheme, Send, nil, nil, currentLocale, activeProfile)
 
 	lastFrame := time.Now()
 	var hitMap hit.Map
@@ -263,6 +291,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
 	var dragRelease func(x, y float32)  // called once when drag ends
 	var currentCursor input.CursorKind
+	var interactionDirty bool  // set when hit.Map callbacks mutate state (scroll, drag, click)
+	var widgetNeedsFrame bool  // set by widgets via ix.SetNeedsFrame(); persists across frames
 	var dynamicHandlers []globalHandlerEntry
 
 	// On-Screen Keyboard state (RFC-004 §5).
@@ -324,12 +354,53 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					plat.SetSize(m.Width, m.Height)
 				case SetFullscreenMsg:
 					plat.SetFullscreen(m.Fullscreen)
+					// Activate/deactivate tab mode on fullscreen toggle.
+					if m.Fullscreen && windowTabPanel == nil {
+						windowTabPanel = nav.NewWindowTabPanel(
+							func(id uint32) { Send(SelectWindowTabMsg{ID: WindowID(id)}) },
+							func(id uint32) { Send(CloseWindowMsg{ID: WindowID(id)}) },
+							cfg.tabBarPosition,
+						)
+						windowTabPanel.HideSingleTab = cfg.hideSingleTab
+						windowTabPanel.AddTab(0, cfg.title, false)
+						noCompositorMode = true
+						modelDirty = true
+					} else if !m.Fullscreen && windowTabPanel != nil && !baseNoCompositor {
+						// Return to normal mode only if not inherently no-compositor (DRM).
+						windowTabPanel = nil
+						noCompositorMode = false
+						modelDirty = true
+					}
+
+				case SetTabBarPositionMsg:
+					if windowTabPanel != nil {
+						windowTabPanel.SetPosition(m.Position)
+						modelDirty = true
+					}
+					return true
 
 				case OpenWindowMsg:
-					handleOpenWindow(m, plat, renderer, fm)
+					if noCompositorMode && windowTabPanel != nil {
+						modal := m.Config.Type == WindowTypeDialog
+						windowTabPanel.AddTab(uint32(m.ID), m.Config.Title, modal)
+						modelDirty = true
+					} else {
+						handleOpenWindow(m, plat, renderer, fm)
+					}
 					return true
 				case CloseWindowMsg:
-					handleCloseWindow(m, plat, renderer)
+					if noCompositorMode && windowTabPanel != nil {
+						windowTabPanel.RemoveTab(uint32(m.ID))
+						modelDirty = true
+					} else {
+						handleCloseWindow(m, plat, renderer)
+					}
+					return true
+				case SelectWindowTabMsg:
+					if windowTabPanel != nil {
+						windowTabPanel.SelectTab(uint32(m.ID))
+						modelDirty = true
+					}
 					return true
 
 				case ui.RequestFocusMsg:
@@ -742,10 +813,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// OSK auto-show/dismiss (RFC-004 §5.1): when a text field gains
 			// focus and there is no physical keyboard, show the OSK.
 			hasInput := fm.Input != nil
+			suppressOSK := hasInput && fm.Input.SuppressOSK
 			if hasInput != prevHadInput {
 				prevHadInput = hasInput
 				if activeProfile != nil && !activeProfile.HasPhysicalKeyboard {
-					if hasInput && !oskState.Visible {
+					if hasInput && !oskState.Visible && !suppressOSK {
 						oskState.Visible = true
 						oskState.Mode = osk.ModeForLayout(oskState.Layout)
 						oskState.Shifted = false
@@ -776,6 +848,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				dispatcher.Dispatch()
 
 				newTree := view(currentModel)
+				// In no-compositor mode, wrap the view in the tab panel.
+				if noCompositorMode && windowTabPanel != nil && windowTabPanel.TabCount() > 0 {
+					windowTabPanel.SetContent(0, newTree)
+					newTree = nav.NewWindowTabPanelElement(windowTabPanel)
+				}
 				currentTree, _ = reconciler.Reconcile(newTree, activeTheme, Send, dispatcher, fm, currentLocale, activeProfile)
 
 				// Sort tab order derived from layout tree (RFC-002 §2.3).
@@ -815,7 +892,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// This is the main idle-CPU optimisation: BuildScene walks the
 			// entire widget tree and renderer.Draw submits GPU commands —
 			// both are expensive relative to the cheap message-drain above.
-			needsPaint := modelDirty || hoverDirty || needsInitialPaint
+			needsPaint := modelDirty || hoverDirty || needsInitialPaint || interactionDirty || widgetNeedsFrame
+			widgetNeedsFrame = false // reset before BuildScene; widgets re-set via ix.SetNeedsFrame()
+			interactionDirty = false
 			if needsPaint {
 				needsInitialPaint = false
 
@@ -844,25 +923,27 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 				hitMap.Reset()
 				ix := ui.NewInteractor(&hitMap, &hoverState)
+				ix.Dispatcher = dispatcher
+				ix.NeedsFrame = &widgetNeedsFrame
 
-				// If the OSK is visible, reduce the content area by the OSK height (RFC-004 §5.2).
+				// If the OSK is visible, always use ActionSheet mode (RFC-004 §5.2).
+				// The inline mode has been removed — the OSK is always rendered
+				// as an ActionSheet overlay without shrinking the viewport.
 				contentH := h
-				oskH := oskState.Height(w, h, canvas.DPR())
-				if oskState.Visible && oskH > 0 {
-					contentH = h - int(oskH)
-					if contentH < 100 {
-						contentH = 100
-					}
+				var safeArea ui.SafeAreaInsets
+				if noCompositorMode {
+					safeArea.NoFramePadding = true
+				}
+				var oskEl ui.Element
+				if oskState.Visible && oskState.Layout != osk.OSKLayoutNone {
+					oskEl = osk.NewKeyboardActionSheet(&oskState, w, h, fm.Input, activeProfile)
 				}
 
 				paintStart := time.Now()
 
-				// Build the OSK element (if visible) so BuildScene can render it (RFC-004 §5.5).
-				var oskEl ui.Element
-				if oskState.Visible {
-					oskEl = osk.NewOSKElement(&oskState, w, h)
-				}
-				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl)
+				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl, activeProfile, safeArea)
+				dispatcher.SwapBounds()
+				hoverState.Trim(hitMap.Len())
 
 				paintTime := time.Since(paintStart)
 
@@ -888,7 +969,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Request continued rendering while animations, tick-driven
 			// model changes, or dirty-tracked widgets are active, so
 			// platforms that idle between frames keep ticking.
-			if animDirty || hoverDirty || tickDirty || stateDirty {
+			if animDirty || hoverDirty || tickDirty || stateDirty || widgetNeedsFrame {
 				plat.RequestFrame()
 			}
 		},
@@ -916,29 +997,34 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Left-click hit-test and drag tracking.
 			if button == 0 {
 				if pressed {
-					// Blur focus first; if the click lands on a focusable element,
-					// its hit target will re-focus it.
-					oldUID := fm.FocusedUID()
-					fm.Blur()
-					if oldUID != 0 {
-						dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+					// Only blur focus if no drag is active (prevents focus loss
+					// during scroll-bar drags and similar interactions).
+					if dragCallback == nil {
+						oldUID := fm.FocusedUID()
+						if oldUID != 0 {
+							fm.Blur()
+							dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceClick)
+						}
 					}
 
 					if target := hitMap.HitTest(x, y); target != nil {
 						if target.OnClickAt != nil {
 							target.OnClickAt(x, y)
+							interactionDirty = true
 							if target.Draggable {
 								dragCallback = target.OnClickAt
 								dragRelease = target.OnRelease
 							}
 						} else if target.OnClick != nil {
 							target.OnClick()
+							interactionDirty = true
 						}
 					}
 				} else {
 					// Release ends any active drag.
 					if dragRelease != nil {
 						dragRelease(x, y)
+						interactionDirty = true
 					}
 					dragCallback = nil
 					dragRelease = nil
@@ -953,6 +1039,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Continue firing positional callback while dragging.
 			if dragCallback != nil {
 				dragCallback(x, y)
+				interactionDirty = true
 			}
 			// Update cursor based on hovered hit target (RFC-002 §2.7).
 			newCursor := input.CursorDefault
@@ -970,6 +1057,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 			// Route scroll events directly to the ScrollView under the cursor.
 			if target := hitMap.HitTestScroll(mouseX, mouseY); target != nil {
 				target.OnScroll(deltaY * 30) // 30dp per scroll unit
+				interactionDirty = true
 			}
 		},
 
@@ -998,6 +1086,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 		OnIMECommit: func(text string) {
 			Send(input.IMECommitMsg{Text: text})
+		},
+
+		OnTouch: func(id int64, x, y float32, phase int, force float32) {
+			p := input.TouchPhase(phase)
+			Send(input.TouchMsg{ID: id, X: x, Y: y, Phase: p, Force: force})
 		},
 
 		// Multi-window: when the user closes a secondary window via the X button,

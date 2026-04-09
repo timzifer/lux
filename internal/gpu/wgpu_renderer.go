@@ -118,6 +118,13 @@ type WGPURenderer struct {
 	blurDstView         wgpu.TextureView
 	blurW, blurH        int // current blur texture dimensions
 
+	// MSAA resources (4x multisampling)
+	msaaTexture          wgpu.Texture     // 4x MSAA render target
+	msaaView             wgpu.TextureView // view into msaaTexture
+	msaaW, msaaH         int              // tracked MSAA texture size
+	overlayResolveTexture wgpu.Texture    // non-MSAA resolve target for overlay pass (blur case)
+	overlayResolveView    wgpu.TextureView
+
 	// Path triangle resources
 	pathPipeline      wgpu.RenderPipeline
 	pathVertBuffer    wgpu.Buffer
@@ -391,6 +398,8 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	}
 
 	// Create render pipelines.
+	const msaaSamples uint32 = 4
+
 	r.rectPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label: "rect-pipeline",
 		Vertex: wgpu.VertexState{
@@ -413,6 +422,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	r.textInstPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
@@ -429,6 +439,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{r.textLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	r.msdfInstPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
@@ -445,6 +456,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{r.textLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	r.emojiInstPipeline = device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
@@ -461,6 +473,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{r.textLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	// Create bind groups.
@@ -547,6 +560,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.surfTexLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	// --- Image pipeline ---
@@ -597,6 +611,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.imageTexLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	r.imageTextures = make(map[draw.ImageID]imageTextureEntry)
@@ -639,6 +654,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout, r.gradLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	r.surfaceTextures = make(map[draw.TextureID]wgpu.TextureView)
@@ -683,6 +699,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	// --- Path triangle pipeline ---
@@ -725,6 +742,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		},
 		Primitive:        wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		BindGroupLayouts: []wgpu.BindGroupLayout{projLayout},
+		SampleCount:      msaaSamples,
 	})
 
 	// --- Blur pipeline (fragment-shader, 2-pass ping-pong) ---
@@ -818,6 +836,9 @@ func (r *WGPURenderer) Init(cfg Config) error {
 
 	// Create initial blur textures at framebuffer size.
 	r.resizeBlurTextures()
+
+	// Create initial MSAA textures.
+	r.resizeMSAATextures()
 
 	// Upload initial projection matrix.
 	r.updateProjection()
@@ -918,6 +939,7 @@ func (r *WGPURenderer) Resize(width, height int) {
 	}
 	r.updateProjection()
 	r.resizeBlurTextures()
+	r.resizeMSAATextures()
 }
 
 // BeginFrame starts a new frame.
@@ -1153,12 +1175,19 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		mainTarget = r.blurSrcView
 	}
 
+	// Lazily resize MSAA texture if dimensions changed (e.g. multi-window).
+	if r.width != r.msaaW || r.height != r.msaaH {
+		r.resizeMSAATextures()
+	}
+
+	// MSAA 4x: render into the multisampled texture, resolve into mainTarget.
 	renderPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 		ColorAttachments: []wgpu.RenderPassColorAttachment{
 			{
-				View:    mainTarget,
-				LoadOp:  wgpu.LoadOpClear,
-				StoreOp: wgpu.StoreOpStore,
+				View:          r.msaaView,
+				ResolveTarget: mainTarget,
+				LoadOp:        wgpu.LoadOpClear,
+				StoreOp:       wgpu.StoreOpDiscard,
 				ClearValue: wgpu.Color{
 					R: float64(r.bgColor.R),
 					G: float64(r.bgColor.G),
@@ -1400,15 +1429,20 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 
 		// --- Overlay pass (post-blur): render overlay content on top of blurred surface ---
 		// This enables frosted glass: blurred backdrop + sharp overlay content.
+		// With MSAA: render overlay → MSAA texture → resolve to overlayResolveView,
+		// then alpha-blit the resolved overlay onto the surface.
 		hasOverlay := overlayRectCount > 0 || overlayTextGlyphs > 0 || overlayMSDFGlyphs > 0 ||
 			overlayEmojiGlyphs > 0 || len(scene.OverlayGradientRects) > 0 || overlayShadowCount > 0 ||
 			len(scene.OverlayPathBatches) > 0
 		if hasOverlay {
+			// Step 1: Render overlay into MSAA texture, resolve to overlay resolve texture.
 			overlayPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 				ColorAttachments: []wgpu.RenderPassColorAttachment{{
-					View:    textureView,
-					LoadOp:  wgpu.LoadOpLoad,
-					StoreOp: wgpu.StoreOpStore,
+					View:          r.msaaView,
+					ResolveTarget: r.overlayResolveView,
+					LoadOp:        wgpu.LoadOpClear,
+					StoreOp:       wgpu.StoreOpDiscard,
+					ClearValue:    wgpu.Color{R: 0, G: 0, B: 0, A: 0}, // transparent
 				}},
 			})
 			overlayPass.SetScissorRect(0, 0, vpW, vpH)
@@ -1421,6 +1455,31 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 				vpW, vpH)
 			r.drawImages(overlayPass, scene.OverlayImageRects, vpW, vpH)
 			overlayPass.End()
+
+			// Step 2: Alpha-blit resolved overlay onto the surface (blurBlitPipeline has premultiplied alpha blend).
+			overlayBlitBG := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+				Label:  "overlay-blit",
+				Layout: r.blurBlitBindGroupLayout,
+				Entries: []wgpu.BindGroupEntry{
+					{Binding: 0, Texture: r.overlayResolveView},
+					{Binding: 1, Sampler: r.blurSampler},
+				},
+			})
+			overlayBlitPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+				ColorAttachments: []wgpu.RenderPassColorAttachment{{
+					View:    textureView,
+					LoadOp:  wgpu.LoadOpLoad,
+					StoreOp: wgpu.StoreOpStore,
+				}},
+			})
+			overlayBlitPass.SetPipeline(r.blurBlitPipeline)
+			overlayBlitPass.SetBindGroup(0, r.projBindGroup)
+			overlayBlitPass.SetBindGroup(1, overlayBlitBG)
+			overlayBlitPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
+			overlayBlitPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
+			overlayBlitPass.Draw(6, 1, 0, 0)
+			overlayBlitPass.End()
+			overlayBlitBG.Destroy()
 		}
 	}
 
@@ -1510,6 +1569,10 @@ func (r *WGPURenderer) Destroy() {
 	r.msdfTexture.Destroy()
 	r.emojiView.Destroy()
 	r.emojiTexture.Destroy()
+	r.msaaView.Destroy()
+	r.msaaTexture.Destroy()
+	r.overlayResolveView.Destroy()
+	r.overlayResolveTexture.Destroy()
 	r.atlasSampler.Destroy()
 	r.surfSampler.Destroy()
 	r.rectPipeline.Destroy()
@@ -1736,6 +1799,33 @@ func (r *WGPURenderer) resizeBlurTextures() {
 		Usage:  blurUsage,
 	})
 	r.blurDstView = r.blurDstTexture.CreateView()
+}
+
+// resizeMSAATextures creates or recreates the 4x MSAA render target and the
+// overlay resolve texture to match the current r.width × r.height.
+func (r *WGPURenderer) resizeMSAATextures() {
+	if r.msaaTexture != nil {
+		r.msaaView.Destroy()
+		r.msaaTexture.Destroy()
+		r.overlayResolveView.Destroy()
+		r.overlayResolveTexture.Destroy()
+	}
+	r.msaaW, r.msaaH = r.width, r.height
+	r.msaaTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:       "msaa-4x",
+		Size:        wgpu.Extent3D{Width: uint32(r.msaaW), Height: uint32(r.msaaH), DepthOrArrayLayers: 1},
+		Format:      wgpu.TextureFormatBGRA8Unorm,
+		Usage:       wgpu.TextureUsageRenderAttachment,
+		SampleCount: 4,
+	})
+	r.msaaView = r.msaaTexture.CreateView()
+	r.overlayResolveTexture = r.device.CreateTexture(&wgpu.TextureDescriptor{
+		Label:  "overlay-resolve",
+		Size:   wgpu.Extent3D{Width: uint32(r.msaaW), Height: uint32(r.msaaH), DepthOrArrayLayers: 1},
+		Format: wgpu.TextureFormatBGRA8Unorm,
+		Usage:  wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageTextureBinding,
+	})
+	r.overlayResolveView = r.overlayResolveTexture.CreateView()
 }
 
 // ensureGPUBuffer grows a GPU buffer if the needed capacity exceeds the current one.
