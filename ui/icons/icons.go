@@ -22,6 +22,7 @@ const (
 	Minus         = "\uE32A"
 	Pencil        = "\uE3AE"
 	Trash         = "\uE4A6"
+	Eraser        = "\uE21E"
 	MagnifyingGlass = "\uE30C"
 	Gear          = "\uE270"
 
@@ -54,6 +55,14 @@ const (
 	Calendar = "\uE118"
 	Clock    = "\uE196"
 	Palette  = "\uE398"
+
+	// Keyboard / OSK
+	Backspace         = "\uE0AE"
+	KeyReturn         = "\uE782"
+	Keyboard          = "\uE2D8"
+	ArrowBendDownLeft = "\uE018"
+	CaretDoubleUp     = "\uE12C"
+	CaretDoubleDown   = "\uE126"
 
 	// UI / Symbols
 	Star        = "\uE46A"

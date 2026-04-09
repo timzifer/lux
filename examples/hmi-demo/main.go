@@ -57,20 +57,21 @@ type Model struct {
 	OSKTextField2 string
 	OSKMode       osk.OSKMode
 
+	// Controls — Checkbox demo
+	AutoMode     bool
+	AlarmEnabled bool
+
 	// HMI Widgets demo (RFC-004 §6)
-	NumericVal      float64
-	StepperVal      int
-	DrumPickerIdx   int
-	PinValue        string
-	HexValue        uint64
-	IPValue         string
-	UnitValue       float64
-	UnitSymbol      string
-	UnitState       *form.UnitInputState
-	RangeLow        float64
-	RangeHigh       float64
-	TimeValue       time.Time
-	DateValue       time.Time
+	NumericVal       float64
+	StepperVal       int
+	UnitValue        float64
+	UnitSymbol       string
+	UnitState        *form.UnitInputState
+	RangeLow         float64
+	RangeHigh        float64
+	TimeValue        time.Time
+	DateValue        time.Time
+	HMIWidgetsScroll *ui.ScrollState
 }
 
 func initialModel() Model {
@@ -87,18 +88,19 @@ func initialModel() Model {
 		ValveToggle:       form.NewToggleState(),
 		ConfirmMotorState: button.NewConfirmButtonState(),
 		HoldStopState:     button.NewHoldButtonState(),
+		AutoMode:          true,
+		AlarmEnabled:      true,
 		// HMI Widgets defaults
-		NumericVal:  23.5,
-		StepperVal:  5,
-		HexValue:    0x00FF,
-		IPValue:     "192.168.1.1",
-		UnitValue:   25.0,
-		UnitSymbol:  "mm",
-		UnitState:   form.NewUnitInputState(),
-		RangeLow:    20,
-		RangeHigh:   80,
-		TimeValue:   time.Date(2026, 1, 1, 14, 30, 0, 0, time.UTC),
-		DateValue:   time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC),
+		NumericVal:       23.5,
+		StepperVal:       5,
+		UnitValue:        25.0,
+		UnitSymbol:       "mm",
+		UnitState:        form.NewUnitInputState(),
+		RangeLow:         20,
+		RangeHigh:        80,
+		TimeValue:        time.Date(2026, 1, 1, 14, 30, 0, 0, time.UTC),
+		DateValue:        time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC),
+		HMIWidgetsScroll: &ui.ScrollState{},
 	}
 }
 
@@ -121,6 +123,10 @@ type SetConveyorSpeedMsg struct{ V float32 }
 type ConfirmMotorStartMsg struct{}
 type EmergencyHoldCompleteMsg struct{}
 
+// Checkbox messages
+type ToggleAutoModeMsg struct{}
+type ToggleAlarmEnabledMsg struct{}
+
 // On-Screen Keyboard messages (RFC-004 §5)
 type SetOSKField1Msg struct{ V string }
 type SetOSKField2Msg struct{ V string }
@@ -129,10 +135,6 @@ type SetDemoOSKModeMsg struct{ Mode osk.OSKMode }
 // HMI Widget messages (RFC-004 §6)
 type SetNumericValMsg struct{ V float64 }
 type SetStepperValMsg struct{ V int }
-type SetDrumPickerIdxMsg struct{ V int }
-type SetPinValueMsg struct{ V string }
-type SetHexValueMsg struct{ V uint64 }
-type SetIPValueMsg struct{ V string }
 type SetUnitValueMsg struct {
 	Value float64
 	Unit  string
@@ -204,6 +206,11 @@ func update(m Model, msg app.Msg) Model {
 		m.MotorRunning = false
 		m.PumpActive = false
 
+	case ToggleAutoModeMsg:
+		m.AutoMode = !m.AutoMode
+	case ToggleAlarmEnabledMsg:
+		m.AlarmEnabled = !m.AlarmEnabled
+
 	case SetOSKField1Msg:
 		m.OSKTextField1 = msg.V
 	case SetOSKField2Msg:
@@ -217,14 +224,6 @@ func update(m Model, msg app.Msg) Model {
 		m.NumericVal = msg.V
 	case SetStepperValMsg:
 		m.StepperVal = msg.V
-	case SetDrumPickerIdxMsg:
-		m.DrumPickerIdx = msg.V
-	case SetPinValueMsg:
-		m.PinValue = msg.V
-	case SetHexValueMsg:
-		m.HexValue = msg.V
-	case SetIPValueMsg:
-		m.IPValue = msg.V
 	case SetUnitValueMsg:
 		m.UnitValue = msg.Value
 		m.UnitSymbol = msg.Unit
@@ -253,6 +252,7 @@ func view(m Model) ui.Element {
 				{Header: display.Text("Keyboard"), Content: viewKeyboard(m)},
 				{Header: display.Text("HMI Widgets"), Content: viewHMIWidgets(m)},
 				{Header: display.Text("Alarms"), Content: viewAlarms(m)},
+				{Header: display.Text("Windows"), Content: viewWindows(m)},
 			},
 			m.ActiveTab,
 			func(i int) { app.Send(SelectTabMsg{Index: i}) },
@@ -371,6 +371,19 @@ func viewControls(m Model) ui.Element {
 				form.NewToggle(m.ValveOpen, func(v bool) {
 					app.Send(ToggleValveMsg{})
 				}, m.ValveToggle),
+			),
+		),
+
+		// Checkboxes — demonstrate touch-adaptive sizing
+		display.Card(
+			layout.Column(
+				display.Text("Optionen (Checkbox)"),
+				form.NewCheckbox("Auto-Modus", m.AutoMode, func(v bool) {
+					app.Send(ToggleAutoModeMsg{})
+				}),
+				form.NewCheckbox("Alarm aktiv", m.AlarmEnabled, func(v bool) {
+					app.Send(ToggleAlarmEnabledMsg{})
+				}),
 			),
 		),
 
@@ -523,6 +536,19 @@ func viewKeyboard(m Model) ui.Element {
 				),
 			),
 		),
+
+		display.Divider(),
+
+		// Keyboard navigation info
+		display.Card(
+			layout.Column(
+				display.Text("Keyboard Navigation (Focus Management)"),
+				display.Text("Tab / Shift+Tab — Move focus between interactive elements"),
+				display.Text("Space / Enter — Activate focused button, toggle, or checkbox"),
+				display.Text("Arrow keys — Adjust sliders, navigate lists and steppers"),
+				display.Text("Escape — Dismiss OSK, close overlays"),
+			),
+		),
 	)
 }
 
@@ -535,9 +561,7 @@ func viewHMIWidgets(m Model) ui.Element {
 		{Symbol: "m", Label: "Meter", Factor: 1000},
 	}
 
-	drumItems := form.IntItems(0, 23)
-
-	return layout.Column(
+	content := layout.Column(
 		display.Text("Spezialisierte HMI-Widgets (RFC-004 §6)"),
 		display.Divider(),
 
@@ -568,51 +592,6 @@ func viewHMIWidgets(m Model) ui.Element {
 						form.WithOnStepperChange(func(v int) { app.Send(SetStepperValMsg{V: v}) }),
 					),
 					display.Text(fmt.Sprintf("Wert: %d", m.StepperVal)),
-				),
-			),
-		),
-
-		// DrumPicker
-		display.Card(
-			layout.Column(
-				display.Text("DrumPicker — Rollen-Auswahl"),
-				form.NewDrumPicker(drumItems, m.DrumPickerIdx,
-					form.WithOnDrumSelect(func(i int) { app.Send(SetDrumPickerIdxMsg{V: i}) }),
-					form.WithDrumLooping(),
-				),
-			),
-		),
-
-		// PinInput
-		display.Card(
-			layout.Column(
-				display.Text("PinInput — PIN-Eingabe"),
-				form.NewPinInput(4, m.PinValue,
-					form.WithPinMasked(),
-					form.WithOnPinChange(func(v string) { app.Send(SetPinValueMsg{V: v}) }),
-				),
-			),
-		),
-
-		// HexInput
-		display.Card(
-			layout.Column(
-				display.Text("HexInput — Hexadezimal-Eingabe"),
-				form.NewHexInput(m.HexValue,
-					form.WithHexDigits(4),
-					form.WithHexPrefix(),
-					form.WithHexUpper(),
-					form.WithOnHexChange(func(v uint64) { app.Send(SetHexValueMsg{V: v}) }),
-				),
-			),
-		),
-
-		// IPInput
-		display.Card(
-			layout.Column(
-				display.Text("IPInput — IPv4-Adresse"),
-				form.NewIPInput(m.IPValue,
-					form.WithOnIPChange(func(v string) { app.Send(SetIPValueMsg{V: v}) }),
 				),
 			),
 		),
@@ -663,8 +642,61 @@ func viewHMIWidgets(m Model) ui.Element {
 			layout.Column(
 				display.Text("DateInput — Datum-Eingabe"),
 				form.NewDateInput(m.DateValue,
-					form.WithDateMode(form.DateModeDrum),
+					form.WithDateMode(form.DateModeNumeric),
 					form.WithOnDateInputChange(func(t time.Time) { app.Send(SetDateValueMsg{V: t}) }),
+				),
+			),
+		),
+	)
+	return nav.NewScrollView(content, 0, m.HMIWidgetsScroll)
+}
+
+// ── Windows Tab (multi-window via tab bar) ──────────────────────
+
+// Window IDs for secondary windows.
+const (
+	windowSettings    app.WindowID = 1
+	windowDiagnostics app.WindowID = 2
+	windowAlarmDetail app.WindowID = 3
+)
+
+func viewWindows(m Model) ui.Element {
+	return layout.Column(
+		display.Text("Fenster-Management (No-Compositor Tab-Bar)"),
+		display.Divider(),
+
+		display.Card(
+			layout.Column(
+				display.Text("In diesem Modus erscheinen neue Fenster als Tabs in der globalen Tab-Bar."),
+				display.Text("Die Tab-Bar wird automatisch vom Framework gerendert."),
+				display.Text(fmt.Sprintf("Aktives Profil: %s — NoCompositor-Modus aktiv.", m.ProfileName)),
+			),
+		),
+
+		display.Divider(),
+
+		display.Card(
+			layout.Column(
+				display.Text("Fenster öffnen:"),
+				layout.Row(
+					button.Text("Settings", func() {
+						app.Send(app.OpenWindowMsg{
+							ID:     windowSettings,
+							Config: app.WindowConfig{Title: "Settings", Width: 800, Height: 500},
+						})
+					}),
+					button.Text("Diagnostics", func() {
+						app.Send(app.OpenWindowMsg{
+							ID:     windowDiagnostics,
+							Config: app.WindowConfig{Title: "Diagnostics", Width: 800, Height: 500},
+						})
+					}),
+					button.Text("Alarm Detail (Dialog)", func() {
+						app.Send(app.OpenWindowMsg{
+							ID:     windowAlarmDetail,
+							Config: app.WindowConfig{Title: "Alarm Detail", Type: app.WindowTypeDialog, Width: 600, Height: 400},
+						})
+					}),
 				),
 			),
 		),
@@ -730,11 +762,17 @@ func profileFor(name string) interaction.InteractionProfile {
 // ── Main ─────────────────────────────────────────────────────────
 
 func main() {
+	// HMI profile with NoCompositor: windows appear as tabs in the global tab bar.
+	hmiProfile := interaction.ProfileHMI
+	hmiProfile.NoCompositor = true
+
 	if err := app.Run(initialModel(), update, view,
 		app.WithTheme(theme.Default),
 		app.WithTitle("HMI Demo — Industrial Control Panel"),
 		app.WithSize(1024, 600),
-		app.WithInteractionProfile(interaction.ProfileHMI),
+		app.WithInteractionProfile(hmiProfile),
+		app.WithTabBarPosition(nav.TabPositionTop),
+		app.WithHideSingleTab(true),
 	); err != nil {
 		log.Fatal(err)
 	}

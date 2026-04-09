@@ -142,6 +142,61 @@ func TestNumericInput_FormatValue(t *testing.T) {
 	}
 }
 
+func TestFilterNumericChars(t *testing.T) {
+	tests := []struct {
+		in   string
+		kind NumericKind
+		want string
+	}{
+		{"123", NumericInteger, "123"},
+		{"-42", NumericInteger, "-42"},
+		{"12.5", NumericFloat, "12.5"},
+		{"12.5.6", NumericFloat, "12.56"},  // second dot filtered, digits kept
+		{"abc123", NumericInteger, "123"},   // letters filtered
+		{"-3.14", NumericFloat, "-3.14"},
+		{"12,5", NumericFloat, "12.5"},      // comma → dot
+	}
+	for _, tt := range tests {
+		got := filterNumericChars(tt.in, tt.kind)
+		if got != tt.want {
+			t.Errorf("filterNumericChars(%q, %d) = %q, want %q", tt.in, tt.kind, got, tt.want)
+		}
+	}
+}
+
+func TestClampWithWrapping(t *testing.T) {
+	n := NumericInput{Min: ptrF(0), Max: ptrF(23), Step: 1, Wrapping: true}
+	// Incrementing past max wraps to min.
+	v := n.clamp(n.snapToStep(23 + n.Step))
+	if v != 0 {
+		t.Errorf("wrap past max: got %v, want 0", v)
+	}
+	// Decrementing below min wraps to max.
+	v = n.clamp(n.snapToStep(0 - n.Step))
+	if v != 23 {
+		t.Errorf("wrap below min: got %v, want 23", v)
+	}
+	// Normal values unchanged.
+	v = n.clamp(12)
+	if v != 12 {
+		t.Errorf("normal value: got %v, want 12", v)
+	}
+}
+
+func TestClampWrapping_Minutes(t *testing.T) {
+	n := NumericInput{Min: ptrF(0), Max: ptrF(59), Step: 5, Wrapping: true}
+	// 55 + 5 = 60 > 59 → wrap to 0
+	v := n.clamp(n.snapToStep(55 + n.Step))
+	if v != 0 {
+		t.Errorf("minute wrap: got %v, want 0", v)
+	}
+	// 0 - 5 = -5 < 0 → wrap to 59
+	v = n.clamp(n.snapToStep(0 - n.Step))
+	if v != 59 {
+		t.Errorf("minute wrap back: got %v, want 59", v)
+	}
+}
+
 func TestNumericInput_NilBounds(t *testing.T) {
 	n := NumericInput{Value: 50, Min: nil, Max: nil, Step: 1}
 	// With nil bounds, clamp should not restrict.

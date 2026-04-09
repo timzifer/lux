@@ -104,6 +104,17 @@ func (n Button) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	w := contentW + (ui.ButtonPadX * 2)
 	h := contentH + (ui.ButtonPadY * 2)
 
+	// Enforce MinTouchTarget for touch/HMI profiles (RFC-004 §2.5).
+	if ctx.Profile != nil && ctx.Profile.MinTouchTarget > 0 {
+		minT := int(ctx.Profile.MinTouchTarget)
+		if w < minT {
+			w = minT
+		}
+		if h < minT {
+			h = minT
+		}
+	}
+
 	// Register hit target and get hover opacity atomically.
 	buttonRect := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 	var hoverOpacity float32

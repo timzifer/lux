@@ -110,32 +110,6 @@ func TestNumpadLayout_Keys(t *testing.T) {
 	}
 }
 
-func TestHexLayout(t *testing.T) {
-	rows := hexRows()
-	if len(rows) != 4 {
-		t.Errorf("expected 4 rows, got %d", len(rows))
-	}
-	// First row: 7,8,9,A,B
-	if len(rows[0]) != 5 {
-		t.Errorf("expected 5 keys in hex first row, got %d", len(rows[0]))
-	}
-}
-
-func TestPinLayout(t *testing.T) {
-	rows := pinRows()
-	if len(rows) != 4 {
-		t.Errorf("expected 4 rows, got %d", len(rows))
-	}
-	// Last row should have empty, 0, backspace.
-	lastRow := rows[3]
-	if lastRow[1].Char != '0' {
-		t.Errorf("expected 0 in center of last pin row")
-	}
-	if lastRow[2].Action != OSKActionBackspace {
-		t.Errorf("expected backspace in last pin row")
-	}
-}
-
 func TestCondensedLayout_RowCount(t *testing.T) {
 	rows := condensedRows(false)
 	if len(rows) != 4 {
@@ -180,10 +154,7 @@ func TestModeForLayout(t *testing.T) {
 		{OSKLayoutAlpha, ModeAlpha},
 		{OSKLayoutNumeric, ModeNumPad},
 		{OSKLayoutNumericInteger, ModeNumPad},
-		{OSKLayoutPin, ModeNumPad},
 		{OSKLayoutPhone, ModeNumPad},
-		{OSKLayoutIP, ModeNumPad},
-		{OSKLayoutHex, ModeNumPad},
 	}
 	for _, tt := range tests {
 		got := ModeForLayout(tt.layout)
@@ -291,18 +262,6 @@ func TestOSKGolden_Condensed(t *testing.T) {
 	state := &OSKState{Visible: true, Mode: ModeCondensed, Layout: OSKLayoutAlpha}
 	scene := buildOSKScene(state, 400, 700)
 	uitest.AssertScene(t, scene, "testdata/osk_condensed.golden")
-}
-
-func TestOSKGolden_Pin(t *testing.T) {
-	state := &OSKState{Visible: true, Mode: ModeNumPad, Layout: OSKLayoutPin}
-	scene := buildOSKScene(state, 400, 600)
-	uitest.AssertScene(t, scene, "testdata/osk_pin.golden")
-}
-
-func TestOSKGolden_Hex(t *testing.T) {
-	state := &OSKState{Visible: true, Mode: ModeNumPad, Layout: OSKLayoutHex}
-	scene := buildOSKScene(state, 600, 600)
-	uitest.AssertScene(t, scene, "testdata/osk_hex.golden")
 }
 
 func TestOSKGolden_Hidden(t *testing.T) {

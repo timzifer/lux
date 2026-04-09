@@ -89,8 +89,20 @@ func (n Toggle) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	ix := ctx.IX
 	focus := ctx.Focus
 
+	// Touch-adaptive sizing: scale track and thumb to meet MinTouchTarget (RFC-004 §2).
+	trackW := toggleTrackW
+	trackH := toggleTrackH
+	thumbD := toggleThumbD
+	pad := toggleThumbPad
+	if ctx.IsTouch() && ctx.Profile != nil {
+		minT := int(ctx.Profile.MinTouchTarget)
+		trackH = minT
+		trackW = int(float32(minT) * (float32(toggleTrackW) / float32(toggleTrackH)))
+		thumbD = trackH - 2*pad - 2
+	}
+
 	// Register hit target and get hover opacity atomically.
-	toggleRect := draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH))
+	toggleRect := draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(trackH))
 	var hoverOpacity float32
 	if n.Disabled {
 		ix.RegisterHit(toggleRect, nil)
@@ -145,14 +157,14 @@ func (n Toggle) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		trackColor = ui.DisabledColor(trackColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillRoundRect(
-		draw.R(float32(area.X), float32(area.Y), float32(toggleTrackW), float32(toggleTrackH)),
-		float32(toggleTrackH)/2, draw.SolidPaint(trackColor))
+		draw.R(float32(area.X), float32(area.Y), float32(trackW), float32(trackH)),
+		float32(trackH)/2, draw.SolidPaint(trackColor))
 
 	// Thumb — lerp position and color.
-	offX := float32(area.X + toggleThumbPad)
-	onX := float32(area.X + toggleTrackW - toggleThumbD - toggleThumbPad)
+	offX := float32(area.X + pad)
+	onX := float32(area.X + trackW - thumbD - pad)
 	thumbX := offX + (onX-offX)*t
-	thumbY := float32(area.Y + (toggleTrackH-toggleThumbD)/2)
+	thumbY := float32(area.Y + (trackH-thumbD)/2)
 	offThumbColor := tokens.Colors.Text.Secondary
 	onThumbColor := tokens.Colors.Text.OnAccent
 	var thumbColor draw.Color
@@ -168,15 +180,15 @@ func (n Toggle) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		thumbColor = ui.DisabledColor(thumbColor, tokens.Colors.Surface.Base)
 	}
 	canvas.FillEllipse(
-		draw.R(thumbX, thumbY, float32(toggleThumbD), float32(toggleThumbD)),
+		draw.R(thumbX, thumbY, float32(thumbD), float32(thumbD)),
 		draw.SolidPaint(thumbColor))
 
 	// Focus glow on the toggle track (RFC-008 §9.4).
 	if focused {
-		ui.DrawFocusRing(canvas, toggleRect, float32(toggleTrackH)/2, tokens)
+		ui.DrawFocusRing(canvas, toggleRect, float32(trackH)/2, tokens)
 	}
 
-	return ui.Bounds{X: area.X, Y: area.Y, W: toggleTrackW, H: toggleTrackH}
+	return ui.Bounds{X: area.X, Y: area.Y, W: trackW, H: trackH}
 }
 
 // TreeEqual implements ui.TreeEqualizer.

@@ -29,22 +29,26 @@ func Card(children ...ui.Element) ui.Element {
 
 // LayoutSelf implements ui.Layouter.
 func (n CardElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	ext := ctx.Tokens.Elevation.Low.Extent()
+	el, et := int(ext.Left), int(ext.Top)
+	er, eb := int(ext.Right), int(ext.Bottom)
+
 	// Measure child to determine card size.
 	childArea := ui.Bounds{
-		X: ctx.Area.X + cardPadding,
-		Y: ctx.Area.Y + cardPadding,
-		W: max(ctx.Area.W-cardPadding*2, 0),
-		H: max(ctx.Area.H-cardPadding*2, 0),
+		X: ctx.Area.X + el + cardPadding,
+		Y: ctx.Area.Y + et + cardPadding,
+		W: max(ctx.Area.W-el-er-cardPadding*2, 0),
+		H: max(ctx.Area.H-et-eb-cardPadding*2, 0),
 	}
 	cb := ctx.MeasureChild(n.Child, childArea)
 
 	w := cb.W + cardPadding*2
 	h := cb.H + cardPadding*2
-	if w > ctx.Area.W {
-		w = ctx.Area.W
+	if w > ctx.Area.W-el-er {
+		w = ctx.Area.W - el - er
 	}
 
-	cardRect := draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(w), float32(h))
+	cardRect := draw.R(float32(ctx.Area.X+el), float32(ctx.Area.Y+et), float32(w), float32(h))
 
 	// Elevation shadow.
 	ctx.Canvas.DrawShadow(cardRect, ctx.Tokens.Elevation.Low)
@@ -62,7 +66,7 @@ func (n CardElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Child content.
 	ctx.LayoutChild(n.Child, childArea)
 
-	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h}
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w + el + er, H: h + et + eb}
 }
 
 // TreeEqual implements ui.TreeEqualizer.

@@ -106,14 +106,26 @@ type Callbacks struct {
 	// OnIMECommit is called when the IME commits final text (RFC-002 §2.2).
 	OnIMECommit func(text string)
 
+	// OnTouch is called when a touch event occurs (RFC-004).
+	// phase: 0=began, 1=moved, 2=ended, 3=cancelled.
+	OnTouch func(id int64, x, y float32, phase int, force float32)
+
 	// ── Multi-window callbacks ────────────────────────────────────
-	OnWindowResize      func(windowID uint32, width, height int)
+	OnWindowResize func(windowID uint32, width, height int)
 	OnWindowClose       func(windowID uint32)
 	OnWindowMouseButton func(windowID uint32, x, y float32, button int, pressed bool)
 	OnWindowMouseMove   func(windowID uint32, x, y float32)
 	OnWindowKey         func(windowID uint32, key string, action int, mods int)
 	OnWindowChar        func(windowID uint32, ch rune)
 	OnWindowScroll      func(windowID uint32, deltaX, deltaY float32)
+}
+
+// CompositorChecker is an optional interface that platforms can implement
+// to indicate whether a window compositor is available. Platforms without
+// a compositor (e.g. DRM/KMS direct rendering) return false, causing the
+// framework to redirect multi-window calls to an internal tab panel.
+type CompositorChecker interface {
+	HasCompositor() bool
 }
 
 // MultiWindowPlatform extends Platform with multi-window support.

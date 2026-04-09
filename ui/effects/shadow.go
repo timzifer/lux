@@ -16,15 +16,26 @@ type ShadowBoxElement struct {
 }
 
 func (n ShadowBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
-	// Draw shadow first (behind content), then layout child on top.
-	b := ctx.LayoutChild(n.Child, ctx.Area)
-	r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
 	shadow := n.Shadow
 	if n.Radius > 0 {
 		shadow.Radius = n.Radius
 	}
-	ctx.Canvas.DrawShadow(r, shadow)
-	return b
+	ext := shadow.Extent()
+
+	childArea := ui.Bounds{
+		X: ctx.Area.X + int(ext.Left),
+		Y: ctx.Area.Y + int(ext.Top),
+		W: max(ctx.Area.W-int(ext.Left)-int(ext.Right), 0),
+		H: max(ctx.Area.H-int(ext.Top)-int(ext.Bottom), 0),
+	}
+	b := ctx.LayoutChild(n.Child, childArea)
+	ctx.Canvas.DrawShadow(draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H)), shadow)
+	return ui.Bounds{
+		X: b.X - int(ext.Left),
+		Y: b.Y - int(ext.Top),
+		W: b.W + int(ext.Left) + int(ext.Right),
+		H: b.H + int(ext.Top) + int(ext.Bottom),
+	}
 }
 
 func (n ShadowBoxElement) TreeEqual(other ui.Element) bool {
@@ -110,8 +121,15 @@ type ElevationBoxElement struct {
 }
 
 func (n ElevationBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
-	// Layout child, register hover, interpolate shadow.
-	b := ctx.LayoutChild(n.Child, ctx.Area)
+	ext := draw.MaxExtent(n.Rest, n.Hover, n.Press)
+
+	childArea := ui.Bounds{
+		X: ctx.Area.X + int(ext.Left),
+		Y: ctx.Area.Y + int(ext.Top),
+		W: max(ctx.Area.W-int(ext.Left)-int(ext.Right), 0),
+		H: max(ctx.Area.H-int(ext.Top)-int(ext.Bottom), 0),
+	}
+	b := ctx.LayoutChild(n.Child, childArea)
 	r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
 	hoverOpacity := ctx.IX.RegisterHit(r, n.OnClick)
 	shadow := draw.LerpShadow(n.Rest, n.Hover, hoverOpacity)
@@ -119,7 +137,12 @@ func (n ElevationBoxElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		shadow.Radius = n.Radius
 	}
 	ctx.Canvas.DrawShadow(r, shadow)
-	return b
+	return ui.Bounds{
+		X: b.X - int(ext.Left),
+		Y: b.Y - int(ext.Top),
+		W: b.W + int(ext.Left) + int(ext.Right),
+		H: b.H + int(ext.Top) + int(ext.Bottom),
+	}
 }
 
 func (n ElevationBoxElement) TreeEqual(other ui.Element) bool {
@@ -151,13 +174,25 @@ type ElevationCardElement struct {
 }
 
 func (n ElevationCardElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
-	// Convenience: uses theme elevation presets (Low → High → None).
-	b := ctx.LayoutChild(n.Child, ctx.Area)
+	ext := draw.MaxExtent(ctx.Tokens.Elevation.Low, ctx.Tokens.Elevation.High)
+
+	childArea := ui.Bounds{
+		X: ctx.Area.X + int(ext.Left),
+		Y: ctx.Area.Y + int(ext.Top),
+		W: max(ctx.Area.W-int(ext.Left)-int(ext.Right), 0),
+		H: max(ctx.Area.H-int(ext.Top)-int(ext.Bottom), 0),
+	}
+	b := ctx.LayoutChild(n.Child, childArea)
 	r := draw.R(float32(b.X), float32(b.Y), float32(b.W), float32(b.H))
 	hoverOpacity := ctx.IX.RegisterHit(r, n.OnClick)
 	shadow := draw.LerpShadow(ctx.Tokens.Elevation.Low, ctx.Tokens.Elevation.High, hoverOpacity)
 	ctx.Canvas.DrawShadow(r, shadow)
-	return b
+	return ui.Bounds{
+		X: b.X - int(ext.Left),
+		Y: b.Y - int(ext.Top),
+		W: b.W + int(ext.Left) + int(ext.Right),
+		H: b.H + int(ext.Top) + int(ext.Bottom),
+	}
 }
 
 func (n ElevationCardElement) TreeEqual(other ui.Element) bool {

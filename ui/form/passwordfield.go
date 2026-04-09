@@ -201,6 +201,8 @@ func (n PasswordField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			CursorOffset:   cursorOff,
 			SelectionStart: selStart,
 		}
+		r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
+		focus.FocusedBounds = &r
 	}
 
 	// Hit target for focus acquisition (full field).

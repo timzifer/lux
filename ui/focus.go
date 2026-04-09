@@ -3,6 +3,8 @@ package ui
 import (
 	"sort"
 	"time"
+
+	"github.com/timzifer/lux/draw"
 )
 
 // ── Focus Messages (RFC-002 §2.3) ────────────────────────────────
@@ -70,6 +72,12 @@ type FocusManager struct {
 
 	// FocusTrap support (RFC-001 §11.7).
 	Trap *FocusTrapManager
+
+	// FocusedBounds stores the screen-space bounds of the currently focused
+	// element's input area. Set during layout by focusable widgets.
+	// Used by ScrollView to auto-scroll focused elements into view
+	// when the OSK appears and reduces the viewport.
+	FocusedBounds *draw.Rect
 
 	// dirty is set when focus state changes outside the normal message-drain
 	// path (e.g. from a click handler). The run loop checks this to force a
@@ -197,6 +205,7 @@ func (fm *FocusManager) ResetOrder() {
 	}
 	fm.focusOrder = fm.focusOrder[:0]
 	fm.nextElemID = 0
+	fm.FocusedBounds = nil
 }
 
 // SortOrder sorts the focus order: elements with positive TabIndex come
