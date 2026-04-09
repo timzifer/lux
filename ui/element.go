@@ -718,6 +718,9 @@ func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, 
 	ix.resetCounter()
 
 	tokens := th.Tokens()
+	if profile != nil && profile.ScaleTypography != 0 && profile.ScaleTypography != 1.0 {
+		tokens.Typography = tokens.Typography.Scaled(profile.ScaleTypography)
+	}
 	var sa SafeAreaInsets
 	if len(safeArea) > 0 {
 		sa = safeArea[0]

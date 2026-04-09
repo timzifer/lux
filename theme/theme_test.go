@@ -181,6 +181,46 @@ func TestOverrideParentIsBase(t *testing.T) {
 	}
 }
 
+func TestTypographyScaled(t *testing.T) {
+	base := LuxDark.Tokens().Typography
+	scaled := base.Scaled(1.5)
+
+	check := func(name string, got, wantBase float32) {
+		t.Helper()
+		want := wantBase * 1.5
+		if got != want {
+			t.Errorf("%s.Size = %v, want %v", name, got, want)
+		}
+	}
+	check("H1", scaled.H1.Size, base.H1.Size)
+	check("H2", scaled.H2.Size, base.H2.Size)
+	check("H3", scaled.H3.Size, base.H3.Size)
+	check("Body", scaled.Body.Size, base.Body.Size)
+	check("BodySmall", scaled.BodySmall.Size, base.BodySmall.Size)
+	check("Label", scaled.Label.Size, base.Label.Size)
+	check("LabelSmall", scaled.LabelSmall.Size, base.LabelSmall.Size)
+	check("Code", scaled.Code.Size, base.Code.Size)
+	check("CodeSmall", scaled.CodeSmall.Size, base.CodeSmall.Size)
+}
+
+func TestTypographyScaledIdentity(t *testing.T) {
+	base := LuxDark.Tokens().Typography
+	scaled := base.Scaled(1.0)
+
+	if scaled.Body.Size != base.Body.Size {
+		t.Errorf("Scaled(1.0) should not change Body.Size: got %v, want %v", scaled.Body.Size, base.Body.Size)
+	}
+}
+
+func TestTypographyScaledPreservesWeight(t *testing.T) {
+	base := LuxDark.Tokens().Typography
+	scaled := base.Scaled(1.5)
+
+	if scaled.H1.Weight != base.H1.Weight {
+		t.Errorf("Scaled should not change H1.Weight: got %v, want %v", scaled.H1.Weight, base.H1.Weight)
+	}
+}
+
 func TestSlateRadii(t *testing.T) {
 	tokens := Slate.Tokens()
 	if tokens.Radii.Button != 6 {

@@ -214,6 +214,30 @@ type TypographyScale struct {
 	CodeSmall  draw.TextStyle // 12dp, Regular, Monospace
 }
 
+// Scaled returns a copy of the TypographyScale with all Size and
+// LineHeight values multiplied by factor. A factor of 1.0 returns
+// an identical copy. This is used by the layout system to apply
+// InteractionProfile.ScaleTypography (RFC-004 §2.2).
+func (ts TypographyScale) Scaled(factor float32) TypographyScale {
+	if factor == 1.0 || factor == 0 {
+		return ts
+	}
+	scaleStyle := func(s draw.TextStyle) draw.TextStyle {
+		s.Size *= factor
+		return s
+	}
+	ts.H1 = scaleStyle(ts.H1)
+	ts.H2 = scaleStyle(ts.H2)
+	ts.H3 = scaleStyle(ts.H3)
+	ts.Body = scaleStyle(ts.Body)
+	ts.BodySmall = scaleStyle(ts.BodySmall)
+	ts.Label = scaleStyle(ts.Label)
+	ts.LabelSmall = scaleStyle(ts.LabelSmall)
+	ts.Code = scaleStyle(ts.Code)
+	ts.CodeSmall = scaleStyle(ts.CodeSmall)
+	return ts
+}
+
 // ── SpacingScale (RFC-003 §2) ───────────────────────────────────
 
 // SpacingScale defines spacing constants.

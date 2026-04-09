@@ -184,7 +184,7 @@ func (n ConfirmButton) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	st.ripple.Draw(canvas, buttonRect, tokens.Radii.Button, textColor)
 
 	// Request continued frames while animations are active.
-	if st.phase == confirmPending || st.ripple.Active() {
+	if st.phase == confirmPending || st.ripple.Active {
 		ix.SetNeedsFrame()
 	}
 
