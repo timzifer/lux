@@ -403,6 +403,13 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					}
 					return true
 
+				case StartDragSessionMsg:
+					dnd := dispatcher.DnDManager()
+					dnd.StartDrag(m.SourceUID, m.Data, m.StartPos, m.SourceBounds,
+						m.Preview, m.PreviewOffset, m.ShowPlaceholder)
+					modelDirty = true
+					return true
+
 				case ui.RequestFocusMsg:
 					oldUID := fm.FocusedUID()
 					fm.SetFocusedUID(m.Target)
@@ -925,6 +932,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				ix := ui.NewInteractor(&hitMap, &hoverState)
 				ix.Dispatcher = dispatcher
 				ix.NeedsFrame = &widgetNeedsFrame
+				ix.DnD = dispatcher.DnDManager()
+				dispatcher.DnDManager().ResetDropZones()
 
 				// If the OSK is visible, always use ActionSheet mode (RFC-004 §5.2).
 				// The inline mode has been removed — the OSK is always rendered

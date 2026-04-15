@@ -59,6 +59,7 @@ var sectionIDs = []string{
 	"group-platform",
 	"group-rendering",
 	"group-architecture",
+	"group-dnd",
 	"group-a11y",
 }
 
@@ -77,6 +78,7 @@ var sectionGroupChildren = map[string][]string{
 	"group-platform":     {"platform-info", "window-controls", "clipboard", "gpu-backend", "multi-window"},
 	"group-rendering":    {"canvas-paints", "surfaces", "svg-rendering"},
 	"group-architecture": {"commands", "sub-models"},
+	"group-dnd":          {"dnd-basic", "dnd-copy", "dnd-sortable", "dnd-multi-zone", "dnd-placeholder", "dnd-kanban", "dnd-handle", "dnd-keyboard"},
 	"group-a11y":         {"a11y-tree", "a11y-focus-trap", "a11y-bridge"},
 }
 
@@ -217,6 +219,25 @@ func sectionLabel(id string) string {
 		return "Images"
 	case "shader-effects":
 		return "Shader Effects"
+	// Drag and Drop sections
+	case "group-dnd":
+		return "Drag & Drop"
+	case "dnd-basic":
+		return "Basic DnD"
+	case "dnd-copy":
+		return "Copy on Drag"
+	case "dnd-sortable":
+		return "Sortable List"
+	case "dnd-multi-zone":
+		return "Multiple Drop Zones"
+	case "dnd-placeholder":
+		return "Placeholder Drag"
+	case "dnd-kanban":
+		return "Kanban Board"
+	case "dnd-handle":
+		return "Drag Handle"
+	case "dnd-keyboard":
+		return "Keyboard DnD"
 	// Accessibility sections
 	case "group-a11y":
 		return "Accessibility"
@@ -1090,6 +1111,23 @@ func sectionContent(m Model) ui.Element {
 		return imagesSection(m)
 	case "shader-effects":
 		return shaderEffectsSection()
+	// Drag & Drop
+	case "dnd-basic":
+		return dndBasicSection(m)
+	case "dnd-copy":
+		return dndCopySection(m)
+	case "dnd-sortable":
+		return dndSortableSection(m)
+	case "dnd-multi-zone":
+		return dndMultiZoneSection(m)
+	case "dnd-placeholder":
+		return dndPlaceholderSection(m)
+	case "dnd-kanban":
+		return dndKanbanSection(m)
+	case "dnd-handle":
+		return dndHandleSection(m)
+	case "dnd-keyboard":
+		return dndKeyboardSection(m)
 	// Accessibility
 	case "a11y-tree":
 		return a11yTreeSection(m)

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	luximage "github.com/timzifer/lux/image"
-	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
@@ -52,6 +51,17 @@ type DismissOSKMsg struct{}
 
 // SetOSKModeMsg changes the OSK presentation mode at runtime.
 type SetOSKModeMsg struct{ Mode uint8 }
+
+// StartDragSessionMsg initiates a drag-and-drop session (RFC-005 §4).
+// This is an alias for ui.StartDragSessionMsg so that both packages can
+// reference the same type.
+type StartDragSessionMsg = ui.StartDragSessionMsg
+
+// DragCompletedMsg is sent to the user model when a drag completes (RFC-005 §4).
+type DragCompletedMsg = ui.DragCompletedMsg
+
+// DragCancelledMsg is sent when a drag is cancelled without dropping.
+type DragCancelledMsg = ui.DragCancelledMsg
 
 // Cmd is a function that performs a side effect and optionally returns a Msg (RFC §3.6).
 // A nil Cmd means "no command".
