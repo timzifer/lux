@@ -23,6 +23,12 @@ const (
 	EventSwipe
 	EventDrag
 	EventPinch
+
+	// Drag-and-drop events (RFC-005 §5).
+	EventDragEnter // cursor carrying drag data entered a drop target
+	EventDragOver  // cursor moving within a drop target
+	EventDragLeave // cursor left a drop target
+	EventDrop      // data dropped on a target
 )
 
 // InputEvent is a typed union wrapper for all input events delivered to
@@ -50,6 +56,12 @@ type InputEvent struct {
 	Swipe     *input.SwipeMsg
 	Drag      *input.DragMsg
 	Pinch     *input.PinchMsg
+
+	// Drag-and-drop events (RFC-005 §5).
+	DnDEnter *DragEnterMsg
+	DnDOver  *DragOverMsg
+	DnDLeave *DragLeaveMsg
+	DnDDrop  *DropMsg
 }
 
 // KeyEvent constructs an InputEvent from a KeyMsg.
@@ -125,4 +137,55 @@ func DragEvent(msg input.DragMsg) InputEvent {
 // PinchEvent constructs an InputEvent from a PinchMsg.
 func PinchEvent(msg input.PinchMsg) InputEvent {
 	return InputEvent{Kind: EventPinch, Pinch: &msg}
+}
+
+// ── Drag-and-Drop Event Types (RFC-005 §5) ──────────────────────
+
+// DragEnterMsg is delivered when a drag cursor enters a registered drop target.
+type DragEnterMsg struct {
+	Data      *input.DragData
+	Pos       input.GesturePoint
+	Modifiers input.ModifierSet
+	Operation input.DragOperation // current operation based on modifiers
+}
+
+// DragOverMsg is delivered continuously while a drag cursor moves within a drop target.
+type DragOverMsg struct {
+	Data      *input.DragData
+	Pos       input.GesturePoint
+	Modifiers input.ModifierSet
+	Operation input.DragOperation
+}
+
+// DragLeaveMsg is delivered when a drag cursor leaves a drop target.
+type DragLeaveMsg struct {
+	Data *input.DragData
+}
+
+// DropMsg is delivered when the user releases a drag over an accepting drop target.
+type DropMsg struct {
+	Data      *input.DragData
+	Pos       input.GesturePoint
+	Effect    input.DropEffect // resolved operation
+	Modifiers input.ModifierSet
+}
+
+// DragEnterEvent constructs an InputEvent from a DragEnterMsg.
+func DragEnterEvent(msg DragEnterMsg) InputEvent {
+	return InputEvent{Kind: EventDragEnter, DnDEnter: &msg}
+}
+
+// DragOverEvent constructs an InputEvent from a DragOverMsg.
+func DragOverEvent(msg DragOverMsg) InputEvent {
+	return InputEvent{Kind: EventDragOver, DnDOver: &msg}
+}
+
+// DragLeaveEvent constructs an InputEvent from a DragLeaveMsg.
+func DragLeaveEvent(msg DragLeaveMsg) InputEvent {
+	return InputEvent{Kind: EventDragLeave, DnDLeave: &msg}
+}
+
+// DropEvent constructs an InputEvent from a DropMsg.
+func DropEvent(msg DropMsg) InputEvent {
+	return InputEvent{Kind: EventDrop, DnDDrop: &msg}
 }

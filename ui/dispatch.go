@@ -53,6 +53,12 @@ type EventDispatcher struct {
 
 	// Gesture recognizer transforms raw touches into gesture events (RFC-004 §3).
 	gesture *GestureRecognizer
+
+	// Drag-and-drop manager (RFC-005 §4).
+	dnd *DnDManager
+
+	// Modifier tracking for drag-and-drop operation resolution.
+	modifiers input.ModifierSet
 }
 
 // dispatchOverlayEntry tracks an active overlay's bounds and properties.
@@ -72,6 +78,7 @@ func NewEventDispatcher(fm *FocusManager) *EventDispatcher {
 		focusGained:  make(map[UID]FocusGainedMsg),
 		focusLost:    make(map[UID]FocusLostMsg),
 		gesture:      NewGestureRecognizer(DefaultGestureConfig),
+		dnd:          NewDnDManager(),
 	}
 }
 
@@ -89,6 +96,16 @@ func (d *EventDispatcher) SetGestureConfig(config GestureConfig) {
 // GestureRecognizer returns the dispatcher's gesture recognizer.
 func (d *EventDispatcher) GestureRecognizer() *GestureRecognizer {
 	return d.gesture
+}
+
+// DnDManager returns the dispatcher's drag-and-drop manager (RFC-005 §4).
+func (d *EventDispatcher) DnDManager() *DnDManager {
+	return d.dnd
+}
+
+// Modifiers returns the currently held keyboard modifiers.
+func (d *EventDispatcher) Modifiers() input.ModifierSet {
+	return d.modifiers
 }
 
 // Collect adds a raw input event to the per-frame buffer.
@@ -213,6 +230,64 @@ func (d *EventDispatcher) Dispatch() {
 		for _, g := range gestures {
 			if uid := d.hitTestWidget(g.pos.X, g.pos.Y); uid != 0 {
 				d.appendEvent(uid, g.event)
+			}
+		}
+	}
+
+	// Track modifier state from key events for DnD operation resolution.
+	for i := range d.keyEvents {
+		k := &d.keyEvents[i]
+		if k.Action == input.KeyPress || k.Action == input.KeyRepeat {
+			switch k.Key {
+			case input.KeyLeftCtrl, input.KeyRightCtrl:
+				d.modifiers |= input.ModCtrl
+			case input.KeyLeftShift, input.KeyRightShift:
+				d.modifiers |= input.ModShift
+			case input.KeyLeftAlt, input.KeyRightAlt:
+				d.modifiers |= input.ModAlt
+			}
+		} else if k.Action == input.KeyRelease {
+			switch k.Key {
+			case input.KeyLeftCtrl, input.KeyRightCtrl:
+				d.modifiers &^= input.ModCtrl
+			case input.KeyLeftShift, input.KeyRightShift:
+				d.modifiers &^= input.ModShift
+			case input.KeyLeftAlt, input.KeyRightAlt:
+				d.modifiers &^= input.ModAlt
+			}
+		}
+	}
+
+	// Update DnD manager with mouse position and dispatch DnD events (RFC-005 §4).
+	if d.dnd.IsActive() {
+		for i := range d.mouseEvents {
+			m := &d.mouseEvents[i]
+			pos := input.GesturePoint{X: m.X, Y: m.Y}
+			if m.Action == input.MouseRelease {
+				// End drag: dispatch drop event if over accepting zone.
+				d.dnd.UpdateDrag(pos, d.modifiers)
+				if d.dnd.HoveredZoneAccepts() {
+					effect := d.dnd.EndDrag(pos, d.modifiers)
+					_ = effect // the DropEvent carries the effect
+					// The DropEvent was dispatched by DispatchDnDEvents below
+					// before EndDrag clears the session. Handle it here instead.
+				}
+			} else {
+				d.dnd.UpdateDrag(pos, d.modifiers)
+			}
+		}
+		d.dnd.DispatchDnDEvents(d.appendEvent)
+
+		// Check for mouse release to end the drag (after dispatching events).
+		for i := range d.mouseEvents {
+			m := &d.mouseEvents[i]
+			if m.Action == input.MouseRelease {
+				pos := input.GesturePoint{X: m.X, Y: m.Y}
+				if d.dnd.HoveredZoneAccepts() {
+					d.dnd.DispatchDropEvent(d.appendEvent, operationToEffect(d.dnd.session.Operation))
+				}
+				d.dnd.EndDrag(pos, d.modifiers)
+				break
 			}
 		}
 	}

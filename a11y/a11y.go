@@ -64,6 +64,11 @@ type AccessStates struct {
 	Invalid  bool
 	Busy     bool
 	Live     AccessLiveRegion
+
+	// Drag-and-drop states (RFC-005 §7).
+	Grabbed    bool   // Element is currently being dragged.
+	DropTarget bool   // Element is a valid drop target.
+	DropEffect string // "move", "copy", "link", or "none".
 }
 
 // AccessAction describes an action that can be performed on an accessibility node.
