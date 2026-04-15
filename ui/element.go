@@ -689,6 +689,10 @@ func BuildScene(root Element, canvas draw.Canvas, th theme.Theme, width, height 
 	for _, entry := range overlays.Entries {
 		entry.Render(canvas, tokens, ix)
 	}
+	// Render drag-and-drop preview ghost on top of all overlays (RFC-005 §10).
+	if ix != nil && ix.DnD != nil && ix.DnD.IsActive() {
+		renderDnDPreview(ix.DnD, canvas, th, tokens, ix, width, height)
+	}
 	if oms, ok := canvas.(overlayModeSetter); ok {
 		oms.SetOverlayMode(false)
 	}
@@ -758,6 +762,10 @@ func BuildSceneWithOSK(root Element, canvas draw.Canvas, th theme.Theme, width, 
 			}
 			l.LayoutSelf(oskCtx)
 		}
+	}
+	// Render drag-and-drop preview ghost on top of all overlays (RFC-005 §10).
+	if ix != nil && ix.DnD != nil && ix.DnD.IsActive() {
+		renderDnDPreview(ix.DnD, canvas, th, tokens, ix, width, height)
 	}
 	if oms, ok := canvas.(overlayModeSetter); ok {
 		oms.SetOverlayMode(false)

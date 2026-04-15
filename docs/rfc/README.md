@@ -13,6 +13,7 @@ column below reflects the current implementation state.
 | 003 | [RFC-003-lux-widget-catalogue.md](RFC-003-lux-widget-catalogue.md) | Integrated | Full widget catalogue, design token system, typography, i18n, RTL, built-in fonts, HTML Viewer widget |
 | 004 | [RFC-004-hmi-touch.md](RFC-004-hmi-touch.md) | Partially integrated | Touch input, multi-touch gesture recognition, HMI/embedded targets; §2–§5 integrated, §6 mostly integrated (DrumPicker missing), §7–§10 pending |
 | 004 | [RFC-004-lux-webview.md](RFC-004-lux-webview.md) | Deferred (post-V1) | WebView integration as an external surface — code saved in branch `feature/webview` |
+| 005 | [RFC-005-lux-drag-and-drop.md](RFC-005-lux-drag-and-drop.md) | Integrated | Drag-and-drop system: data transfer model, DnD session manager, DragSource/DropTarget/SortableList widgets, keyboard accessibility, visual effects |
 | 006 | [RFC-006-lux-surface-semantics.md](RFC-006-lux-surface-semantics.md) | Integrated | External surface API, zero-copy texture provider, accessibility semantics for surfaces; SemanticProvider, AccessTree merge, fallback nodes |
 | 007 | [RFC-007-lux-WGPU-rendering.md](RFC-007-lux-WGPU-rendering.md) | Integrated | GPU rendering via wgpu/gogpu (Vulkan/Metal/D3D12), geometry batcher, visual effects, OpenGL fallback (only wgpu-native backend deferred) |
 | 008 | [RFC-008-lux-default-theme.md](RFC-008-lux-default-theme.md) | Integrated | Lux dark/light theme (design tokens, color system, typography, motion, elevation) |

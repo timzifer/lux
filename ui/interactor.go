@@ -26,6 +26,9 @@ type Interactor struct {
 	// set to true during BuildScene, the framework requests another frame
 	// so animations keep rendering.
 	NeedsFrame *bool
+
+	// DnD is the drag-and-drop manager for drop zone registration (RFC-005 §4).
+	DnD *DnDManager
 }
 
 // NewInteractor creates an Interactor for use during a single BuildScene pass.
@@ -183,6 +186,21 @@ func (ix *Interactor) SetNeedsFrame() {
 	if ix != nil && ix.NeedsFrame != nil {
 		*ix.NeedsFrame = true
 	}
+}
+
+// RegisterDropZone registers a drop zone for drag-and-drop targeting (RFC-005 §4).
+// Unlike hit targets, drop zones do NOT consume hover animation slots and
+// are stored in a separate list in the DnDManager.
+func (ix *Interactor) RegisterDropZone(bounds draw.Rect, uid UID, accept func(*input.DragData, input.DragOperation) bool, priority int) {
+	if ix == nil || ix.DnD == nil {
+		return
+	}
+	ix.DnD.RegisterDropZone(DropZone{
+		UID:      uid,
+		Bounds:   bounds,
+		Accept:   accept,
+		Priority: priority,
+	})
 }
 
 // resetCounter resets the hover animation counter for a new BuildScene pass.

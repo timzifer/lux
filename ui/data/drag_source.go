@@ -1,0 +1,188 @@
+// Package data — drag_source.go implements the DragSource wrapper element
+// that makes any child element draggable (RFC-005 §6).
+//
+// DragSource is a stateful Widget: it processes DragMsg events from
+// RenderCtx.Events and initiates drag-and-drop sessions via Send.
+package data
+
+import (
+	"github.com/timzifer/lux/a11y"
+	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/input"
+	"github.com/timzifer/lux/ui"
+)
+
+// DragSource wraps a child element and makes it draggable.
+// When the user starts a drag gesture on the child, a drag-and-drop
+// session is initiated with the provided DragData.
+type DragSource struct {
+	ui.BaseElement
+
+	// Child is the element to render (and to drag).
+	Child ui.Element
+
+	// Data provides the drag payload. Called lazily when the drag begins.
+	Data func() *input.DragData
+
+	// Operations declares which operations this source supports.
+	// Default (zero): DragOperationMove.
+	Operations input.DragOperation
+
+	// Preview builds a custom drag preview element.
+	// If nil, the framework renders a default ghost rectangle.
+	Preview func() ui.Element
+
+	// Placeholder controls whether a visual placeholder is shown at
+	// the original position while the item is being dragged.
+	Placeholder bool
+
+	// OnDragStart is called when the drag begins (optional).
+	OnDragStart func()
+
+	// OnDragEnd is called when the drag completes with the result effect (optional).
+	OnDragEnd func(input.DropEffect)
+}
+
+// dragSourceState is the per-instance state for DragSource.
+type dragSourceState struct {
+	dragging bool
+	bounds   draw.Rect
+}
+
+// Render implements ui.Widget.
+func (ds DragSource) Render(ctx ui.RenderCtx, raw ui.WidgetState) (ui.Element, ui.WidgetState) {
+	s := ui.AdoptState[dragSourceState](raw)
+
+	for _, ev := range ctx.Events {
+		if ev.Kind == ui.EventDrag && ev.Drag != nil {
+			switch ev.Drag.Phase {
+			case input.DragBegan:
+				if ds.Data == nil {
+					continue
+				}
+				data := ds.Data()
+				if data == nil {
+					continue
+				}
+				ops := ds.Operations
+				if ops == 0 {
+					ops = input.DragOperationMove
+				}
+				data.AllowedOps = ops
+
+				var preview ui.Element
+				if ds.Preview != nil {
+					preview = ds.Preview()
+				}
+
+				// Offset preview so it's centered under the cursor.
+				offset := draw.Point{X: -60, Y: -20}
+
+				ctx.Send(ui.StartDragSessionMsg{
+					SourceUID:       ctx.UID,
+					Data:            data,
+					StartPos:        ev.Drag.Start,
+					SourceBounds:    s.bounds,
+					Preview:         preview,
+					PreviewOffset:   offset,
+					ShowPlaceholder: ds.Placeholder,
+				})
+				s.dragging = true
+
+				if ds.OnDragStart != nil {
+					ds.OnDragStart()
+				}
+
+			case input.DragEnded:
+				if s.dragging {
+					s.dragging = false
+					if ds.OnDragEnd != nil {
+						ds.OnDragEnd(input.DropEffectMove) // TODO: get actual effect
+					}
+				}
+
+			case input.DragCancelled:
+				if s.dragging {
+					s.dragging = false
+					if ds.OnDragEnd != nil {
+						ds.OnDragEnd(input.DropEffectNone)
+					}
+				}
+			}
+		}
+	}
+
+	// When dragging with placeholder mode, show a dimmed version.
+	if s.dragging && ds.Placeholder {
+		return dragPlaceholder{Child: ds.Child, Bounds: &s.bounds}, s
+	}
+
+	return dragSourceLayout{Child: ds.Child, Bounds: &s.bounds}, s
+}
+
+// AccessibleWidget implements ui.AccessibleWidget for screen reader support.
+func (ds DragSource) AccessNode(state ui.WidgetState) a11y.AccessNode {
+	s, _ := state.(*dragSourceState)
+	grabbed := s != nil && s.dragging
+	return a11y.AccessNode{
+		Role:   a11y.RoleGroup,
+		Label:  "draggable",
+		States: a11y.AccessStates{Grabbed: grabbed},
+		Actions: []a11y.AccessAction{
+			{Name: "drag"},
+		},
+	}
+}
+
+// dragSourceLayout is a layout wrapper that records its bounds for the
+// DragSource state and renders the child normally.
+type dragSourceLayout struct {
+	ui.BaseElement
+	Child  ui.Element
+	Bounds *draw.Rect
+}
+
+// LayoutSelf implements ui.Layouter.
+func (d dragSourceLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	area := ctx.Area
+	childBounds := ctx.LayoutChild(d.Child, area)
+	if d.Bounds != nil {
+		*d.Bounds = draw.R(float32(area.X), float32(area.Y),
+			float32(childBounds.W), float32(childBounds.H))
+	}
+	return childBounds
+}
+
+// dragPlaceholder renders a dimmed/dashed version of the child to show
+// where the dragged item came from.
+type dragPlaceholder struct {
+	ui.BaseElement
+	Child  ui.Element
+	Bounds *draw.Rect
+}
+
+// LayoutSelf implements ui.Layouter.
+func (d dragPlaceholder) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	area := ctx.Area
+	if d.Bounds != nil {
+		*d.Bounds = draw.R(float32(area.X), float32(area.Y),
+			float32(area.W), float32(area.H))
+	}
+
+	// Draw a dashed border placeholder.
+	tokens := ctx.Tokens
+	placeholderColor := tokens.Colors.Stroke.Border
+	placeholderColor.A = 0.3
+	ctx.Canvas.StrokeRoundRect(
+		draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(area.H)),
+		tokens.Radii.Card,
+		draw.Stroke{
+			Paint:      draw.SolidPaint(placeholderColor),
+			Width:      2.0,
+			Dash:       []float32{6, 4}, // dashed
+			DashOffset: 0,
+		},
+	)
+
+	return ui.Bounds{X: area.X, Y: area.Y, W: area.W, H: area.H}
+}
