@@ -86,6 +86,9 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	activePlatform = plat
 	defer func() { activePlatform = nil }()
 
+	// Clipboard adapter for extracted input handlers.
+	clipboardAdapter := &platformClipboard{}
+
 	// A11y: initialize bridge if the platform supports it (RFC-001 §11).
 	type a11yBridgeProvider interface {
 		A11yBridge() a11y.A11yBridge
@@ -456,264 +459,43 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					}
 
 					// Handle Tab/Shift+Tab for focus navigation.
-					if m.Action == input.KeyPress || m.Action == input.KeyRepeat {
-						if m.Key == input.KeyTab {
-							oldUID := fm.FocusedUID()
-							var newUID ui.UID
-							if m.Modifiers.Has(input.ModShift) {
-								newUID = fm.FocusPrev()
-							} else {
-								newUID = fm.FocusNext()
-							}
-							if newUID != oldUID {
-								dispatcher.QueueFocusChange(oldUID, newUID, ui.FocusSourceTab)
-								modelDirty = true
-							}
-							return true
-						}
+					if ui.HandleTabNavigation(fm, m, dispatcher) {
+						modelDirty = true
+						return true
+					}
 
-						// Framework-internal keyboard handling for TextFields.
-						if is := fm.Input; is != nil {
-							shift := m.Modifiers.Has(input.ModShift)
-							ctrl := m.Modifiers.Has(input.ModCtrl) || m.Modifiers.Has(input.ModSuper)
-
-							// Platform shortcuts: Ctrl+C/V/X/A.
-							if ctrl {
-								switch m.Key {
-								case input.KeyC:
-									// Copy selected text.
-									if is.HasSelection() {
-										_ = SetClipboard(is.SelectedText())
-									}
-									modelDirty = true
-
-								case input.KeyX:
-									// Cut selected text.
-									if is.HasSelection() {
-										_ = SetClipboard(is.SelectedText())
-										is.DeleteSelection()
-										is.OnChange(is.Value)
-										modelDirty = true
-									}
-
-								case input.KeyV:
-									// Paste from clipboard.
-									if clip, err := GetClipboard(); err == nil && clip != "" {
-										is.DeleteSelection() // replace selection if any
-										v := is.Value[:is.CursorOffset] + clip + is.Value[is.CursorOffset:]
-										is.CursorOffset += len(clip)
-										is.Value = v
-										is.ClearSelection()
-										is.OnChange(v)
-										modelDirty = true
-									}
-
-								case input.KeyA:
-									// Select all.
-									is.SelectionStart = 0
-									is.CursorOffset = len(is.Value)
-									modelDirty = true
-								}
-							}
-
-							// Navigation and editing keys.
-							switch m.Key {
-							case input.KeyEnter:
-								if is.Multiline {
-									is.DeleteSelection()
-									v := is.Value[:is.CursorOffset] + "\n" + is.Value[is.CursorOffset:]
-									is.CursorOffset++
-									is.Value = v
-									is.ClearSelection()
-									is.OnChange(v)
-									modelDirty = true
-								}
-							case input.KeyBackspace:
-								if is.HasSelection() {
-									is.DeleteSelection()
-									is.OnChange(is.Value)
-									modelDirty = true
-								} else if is.CursorOffset > 0 {
-									v, newOff := text.DeleteBackward(is.Value, is.CursorOffset)
-									is.Value = v
-									is.CursorOffset = newOff
-									is.OnChange(v)
-									modelDirty = true
-								}
-							case input.KeyDelete:
-								if is.HasSelection() {
-									is.DeleteSelection()
-									is.OnChange(is.Value)
-									modelDirty = true
-								} else if is.CursorOffset < len(is.Value) {
-									v, newOff := text.DeleteForward(is.Value, is.CursorOffset)
-									is.Value = v
-									is.CursorOffset = newOff
-									is.OnChange(v)
-									modelDirty = true
-								}
-							case input.KeyLeft:
-								if shift {
-									if is.SelectionStart < 0 {
-										is.SelectionStart = is.CursorOffset
-									}
-								} else if is.HasSelection() {
-									// Collapse selection to left edge.
-									a, _ := is.SelectionRange()
-									is.CursorOffset = a
-									is.ClearSelection()
-									modelDirty = true
-									break
-								} else {
-									is.ClearSelection()
-								}
-								if ctrl {
-									is.CursorOffset = text.PrevWordBoundary(is.Value, is.CursorOffset)
-								} else {
-									is.CursorOffset = text.PrevGraphemeCluster(is.Value, is.CursorOffset)
-								}
-								modelDirty = true
-							case input.KeyRight:
-								if shift {
-									if is.SelectionStart < 0 {
-										is.SelectionStart = is.CursorOffset
-									}
-								} else if is.HasSelection() {
-									// Collapse selection to right edge.
-									_, b := is.SelectionRange()
-									is.CursorOffset = b
-									is.ClearSelection()
-									modelDirty = true
-									break
-								} else {
-									is.ClearSelection()
-								}
-								if ctrl {
-									is.CursorOffset = text.NextWordBoundary(is.Value, is.CursorOffset)
-								} else {
-									is.CursorOffset = text.NextGraphemeCluster(is.Value, is.CursorOffset)
-								}
-								modelDirty = true
-							case input.KeyUp:
-								if is.Multiline {
-									if shift {
-										if is.SelectionStart < 0 {
-											is.SelectionStart = is.CursorOffset
-										}
-									} else {
-										is.ClearSelection()
-									}
-									is.CursorOffset = text.CursorUp(is.Value, is.CursorOffset)
-									modelDirty = true
-								}
-							case input.KeyDown:
-								if is.Multiline {
-									if shift {
-										if is.SelectionStart < 0 {
-											is.SelectionStart = is.CursorOffset
-										}
-									} else {
-										is.ClearSelection()
-									}
-									is.CursorOffset = text.CursorDown(is.Value, is.CursorOffset)
-									modelDirty = true
-								}
-							case input.KeyHome:
-								if shift {
-									if is.SelectionStart < 0 {
-										is.SelectionStart = is.CursorOffset
-									}
-								} else {
-									is.ClearSelection()
-								}
-								if is.Multiline && !ctrl {
-									is.CursorOffset = text.LineStart(is.Value, is.CursorOffset)
-								} else {
-									is.CursorOffset = 0
-								}
-								modelDirty = true
-							case input.KeyEnd:
-								if shift {
-									if is.SelectionStart < 0 {
-										is.SelectionStart = is.CursorOffset
-									}
-								} else {
-									is.ClearSelection()
-								}
-								if is.Multiline && !ctrl {
-									is.CursorOffset = text.LineEnd(is.Value, is.CursorOffset)
-								} else {
-									is.CursorOffset = len(is.Value)
-								}
-								modelDirty = true
-							case input.KeyEscape:
-								oldUID := fm.FocusedUID()
-								fm.Blur()
-								dispatcher.QueueFocusChange(oldUID, 0, ui.FocusSourceProgram)
-								modelDirty = true
-							}
-						}
+					// Framework-internal keyboard handling for TextFields.
+					if ui.HandleTextFieldKeyMsg(fm, m, dispatcher, clipboardAdapter) {
+						modelDirty = true
 					}
 					return true
 
 				case input.CharMsg:
 					// Collect for widget-level dispatch.
 					dispatcher.Collect(m)
-					// Framework-internal character input for TextFields.
-					if is := fm.Input; is != nil {
-						// Skip CR and LF -- Enter is already handled by KeyMsg(KeyEnter).
-						// On Windows/GLFW both a KeyMsg and a CharMsg fire for Enter,
-						// which would insert a double newline without this guard.
-						if m.Char >= 32 {
-							is.DeleteSelection()
-							ch := string(m.Char)
-							v := is.Value[:is.CursorOffset] + ch + is.Value[is.CursorOffset:]
-							is.CursorOffset += len(ch)
-							is.Value = v
-							is.ClearSelection()
-							is.OnChange(v)
-							modelDirty = true
-						}
+					if ui.HandleCharMsg(fm, m) {
+						modelDirty = true
 					}
 					return true
 
 				case input.TextInputMsg:
 					// Collect for widget-level dispatch.
 					dispatcher.Collect(m)
-					// Framework-internal IME input for TextFields.
-					if is := fm.Input; is != nil && m.Text != "" {
-						is.DeleteSelection()
-						v := is.Value[:is.CursorOffset] + m.Text + is.Value[is.CursorOffset:]
-						is.CursorOffset += len(m.Text)
-						is.Value = v
-						is.ClearSelection()
-						is.OnChange(v)
+					if ui.HandleTextInputMsg(fm, m) {
 						modelDirty = true
 					}
 					return true
 
 				case input.IMEComposeMsg:
 					dispatcher.Collect(m)
-					// Update FocusManager's compose state for TextField rendering.
-					if is := fm.Input; is != nil {
-						is.ComposeText = m.Text
-						is.ComposeCursorStart = m.CursorStart
-						is.ComposeCursorEnd = m.CursorEnd
+					if ui.HandleIMEComposeMsg(fm, m) {
 						modelDirty = true
 					}
 					return true
 
 				case input.IMECommitMsg:
 					dispatcher.Collect(m)
-					// Insert committed text into focused TextField.
-					if is := fm.Input; is != nil && m.Text != "" {
-						is.ComposeText = "" // clear composition
-						is.DeleteSelection()
-						v := is.Value[:is.CursorOffset] + m.Text + is.Value[is.CursorOffset:]
-						is.CursorOffset += len(m.Text)
-						is.Value = v
-						is.ClearSelection()
-						is.OnChange(v)
+					if ui.HandleIMECommitMsg(fm, m) {
 						modelDirty = true
 					}
 					return true

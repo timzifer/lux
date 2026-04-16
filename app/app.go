@@ -337,3 +337,23 @@ func GetClipboard() (string, error) {
 	}
 	return "", nil
 }
+
+// SetGlobalLoopForTest installs a loop for testing, enabling app.Send()
+// outside of app.Run(). The caller must drain messages manually.
+// Call with nil to reset.
+func SetGlobalLoopForTest(l *loop.Loop) {
+	globalLoop = l
+}
+
+// SetGlobalFocusForTest installs a FocusManager for testing, enabling
+// app.Focus() outside of app.Run().
+func SetGlobalFocusForTest(fm *ui.FocusManager) {
+	globalFocus = fm
+}
+
+// platformClipboard adapts the package-level clipboard functions to
+// the ui.ClipboardProvider interface for use by extracted input handlers.
+type platformClipboard struct{}
+
+func (platformClipboard) GetClipboard() (string, error) { return GetClipboard() }
+func (platformClipboard) SetClipboard(s string) error   { return SetClipboard(s) }
