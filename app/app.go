@@ -13,6 +13,7 @@ import (
 	"time"
 
 	luximage "github.com/timzifer/lux/image"
+	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/interaction"
 	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
@@ -32,7 +33,9 @@ type SetThemeMsg struct{ Theme theme.Theme }
 type SetDarkModeMsg struct{ Dark bool }
 
 // SetInteractionProfileMsg switches the active interaction profile at runtime (RFC-004 §2.4).
-type SetInteractionProfileMsg struct{ Profile interaction.InteractionProfile }
+type SetInteractionProfileMsg struct {
+	Profile interaction.InteractionProfile
+}
 
 // ModelRestoredMsg is sent once after a persisted model is successfully loaded (RFC §3.4).
 // Handle this in your update function to apply side effects from the restored state
@@ -127,7 +130,7 @@ type options struct {
 	height          int
 	maxFrameDelta   time.Duration
 	theme           theme.Theme
-	locale          string // BCP 47 language tag (RFC-003 §3.8)
+	locale          string                          // BCP 47 language tag (RFC-003 §3.8)
 	profile         *interaction.InteractionProfile // RFC-004 §2.4
 	platformFactory func() platform.Platform
 	rendererFactory func() gpu.Renderer

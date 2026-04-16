@@ -272,6 +272,13 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					handleCloseWindow(m, plat, renderer)
 					return true
 
+				case StartDragSessionMsg:
+					dnd := mainWC.dispatcher.DnDManager()
+					dnd.StartDrag(m.SourceUID, m.Data, m.StartPos, m.SourceBounds,
+						m.Preview, m.PreviewOffset, m.ShowPlaceholder)
+					modelDirty = true
+					return true
+
 				case ui.RequestFocusMsg:
 					oldUID := fm.FocusedUID()
 					fm.SetFocusedUID(m.Target)
@@ -558,6 +565,9 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 
 				case input.MouseMsg:
 					mainWC.dispatcher.Collect(m)
+					if mainWC.dispatcher.DnDManager().IsActive() {
+						modelDirty = true
+					}
 				case input.ScrollMsg:
 					mainWC.dispatcher.Collect(m)
 				case input.TouchMsg:
@@ -662,6 +672,8 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				ix := ui.NewInteractor(&mainWC.hitMap, &mainWC.hoverState)
 				ix.Dispatcher = mainWC.dispatcher
 				ix.NeedsFrame = &widgetNeedsFrame
+				ix.DnD = mainWC.dispatcher.DnDManager()
+				mainWC.dispatcher.DnDManager().ResetDropZones()
 				scene := ui.BuildSceneWithOSK(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm, nil, activeProfile)
 				mainWC.dispatcher.SwapBounds()
 				mainWC.hoverState.Trim(mainWC.hitMap.Len())

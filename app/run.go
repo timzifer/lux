@@ -779,6 +779,11 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 				case input.MouseMsg:
 					dispatcher.Collect(m)
+					// During active DnD sessions, mouse events must trigger
+					// Dispatch+Reconcile so drop zones receive DnD events.
+					if dispatcher.DnDManager().IsActive() {
+						modelDirty = true
+					}
 				case input.ScrollMsg:
 					dispatcher.Collect(m)
 				case input.TouchMsg:

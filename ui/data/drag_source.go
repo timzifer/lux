@@ -2,7 +2,8 @@
 // that makes any child element draggable (RFC-005 §6).
 //
 // DragSource is a stateful Widget: it processes DragMsg events from
-// RenderCtx.Events and initiates drag-and-drop sessions via Send.
+// RenderCtx.Events (touch) and registers draggable hit targets via the
+// Interactor (mouse) to initiate drag-and-drop sessions.
 package data
 
 import (
@@ -43,6 +44,10 @@ type DragSource struct {
 	OnDragEnd func(input.DropEffect)
 }
 
+// mouseDragThreshold is the minimum mouse movement in dp before a
+// mouse press becomes a drag gesture (matches GestureConfig default).
+const mouseDragThreshold float32 = 10
+
 // dragSourceState is the per-instance state for DragSource.
 type dragSourceState struct {
 	dragging bool
@@ -53,6 +58,7 @@ type dragSourceState struct {
 func (ds DragSource) Render(ctx ui.RenderCtx, raw ui.WidgetState) (ui.Element, ui.WidgetState) {
 	s := ui.AdoptState[dragSourceState](raw)
 
+	// Handle touch-based drag events from the gesture recognizer.
 	for _, ev := range ctx.Events {
 		if ev.Kind == ui.EventDrag && ev.Drag != nil {
 			switch ev.Drag.Phase {
@@ -75,7 +81,6 @@ func (ds DragSource) Render(ctx ui.RenderCtx, raw ui.WidgetState) (ui.Element, u
 					preview = ds.Preview()
 				}
 
-				// Offset preview so it's centered under the cursor.
 				offset := draw.Point{X: -60, Y: -20}
 
 				ctx.Send(ui.StartDragSessionMsg{
@@ -117,7 +122,21 @@ func (ds DragSource) Render(ctx ui.RenderCtx, raw ui.WidgetState) (ui.Element, u
 		return dragPlaceholder{Child: ds.Child, Bounds: &s.bounds}, s
 	}
 
-	return dragSourceLayout{Child: ds.Child, Bounds: &s.bounds}, s
+	// Pass the drag configuration and Send function to the layout element
+	// so it can register a hit target for mouse-based drag (desktop).
+	return dragSourceLayout{
+		Child:  ds.Child,
+		Bounds: &s.bounds,
+		dragConfig: dragConfig{
+			Send:        ctx.Send,
+			WidgetUID:   ctx.UID,
+			DataFn:      ds.Data,
+			Operations:  ds.Operations,
+			PreviewFn:   ds.Preview,
+			Placeholder: ds.Placeholder,
+			OnDragStart: ds.OnDragStart,
+		},
+	}, s
 }
 
 // AccessibleWidget implements ui.AccessibleWidget for screen reader support.
@@ -134,22 +153,105 @@ func (ds DragSource) AccessNode(state ui.WidgetState) a11y.AccessNode {
 	}
 }
 
+// dragConfig holds drag-and-drop parameters passed from DragSource.Render()
+// to dragSourceLayout.LayoutSelf() for hit target registration.
+type dragConfig struct {
+	Send        func(any)
+	WidgetUID   ui.UID
+	DataFn      func() *input.DragData
+	Operations  input.DragOperation
+	PreviewFn   func() ui.Element
+	Placeholder bool
+	OnDragStart func()
+}
+
 // dragSourceLayout is a layout wrapper that records its bounds for the
-// DragSource state and renders the child normally.
+// DragSource state and registers a draggable hit target for mouse interaction.
 type dragSourceLayout struct {
 	ui.BaseElement
 	Child  ui.Element
 	Bounds *draw.Rect
+	dragConfig
 }
 
 // LayoutSelf implements ui.Layouter.
 func (d dragSourceLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
 	childBounds := ctx.LayoutChild(d.Child, area)
+
+	rect := draw.R(float32(area.X), float32(area.Y),
+		float32(childBounds.W), float32(childBounds.H))
 	if d.Bounds != nil {
-		*d.Bounds = draw.R(float32(area.X), float32(area.Y),
-			float32(childBounds.W), float32(childBounds.H))
+		*d.Bounds = rect
 	}
+
+	// Register a draggable hit target for mouse-based drag (desktop).
+	// Touch-based drag is handled separately via the gesture recognizer
+	// and EventDrag in DragSource.Render().
+	if ctx.IX != nil && ctx.IX.DnD != nil && d.DataFn != nil {
+		cfg := d.dragConfig
+		sourceBounds := rect
+		dnd := ctx.IX.DnD
+
+		var startX, startY float32
+		var pressing bool
+		var dragSent bool
+
+		ctx.IX.RegisterSurfaceDrag(rect,
+			// OnClickAt: fires on press and on every move while held.
+			func(x, y float32) {
+				if dragSent {
+					return
+				}
+				if !pressing {
+					startX, startY = x, y
+					pressing = true
+					return
+				}
+				dx := x - startX
+				dy := y - startY
+				if dx*dx+dy*dy > mouseDragThreshold*mouseDragThreshold {
+					data := cfg.DataFn()
+					if data == nil {
+						return
+					}
+					ops := cfg.Operations
+					if ops == 0 {
+						ops = input.DragOperationMove
+					}
+					data.AllowedOps = ops
+
+					var preview ui.Element
+					if cfg.PreviewFn != nil {
+						preview = cfg.PreviewFn()
+					}
+
+					// Start DnD session directly — bypasses the message
+					// queue to avoid timing issues with platform callbacks.
+					dnd.StartDrag(
+						cfg.WidgetUID, data,
+						input.GesturePoint{X: startX, Y: startY},
+						sourceBounds, preview,
+						draw.Point{X: -60, Y: -20},
+						cfg.Placeholder,
+					)
+	
+
+					if cfg.OnDragStart != nil {
+						cfg.OnDragStart()
+					}
+
+					dragSent = true
+				}
+			},
+			// OnRelease: fires once on mouse release.
+			func(x, y float32) {
+				pressing = false
+				dragSent = false
+			},
+		)
+	}
+
 	return childBounds
 }
 
