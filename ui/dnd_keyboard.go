@@ -117,14 +117,9 @@ func HandleKeyboardDnD(ks *DnDKeyboardState, dnd *DnDManager, ev InputEvent, app
 		// Highlight the new target by moving the DnD hover.
 		if targetUID := ks.FocusedTargetUID(); targetUID != 0 {
 			// Update DnD manager to hover over the keyboard-selected zone.
-			for i, z := range dnd.dropZones {
-				if z.UID == targetUID {
-					dnd.hoveredZone = i
-					break
-				}
-			}
+			dnd.hoveredZoneUID = targetUID
 			dnd.DispatchDnDEvents(appendEvent)
-			dnd.prevHovered = dnd.hoveredZone
+			dnd.prevHoveredUID = dnd.hoveredZoneUID
 		}
 		return true
 

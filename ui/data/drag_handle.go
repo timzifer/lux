@@ -36,8 +36,69 @@ func (dh DragHandle) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	bounds := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 
-	// Register grab cursor for the handle region.
-	if ctx.IX != nil {
+	// When inside a HandleOnly DragSource, register the actual drag
+	// interaction on the handle bounds (not just a cursor).
+	if ctx.IX != nil && activeDragHandleConfig != nil && ctx.IX.DnD != nil {
+		cfg := *activeDragHandleConfig
+		sourceBounds := bounds
+		dnd := ctx.IX.DnD
+
+		var startX, startY float32
+		var pressing, dragSent bool
+
+		ctx.IX.RegisterSurfaceDrag(bounds,
+			func(x, y float32) {
+				if dragSent {
+					return
+				}
+				if !pressing {
+					startX, startY = x, y
+					pressing = true
+					return
+				}
+				dx := x - startX
+				dy := y - startY
+				if dx*dx+dy*dy > mouseDragThreshold*mouseDragThreshold {
+					data := cfg.DataFn()
+					if data == nil {
+						return
+					}
+					ops := cfg.Operations
+					if ops == 0 {
+						ops = input.DragOperationMove
+					}
+					data.AllowedOps = ops
+
+					var preview ui.Element
+					if cfg.PreviewFn != nil {
+						preview = cfg.PreviewFn()
+					}
+
+					offset := draw.Point{
+						X: sourceBounds.X - startX,
+						Y: sourceBounds.Y - startY,
+					}
+
+					dnd.StartDrag(
+						cfg.WidgetUID, data,
+						input.GesturePoint{X: startX, Y: startY},
+						sourceBounds, preview, offset,
+						cfg.Placeholder,
+					)
+
+					if cfg.OnDragStart != nil {
+						cfg.OnDragStart()
+					}
+					dragSent = true
+				}
+			},
+			func(x, y float32) {
+				pressing = false
+				dragSent = false
+			},
+		)
+	} else if ctx.IX != nil {
+		// Register grab cursor for the handle region (visual only).
 		ctx.IX.RegisterDragCursor(bounds, input.CursorGrab, nil)
 	}
 
