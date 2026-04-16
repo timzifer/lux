@@ -25,18 +25,18 @@ const (
 // DragSession holds the state of an active drag-and-drop operation.
 // It is created by DnDManager.StartDrag and cleared on EndDrag/CancelDrag.
 type DragSession struct {
-	Phase         DragSessionPhase
-	Data          *input.DragData
-	SourceUID     UID
-	SourceBounds  draw.Rect
-	StartPos      input.GesturePoint
-	CurrentPos    input.GesturePoint
-	Modifiers     input.ModifierSet
-	Operation     input.DragOperation // current operation based on modifiers
-	Preview       Element             // element to render as drag ghost
-	PreviewBounds draw.Rect           // size of the preview element
-	PreviewOffset draw.Point          // offset from cursor to preview origin
-	ShowPlaceholder bool              // whether to show placeholder at source
+	Phase           DragSessionPhase
+	Data            *input.DragData
+	SourceUID       UID
+	SourceBounds    draw.Rect
+	StartPos        input.GesturePoint
+	CurrentPos      input.GesturePoint
+	Modifiers       input.ModifierSet
+	Operation       input.DragOperation // current operation based on modifiers
+	Preview         Element             // element to render as drag ghost
+	PreviewBounds   draw.Rect           // size of the preview element
+	PreviewOffset   draw.Point          // offset from cursor to preview origin
+	ShowPlaceholder bool                // whether to show placeholder at source
 }
 
 // ── DropZone ────────────────────────────────────────────────────
@@ -57,18 +57,15 @@ type DropZone struct {
 // It is created once per window and lives for the entire application
 // lifetime (like EventDispatcher).
 type DnDManager struct {
-	session     DragSession
-	dropZones   []DropZone
-	hoveredZone int // index in dropZones, -1 = none
-	prevHovered int // for enter/leave detection
+	session        DragSession
+	dropZones      []DropZone
+	hoveredZoneUID UID // UID of hovered zone, 0 = none
+	prevHoveredUID UID // for enter/leave detection
 }
 
 // NewDnDManager creates a new DnD manager in idle state.
 func NewDnDManager() *DnDManager {
-	return &DnDManager{
-		hoveredZone: -1,
-		prevHovered: -1,
-	}
+	return &DnDManager{}
 }
 
 // ── Session Lifecycle ───────────────────────────────────────────
@@ -88,8 +85,8 @@ func (m *DnDManager) StartDrag(sourceUID UID, data *input.DragData, startPos inp
 		PreviewOffset:   previewOffset,
 		ShowPlaceholder: showPlaceholder,
 	}
-	m.hoveredZone = -1
-	m.prevHovered = -1
+	m.hoveredZoneUID = 0
+	m.prevHoveredUID = 0
 }
 
 // UpdateDrag updates the cursor position and keyboard modifiers during
@@ -103,7 +100,7 @@ func (m *DnDManager) UpdateDrag(pos input.GesturePoint, mods input.ModifierSet) 
 	m.session.Operation = input.ResolveOperation(m.session.Data.AllowedOps, mods)
 
 	// Hit-test against drop zones.
-	m.hoveredZone = m.hitTestDropZone(pos.X, pos.Y)
+	m.hoveredZoneUID = m.hitTestDropZone(pos.X, pos.Y)
 	return true
 }
 
@@ -119,11 +116,10 @@ func (m *DnDManager) EndDrag(pos input.GesturePoint, mods input.ModifierSet) inp
 	m.session.Modifiers = mods
 	m.session.Operation = input.ResolveOperation(m.session.Data.AllowedOps, mods)
 
-	m.hoveredZone = m.hitTestDropZone(pos.X, pos.Y)
+	m.hoveredZoneUID = m.hitTestDropZone(pos.X, pos.Y)
 
 	var effect input.DropEffect
-	if m.hoveredZone >= 0 {
-		zone := &m.dropZones[m.hoveredZone]
+	if zone := m.zoneByUID(m.hoveredZoneUID); zone != nil {
 		if zone.Accept != nil && zone.Accept(m.session.Data, m.session.Operation) {
 			effect = operationToEffect(m.session.Operation)
 		}
@@ -140,8 +136,8 @@ func (m *DnDManager) CancelDrag() {
 
 func (m *DnDManager) reset() {
 	m.session = DragSession{}
-	m.hoveredZone = -1
-	m.prevHovered = -1
+	m.hoveredZoneUID = 0
+	m.prevHoveredUID = 0
 }
 
 // ── Drop Zone Registration ──────────────────────────────────────
@@ -179,26 +175,23 @@ func (m *DnDManager) Session() *DragSession {
 // HoveredZoneUID returns the UID of the currently hovered drop zone,
 // or 0 if no zone is hovered.
 func (m *DnDManager) HoveredZoneUID() UID {
-	if m.hoveredZone < 0 || m.hoveredZone >= len(m.dropZones) {
-		return 0
-	}
-	return m.dropZones[m.hoveredZone].UID
+	return m.hoveredZoneUID
 }
 
 // HoveredZoneAccepts reports whether the currently hovered drop zone
 // accepts the active drag data with the current operation.
 func (m *DnDManager) HoveredZoneAccepts() bool {
-	if !m.IsActive() || m.hoveredZone < 0 {
+	if !m.IsActive() || m.hoveredZoneUID == 0 {
 		return false
 	}
-	zone := &m.dropZones[m.hoveredZone]
-	return zone.Accept != nil && zone.Accept(m.session.Data, m.session.Operation)
+	zone := m.zoneByUID(m.hoveredZoneUID)
+	return zone != nil && zone.Accept != nil && zone.Accept(m.session.Data, m.session.Operation)
 }
 
 // IsDropHovered reports whether the given UID is the currently hovered
 // drop zone during an active drag.
 func (m *DnDManager) IsDropHovered(uid UID) bool {
-	return m.IsActive() && m.HoveredZoneUID() == uid
+	return m.IsActive() && m.hoveredZoneUID == uid
 }
 
 // DropZoneCount returns the number of registered drop zones.
@@ -231,11 +224,8 @@ func (m *DnDManager) DispatchDnDEvents(appendEvent func(uid UID, ev InputEvent))
 		return
 	}
 
-	currentUID := m.HoveredZoneUID()
-	var prevUID UID
-	if m.prevHovered >= 0 && m.prevHovered < len(m.dropZones) {
-		prevUID = m.dropZones[m.prevHovered].UID
-	}
+	currentUID := m.hoveredZoneUID
+	prevUID := m.prevHoveredUID
 
 	// DragLeave for the previous zone (if changed).
 	if prevUID != 0 && prevUID != currentUID {
@@ -264,17 +254,16 @@ func (m *DnDManager) DispatchDnDEvents(appendEvent func(uid UID, ev InputEvent))
 		}))
 	}
 
-	m.prevHovered = m.hoveredZone
+	m.prevHoveredUID = currentUID
 }
 
 // DispatchDropEvent generates a Drop event for the currently hovered zone.
 // Call this when the drag ends over an accepting target.
 func (m *DnDManager) DispatchDropEvent(appendEvent func(uid UID, ev InputEvent), effect input.DropEffect) {
-	if !m.IsActive() || m.hoveredZone < 0 {
+	if !m.IsActive() || m.hoveredZoneUID == 0 {
 		return
 	}
-	zone := &m.dropZones[m.hoveredZone]
-	appendEvent(zone.UID, DropEvent(DropMsg{
+	appendEvent(m.hoveredZoneUID, DropEvent(DropMsg{
 		Data:      m.session.Data,
 		Pos:       m.session.CurrentPos,
 		Effect:    effect,
@@ -284,12 +273,12 @@ func (m *DnDManager) DispatchDropEvent(appendEvent func(uid UID, ev InputEvent),
 
 // ── Hit-Testing ─────────────────────────────────────────────────
 
-// hitTestDropZone returns the index of the top-most drop zone containing
-// point (x, y), or -1 if none match. When multiple zones overlap, the
+// hitTestDropZone returns the UID of the top-most drop zone containing
+// point (x, y), or 0 if none match. When multiple zones overlap, the
 // one with the highest priority wins; on tie, the smallest area wins.
-func (m *DnDManager) hitTestDropZone(x, y float32) int {
+func (m *DnDManager) hitTestDropZone(x, y float32) UID {
 	pt := draw.Pt(x, y)
-	bestIdx := -1
+	var bestUID UID
 	bestPriority := -1
 	var bestArea float32
 
@@ -299,15 +288,25 @@ func (m *DnDManager) hitTestDropZone(x, y float32) int {
 			continue
 		}
 		area := z.Bounds.W * z.Bounds.H
-		if bestIdx == -1 ||
+		if bestUID == 0 ||
 			z.Priority > bestPriority ||
 			(z.Priority == bestPriority && area < bestArea) {
-			bestIdx = i
+			bestUID = z.UID
 			bestPriority = z.Priority
 			bestArea = area
 		}
 	}
-	return bestIdx
+	return bestUID
+}
+
+// zoneByUID returns a pointer to the drop zone with the given UID, or nil.
+func (m *DnDManager) zoneByUID(uid UID) *DropZone {
+	for i := range m.dropZones {
+		if m.dropZones[i].UID == uid {
+			return &m.dropZones[i]
+		}
+	}
+	return nil
 }
 
 // ── Cursor Resolution ───────────────────────────────────────────
@@ -317,7 +316,7 @@ func (m *DnDManager) DragCursor() input.CursorKind {
 	if !m.IsActive() {
 		return input.CursorDefault
 	}
-	if m.hoveredZone < 0 {
+	if m.hoveredZoneUID == 0 {
 		return input.CursorGrabbing
 	}
 	if !m.HoveredZoneAccepts() {

@@ -52,29 +52,11 @@ func renderDnDPreview(dnd *DnDManager, canvas draw.Canvas, th theme.Theme, token
 		)
 	}
 
-	// Draw drop zone highlights for the hovered zone.
-	if dnd.hoveredZone >= 0 && dnd.hoveredZone < len(dnd.dropZones) {
-		zone := &dnd.dropZones[dnd.hoveredZone]
-		if zone.Accept != nil && zone.Accept(sess.Data, sess.Operation) {
-			// Accepting zone: accent-colored highlight.
-			highlightColor := tokens.Colors.Accent.Primary
-			highlightColor.A = 0.15
-			canvas.FillRoundRect(
-				zone.Bounds,
-				tokens.Radii.Card,
-				draw.SolidPaint(highlightColor),
-			)
-			borderColor := tokens.Colors.Accent.Primary
-			canvas.StrokeRoundRect(
-				zone.Bounds,
-				tokens.Radii.Card,
-				draw.Stroke{
-					Paint: draw.SolidPaint(borderColor),
-					Width: 2.0,
-				},
-			)
-		} else {
-			// Rejecting zone: error-colored indicator.
+	// Drop zone highlighting is handled by DropTarget widgets themselves
+	// (in dropTargetLayout.LayoutSelf) so the overlay only needs to draw
+	// the rejection indicator for zones that explicitly reject the data.
+	if zone := dnd.zoneByUID(dnd.hoveredZoneUID); zone != nil {
+		if zone.Accept != nil && !zone.Accept(sess.Data, sess.Operation) {
 			rejectColor := tokens.Colors.Status.Error
 			rejectColor.A = 0.1
 			canvas.FillRoundRect(

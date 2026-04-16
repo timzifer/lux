@@ -37,6 +37,10 @@ type DragSource struct {
 	// the original position while the item is being dragged.
 	Placeholder bool
 
+	// HandleOnly restricts drag initiation to DragHandle children.
+	// When true, the full element is not draggable — only the handle region.
+	HandleOnly bool
+
 	// OnDragStart is called when the drag begins (optional).
 	OnDragStart func()
 
@@ -81,7 +85,12 @@ func (ds DragSource) Render(ctx ui.RenderCtx, raw ui.WidgetState) (ui.Element, u
 					preview = ds.Preview()
 				}
 
-				offset := draw.Point{X: -60, Y: -20}
+				// Calculate offset so the preview stays aligned with where
+				// the user grabbed the element (no jump).
+				offset := draw.Point{
+					X: s.bounds.X - ev.Drag.Start.X,
+					Y: s.bounds.Y - ev.Drag.Start.Y,
+				}
 
 				ctx.Send(ui.StartDragSessionMsg{
 					SourceUID:       ctx.UID,
@@ -134,6 +143,7 @@ func (ds DragSource) Render(ctx ui.RenderCtx, raw ui.WidgetState) (ui.Element, u
 			Operations:  ds.Operations,
 			PreviewFn:   ds.Preview,
 			Placeholder: ds.Placeholder,
+			HandleOnly:  ds.HandleOnly,
 			OnDragStart: ds.OnDragStart,
 		},
 	}, s
@@ -162,8 +172,15 @@ type dragConfig struct {
 	Operations  input.DragOperation
 	PreviewFn   func() ui.Element
 	Placeholder bool
+	HandleOnly  bool
 	OnDragStart func()
 }
+
+// activeDragHandleConfig is a package-level pointer used to pass drag
+// configuration from a HandleOnly DragSource to its DragHandle child
+// during the synchronous LayoutSelf pass. It is set before the child
+// layout and cleared immediately after.
+var activeDragHandleConfig *dragConfig
 
 // dragSourceLayout is a layout wrapper that records its bounds for the
 // DragSource state and registers a draggable hit target for mouse interaction.
@@ -177,7 +194,17 @@ type dragSourceLayout struct {
 // LayoutSelf implements ui.Layouter.
 func (d dragSourceLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
+
+	// When HandleOnly, expose the drag config to DragHandle children
+	// during the synchronous LayoutChild call.
+	if d.HandleOnly {
+		cfg := d.dragConfig
+		activeDragHandleConfig = &cfg
+	}
 	childBounds := ctx.LayoutChild(d.Child, area)
+	if d.HandleOnly {
+		activeDragHandleConfig = nil
+	}
 
 	rect := draw.R(float32(area.X), float32(area.Y),
 		float32(childBounds.W), float32(childBounds.H))
@@ -188,7 +215,8 @@ func (d dragSourceLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Register a draggable hit target for mouse-based drag (desktop).
 	// Touch-based drag is handled separately via the gesture recognizer
 	// and EventDrag in DragSource.Render().
-	if ctx.IX != nil && ctx.IX.DnD != nil && d.DataFn != nil {
+	// When HandleOnly, the DragHandle child registers itself instead.
+	if ctx.IX != nil && ctx.IX.DnD != nil && d.DataFn != nil && !d.HandleOnly {
 		cfg := d.dragConfig
 		sourceBounds := rect
 		dnd := ctx.IX.DnD
@@ -226,16 +254,22 @@ func (d dragSourceLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 						preview = cfg.PreviewFn()
 					}
 
+					// Calculate offset so the preview stays where the
+					// user grabbed the element (no jump).
+					offset := draw.Point{
+						X: sourceBounds.X - startX,
+						Y: sourceBounds.Y - startY,
+					}
+
 					// Start DnD session directly — bypasses the message
 					// queue to avoid timing issues with platform callbacks.
 					dnd.StartDrag(
 						cfg.WidgetUID, data,
 						input.GesturePoint{X: startX, Y: startY},
 						sourceBounds, preview,
-						draw.Point{X: -60, Y: -20},
+						offset,
 						cfg.Placeholder,
 					)
-	
 
 					if cfg.OnDragStart != nil {
 						cfg.OnDragStart()

@@ -2,9 +2,9 @@
 // dispatcher (RFC-002 §2.6). It collects raw input events per frame and
 // routes them to widgets via RenderCtx.Events:
 //
-//   Mouse/Scroll/Touch → hit-test against previous-frame widget bounds → Widget UID
-//   Keyboard/Char/Text → FocusManager → focused Widget UID
-//   Focus gained/lost  → delivered to affected Widget UIDs
+//	Mouse/Scroll/Touch → hit-test against previous-frame widget bounds → Widget UID
+//	Keyboard/Char/Text → FocusManager → focused Widget UID
+//	Focus gained/lost  → delivered to affected Widget UIDs
 package ui
 
 import (
@@ -260,35 +260,31 @@ func (d *EventDispatcher) Dispatch() {
 
 	// Update DnD manager with mouse position and dispatch DnD events (RFC-005 §4).
 	if d.dnd.IsActive() {
+		var releasePos *input.GesturePoint
+
+		// Update drag position for every mouse event. Remember the
+		// release position (if any) but do NOT end the session yet —
+		// events must be dispatched first.
 		for i := range d.mouseEvents {
 			m := &d.mouseEvents[i]
 			pos := input.GesturePoint{X: m.X, Y: m.Y}
+			d.dnd.UpdateDrag(pos, d.modifiers)
 			if m.Action == input.MouseRelease {
-				// End drag: dispatch drop event if over accepting zone.
-				d.dnd.UpdateDrag(pos, d.modifiers)
-				if d.dnd.HoveredZoneAccepts() {
-					effect := d.dnd.EndDrag(pos, d.modifiers)
-					_ = effect // the DropEvent carries the effect
-					// The DropEvent was dispatched by DispatchDnDEvents below
-					// before EndDrag clears the session. Handle it here instead.
-				}
-			} else {
-				d.dnd.UpdateDrag(pos, d.modifiers)
+				p := pos
+				releasePos = &p
 			}
 		}
+
+		// Dispatch DragEnter / DragOver / DragLeave while session is
+		// still alive so DropTarget widgets see correct hover state.
 		d.dnd.DispatchDnDEvents(d.appendEvent)
 
-		// Check for mouse release to end the drag (after dispatching events).
-		for i := range d.mouseEvents {
-			m := &d.mouseEvents[i]
-			if m.Action == input.MouseRelease {
-				pos := input.GesturePoint{X: m.X, Y: m.Y}
-				if d.dnd.HoveredZoneAccepts() {
-					d.dnd.DispatchDropEvent(d.appendEvent, operationToEffect(d.dnd.session.Operation))
-				}
-				d.dnd.EndDrag(pos, d.modifiers)
-				break
+		// Now handle the release: dispatch DropEvent, then end session.
+		if releasePos != nil {
+			if d.dnd.HoveredZoneAccepts() {
+				d.dnd.DispatchDropEvent(d.appendEvent, operationToEffect(d.dnd.session.Operation))
 			}
+			d.dnd.EndDrag(*releasePos, d.modifiers)
 		}
 	}
 

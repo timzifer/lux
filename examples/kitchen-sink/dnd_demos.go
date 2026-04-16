@@ -257,7 +257,8 @@ func dndHandleSection(m Model) ui.Element {
 			Data: func() *input.DragData {
 				return input.NewTextDragData(itemName)
 			},
-			Preview: func() ui.Element { return colorCard(itemName) },
+			Preview:    func() ui.Element { return colorCard(itemName) },
+			HandleOnly: true,
 		})
 		rows = append(rows, row)
 	}
