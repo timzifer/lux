@@ -231,30 +231,78 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			H: itemH,
 		}
 
-		el := sl.BuildItem(sl.Items[i], i, dragging)
-
-		if !sl.HandleOnly {
-			// Wrap each item in a DragSource for reordering.
-			itemKey := sl.Items[i]
-			idx := i
-			el = DragSource{
-				Child: el,
-				Data: func() *input.DragData {
-					return input.NewDragData(input.MIMESortableKey, itemKey)
+		// Show dashed placeholder for the item being dragged.
+		if dragging && sl.ShowPlaceholder {
+			placeholderColor := tokens.Colors.Stroke.Border
+			placeholderColor.A = 0.3
+			ctx.Canvas.StrokeRoundRect(
+				draw.R(float32(itemArea.X), float32(itemArea.Y), float32(itemArea.W), float32(itemArea.H)),
+				tokens.Radii.Card,
+				draw.Stroke{
+					Paint:      draw.SolidPaint(placeholderColor),
+					Width:      2.0,
+					Dash:       []float32{6, 4},
+					DashOffset: 0,
 				},
-				Operations:  input.DragOperationMove,
-				Placeholder: sl.ShowPlaceholder,
-				OnDragStart: func() {
-					state.DragIndex = idx
-				},
-				OnDragEnd: func(effect input.DropEffect) {
-					state.DragIndex = -1
-					state.InsertIndex = -1
-				},
-			}
+			)
+			continue
 		}
 
-		ctx.LayoutChild(el, itemArea)
+		el := sl.BuildItem(sl.Items[i], i, dragging)
+		childBounds := ctx.LayoutChild(el, itemArea)
+
+		// Register drag hit target for reordering (bypasses DragSource
+		// widget which requires reconciliation not available in LayoutSelf).
+		if !sl.HandleOnly && ctx.IX != nil && ctx.IX.DnD != nil {
+			itemKey := sl.Items[i]
+			idx := i
+			itemRect := draw.R(float32(itemArea.X), float32(itemArea.Y),
+				float32(childBounds.W), float32(childBounds.H))
+			dnd := ctx.IX.DnD
+			showPH := sl.ShowPlaceholder
+
+			var startX, startY float32
+			var pressing, dragSent bool
+
+			ctx.IX.RegisterSurfaceDrag(itemRect,
+				func(x, y float32) {
+					if dragSent {
+						return
+					}
+					if !pressing {
+						startX, startY = x, y
+						pressing = true
+						return
+					}
+					dx := x - startX
+					dy := y - startY
+					if dx*dx+dy*dy > mouseDragThreshold*mouseDragThreshold {
+						data := input.NewDragData(input.MIMESortableKey, itemKey)
+						data.AllowedOps = input.DragOperationMove
+
+						offset := draw.Point{
+							X: itemRect.X - startX,
+							Y: itemRect.Y - startY,
+						}
+
+						dnd.StartDrag(0, data,
+							input.GesturePoint{X: startX, Y: startY},
+							itemRect, nil, offset, showPH)
+
+						state.DragIndex = idx
+						dragSent = true
+					}
+				},
+				func(x, y float32) {
+					pressing = false
+					if dragSent {
+						state.DragIndex = -1
+						state.InsertIndex = -1
+					}
+					dragSent = false
+				},
+			)
+		}
 	}
 
 	// Register scroll target.

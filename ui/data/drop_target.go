@@ -139,48 +139,46 @@ type dropTargetLayout struct {
 func (d dropTargetLayout) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	area := ctx.Area
 
-	// Register as a drop zone with the DnDManager.
+	// Layout child first to get actual bounds.
+	childBounds := ctx.LayoutChild(d.Child, area)
+	zoneBounds := draw.R(float32(childBounds.X), float32(childBounds.Y),
+		float32(childBounds.W), float32(childBounds.H))
+
+	// Register as a drop zone using the child's actual bounds.
 	if ctx.IX != nil {
-		ctx.IX.RegisterDropZone(
-			draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(area.H)),
-			d.WidgetUID,
-			d.Accept,
-			d.Priority,
-		)
+		ctx.IX.RegisterDropZone(zoneBounds, d.WidgetUID, d.Accept, d.Priority)
 	}
 
 	// Draw highlight when hovered and accepting.
 	if d.State != nil && d.State.isHovered && d.State.accepts {
 		tokens := ctx.Tokens
-		bounds := draw.R(float32(area.X), float32(area.Y), float32(area.W), float32(area.H))
 
 		switch d.Highlight {
 		case DropHighlightBorder:
 			accentColor := tokens.Colors.Accent.Primary
-			ctx.Canvas.StrokeRoundRect(bounds, tokens.Radii.Card, draw.Stroke{
+			ctx.Canvas.StrokeRoundRect(zoneBounds, tokens.Radii.Card, draw.Stroke{
 				Paint: draw.SolidPaint(accentColor),
 				Width: 2.0,
 			})
 			bgColor := accentColor
 			bgColor.A = 0.08
-			ctx.Canvas.FillRoundRect(bounds, tokens.Radii.Card, draw.SolidPaint(bgColor))
+			ctx.Canvas.FillRoundRect(zoneBounds, tokens.Radii.Card, draw.SolidPaint(bgColor))
 
 		case DropHighlightFill:
 			accentColor := tokens.Colors.Accent.Primary
 			accentColor.A = 0.15
-			ctx.Canvas.FillRoundRect(bounds, tokens.Radii.Card, draw.SolidPaint(accentColor))
+			ctx.Canvas.FillRoundRect(zoneBounds, tokens.Radii.Card, draw.SolidPaint(accentColor))
 
 		case DropHighlightInsert:
 			// Insertion line at top of the zone.
 			accentColor := tokens.Colors.Accent.Primary
-			lineY := float32(area.Y)
-			ctx.Canvas.FillRect(draw.R(float32(area.X), lineY, float32(area.W), 3), draw.SolidPaint(accentColor))
+			lineY := float32(childBounds.Y)
+			ctx.Canvas.FillRect(draw.R(float32(childBounds.X), lineY, float32(childBounds.W), 3), draw.SolidPaint(accentColor))
 
 		case DropHighlightNone:
 			// No automatic highlighting.
 		}
 	}
 
-	// Layout child.
-	return ctx.LayoutChild(d.Child, area)
+	return childBounds
 }
