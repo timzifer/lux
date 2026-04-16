@@ -192,6 +192,15 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	if sl.MaxHeight > 0 && int(sl.MaxHeight) < viewportH {
 		viewportH = int(sl.MaxHeight)
 	}
+	// When the parent allocates zero height (e.g. unconstrained Flex),
+	// fall back to MaxHeight or content height so items are visible.
+	if viewportH <= 0 {
+		if sl.MaxHeight > 0 {
+			viewportH = int(sl.MaxHeight)
+		} else {
+			viewportH = contentH
+		}
+	}
 
 	// Register as drop target for reordering.
 	if ctx.IX != nil {
@@ -285,9 +294,15 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 							Y: itemRect.Y - startY,
 						}
 
+						// Build a preview element from the item.
+						var preview ui.Element
+						if sl.BuildItem != nil {
+							preview = sl.BuildItem(itemKey, idx, true)
+						}
+
 						dnd.StartDrag(0, data,
 							input.GesturePoint{X: startX, Y: startY},
-							itemRect, nil, offset, showPH)
+							itemRect, preview, offset, showPH)
 
 						state.DragIndex = idx
 						dragSent = true
