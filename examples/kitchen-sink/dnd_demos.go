@@ -27,18 +27,19 @@ func dndBasicSection(m Model) ui.Element {
 	var cards []ui.Element
 	for _, c := range colors {
 		color := c
-		cards = append(cards, data.DragSource{
-			Child: colorCard(color.name, color.color),
+		cards = append(cards, ui.Component(data.DragSource{
+			Child: colorCardWithBG(color.name, color.color),
 			Data: func() *input.DragData {
 				return input.NewTextDragData(color.name)
 			},
 			Operations: input.DragOperationMove,
-		})
+			Preview:    func() ui.Element { return colorCardWithBG(color.name, color.color) },
+		}))
 	}
 
-	source := layout.Column(layout.FlexConfig{Gap: 8}, cards...)
+	source := layout.NewFlex(cards, layout.WithDirection(layout.FlexColumn), layout.WithGap(8))
 
-	target := data.DropTarget{
+	target := ui.Component(data.DropTarget{
 		Child: dropZoneBox("Drop cards here", 200),
 		Accept: func(d *input.DragData, op input.DragOperation) bool {
 			return d.HasType(input.MIMEText)
@@ -47,30 +48,28 @@ func dndBasicSection(m Model) ui.Element {
 			fmt.Printf("Dropped: %s\n", d.Text())
 		},
 		Highlight: data.DropHighlightBorder,
-	}
+	})
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Basic Drag & Drop"),
 		display.Text("Drag colored cards to the drop zone."),
-		layout.Row(layout.FlexConfig{Gap: 24},
-			source,
-			target,
-		),
-	)
+		layout.NewFlex([]ui.Element{source, target}, layout.WithGap(24)),
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Copy on Drag ────────────────────────────────────────────────
 
 func dndCopySection(m Model) ui.Element {
-	source := data.DragSource{
-		Child: colorCard("Copy Me", draw.Hex("#8b5cf6")),
+	source := ui.Component(data.DragSource{
+		Child: colorCardWithBG("Copy Me", draw.Hex("#8b5cf6")),
 		Data: func() *input.DragData {
 			return input.NewTextDragData("Copied Item")
 		},
 		Operations: input.DragOperationMove | input.DragOperationCopy,
-	}
+		Preview:    func() ui.Element { return colorCardWithBG("Copy Me", draw.Hex("#8b5cf6")) },
+	})
 
-	target := data.DropTarget{
+	target := ui.Component(data.DropTarget{
 		Child: dropZoneBox("Drop here (Ctrl = Copy)", 200),
 		Accept: func(d *input.DragData, op input.DragOperation) bool {
 			return true
@@ -83,16 +82,13 @@ func dndCopySection(m Model) ui.Element {
 			fmt.Printf("Item %s: %s\n", opName, d.Text())
 		},
 		Highlight: data.DropHighlightFill,
-	}
+	})
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Copy on Drag"),
 		display.Text("Hold Ctrl while dragging to copy instead of move."),
-		layout.Row(layout.FlexConfig{Gap: 24},
-			source,
-			target,
-		),
-	)
+		layout.NewFlex([]ui.Element{source, target}, layout.WithGap(24)),
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Sortable List ───────────────────────────────────────────────
@@ -100,7 +96,7 @@ func dndCopySection(m Model) ui.Element {
 func dndSortableSection(m Model) ui.Element {
 	items := []string{"Task A", "Task B", "Task C", "Task D", "Task E"}
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Sortable List"),
 		display.Text("Drag items to reorder."),
 		data.SortableList{
@@ -120,14 +116,15 @@ func dndSortableSection(m Model) ui.Element {
 			},
 			ShowPlaceholder: true,
 		},
-	)
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Multiple Drop Zones ─────────────────────────────────────────
 
 func dndMultiZoneSection(m Model) ui.Element {
-	source := data.DragSource{
-		Child: colorCard("Drag Me", draw.Hex("#f59e0b")),
+	source := ui.Component(data.DragSource{
+		Child:   colorCardWithBG("Drag Me", draw.Hex("#f59e0b")),
+		Preview: func() ui.Element { return colorCardWithBG("Drag Me", draw.Hex("#f59e0b")) },
 		Data: func() *input.DragData {
 			d := input.NewTextDragData("Item")
 			d.Items = append(d.Items, input.DragItem{
@@ -137,73 +134,65 @@ func dndMultiZoneSection(m Model) ui.Element {
 			return d
 		},
 		Operations: input.DragOperationMove | input.DragOperationCopy,
-	}
+	})
 
-	textZone := data.DropTarget{
+	textZone := ui.Component(data.DropTarget{
 		Child: dropZoneBox("Text Only", 150),
 		Accept: func(d *input.DragData, op input.DragOperation) bool {
 			return d.HasType(input.MIMEText) && !d.HasType(input.MIMEJSON)
 		},
 		Highlight: data.DropHighlightBorder,
-	}
+	})
 
-	jsonZone := data.DropTarget{
+	jsonZone := ui.Component(data.DropTarget{
 		Child: dropZoneBox("JSON Only", 150),
 		Accept: func(d *input.DragData, op input.DragOperation) bool {
 			return d.HasType(input.MIMEJSON)
 		},
 		Highlight: data.DropHighlightFill,
-	}
+	})
 
-	anyZone := data.DropTarget{
+	anyZone := ui.Component(data.DropTarget{
 		Child: dropZoneBox("Accepts All", 150),
 		Accept: func(d *input.DragData, op input.DragOperation) bool {
 			return true
 		},
 		Highlight: data.DropHighlightBorder,
-	}
+	})
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Multiple Drop Zones"),
 		display.Text("Three zones accepting different MIME types. Only matching zones highlight."),
-		layout.Row(layout.FlexConfig{Gap: 12},
-			source,
-		),
-		layout.Row(layout.FlexConfig{Gap: 12},
-			textZone,
-			jsonZone,
-			anyZone,
-		),
-	)
+		layout.NewFlex([]ui.Element{source}, layout.WithGap(12)),
+		layout.NewFlex([]ui.Element{textZone, jsonZone, anyZone}, layout.WithGap(12)),
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Placeholder Drag ────────────────────────────────────────────
 
 func dndPlaceholderSection(m Model) ui.Element {
-	source := data.DragSource{
-		Child: colorCard("Placeholder Mode", draw.Hex("#06b6d4")),
+	source := ui.Component(data.DragSource{
+		Child: colorCardWithBG("Placeholder Mode", draw.Hex("#ec4899")),
 		Data: func() *input.DragData {
 			return input.NewTextDragData("placeholder item")
 		},
 		Placeholder: true,
-	}
+		Preview:     func() ui.Element { return colorCardWithBG("Placeholder Mode", draw.Hex("#ec4899")) },
+	})
 
-	target := data.DropTarget{
+	target := ui.Component(data.DropTarget{
 		Child: dropZoneBox("Drop here", 200),
 		Accept: func(d *input.DragData, op input.DragOperation) bool {
 			return true
 		},
 		Highlight: data.DropHighlightBorder,
-	}
+	})
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Placeholder Drag"),
 		display.Text("A dashed placeholder appears at the original position during drag."),
-		layout.Row(layout.FlexConfig{Gap: 24},
-			source,
-			target,
-		),
-	)
+		layout.NewFlex([]ui.Element{source, target}, layout.WithGap(24)),
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Kanban Board ────────────────────────────────────────────────
@@ -239,17 +228,17 @@ func dndKanbanSection(m Model) ui.Element {
 			},
 		}
 
-		cols = append(cols, layout.Column(layout.FlexConfig{Gap: 8},
+		cols = append(cols, layout.NewFlex([]ui.Element{
 			display.Text(colTitle),
 			list,
-		))
+		}, layout.WithDirection(layout.FlexColumn), layout.WithGap(8)))
 	}
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Kanban Board"),
 		display.Text("Drag items between columns and within columns to reorder."),
-		layout.Row(layout.FlexConfig{Gap: 16}, cols...),
-	)
+		layout.NewFlex(cols, layout.WithGap(16)),
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Drag Handle ─────────────────────────────────────────────────
@@ -260,76 +249,144 @@ func dndHandleSection(m Model) ui.Element {
 	var rows []ui.Element
 	for _, item := range items {
 		itemName := item
-		row := data.DragSource{
-			Child: layout.Row(layout.FlexConfig{Gap: 8, Align: layout.AlignCenter},
+		row := ui.Component(data.DragSource{
+			Child: layout.NewFlex([]ui.Element{
 				data.DragHandle{Size: 24},
 				display.Text(itemName),
-			),
+			}, layout.WithGap(8), layout.WithAlign(layout.AlignCenter)),
 			Data: func() *input.DragData {
 				return input.NewTextDragData(itemName)
 			},
-		}
+			Preview: func() ui.Element { return colorCard(itemName) },
+		})
 		rows = append(rows, row)
 	}
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Drag Handle"),
 		display.Text("Items can only be dragged by the grip handle icon."),
-		layout.Column(layout.FlexConfig{Gap: 4}, rows...),
-	)
+		layout.NewFlex(rows, layout.WithDirection(layout.FlexColumn), layout.WithGap(4)),
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Keyboard DnD ────────────────────────────────────────────────
 
 func dndKeyboardSection(m Model) ui.Element {
-	source := data.DragSource{
-		Child: colorCard("Focus & press Space", draw.Hex("#a855f7")),
+	source := ui.Component(data.DragSource{
+		Child:   colorCardWithBG("Focus & press Space", draw.Hex("#06b6d4")),
+		Preview: func() ui.Element { return colorCardWithBG("Focus & press Space", draw.Hex("#06b6d4")) },
 		Data: func() *input.DragData {
 			return input.NewTextDragData("keyboard drag")
 		},
-	}
+	})
 
-	target := data.DropTarget{
+	target := ui.Component(data.DropTarget{
 		Child: dropZoneBox("Tab to cycle, Enter to drop", 200),
 		Accept: func(d *input.DragData, op input.DragOperation) bool {
 			return true
 		},
 		Highlight: data.DropHighlightBorder,
-	}
+	})
 
-	return layout.Column(layout.FlexConfig{Gap: 16},
+	return layout.NewFlex([]ui.Element{
 		sectionHeader("Keyboard Drag & Drop"),
 		display.Text("Accessible DnD: Focus source → Space to grab → Tab to cycle targets → Enter to drop → Escape to cancel."),
-		layout.Row(layout.FlexConfig{Gap: 24},
-			source,
-			target,
-		),
-	)
+		layout.NewFlex([]ui.Element{source, target}, layout.WithGap(24)),
+	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
 }
 
 // ── Helper Elements ─────────────────────────────────────────────
 
-// colorCard creates a small colored card for drag demos.
-func colorCard(label string, bg draw.Color) ui.Element {
-	return layout.Padding(
-		draw.Insets{Top: 12, Right: 16, Bottom: 12, Left: 16},
-		display.Text(label),
-	)
+// colorCardElement draws a rounded rectangle background with centered text.
+type colorCardElement struct {
+	ui.BaseElement
+	Label string
+	BG    draw.Color
 }
 
-// dropZoneBox creates a drop zone visual with a dashed border appearance.
+func colorCard(label string) ui.Element {
+	return colorCardElement{Label: label, BG: draw.Hex("#334155")}
+}
+
+func colorCardWithBG(label string, bg draw.Color) ui.Element {
+	return colorCardElement{Label: label, BG: bg}
+}
+
+func (c colorCardElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	padX, padY := 16, 12
+	style := ctx.Tokens.Typography.Label
+	metrics := ctx.Canvas.MeasureText(c.Label, style)
+	w := int(metrics.Width) + padX*2
+	h := int(metrics.Ascent+metrics.Descent) + padY*2
+
+	rect := draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(w), float32(h))
+	ctx.Canvas.FillRoundRect(rect, ctx.Tokens.Radii.Card, draw.SolidPaint(c.BG))
+
+	ctx.Canvas.DrawText(c.Label,
+		draw.Pt(float32(ctx.Area.X+padX), float32(ctx.Area.Y+padY)),
+		style, ctx.Tokens.Colors.Text.Primary)
+
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h}
+}
+
+// dropZoneElement draws a dashed border rectangle with centered text.
+type dropZoneElement struct {
+	ui.BaseElement
+	Label  string
+	Width  float32
+	Height float32
+}
+
 func dropZoneBox(label string, height float32) ui.Element {
-	return layout.SizedBox(200, height,
-		layout.Center(
-			display.Text(label),
-		),
-	)
+	return dropZoneElement{Label: label, Width: 200, Height: height}
 }
 
-// sortableItemCard creates a card for sortable list items.
+func (d dropZoneElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	w, h := int(d.Width), int(d.Height)
+	rect := draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(w), float32(h))
+
+	// Dashed border.
+	borderColor := ctx.Tokens.Colors.Stroke.Border
+	ctx.Canvas.StrokeRoundRect(rect, ctx.Tokens.Radii.Card, draw.Stroke{
+		Paint: draw.SolidPaint(borderColor),
+		Width: 2,
+		Dash:  []float32{6, 4},
+	})
+
+	// Centered label.
+	style := ctx.Tokens.Typography.Label
+	metrics := ctx.Canvas.MeasureText(d.Label, style)
+	tx := float32(ctx.Area.X) + (d.Width-metrics.Width)/2
+	ty := float32(ctx.Area.Y) + (d.Height-metrics.Ascent)/2
+	ctx.Canvas.DrawText(d.Label, draw.Pt(tx, ty), style, ctx.Tokens.Colors.Text.Secondary)
+
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h}
+}
+
+// sortableItemElement draws a card for sortable list items with a background.
+type sortableItemElement struct {
+	ui.BaseElement
+	Label string
+	BG    draw.Color
+}
+
 func sortableItemCard(label string, bg draw.Color) ui.Element {
-	return layout.Padding(
-		draw.Insets{Top: 10, Right: 16, Bottom: 10, Left: 16},
-		display.Text(label),
-	)
+	return sortableItemElement{Label: label, BG: bg}
+}
+
+func (s sortableItemElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
+	padX, padY := 16, 10
+	style := ctx.Tokens.Typography.Label
+	metrics := ctx.Canvas.MeasureText(s.Label, style)
+	w := ctx.Area.W
+	h := int(metrics.Ascent+metrics.Descent) + padY*2
+
+	rect := draw.R(float32(ctx.Area.X), float32(ctx.Area.Y), float32(w), float32(h))
+	ctx.Canvas.FillRoundRect(rect, ctx.Tokens.Radii.Card, draw.SolidPaint(s.BG))
+
+	ctx.Canvas.DrawText(s.Label,
+		draw.Pt(float32(ctx.Area.X+padX), float32(ctx.Area.Y+padY)),
+		style, ctx.Tokens.Colors.Text.Primary)
+
+	return ui.Bounds{X: ctx.Area.X, Y: ctx.Area.Y, W: w, H: h}
 }

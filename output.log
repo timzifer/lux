@@ -1,0 +1,17 @@
+2026/04/16 08:36:02 wgpu: Init cfg: NativeHandle=0x270e66 NativeDisplay=0x0 DRMfd=-1
+2026/04/16 08:36:02 wgpu: surface created: surfaceOK=true surface=&{0xc0004566a0 <nil> <nil> <nil> false}
+2026/04/16 08:36:02 wgpu: adapter="NVIDIA GeForce RTX 3070 Laptop GPU" backend=DX12 type=DiscreteGPU
+2026/04/16 08:36:02 wgpu/gogpu: surface suboptimal, consider reconfigure
+2026/04/16 08:36:07 wgpu perf: 36.0 fps | draw avg=2.105ms min=999µs max=6.621ms | rects=11 textGlyphs=261 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:12 wgpu perf: 31.3 fps | draw avg=3.159ms min=1.458ms max=17.784ms | rects=11 textGlyphs=262 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:17 wgpu perf: 31.9 fps | draw avg=2.985ms min=1.265ms max=9.367ms | rects=12 textGlyphs=262 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:23 wgpu perf: 33.5 fps | draw avg=2.995ms min=1.505ms max=19.537ms | rects=11 textGlyphs=297 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:28 wgpu perf: 29.3 fps | draw avg=3.566ms min=1.455ms max=21.661ms | rects=14 textGlyphs=318 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:33 wgpu perf: 32.5 fps | draw avg=2.912ms min=1.201ms max=15.663ms | rects=12 textGlyphs=310 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:38 wgpu perf: 32.9 fps | draw avg=2.786ms min=1.045ms max=8.254ms | rects=16 textGlyphs=329 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:43 wgpu perf: 33.9 fps | draw avg=3.024ms min=1ms max=13.774ms | rects=22 textGlyphs=359 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:48 wgpu perf: 28.3 fps | draw avg=3.356ms min=1.006ms max=17.018ms | rects=13 textGlyphs=344 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:53 wgpu perf: 36.4 fps | draw avg=2.824ms min=1.005ms max=6.519ms | rects=11 textGlyphs=333 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:36:58 wgpu perf: 29.3 fps | draw avg=2.73ms min=1.001ms max=11.192ms | rects=24 textGlyphs=346 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:37:10 wgpu perf: 7.8 fps | draw avg=2.569ms min=2.001ms max=7.186ms | rects=24 textGlyphs=343 msdfGlyphs=0 (per frame avg)
+2026/04/16 08:37:15 wgpu perf: 5.4 fps | draw avg=4.025ms min=2.04ms max=13.656ms | rects=24 textGlyphs=337 msdfGlyphs=0 (per frame avg)

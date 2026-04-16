@@ -71,6 +71,7 @@ func (l *Loop) Send(msg any) {
 	default:
 		// Channel full — drop message to avoid blocking.
 		// This matches RFC's "blockiert nie" requirement.
+		// Channel full — message dropped.
 	}
 }
 
