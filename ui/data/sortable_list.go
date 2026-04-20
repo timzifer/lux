@@ -4,6 +4,7 @@ package data
 
 import (
 	"time"
+	"unsafe"
 
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
@@ -211,14 +212,101 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 			groupID = "sortable"
 		}
 
-		ctx.IX.RegisterDropZone(listBounds, 0, func(data *input.DragData, op input.DragOperation) bool {
+		// Use the state pointer as a stable, unique UID so multiple
+		// SortableLists don't share UID 0 (which breaks hover detection).
+		zoneUID := ui.UID(uintptr(unsafe.Pointer(state)))
+		ctx.IX.RegisterDropZone(listBounds, zoneUID, func(data *input.DragData, op input.DragOperation) bool {
 			// Accept items with matching sortable key or same group.
 			return data.HasType(input.MIMESortableKey)
 		}, 0)
 	}
 
-	// Render visible items.
+	// Scroll offset (used by both drag tracking and item rendering).
 	scrollOffset := int(state.Scroll.Offset)
+
+	// Helper: check if cursor is within this list's viewport.
+	cursorOverList := func(cx, cy float32) bool {
+		return cx >= float32(area.X) && cx < float32(area.X+area.W) &&
+			cy >= float32(area.Y) && cy < float32(area.Y+viewportH)
+	}
+	// Helper: compute insertion index from a cursor Y position.
+	insertionIndex := func(cy float32) int {
+		relY := cy - float32(area.Y) + float32(scrollOffset)
+		idx := int((relY + float32(itemH)/2) / float32(itemH))
+		if idx < 0 {
+			idx = 0
+		}
+		if idx > itemCount {
+			idx = itemCount
+		}
+		return idx
+	}
+
+	// Track active drag session for insertion index and reorder detection.
+	// Handles same-list reorder AND cross-list insert (GroupID).
+	if ctx.IX != nil && ctx.IX.DnD != nil {
+		dnd := ctx.IX.DnD
+		if dnd.IsActive() {
+			sess := dnd.Session()
+			if sess != nil && sess.Data != nil && sess.Data.HasType(input.MIMESortableKey) {
+				dragKey := sortableDragKey(sess.Data)
+				foundIdx := sortableFindKey(sl.Items, dragKey)
+
+				if foundIdx >= 0 {
+					// Same-list drag — item is in our Items.
+					state.DragIndex = foundIdx
+					state.SetInsertIndex(insertionIndex(sess.CurrentPos.Y), itemCount)
+				} else if sl.groupMatches(sess.Data) &&
+					cursorOverList(sess.CurrentPos.X, sess.CurrentPos.Y) {
+					// Cross-list: foreign item hovering over this list.
+					// DragIndex stays -1; InsertIndex shows the insertion gap.
+					state.DragIndex = -1
+					state.InsertIndex = insertionIndex(sess.CurrentPos.Y)
+				} else {
+					// Cursor outside this list or group mismatch — clear.
+					state.DragIndex = -1
+					state.InsertIndex = -1
+				}
+			}
+		} else if completed := dnd.CompletedDrag(); completed != nil &&
+			completed.Data != nil && completed.Data.HasType(input.MIMESortableKey) {
+			// Drag just completed — handle same-list reorder OR cross-list transfer.
+			dragKey := sortableDragKey(completed.Data)
+			foundIdx := sortableFindKey(sl.Items, dragKey)
+			overUs := cursorOverList(completed.CurrentPos.X, completed.CurrentPos.Y)
+
+			if foundIdx >= 0 && overUs {
+				// Same-list reorder: item originated here, dropped here.
+				toIdx := insertionIndex(completed.CurrentPos.Y)
+				if toIdx != foundIdx && sl.OnReorder != nil {
+					sl.OnReorder(foundIdx, toIdx)
+				}
+			} else if foundIdx < 0 && overUs && sl.groupMatches(completed.Data) {
+				// Foreign item dropped on this list — insert.
+				toIdx := insertionIndex(completed.CurrentPos.Y)
+				if sl.OnInsert != nil {
+					sl.OnInsert(toIdx, completed.Data)
+				}
+			}
+			state.DragIndex = -1
+			state.InsertIndex = -1
+		} else if state.DragIndex >= 0 || state.InsertIndex >= 0 {
+			state.DragIndex = -1
+			state.InsertIndex = -1
+		}
+	}
+
+	// When a cross-list insertion gap is active, the effective content
+	// is one item taller. Adjust heights so the viewport, scroll region,
+	// and returned bounds all account for the extra slot.
+	if state.DragIndex < 0 && state.InsertIndex >= 0 {
+		contentH = (itemCount + 1) * itemH
+		if sl.MaxHeight <= 0 || contentH < int(sl.MaxHeight) {
+			viewportH = contentH
+		}
+	}
+
+	// Render visible items.
 	firstVisible := scrollOffset / itemH
 	if firstVisible < 0 {
 		firstVisible = 0
@@ -230,7 +318,27 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	for i := firstVisible; i <= lastVisible; i++ {
 		dragging := state.DragIndex == i
-		displacement := state.displacement(i)
+
+		// Compute displacement directly from DragIndex/InsertIndex.
+		// SortableListState.Tick() is not called by the framework for
+		// non-Widget elements, so animation values stay at 0.
+		var displacement float32
+		if state.InsertIndex >= 0 {
+			if state.DragIndex >= 0 && !dragging {
+				// Same-list reorder: shift items between DragIndex and InsertIndex.
+				if state.DragIndex < state.InsertIndex && i >= state.DragIndex && i < state.InsertIndex {
+					displacement = -1
+				} else if state.DragIndex > state.InsertIndex && i >= state.InsertIndex && i < state.DragIndex {
+					displacement = 1
+				}
+			} else if state.DragIndex < 0 {
+				// Cross-list insertion: open a gap at InsertIndex.
+				if i >= state.InsertIndex {
+					displacement = 1
+				}
+			}
+		}
+
 		yOffset := float32(area.Y) + float32(i*itemH) - float32(scrollOffset) + displacement*float32(itemH)
 
 		itemArea := ui.Bounds{
@@ -258,7 +366,35 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		}
 
 		el := sl.BuildItem(sl.Items[i], i, dragging)
+
+		// In HandleOnly mode, expose a drag config to DragHandle children
+		// so they initiate drags with the correct MIMESortableKey data.
+		if sl.HandleOnly && ctx.IX != nil && ctx.IX.DnD != nil {
+			itemKey := sl.Items[i]
+			idx := i
+			showPH := sl.ShowPlaceholder
+			grp := sl.GroupID
+			activeDragHandleConfig = &dragConfig{
+				DataFn: func() *input.DragData {
+					return sortableDragData(itemKey, grp)
+				},
+				Operations:  input.DragOperationMove,
+				Placeholder: showPH,
+				HandleOnly:  true,
+				PreviewFn: func() ui.Element {
+					if sl.BuildItem != nil {
+						return sl.BuildItem(itemKey, idx, true)
+					}
+					return nil
+				},
+			}
+		}
+
 		childBounds := ctx.LayoutChild(el, itemArea)
+
+		if sl.HandleOnly {
+			activeDragHandleConfig = nil
+		}
 
 		// Register drag hit target for reordering (bypasses DragSource
 		// widget which requires reconciliation not available in LayoutSelf).
@@ -286,7 +422,7 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 					dx := x - startX
 					dy := y - startY
 					if dx*dx+dy*dy > mouseDragThreshold*mouseDragThreshold {
-						data := input.NewDragData(input.MIMESortableKey, itemKey)
+						data := sortableDragData(itemKey, sl.GroupID)
 						data.AllowedOps = input.DragOperationMove
 
 						offset := draw.Point{
@@ -310,10 +446,8 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				},
 				func(x, y float32) {
 					pressing = false
-					if dragSent {
-						state.DragIndex = -1
-						state.InsertIndex = -1
-					}
+					// Don't reset DragIndex/InsertIndex here — LayoutSelf
+					// detects the drag-ended transition and calls OnReorder.
 					dragSent = false
 				},
 			)
@@ -341,4 +475,54 @@ func (sl SortableList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	return ui.Bounds{X: area.X, Y: area.Y, W: area.W, H: usedH}
+}
+
+// ── Sortable helpers ────────────────────────────────────────────
+
+// sortableDragData creates drag data with MIMESortableKey and optional GroupID.
+func sortableDragData(key, groupID string) *input.DragData {
+	d := input.NewDragData(input.MIMESortableKey, key)
+	if groupID != "" {
+		d.Items = append(d.Items, input.DragItem{
+			MIMEType: input.MIMESortableGroup,
+			Data:     groupID,
+		})
+	}
+	return d
+}
+
+// sortableDragKey extracts the item key from sortable drag data.
+func sortableDragKey(d *input.DragData) string {
+	if v, ok := d.Get(input.MIMESortableKey); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// sortableFindKey returns the index of key in items, or -1 if not found.
+func sortableFindKey(items []string, key string) int {
+	if key == "" {
+		return -1
+	}
+	for i, k := range items {
+		if k == key {
+			return i
+		}
+	}
+	return -1
+}
+
+// groupMatches checks if drag data's GroupID matches this list's GroupID.
+func (sl SortableList) groupMatches(d *input.DragData) bool {
+	if sl.GroupID == "" {
+		return false // no group set → no cross-list
+	}
+	v, ok := d.Get(input.MIMESortableGroup)
+	if !ok {
+		return false
+	}
+	g, _ := v.(string)
+	return g == sl.GroupID
 }

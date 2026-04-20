@@ -12,6 +12,21 @@ import (
 	"github.com/timzifer/lux/ui/layout"
 )
 
+// Persistent sortable list state (survives across frames).
+var (
+	sortableItems = []string{"Task A", "Task B", "Task C", "Task D", "Task E"}
+	sortableState = data.NewSortableListState()
+
+	kanbanTodo       = []string{"Design", "Research", "Prototype"}
+	kanbanInProgress = []string{"Implementation", "Testing"}
+	kanbanDone       = []string{"Documentation"}
+	kanbanStates     = [3]*data.SortableListState{
+		data.NewSortableListState(),
+		data.NewSortableListState(),
+		data.NewSortableListState(),
+	}
+)
+
 // ── Basic DnD ───────────────────────────────────────────────────
 
 func dndBasicSection(m Model) ui.Element {
@@ -94,16 +109,14 @@ func dndCopySection(m Model) ui.Element {
 // ── Sortable List ───────────────────────────────────────────────
 
 func dndSortableSection(m Model) ui.Element {
-	items := []string{"Task A", "Task B", "Task C", "Task D", "Task E"}
-
 	return layout.NewFlex([]ui.Element{
 		sectionHeader("Sortable List"),
 		display.Text("Drag items to reorder."),
 		data.SortableList{
-			Items:      items,
+			Items:      sortableItems,
 			ItemHeight: 48,
 			MaxHeight:  300,
-			State:      data.NewSortableListState(),
+			State:      sortableState,
 			BuildItem: func(key string, index int, dragging bool) ui.Element {
 				bg := draw.Hex("#1e293b")
 				if dragging {
@@ -113,6 +126,7 @@ func dndSortableSection(m Model) ui.Element {
 			},
 			OnReorder: func(from, to int) {
 				fmt.Printf("Reorder: %d -> %d\n", from, to)
+				reorderSlice(&sortableItems, from, to)
 			},
 			ShowPlaceholder: true,
 		},
@@ -198,23 +212,26 @@ func dndPlaceholderSection(m Model) ui.Element {
 // ── Kanban Board ────────────────────────────────────────────────
 
 func dndKanbanSection(m Model) ui.Element {
-	columns := []struct {
+	type column struct {
 		title string
-		items []string
-	}{
-		{"To Do", []string{"Design", "Research", "Prototype"}},
-		{"In Progress", []string{"Implementation", "Testing"}},
-		{"Done", []string{"Documentation"}},
+		items *[]string
+		state *data.SortableListState
+	}
+	columns := []column{
+		{"To Do", &kanbanTodo, kanbanStates[0]},
+		{"In Progress", &kanbanInProgress, kanbanStates[1]},
+		{"Done", &kanbanDone, kanbanStates[2]},
 	}
 
 	var cols []ui.Element
 	for _, col := range columns {
 		colTitle := col.title
+		colItems := col.items
 		list := data.SortableList{
-			Items:      col.items,
+			Items:      *col.items,
 			ItemHeight: 40,
 			MaxHeight:  250,
-			State:      data.NewSortableListState(),
+			State:      col.state,
 			GroupID:    "kanban",
 			BuildItem: func(key string, index int, dragging bool) ui.Element {
 				bg := draw.Hex("#1e293b")
@@ -225,6 +242,33 @@ func dndKanbanSection(m Model) ui.Element {
 			},
 			OnReorder: func(from, to int) {
 				fmt.Printf("[%s] Reorder: %d -> %d\n", colTitle, from, to)
+				reorderSlice(colItems, from, to)
+			},
+			OnInsert: func(index int, d *input.DragData) {
+				key := ""
+				if v, ok := d.Get(input.MIMESortableKey); ok {
+					key, _ = v.(string)
+				}
+				fmt.Printf("[%s] Insert: %q at %d\n", colTitle, key, index)
+				// Remove from source column first.
+				for _, src := range []*[]string{&kanbanTodo, &kanbanInProgress, &kanbanDone} {
+					if src == colItems {
+						continue
+					}
+					for j, k := range *src {
+						if k == key {
+							*src = append((*src)[:j], (*src)[j+1:]...)
+							goto removed
+						}
+					}
+				}
+			removed:
+				// Insert into this column.
+				s := *colItems
+				s = append(s, "")
+				copy(s[index+1:], s[index:])
+				s[index] = key
+				*colItems = s
 			},
 		}
 
@@ -294,6 +338,28 @@ func dndKeyboardSection(m Model) ui.Element {
 		display.Text("Accessible DnD: Focus source → Space to grab → Tab to cycle targets → Enter to drop → Escape to cancel."),
 		layout.NewFlex([]ui.Element{source, target}, layout.WithGap(24)),
 	}, layout.WithDirection(layout.FlexColumn), layout.WithGap(16))
+}
+
+// reorderSlice moves the element at index from to index to, shifting
+// intermediate elements. Operates in-place on the underlying array.
+func reorderSlice(items *[]string, from, to int) {
+	s := *items
+	if from < 0 || from >= len(s) || to < 0 || to > len(s) || from == to {
+		return
+	}
+	item := s[from]
+	// Remove from original position.
+	copy(s[from:], s[from+1:])
+	s = s[:len(s)-1]
+	// Adjust insertion index after removal.
+	if to > from {
+		to--
+	}
+	// Insert at new position.
+	s = append(s, "")
+	copy(s[to+1:], s[to:])
+	s[to] = item
+	*items = s
 }
 
 // ── Helper Elements ─────────────────────────────────────────────

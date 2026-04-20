@@ -27,6 +27,11 @@ import (
 // completes. It triggers a repaint so the atlas picks up the new glyphs.
 type msdfReadyMsg struct{}
 
+// dndDropCompletedMsg is sent after a drag-and-drop session completes and
+// SortableList's OnReorder callback has fired. It forces a full model rebuild
+// so the next frame's view() picks up any state changes.
+type dndDropCompletedMsg struct{}
+
 // Run starts the application. It blocks until the window is closed (RFC §3.1).
 //
 // The model, update, and view form the Elm architecture triad:
@@ -504,6 +509,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 					modelDirty = true
 					return true
 
+				case dndDropCompletedMsg:
+					modelDirty = true
+					return true
+
 				// OSK framework messages (RFC-004 §5).
 				case ShowOSKMsg:
 					oskState.Visible = true
@@ -738,6 +747,13 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				paintStart := time.Now()
 
 				scene := ui.BuildSceneWithOSK(currentTree, canvas, activeTheme, w, contentH, ix, fm, oskEl, activeProfile, safeArea)
+				if dispatcher.DnDManager().CompletedDrag() != nil {
+					// A DnD drop was processed during BuildScene. OnReorder
+					// may have mutated shared state — force a full rebuild
+					// next frame so view() picks up the changes.
+					Send(dndDropCompletedMsg{})
+				}
+				dispatcher.DnDManager().ClearCompletedDrag()
 				dispatcher.SwapBounds()
 				hoverState.Trim(hitMap.Len())
 

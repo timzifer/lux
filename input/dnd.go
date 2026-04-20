@@ -166,6 +166,8 @@ const (
 	MIMEJSON = "application/json"
 	// MIMESortableKey is a Lux-internal type for sortable list item keys.
 	MIMESortableKey = "application/x-lux-sortable-key"
+	// MIMESortableGroup is a Lux-internal type carrying the GroupID of a SortableList.
+	MIMESortableGroup = "application/x-lux-sortable-group"
 	// MIMEWidgetID is a Lux-internal type carrying a widget identifier.
 	MIMEWidgetID = "application/x-lux-widget-id"
 )

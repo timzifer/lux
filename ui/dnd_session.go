@@ -18,8 +18,9 @@ import (
 type DragSessionPhase uint8
 
 const (
-	DragSessionIdle   DragSessionPhase = iota // no active drag
-	DragSessionActive                         // drag in progress
+	DragSessionIdle      DragSessionPhase = iota // no active drag
+	DragSessionActive                            // drag in progress
+	DragSessionCompleted                         // drag just finished, data available for one BuildScene pass
 )
 
 // DragSession holds the state of an active drag-and-drop operation.
@@ -107,6 +108,11 @@ func (m *DnDManager) UpdateDrag(pos input.GesturePoint, mods input.ModifierSet) 
 // EndDrag completes the active drag session. If the cursor is over an
 // accepting drop target, the drop is executed and the resolved DropEffect
 // is returned. Otherwise DropEffectNone is returned.
+//
+// The session transitions to DragSessionCompleted (instead of immediately
+// resetting) so that widgets like SortableList can detect the drop during
+// the subsequent BuildScene/LayoutSelf pass. Call ClearCompletedDrag after
+// BuildScene to finalize the reset.
 func (m *DnDManager) EndDrag(pos input.GesturePoint, mods input.ModifierSet) input.DropEffect {
 	if m.session.Phase != DragSessionActive {
 		return input.DropEffectNone
@@ -125,7 +131,11 @@ func (m *DnDManager) EndDrag(pos input.GesturePoint, mods input.ModifierSet) inp
 		}
 	}
 
-	m.reset()
+	// Transition to Completed instead of resetting — keeps Data and
+	// CurrentPos available for LayoutSelf to read during BuildScene.
+	m.session.Phase = DragSessionCompleted
+	m.hoveredZoneUID = 0
+	m.prevHoveredUID = 0
 	return effect
 }
 
@@ -154,6 +164,28 @@ func (m *DnDManager) RegisterDropZone(zone DropZone) {
 func (m *DnDManager) ResetDropZones() {
 	m.dropZones = m.dropZones[:0]
 	// Don't reset session or hovered state — those persist across frames.
+}
+
+// ── Completed Drag ──────────────────────────────────────────────
+
+// CompletedDrag returns the session data from a drag that just finished,
+// or nil if no drag completed this frame. The data persists for one
+// BuildScene pass so LayoutSelf-based widgets (e.g. SortableList) can
+// detect the drop and act on it.
+func (m *DnDManager) CompletedDrag() *DragSession {
+	if m != nil && m.session.Phase == DragSessionCompleted {
+		return &m.session
+	}
+	return nil
+}
+
+// ClearCompletedDrag resets a completed drag session to idle. Called by
+// the framework after BuildScene so the data is available for exactly
+// one layout pass.
+func (m *DnDManager) ClearCompletedDrag() {
+	if m != nil && m.session.Phase == DragSessionCompleted {
+		m.session = DragSession{}
+	}
 }
 
 // ── Queries ─────────────────────────────────────────────────────

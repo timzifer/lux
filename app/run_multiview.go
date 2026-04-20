@@ -563,6 +563,10 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 					modelDirty = true
 					return true
 
+				case dndDropCompletedMsg:
+					modelDirty = true
+					return true
+
 				case input.MouseMsg:
 					mainWC.dispatcher.Collect(m)
 					if mainWC.dispatcher.DnDManager().IsActive() {
@@ -675,6 +679,10 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 				ix.DnD = mainWC.dispatcher.DnDManager()
 				mainWC.dispatcher.DnDManager().ResetDropZones()
 				scene := ui.BuildSceneWithOSK(mainWC.currentTree, canvas, activeTheme, w, h, ix, fm, nil, activeProfile)
+				if mainWC.dispatcher.DnDManager().CompletedDrag() != nil {
+					Send(dndDropCompletedMsg{})
+				}
+				mainWC.dispatcher.DnDManager().ClearCompletedDrag()
 				mainWC.dispatcher.SwapBounds()
 				mainWC.hoverState.Trim(mainWC.hitMap.Len())
 
