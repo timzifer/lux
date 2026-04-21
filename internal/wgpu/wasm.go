@@ -4,6 +4,7 @@ package wgpu
 
 import (
 	"fmt"
+	"log"
 	"syscall/js"
 )
 
@@ -48,6 +49,7 @@ func copyBytesToJS(data []byte) js.Value {
 // --- CreateInstance ---
 
 func CreateInstance() (Instance, error) {
+	log.Println("wgpu/wasm: CreateInstance start")
 	gpu := js.Global().Get("navigator").Get("gpu")
 	if gpu.IsUndefined() || gpu.IsNull() {
 		return nil, fmt.Errorf("wgpu/wasm: WebGPU not supported (navigator.gpu is undefined)")
@@ -58,6 +60,7 @@ func CreateInstance() (Instance, error) {
 		preferredFormat = pf.String()
 	}
 	preferredCanvasFormat = preferredFormat
+	log.Printf("wgpu/wasm: CreateInstance OK, preferredFormat=%s", preferredFormat)
 	return &wasmInstance{gpu: gpu, preferredFormat: preferredFormat}, nil
 }
 
@@ -72,21 +75,28 @@ type wasmInstance struct {
 var preferredCanvasFormat = "bgra8unorm"
 
 func (i *wasmInstance) CreateSurface(desc *SurfaceDescriptor) Surface {
+	log.Println("wgpu/wasm: CreateSurface start")
 	canvas := wasmCanvas
 	if canvas.IsUndefined() || canvas.IsNull() {
+		log.Println("wgpu/wasm: wasmCanvas not set, falling back to getElementById")
 		canvas = js.Global().Get("document").Call("getElementById", "lux-canvas")
 	}
 	if canvas.IsUndefined() || canvas.IsNull() {
+		log.Println("wgpu/wasm: ERROR canvas not found")
 		return &wasmSurface{}
 	}
+	log.Printf("wgpu/wasm: canvas found, width=%v height=%v", canvas.Get("width"), canvas.Get("height"))
 	ctx := canvas.Call("getContext", "webgpu")
 	if ctx.IsUndefined() || ctx.IsNull() {
+		log.Println("wgpu/wasm: ERROR getContext('webgpu') returned null")
 		return &wasmSurface{}
 	}
+	log.Println("wgpu/wasm: CreateSurface OK")
 	return &wasmSurface{ctx: ctx, canvas: canvas}
 }
 
 func (i *wasmInstance) RequestAdapter(opts *RequestAdapterOptions) (Adapter, error) {
+	log.Println("wgpu/wasm: RequestAdapter start")
 	jsOpts := js.Global().Get("Object").New()
 	if opts != nil {
 		switch opts.PowerPreference {
@@ -104,6 +114,7 @@ func (i *wasmInstance) RequestAdapter(opts *RequestAdapterOptions) (Adapter, err
 	if result.IsNull() || result.IsUndefined() {
 		return nil, fmt.Errorf("wgpu/wasm: requestAdapter returned null (no WebGPU adapter available)")
 	}
+	log.Println("wgpu/wasm: RequestAdapter OK")
 	return &wasmAdapter{jsAdapter: result}, nil
 }
 
@@ -116,6 +127,7 @@ type wasmAdapter struct {
 }
 
 func (a *wasmAdapter) RequestDevice(desc *DeviceDescriptor) (Device, error) {
+	log.Println("wgpu/wasm: RequestDevice start")
 	jsDesc := js.Global().Get("Object").New()
 	if desc != nil && desc.Label != "" {
 		jsDesc.Set("label", desc.Label)
@@ -131,11 +143,15 @@ func (a *wasmAdapter) RequestDevice(desc *DeviceDescriptor) (Device, error) {
 	errorHandler := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) > 0 {
 			e := args[0]
-			js.Global().Get("console").Call("error", "wgpu/wasm: device error:", e.Get("error").Get("message"))
+			errObj := e.Get("error")
+			msg := errObj.Get("message")
+			log.Printf("wgpu/wasm: DEVICE ERROR: %s", msg)
+			js.Global().Get("console").Call("error", "wgpu/wasm: device error:", msg)
 		}
 		return nil
 	})
 	result.Call("addEventListener", "uncapturederror", errorHandler)
+	log.Println("wgpu/wasm: RequestDevice OK")
 	return &wasmDevice{jsDevice: result}, nil
 }
 
@@ -166,10 +182,25 @@ func (d *wasmDevice) CreateShaderModule(desc *ShaderModuleDescriptor) ShaderModu
 	}
 	jsDesc.Set("code", desc.Source)
 	m := d.jsDevice.Call("createShaderModule", jsDesc)
+	log.Printf("wgpu/wasm: CreateShaderModule %q", desc.Label)
+	go func() {
+		info, err := awaitPromise(m.Call("getCompilationInfo"))
+		if err != nil {
+			log.Printf("wgpu/wasm: shader %q compilationInfo error: %v", desc.Label, err)
+			return
+		}
+		msgs := info.Get("messages")
+		for i := 0; i < msgs.Length(); i++ {
+			msg := msgs.Index(i)
+			log.Printf("wgpu/wasm: shader %q %s: %s (line %d)", desc.Label,
+				msg.Get("type").String(), msg.Get("message").String(), msg.Get("lineNum").Int())
+		}
+	}()
 	return &wasmShaderModule{jsModule: m}
 }
 
 func (d *wasmDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) RenderPipeline {
+	log.Printf("wgpu/wasm: CreateRenderPipeline %q", desc.Label)
 	jsDesc := js.Global().Get("Object").New()
 	if desc.Label != "" {
 		jsDesc.Set("label", desc.Label)
@@ -264,6 +295,7 @@ func (d *wasmDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) Render
 	}
 
 	p := d.jsDevice.Call("createRenderPipeline", jsDesc)
+	log.Printf("wgpu/wasm: CreateRenderPipeline %q OK", desc.Label)
 	return &wasmRenderPipeline{jsPipeline: p}
 }
 
@@ -430,7 +462,10 @@ type wasmSurface struct {
 }
 
 func (s *wasmSurface) Configure(device Device, config *SurfaceConfiguration) {
+	log.Printf("wgpu/wasm: Configure start, ctx valid=%v, format=%s, size=%dx%d",
+		!s.ctx.IsUndefined() && !s.ctx.IsNull(), preferredCanvasFormat, config.Width, config.Height)
 	if s.ctx.IsUndefined() || s.ctx.IsNull() {
+		log.Println("wgpu/wasm: Configure SKIP — no context")
 		return
 	}
 	dev := device.(*wasmDevice).jsDevice
@@ -441,7 +476,10 @@ func (s *wasmSurface) Configure(device Device, config *SurfaceConfiguration) {
 	jsCfg.Set("usage", int(mapTextureUsage(config.Usage)))
 	jsCfg.Set("alphaMode", "opaque")
 	s.ctx.Call("configure", jsCfg)
+	log.Println("wgpu/wasm: Configure OK")
 }
+
+var getCurrentTextureCount int
 
 func (s *wasmSurface) GetCurrentTexture() (TextureView, error) {
 	if s.ctx.IsUndefined() || s.ctx.IsNull() {
@@ -450,6 +488,11 @@ func (s *wasmSurface) GetCurrentTexture() (TextureView, error) {
 	tex := s.ctx.Call("getCurrentTexture")
 	if tex.IsUndefined() || tex.IsNull() {
 		return nil, fmt.Errorf("wgpu/wasm: getCurrentTexture returned null")
+	}
+	getCurrentTextureCount++
+	if getCurrentTextureCount <= 3 {
+		log.Printf("wgpu/wasm: GetCurrentTexture #%d: width=%v height=%v format=%v",
+			getCurrentTextureCount, tex.Get("width"), tex.Get("height"), tex.Get("format"))
 	}
 	view := tex.Call("createView")
 	return &wasmTextureView{jsView: view}, nil
@@ -548,11 +591,18 @@ type wasmCommandEncoder struct {
 	jsEncoder js.Value
 }
 
+var renderPassCount int
+
 func (e *wasmCommandEncoder) BeginRenderPass(desc *RenderPassDescriptor) RenderPass {
+	renderPassCount++
 	jsDesc := js.Global().Get("Object").New()
 
 	colors := js.Global().Get("Array").New(len(desc.ColorAttachments))
 	for i, ca := range desc.ColorAttachments {
+		if renderPassCount <= 3 {
+			log.Printf("wgpu/wasm: BeginRenderPass #%d: colorAttachment[%d] loadOp=%d storeOp=%d clear=(%.2f,%.2f,%.2f,%.2f)",
+				renderPassCount, i, ca.LoadOp, ca.StoreOp, ca.ClearValue.R, ca.ClearValue.G, ca.ClearValue.B, ca.ClearValue.A)
+		}
 		jca := js.Global().Get("Object").New()
 		jca.Set("view", ca.View.(*wasmTextureView).jsView)
 		jca.Set("loadOp", mapLoadOp(ca.LoadOp))
@@ -680,12 +730,18 @@ type wasmQueue struct {
 	jsQueue js.Value
 }
 
+var submitCount int
+
 func (q *wasmQueue) Submit(buffers ...CommandBuffer) {
 	arr := js.Global().Get("Array").New(len(buffers))
 	for i, b := range buffers {
 		arr.SetIndex(i, b.(*wasmCommandBuffer).jsCmdBuf)
 	}
 	q.jsQueue.Call("submit", arr)
+	submitCount++
+	if submitCount <= 3 {
+		log.Printf("wgpu/wasm: Queue.Submit #%d (%d command buffers)", submitCount, len(buffers))
+	}
 }
 
 func (q *wasmQueue) WriteBuffer(buffer Buffer, offset uint64, data []byte) {
