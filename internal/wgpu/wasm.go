@@ -52,14 +52,24 @@ func CreateInstance() (Instance, error) {
 	if gpu.IsUndefined() || gpu.IsNull() {
 		return nil, fmt.Errorf("wgpu/wasm: WebGPU not supported (navigator.gpu is undefined)")
 	}
-	return &wasmInstance{gpu: gpu}, nil
+	preferredFormat := "bgra8unorm"
+	pf := gpu.Call("getPreferredCanvasFormat")
+	if !pf.IsUndefined() && !pf.IsNull() {
+		preferredFormat = pf.String()
+	}
+	preferredCanvasFormat = preferredFormat
+	return &wasmInstance{gpu: gpu, preferredFormat: preferredFormat}, nil
 }
 
 // --- Instance ---
 
 type wasmInstance struct {
-	gpu js.Value // navigator.gpu
+	gpu             js.Value // navigator.gpu
+	preferredFormat string   // from getPreferredCanvasFormat()
 }
+
+// preferredCanvasFormat stores the browser's preferred format, set during CreateInstance.
+var preferredCanvasFormat = "bgra8unorm"
 
 func (i *wasmInstance) CreateSurface(desc *SurfaceDescriptor) Surface {
 	canvas := wasmCanvas
@@ -118,6 +128,14 @@ func (a *wasmAdapter) RequestDevice(desc *DeviceDescriptor) (Device, error) {
 	if result.IsNull() || result.IsUndefined() {
 		return nil, fmt.Errorf("wgpu/wasm: requestDevice returned null")
 	}
+	errorHandler := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) > 0 {
+			e := args[0]
+			js.Global().Get("console").Call("error", "wgpu/wasm: device error:", e.Get("error").Get("message"))
+		}
+		return nil
+	})
+	result.Call("addEventListener", "uncapturederror", errorHandler)
 	return &wasmDevice{jsDevice: result}, nil
 }
 
@@ -164,6 +182,10 @@ func (d *wasmDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) Render
 	if len(desc.Vertex.Buffers) > 0 {
 		jsBufs := js.Global().Get("Array").New(len(desc.Vertex.Buffers))
 		for i, buf := range desc.Vertex.Buffers {
+			if buf.ArrayStride == 0 && len(buf.Attributes) == 0 {
+				jsBufs.SetIndex(i, js.Null())
+				continue
+			}
 			jb := js.Global().Get("Object").New()
 			jb.Set("arrayStride", int(buf.ArrayStride))
 			jb.Set("stepMode", mapStepMode(buf.StepMode))
@@ -193,7 +215,11 @@ func (d *wasmDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) Render
 			targets := js.Global().Get("Array").New(len(desc.Fragment.Targets))
 			for i, t := range desc.Fragment.Targets {
 				jt := js.Global().Get("Object").New()
-				jt.Set("format", mapTextureFormat(t.Format))
+				fmt := mapTextureFormat(t.Format)
+				if t.Format == TextureFormatBGRA8Unorm {
+					fmt = preferredCanvasFormat
+				}
+				jt.Set("format", fmt)
 				if t.Blend != nil {
 					jb := js.Global().Get("Object").New()
 					jb.Set("color", mapBlendComponent(t.Blend.Color))
@@ -411,7 +437,7 @@ func (s *wasmSurface) Configure(device Device, config *SurfaceConfiguration) {
 	s.device = dev
 	jsCfg := js.Global().Get("Object").New()
 	jsCfg.Set("device", dev)
-	jsCfg.Set("format", mapTextureFormat(config.Format))
+	jsCfg.Set("format", preferredCanvasFormat)
 	jsCfg.Set("usage", int(mapTextureUsage(config.Usage)))
 	jsCfg.Set("alphaMode", "opaque")
 	s.ctx.Call("configure", jsCfg)
