@@ -1,4 +1,4 @@
-//go:build nogui || (windows && !gogpu) || (darwin && arm64)
+//go:build nogui || (windows && !gogpu) || (darwin && arm64) || (js && wasm)
 
 package main
 
