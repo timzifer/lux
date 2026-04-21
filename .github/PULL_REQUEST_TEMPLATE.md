@@ -28,7 +28,7 @@ See CONTRIBUTING.md for build/test commands and DCO sign-off.
 ## Checklist
 
 - [ ] I have read [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-- [ ] Commits are signed off (`git commit -s`) per DCO
+- [ ] I have signed the CLA (the bot will post a link on first PR)
 - [ ] Documentation updated (`docs/`, `README.md`, inline comments)
 - [ ] Related issue linked below (if applicable)
 

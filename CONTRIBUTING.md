@@ -56,17 +56,24 @@ root [`NOTICE`](NOTICE) for attribution.
 - Use the PR template checklist — it exists to keep reviewers fast,
   not to trip you up.
 
-### Sign-offs (DCO)
+### Contributor License Agreement (CLA)
 
-Commits should be signed off to assert that you have the right to
-contribute the change under the project's Apache 2.0 license:
+lux is offered under a **dual-license model** (see
+[`LICENSING.md`](LICENSING.md)). To make that possible, every
+contribution must be covered by a Contributor License Agreement
+(CLA) that grants the project the rights to distribute your
+contribution under both the noncommercial and commercial licenses.
 
-```sh
-git commit -s -m "feat: ..."
-```
+The CLA text lives in [`.github/CLA.md`](.github/CLA.md). When you
+open your first pull request, a bot
+([CLA Assistant](https://cla-assistant.io/)) will post a comment
+asking you to read the CLA and click the "I have read the CLA and I
+hereby sign the CLA" link. Your pull request cannot be merged until
+the check is green.
 
-This adds a `Signed-off-by: Name <email>` trailer. See
-<https://developercertificate.org/> for the certificate text.
+This is a one-time step per contributor; the signature is recorded
+against your GitHub account and future PRs are auto-approved for
+the CLA check.
 
 ## Reporting bugs and requesting features
 
