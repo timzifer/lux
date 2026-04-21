@@ -3,10 +3,10 @@
 // Usage:
 //
 //	GOOS=js GOARCH=wasm go build -o web/wasm/app.wasm ./examples/counter
-//	cp "$(go env GOROOT)/misc/wasm/wasm_exec.js" web/wasm/
 //	go run ./web/wasm/serve.go
 //
 // Then open http://localhost:8080 in a WebGPU-capable browser.
+// wasm_exec.js is bundled in web/wasm/ (Go 1.25+).
 package main
 
 import (
