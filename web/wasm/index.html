@@ -21,6 +21,23 @@
     <div id="error"></div>
     <script src="wasm_exec.js"></script>
     <script>
+        window.addEventListener("error", (e) => {
+            console.error("Uncaught error:", e.error || e.message);
+            const errorDiv = document.getElementById("error");
+            if (errorDiv) {
+                errorDiv.style.display = "flex";
+                errorDiv.textContent = "JS Error: " + (e.error?.message || e.message);
+            }
+        });
+        window.addEventListener("unhandledrejection", (e) => {
+            console.error("Unhandled rejection:", e.reason);
+            const errorDiv = document.getElementById("error");
+            if (errorDiv) {
+                errorDiv.style.display = "flex";
+                errorDiv.textContent = "Unhandled Promise rejection: " + e.reason;
+            }
+        });
+
         (async () => {
             const loading = document.getElementById("loading");
             const errorDiv = document.getElementById("error");
@@ -36,7 +53,14 @@
                 const go = new Go();
                 const result = await WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject);
                 loading.style.display = "none";
-                go.run(result.instance);
+                console.log("WASM loaded, starting Go...");
+                go.run(result.instance).then(() => {
+                    console.log("Go program exited normally");
+                }).catch((err) => {
+                    console.error("Go program crashed:", err);
+                    errorDiv.style.display = "flex";
+                    errorDiv.textContent = "Go crashed: " + err;
+                });
             } catch (err) {
                 loading.style.display = "none";
                 errorDiv.style.display = "flex";
