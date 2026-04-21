@@ -6,6 +6,8 @@
 package web
 
 import (
+	"fmt"
+	"log"
 	"syscall/js"
 
 	"github.com/timzifer/lux/input"
@@ -37,6 +39,7 @@ func New() *Platform {
 }
 
 func (p *Platform) Init(cfg platform.Config) error {
+	log.Println("web/wasm: Init start")
 	p.document = js.Global().Get("document")
 	p.window = js.Global().Get("window")
 	p.title = cfg.Title
@@ -46,6 +49,7 @@ func (p *Platform) Init(cfg platform.Config) error {
 
 	p.canvas = p.document.Call("getElementById", "lux-canvas")
 	if p.canvas.IsUndefined() || p.canvas.IsNull() {
+		log.Println("web/wasm: canvas not found, creating one")
 		p.canvas = p.document.Call("createElement", "canvas")
 		p.canvas.Set("id", "lux-canvas")
 		p.document.Get("body").Call("appendChild", p.canvas)
@@ -79,29 +83,59 @@ func (p *Platform) Init(cfg platform.Config) error {
 	p.canvas.Get("style").Set("width", js.ValueOf(p.width).Call("toString").String()+"px")
 	p.canvas.Get("style").Set("height", js.ValueOf(p.height).Call("toString").String()+"px")
 
+	log.Printf("web/wasm: Init OK: size=%dx%d fb=%dx%d dpr=%.1f", p.width, p.height, p.fbWidth, p.fbHeight, p.dpr)
 	wgpu.SetWASMCanvas(p.canvas)
 	return nil
 }
 
 func (p *Platform) Run(cb platform.Callbacks) error {
+	log.Println("web/wasm: Run start")
 	done := make(chan error, 1)
 
 	p.registerEventListeners(cb)
 
+	frameCount := 0
 	var raf js.Func
 	raf = js.FuncOf(func(_ js.Value, _ []js.Value) any {
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("web/wasm: PANIC in rAF frame %d: %v", frameCount, r)
+				log.Println(errMsg)
+				js.Global().Get("console").Call("error", errMsg)
+				errorDiv := p.document.Call("getElementById", "error")
+				if !errorDiv.IsUndefined() && !errorDiv.IsNull() {
+					errorDiv.Get("style").Set("display", "flex")
+					errorDiv.Set("textContent", errMsg)
+				}
+				done <- fmt.Errorf("%s", errMsg)
+			}
+		}()
 		if p.closed {
 			done <- nil
 			return nil
 		}
+		frameCount++
+		if frameCount <= 3 {
+			log.Printf("web/wasm: rAF frame %d", frameCount)
+		}
 		if cb.OnFrame != nil {
 			cb.OnFrame()
+		}
+		if frameCount <= 3 {
+			log.Printf("web/wasm: rAF frame %d done", frameCount)
+		}
+		if frameCount == 1 {
+			fn := p.window.Get("luxStatus")
+			if !fn.IsUndefined() {
+				fn.Invoke(fmt.Sprintf("Frame %d rendered", frameCount))
+			}
 		}
 		p.window.Call("requestAnimationFrame", raf)
 		return nil
 	})
 	p.funcs = append(p.funcs, raf)
 	p.window.Call("requestAnimationFrame", raf)
+	log.Println("web/wasm: rAF loop started, waiting on done channel")
 
 	return <-done
 }

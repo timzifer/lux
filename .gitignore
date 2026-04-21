@@ -1,3 +1,4 @@
 *.exe
+*.wasm
 /kitchen-sink
 output.log
