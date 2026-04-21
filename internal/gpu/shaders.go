@@ -1,4 +1,4 @@
-//go:build !nogui && !windows
+//go:build !nogui && !windows && !(js && wasm)
 
 package gpu
 

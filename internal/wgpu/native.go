@@ -1,4 +1,4 @@
-//go:build !gogpu && !nogui && !windows && !(darwin && arm64)
+//go:build !gogpu && !nogui && !windows && !(darwin && arm64) && !(js && wasm)
 
 // This file provides the wgpu-native CGo implementation (default backend).
 // It wraps the C wgpu-native library via CGo.
