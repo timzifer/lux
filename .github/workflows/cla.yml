@@ -29,7 +29,11 @@ jobs:
           path-to-signatures: 'signatures/v1/cla.json'
           path-to-document: 'https://github.com/timzifer/lux/blob/main/.github/CLA.md'
           branch: 'main'
-          allowlist: 'timzifer,dependabot[bot]'
+          # claude is the GitHub account that GitHub maps
+          # `Claude <noreply@anthropic.com>` commits to; allowlisting it
+          # prevents Claude Code-authored PRs from getting stuck asking a
+          # bot account to sign the CLA (which it cannot do).
+          allowlist: 'timzifer,dependabot[bot],claude,*[bot]'
           remote-organization-name: 'timzifer'
           remote-repository-name: 'lux-cla-signatures'
           custom-notsigned-prcomment: >
