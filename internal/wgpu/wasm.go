@@ -16,6 +16,13 @@ func SetWASMCanvas(canvas js.Value) {
 	wasmCanvas = canvas
 }
 
+func wasmStatus(msg string) {
+	fn := js.Global().Get("luxStatus")
+	if !fn.IsUndefined() {
+		fn.Invoke(msg)
+	}
+}
+
 // awaitPromise blocks the current goroutine until a JS Promise resolves or rejects.
 func awaitPromise(promise js.Value) (js.Value, error) {
 	ch := make(chan js.Value, 1)
@@ -61,6 +68,7 @@ func CreateInstance() (Instance, error) {
 	}
 	preferredCanvasFormat = preferredFormat
 	log.Printf("wgpu/wasm: CreateInstance OK, preferredFormat=%s", preferredFormat)
+	wasmStatus("CreateInstance OK (format=" + preferredFormat + ")")
 	return &wasmInstance{gpu: gpu, preferredFormat: preferredFormat}, nil
 }
 
@@ -115,6 +123,7 @@ func (i *wasmInstance) RequestAdapter(opts *RequestAdapterOptions) (Adapter, err
 		return nil, fmt.Errorf("wgpu/wasm: requestAdapter returned null (no WebGPU adapter available)")
 	}
 	log.Println("wgpu/wasm: RequestAdapter OK")
+	wasmStatus("RequestAdapter OK")
 	return &wasmAdapter{jsAdapter: result}, nil
 }
 
@@ -152,6 +161,7 @@ func (a *wasmAdapter) RequestDevice(desc *DeviceDescriptor) (Device, error) {
 	})
 	result.Call("addEventListener", "uncapturederror", errorHandler)
 	log.Println("wgpu/wasm: RequestDevice OK")
+	wasmStatus("RequestDevice OK")
 	return &wasmDevice{jsDevice: result}, nil
 }
 
@@ -477,6 +487,7 @@ func (s *wasmSurface) Configure(device Device, config *SurfaceConfiguration) {
 	jsCfg.Set("alphaMode", "opaque")
 	s.ctx.Call("configure", jsCfg)
 	log.Println("wgpu/wasm: Configure OK")
+	wasmStatus("Surface Configure OK")
 }
 
 var getCurrentTextureCount int
