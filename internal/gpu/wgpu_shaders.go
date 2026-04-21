@@ -51,7 +51,7 @@ fn rounded_box_sdf(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 }
 
 fn noise_hash(p: vec2<f32>) -> f32 {
-    var n = u32(p.x) * 1597334673u ^ u32(p.y) * 3812015801u;
+    var n = (u32(p.x) * 1597334673u) ^ (u32(p.y) * 3812015801u);
     n = (n ^ (n >> 16u)) * 2246822519u;
     n = (n ^ (n >> 13u)) * 3266489917u;
     n = n ^ (n >> 16u);
@@ -201,7 +201,7 @@ fn rounded_box_sdf_g(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 }
 
 fn noise_hash_g(p: vec2<f32>) -> f32 {
-    var n = u32(p.x) * 1597334673u ^ u32(p.y) * 3812015801u;
+    var n = (u32(p.x) * 1597334673u) ^ (u32(p.y) * 3812015801u);
     n = (n ^ (n >> 16u)) * 2246822519u;
     n = (n ^ (n >> 13u)) * 3266489917u;
     n = n ^ (n >> 16u);

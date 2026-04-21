@@ -353,7 +353,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	r.projLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Label: "proj-layout",
 		Entries: []wgpu.BindGroupLayoutEntry{
-			{Binding: 0, Visibility: wgpu.ShaderStageVertex, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
+			{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
 		},
 	})
 	projLayout := r.projLayout
@@ -361,7 +361,7 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	r.textLayout = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Label: "text-layout",
 		Entries: []wgpu.BindGroupLayoutEntry{
-			{Binding: 0, Visibility: wgpu.ShaderStageVertex, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
+			{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &wgpu.BufferBindingLayout{Type: wgpu.BufferBindingTypeUniform}},
 			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &wgpu.TextureBindingLayout{SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D}},
 			{Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &wgpu.SamplerBindingLayout{}},
 		},

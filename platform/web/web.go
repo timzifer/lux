@@ -8,6 +8,7 @@ package web
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"syscall/js"
 
 	"github.com/timzifer/lux/input"
@@ -80,8 +81,8 @@ func (p *Platform) Init(cfg platform.Config) error {
 
 	p.canvas.Set("width", p.fbWidth)
 	p.canvas.Set("height", p.fbHeight)
-	p.canvas.Get("style").Set("width", js.ValueOf(p.width).Call("toString").String()+"px")
-	p.canvas.Get("style").Set("height", js.ValueOf(p.height).Call("toString").String()+"px")
+	p.canvas.Get("style").Set("width", strconv.Itoa(p.width)+"px")
+	p.canvas.Get("style").Set("height", strconv.Itoa(p.height)+"px")
 
 	log.Printf("web/wasm: Init OK: size=%dx%d fb=%dx%d dpr=%.1f", p.width, p.height, p.fbWidth, p.fbHeight, p.dpr)
 	wgpu.SetWASMCanvas(p.canvas)

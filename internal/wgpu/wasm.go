@@ -282,6 +282,13 @@ func (d *wasmDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) Render
 	jsPrim.Set("frontFace", mapFrontFace(desc.Primitive.FrontFace))
 	jsDesc.Set("primitive", jsPrim)
 
+	// Multisample state
+	if desc.SampleCount > 1 {
+		jsMS := js.Global().Get("Object").New()
+		jsMS.Set("count", int(desc.SampleCount))
+		jsDesc.Set("multisample", jsMS)
+	}
+
 	// Depth/stencil
 	if desc.DepthStencil != nil {
 		jsDS := js.Global().Get("Object").New()
@@ -350,6 +357,9 @@ func (d *wasmDevice) CreateTexture(desc *TextureDescriptor) Texture {
 	jsDesc.Set("size", jsSize)
 	jsDesc.Set("format", mapTextureFormat(desc.Format))
 	jsDesc.Set("usage", int(mapTextureUsage(desc.Usage)))
+	if desc.SampleCount > 1 {
+		jsDesc.Set("sampleCount", int(desc.SampleCount))
+	}
 	t := d.jsDevice.Call("createTexture", jsDesc)
 	return &wasmTexture{jsTexture: t, width: desc.Size.Width, height: desc.Size.Height, format: desc.Format}
 }
@@ -629,6 +639,9 @@ func (e *wasmCommandEncoder) BeginRenderPass(desc *RenderPassDescriptor) RenderP
 		}
 		jca := js.Global().Get("Object").New()
 		jca.Set("view", ca.View.(*wasmTextureView).jsView)
+		if ca.ResolveTarget != nil {
+			jca.Set("resolveTarget", ca.ResolveTarget.(*wasmTextureView).jsView)
+		}
 		jca.Set("loadOp", mapLoadOp(ca.LoadOp))
 		jca.Set("storeOp", mapStoreOp(ca.StoreOp))
 		clearArr := js.Global().Get("Object").New()
