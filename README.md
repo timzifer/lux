@@ -166,3 +166,14 @@ go run ./examples/fenster/       # window management
 
 Design decisions are captured in the [RFC documents](docs/rfc/).
 Start there before opening a pull request for a new subsystem.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for build, test, and PR
+conventions, and [`SECURITY.md`](SECURITY.md) for reporting
+vulnerabilities.
+
+---
+
+## License
+
+lux is licensed under the [Apache License 2.0](LICENSE). Third-party
+components bundled under `vendor_gogpu_wgpu/` retain their own
+licenses; see [`NOTICE`](NOTICE) for attribution details.

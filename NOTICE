@@ -1,0 +1,14 @@
+lux
+Copyright 2026 timzifer and the lux contributors
+
+This product is licensed under the Apache License, Version 2.0 (see
+LICENSE).
+
+---
+
+This product bundles a vendored copy of gogpu/wgpu in
+`vendor_gogpu_wgpu/`, which is distributed under the MIT License.
+See `vendor_gogpu_wgpu/LICENSE` for the full license text.
+
+  gogpu/wgpu
+  Copyright (c) 2025 Andrey Kolkov and GoGPU Contributors
