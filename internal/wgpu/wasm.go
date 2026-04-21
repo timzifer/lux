@@ -211,6 +211,7 @@ func (d *wasmDevice) CreateShaderModule(desc *ShaderModuleDescriptor) ShaderModu
 
 func (d *wasmDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) RenderPipeline {
 	log.Printf("wgpu/wasm: CreateRenderPipeline %q", desc.Label)
+	d.jsDevice.Call("pushErrorScope", "validation")
 	jsDesc := js.Global().Get("Object").New()
 	if desc.Label != "" {
 		jsDesc.Set("label", desc.Label)
@@ -305,6 +306,18 @@ func (d *wasmDevice) CreateRenderPipeline(desc *RenderPipelineDescriptor) Render
 	}
 
 	p := d.jsDevice.Call("createRenderPipeline", jsDesc)
+	label := desc.Label
+	go func() {
+		result, err := awaitPromise(d.jsDevice.Call("popErrorScope"))
+		if err != nil {
+			log.Printf("wgpu/wasm: CreateRenderPipeline %q popErrorScope error: %v", label, err)
+			return
+		}
+		if !result.IsNull() && !result.IsUndefined() {
+			log.Printf("wgpu/wasm: PIPELINE VALIDATION ERROR %q: %s", label, result.Get("message").String())
+			js.Global().Get("console").Call("error", "pipeline validation error for "+label+":", result.Get("message").String())
+		}
+	}()
 	log.Printf("wgpu/wasm: CreateRenderPipeline %q OK", desc.Label)
 	return &wasmRenderPipeline{jsPipeline: p}
 }
