@@ -174,6 +174,13 @@ vulnerabilities.
 
 ## License
 
-lux is licensed under the [Apache License 2.0](LICENSE). Third-party
-components bundled under `vendor_gogpu_wgpu/` retain their own
-licenses; see [`NOTICE`](NOTICE) for attribution details.
+lux uses a **dual-license model**:
+
+- **Noncommercial use** (personal projects, hobbyists, research,
+  education, nonprofits): free of charge under the
+  [PolyForm Noncommercial License 1.0.0](LICENSE).
+- **Commercial use** requires a paid commercial license. See
+  [`LICENSING.md`](LICENSING.md) for details and how to get in touch.
+
+Third-party components bundled under `vendor_gogpu_wgpu/` retain
+their own licenses; see [`NOTICE`](NOTICE) for attribution details.
