@@ -1,4 +1,23 @@
+# Build output
 *.exe
 *.wasm
 /kitchen-sink
 output.log
+
+# Go coverage
+*.out
+coverage.html
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+*.swp
+*~
+
+# Claude Code / agent tooling
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
