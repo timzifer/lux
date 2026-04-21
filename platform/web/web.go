@@ -124,6 +124,12 @@ func (p *Platform) Run(cb platform.Callbacks) error {
 		if frameCount <= 3 {
 			log.Printf("web/wasm: rAF frame %d done", frameCount)
 		}
+		if frameCount == 1 {
+			fn := p.window.Get("luxStatus")
+			if !fn.IsUndefined() {
+				fn.Invoke(fmt.Sprintf("Frame %d rendered", frameCount))
+			}
+		}
 		p.window.Call("requestAnimationFrame", raf)
 		return nil
 	})
