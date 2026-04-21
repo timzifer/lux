@@ -61,16 +61,29 @@ func (p *Platform) Init(cfg platform.Config) error {
 		p.dpr = 1
 	}
 
+	// Prefer getBoundingClientRect — it reflects the post-layout rendered size,
+	// including transforms and CSS like `width: 100% !important` from an
+	// embedding container, whereas clientWidth rounds to integer CSS pixels.
+	rect := p.canvas.Call("getBoundingClientRect")
+	rectW := rect.Get("width").Float()
+	rectH := rect.Get("height").Float()
+
 	p.width = cfg.Width
 	p.height = cfg.Height
 	if p.width <= 0 {
-		p.width = int(p.canvas.Get("clientWidth").Float())
+		p.width = int(rectW)
+		if p.width <= 0 {
+			p.width = int(p.canvas.Get("clientWidth").Float())
+		}
 		if p.width <= 0 {
 			p.width = 800
 		}
 	}
 	if p.height <= 0 {
-		p.height = int(p.canvas.Get("clientHeight").Float())
+		p.height = int(rectH)
+		if p.height <= 0 {
+			p.height = int(p.canvas.Get("clientHeight").Float())
+		}
 		if p.height <= 0 {
 			p.height = 600
 		}
@@ -81,8 +94,16 @@ func (p *Platform) Init(cfg platform.Config) error {
 
 	p.canvas.Set("width", p.fbWidth)
 	p.canvas.Set("height", p.fbHeight)
-	p.canvas.Get("style").Set("width", strconv.Itoa(p.width)+"px")
-	p.canvas.Get("style").Set("height", strconv.Itoa(p.height)+"px")
+	// Only set inline style when an explicit size was requested. If cfg.Width/
+	// Height are 0, the canvas is expected to follow its container's layout
+	// (e.g. `width: 100% !important`); setting inline pixel values would fight
+	// that layout, and the CSS `!important` override would make them stale.
+	if cfg.Width > 0 {
+		p.canvas.Get("style").Set("width", strconv.Itoa(p.width)+"px")
+	}
+	if cfg.Height > 0 {
+		p.canvas.Get("style").Set("height", strconv.Itoa(p.height)+"px")
+	}
 
 	log.Printf("web/wasm: Init OK: size=%dx%d fb=%dx%d dpr=%.1f", p.width, p.height, p.fbWidth, p.fbHeight, p.dpr)
 	wgpu.SetWASMCanvas(p.canvas)
@@ -94,6 +115,14 @@ func (p *Platform) Run(cb platform.Callbacks) error {
 	done := make(chan error, 1)
 
 	p.registerEventListeners(cb)
+	p.observeCanvasResize(cb)
+
+	// Inform the app of the initial framebuffer size. Without this the first
+	// frame renders with whatever the app assumed at startup, which may not
+	// match the actual canvas when it is embedded in a user-styled container.
+	if cb.OnResize != nil {
+		cb.OnResize(p.fbWidth, p.fbHeight)
+	}
 
 	frameCount := 0
 	var raf js.Func
@@ -231,27 +260,10 @@ func (p *Platform) registerEventListeners(cb platform.Callbacks) {
 		}
 	})
 
-	// Window resize
+	// Window resize covers DPR changes (browser zoom, moving between monitors);
+	// container size changes are handled by ResizeObserver in observeCanvasResize.
 	p.addEventListener(p.window, "resize", func(_ js.Value) {
-		w := int(p.canvas.Get("clientWidth").Float())
-		h := int(p.canvas.Get("clientHeight").Float())
-		if w <= 0 || h <= 0 {
-			return
-		}
-		dpr := p.window.Get("devicePixelRatio").Float()
-		if dpr < 1 {
-			dpr = 1
-		}
-		p.dpr = dpr
-		p.width = w
-		p.height = h
-		p.fbWidth = int(float64(w) * p.dpr)
-		p.fbHeight = int(float64(h) * p.dpr)
-		p.canvas.Set("width", p.fbWidth)
-		p.canvas.Set("height", p.fbHeight)
-		if cb.OnResize != nil {
-			cb.OnResize(p.fbWidth, p.fbHeight)
-		}
+		p.handleResize(cb)
 	})
 
 	// Context menu (suppress to allow right-click handling)
@@ -269,10 +281,73 @@ func (p *Platform) addEventListener(target js.Value, event string, handler func(
 	target.Call("addEventListener", event, fn)
 }
 
+// observeCanvasResize attaches a ResizeObserver to the canvas so that size
+// changes driven by CSS layout (e.g. a container with `width: 100% !important`
+// resizing when its parent changes) are reflected in both the backing-store
+// size and the app's framebuffer. Falling back to the window resize listener
+// alone misses these cases and produces squashed rendering with off-by hitboxes.
+func (p *Platform) observeCanvasResize(cb platform.Callbacks) {
+	ro := js.Global().Get("ResizeObserver")
+	if ro.IsUndefined() || ro.IsNull() {
+		return
+	}
+	fn := js.FuncOf(func(_ js.Value, _ []js.Value) any {
+		p.handleResize(cb)
+		return nil
+	})
+	p.funcs = append(p.funcs, fn)
+	observer := ro.New(fn)
+	observer.Call("observe", p.canvas)
+}
+
+func (p *Platform) handleResize(cb platform.Callbacks) {
+	// Read the post-layout size directly from the DOM — do NOT trust any cached
+	// value, since a container with `width: 100% !important` may be bigger or
+	// smaller than what we last stored.
+	rect := p.canvas.Call("getBoundingClientRect")
+	w := int(rect.Get("width").Float())
+	h := int(rect.Get("height").Float())
+	if w <= 0 || h <= 0 {
+		return
+	}
+	dpr := p.window.Get("devicePixelRatio").Float()
+	if dpr < 1 {
+		dpr = 1
+	}
+	fbW := int(float64(w) * dpr)
+	fbH := int(float64(h) * dpr)
+	if fbW == p.fbWidth && fbH == p.fbHeight && dpr == p.dpr {
+		return
+	}
+	p.dpr = dpr
+	p.width = w
+	p.height = h
+	p.fbWidth = fbW
+	p.fbHeight = fbH
+	p.canvas.Set("width", fbW)
+	p.canvas.Set("height", fbH)
+	if cb.OnResize != nil {
+		cb.OnResize(fbW, fbH)
+	}
+}
+
+// canvasPos maps a pointer event to backing-store pixel coordinates using
+// getBoundingClientRect. This derives the scale factor from the DOM on every
+// call, so it stays correct even when the rendered CSS size diverges from what
+// we cached (e.g. mid-resize, or after a user stylesheet forces a different
+// width than we set via inline style).
 func (p *Platform) canvasPos(e js.Value) (float32, float32) {
-	x := e.Get("offsetX").Float() * p.dpr
-	y := e.Get("offsetY").Float() * p.dpr
-	return float32(x), float32(y)
+	rect := p.canvas.Call("getBoundingClientRect")
+	rw := rect.Get("width").Float()
+	rh := rect.Get("height").Float()
+	if rw <= 0 || rh <= 0 {
+		return 0, 0
+	}
+	cx := e.Get("clientX").Float() - rect.Get("left").Float()
+	cy := e.Get("clientY").Float() - rect.Get("top").Float()
+	bw := p.canvas.Get("width").Float()
+	bh := p.canvas.Get("height").Float()
+	return float32(cx / rw * bw), float32(cy / rh * bh)
 }
 
 func (p *Platform) Destroy() {
