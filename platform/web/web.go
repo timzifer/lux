@@ -238,6 +238,11 @@ func (p *Platform) registerEventListeners(cb platform.Callbacks) {
 		if w <= 0 || h <= 0 {
 			return
 		}
+		dpr := p.window.Get("devicePixelRatio").Float()
+		if dpr < 1 {
+			dpr = 1
+		}
+		p.dpr = dpr
 		p.width = w
 		p.height = h
 		p.fbWidth = int(float64(w) * p.dpr)
@@ -265,7 +270,9 @@ func (p *Platform) addEventListener(target js.Value, event string, handler func(
 }
 
 func (p *Platform) canvasPos(e js.Value) (float32, float32) {
-	return float32(e.Get("offsetX").Float()), float32(e.Get("offsetY").Float())
+	x := e.Get("offsetX").Float() * p.dpr
+	y := e.Get("offsetY").Float() * p.dpr
+	return float32(x), float32(y)
 }
 
 func (p *Platform) Destroy() {
