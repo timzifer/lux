@@ -661,20 +661,34 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 				// Sort tab order derived from layout tree (RFC-002 §2.3).
 				fm.SortOrder()
 
-				// A11y: build access tree and notify bridge (RFC-001 §11).
-				if a11yBridge != nil {
+				// A11y / Inspector: build the access tree once and fan it out to
+				// the platform bridge and the Vellum inspector (RFC-001 §11,
+				// RFC-012 §4.2). The inspector reuses the access tree as the
+				// framework-level widget hierarchy for its Tree/State panels.
+				inspectorAttached := inspectorServer != nil && inspectorServer.HasClient()
+				if a11yBridge != nil || inspectorAttached {
 					w, h := plat.WindowSize()
 					accessTree := ui.BuildAccessTree(currentTree, reconciler, a11y.Rect{
 						Width: float64(w), Height: float64(h),
 					}, dispatcher)
-					a11yBridge.UpdateTree(accessTree)
 
-					// Focus tracking.
-					if accessTree.FocusedID != prevA11yFocusedID {
-						if accessTree.FocusedID != 0 {
-							a11yBridge.NotifyFocus(accessTree.FocusedID)
+					if a11yBridge != nil {
+						a11yBridge.UpdateTree(accessTree)
+
+						// Focus tracking.
+						if accessTree.FocusedID != prevA11yFocusedID {
+							if accessTree.FocusedID != 0 {
+								a11yBridge.NotifyFocus(accessTree.FocusedID)
+							}
+							prevA11yFocusedID = accessTree.FocusedID
 						}
-						prevA11yFocusedID = accessTree.FocusedID
+					}
+
+					if inspectorAttached && inspectorCollector != nil {
+						tree := vellum.WidgetTreeFromAccess(accessTree, frameCounter, reconciler.DirtyUIDs())
+						treeBuf := vellum.NewFrameBuffer()
+						vellum.EncodeDebugWidgetTree(treeBuf, tree)
+						inspectorServer.SendControl(treeBuf.Bytes())
 					}
 				}
 			}

@@ -33,6 +33,9 @@ type InspectorModel struct {
 	ShowDirty   bool
 	Paused      bool
 
+	// started guards one-time startup of the frame/control listeners.
+	started bool
+
 	// Metrics history (ring buffer of last 120 frames).
 	FrameHistory []FrameMetric
 }

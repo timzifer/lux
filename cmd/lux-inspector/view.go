@@ -82,6 +82,9 @@ func leftPanel(m InspectorModel) ui.Element {
 		items = append(items,
 			display.Divider(),
 			display.Text(fmt.Sprintf("Ops: %d", len(m.CurrentFrame.Ops))),
+			display.Divider(),
+			// The live remote surface, replayed from the decoded canvas stream.
+			canvasReplay(m.CurrentFrame, m.CurrentFrame.Bounds.W, m.CurrentFrame.Bounds.H),
 		)
 	}
 

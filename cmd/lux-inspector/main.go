@@ -29,7 +29,7 @@ func main() {
 
 	model := NewInspectorModel(client)
 
-	if err := app.Run(model, inspectorUpdate, inspectorView,
+	if err := app.RunWithCmd(model, inspectorUpdate, inspectorView,
 		app.WithTitle("Lux Inspector"),
 		app.WithSize(1400, 900),
 		app.WithTheme(theme.LuxDark),

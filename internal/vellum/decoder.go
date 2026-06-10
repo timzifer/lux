@@ -85,6 +85,19 @@ func DecodeFrame(data []byte) (*DecodedFrame, error) {
 	return frame, nil
 }
 
+// ReplayOps replays already-decoded operations onto the target Canvas.
+// This is used by clients (e.g. the Inspector) that keep a DecodedFrame
+// around and want to paint it without re-parsing the raw byte stream.
+// Unknown opcodes are skipped (forward-compatibility).
+func (d *CanvasDecoder) ReplayOps(ops []DecodedOp) error {
+	for _, op := range ops {
+		if err := d.dispatchOp(op.Opcode, op.Payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // dispatchOp dispatches a single opcode+payload to the target Canvas.
 func (d *CanvasDecoder) dispatchOp(opcode byte, payload []byte) error {
 	r := NewWireReader(bytes.NewReader(payload))
