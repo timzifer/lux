@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/render"
+	"github.com/timzifer/lux/render"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/layout"
