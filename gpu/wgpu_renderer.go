@@ -10,8 +10,8 @@ import (
 	"unsafe"
 
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/wgpu"
 	"github.com/timzifer/lux/text"
+	"github.com/timzifer/lux/wgpu"
 )
 
 // metalBufferSlotOffset reserves Metal buffer slots 0..1 for bind-group

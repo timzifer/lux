@@ -8,7 +8,7 @@ import (
 	"log"
 
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/wgpu"
+	"github.com/timzifer/lux/wgpu"
 )
 
 // ShaderCache compiles and caches custom shader pipelines on demand.

@@ -5,8 +5,8 @@ package app
 import (
 	"syscall/js"
 
-	"github.com/timzifer/lux/internal/wgpu"
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/wgpu"
 )
 
 // wirePlatformCanvas hands the platform's HTML canvas to the GPU backend.

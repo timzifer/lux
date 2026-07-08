@@ -10,8 +10,8 @@ import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/gpu"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/wgpu"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/wgpu"
 )
 
 // cubeWGSL is the WGSL shader for the 3D RGB cube.
