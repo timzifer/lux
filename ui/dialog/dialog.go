@@ -7,7 +7,6 @@ package dialog
 
 import (
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/button"
 	"github.com/timzifer/lux/ui/display"
@@ -16,7 +15,7 @@ import (
 )
 
 // MessageDialog returns an overlay element displaying a message with an OK button.
-func MessageDialog(id ui.OverlayID, title, message string, kind platform.DialogKind, onClose func()) ui.Element {
+func MessageDialog(id ui.OverlayID, title, message string, kind ui.DialogKind, onClose func()) ui.Element {
 	return ui.Overlay{
 		ID:          id,
 		Placement:   ui.PlacementCenter,
@@ -46,7 +45,7 @@ func ConfirmDialog(id ui.OverlayID, title, message string, onConfirm, onCancel f
 		Dismissable: true,
 		OnDismiss:   onCancel,
 		Backdrop:    true,
-		Content: ui.DialogLayout(platform.DialogInfo,
+		Content: ui.DialogLayout(ui.DialogInfo,
 			layout.Column(
 				display.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
 				display.Spacer(12),
@@ -71,7 +70,7 @@ func InputDialog(id ui.OverlayID, title, message, value, placeholder string, onV
 		Dismissable: true,
 		OnDismiss:   onCancel,
 		Backdrop:    true,
-		Content: ui.DialogLayout(platform.DialogInfo,
+		Content: ui.DialogLayout(ui.DialogInfo,
 			layout.Column(
 				display.TextStyled(title, draw.TextStyle{Size: 16, Weight: draw.FontWeightSemiBold}),
 				display.Spacer(12),

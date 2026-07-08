@@ -22,7 +22,6 @@ import (
 	"github.com/timzifer/lux/draw"
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/button"
@@ -334,7 +333,7 @@ type Model struct {
 	ShowInputDialog   bool
 	InputDialogValue  string
 	DialogResult      string
-	DialogMsgKind     platform.DialogKind
+	DialogMsgKind     ui.DialogKind
 	// Phase F — Multi-Window
 	SecondWindowOpen bool
 	// Images
@@ -455,7 +454,7 @@ type ClipboardResultMsg struct{ Text string }
 type SetClipboardTextMsg struct{ Text string }
 
 // Phase 7 — Dialog messages
-type ShowMsgDialogMsg struct{ Kind platform.DialogKind }
+type ShowMsgDialogMsg struct{ Kind ui.DialogKind }
 type ShowConfirmDialogMsg struct{}
 type ShowInputDialogMsg struct{}
 type DismissDialogMsg struct{}
@@ -3476,11 +3475,11 @@ func dialogsSection(m Model) ui.Element {
 		display.Text("Framework-rendered dialog overlays with backdrop scrim:"),
 		display.Spacer(8),
 		layout.Row(
-			button.Text("Info", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogInfo}) }),
+			button.Text("Info", func() { app.Send(ShowMsgDialogMsg{Kind: ui.DialogInfo}) }),
 			display.Spacer(8),
-			button.Text("Warning", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogWarning}) }),
+			button.Text("Warning", func() { app.Send(ShowMsgDialogMsg{Kind: ui.DialogWarning}) }),
 			display.Spacer(8),
-			button.Text("Error", func() { app.Send(ShowMsgDialogMsg{Kind: platform.DialogError}) }),
+			button.Text("Error", func() { app.Send(ShowMsgDialogMsg{Kind: ui.DialogError}) }),
 		),
 		display.Spacer(8),
 		layout.Row(

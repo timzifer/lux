@@ -12,7 +12,21 @@ package dialog
 import (
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/ui"
 )
+
+// toPlatformKind maps the widget-layer dialog kind to the platform-native
+// one. This package is the only place that knows both vocabularies.
+func toPlatformKind(kind ui.DialogKind) platform.DialogKind {
+	switch kind {
+	case ui.DialogWarning:
+		return platform.DialogWarning
+	case ui.DialogError:
+		return platform.DialogError
+	default:
+		return platform.DialogInfo
+	}
+}
 
 // ── Result messages (sent when a dialog completes) ──────────────
 
@@ -36,7 +50,7 @@ type InputResultMsg struct {
 type ShowFallbackMessageMsg struct {
 	Title   string
 	Message string
-	Kind    platform.DialogKind
+	Kind    ui.DialogKind
 }
 
 // ShowFallbackConfirmMsg requests the app to show a framework-rendered confirm dialog.
@@ -55,11 +69,11 @@ type ShowFallbackInputMsg struct {
 // ── Cmd-producing functions ─────────────────────────────────────
 
 // ShowMessage returns a Cmd that displays a message dialog.
-func ShowMessage(title, message string, kind platform.DialogKind) app.Cmd {
+func ShowMessage(title, message string, kind ui.DialogKind) app.Cmd {
 	return func() app.Msg {
 		plat := app.ActivePlatform()
 		if dp, ok := plat.(platform.NativeDialogProvider); ok {
-			if err := dp.ShowMessageDialog(title, message, kind); err == nil {
+			if err := dp.ShowMessageDialog(title, message, toPlatformKind(kind)); err == nil {
 				return MessageResultMsg{}
 			}
 		}

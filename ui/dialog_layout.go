@@ -6,7 +6,6 @@ import (
 	"math"
 
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui/icons"
 )
@@ -20,13 +19,13 @@ const (
 
 // DialogLayout wraps content in a layout with a colored icon panel on the left.
 // Exported so the ui/dialog sub-package can reuse the same visual treatment.
-func DialogLayout(kind platform.DialogKind, content Element) Element {
+func DialogLayout(kind DialogKind, content Element) Element {
 	return dialogLayoutElement{Kind: kind, Content: content}
 }
 
 // dialogLayoutElement renders a colored icon panel on the left and content on the right.
 type dialogLayoutElement struct {
-	Kind    platform.DialogKind
+	Kind    DialogKind
 	Content Element
 }
 
@@ -102,11 +101,11 @@ func (d dialogLayoutElement) ResolveChildren(resolve func(Element, int) Element)
 }
 
 // dialogPhosphorIcon returns a Phosphor icon codepoint for the given dialog kind.
-func dialogPhosphorIcon(kind platform.DialogKind) string {
+func dialogPhosphorIcon(kind DialogKind) string {
 	switch kind {
-	case platform.DialogWarning:
+	case DialogWarning:
 		return icons.Warning
-	case platform.DialogError:
+	case DialogError:
 		return icons.X
 	default:
 		return icons.Info
@@ -115,12 +114,12 @@ func dialogPhosphorIcon(kind platform.DialogKind) string {
 
 // dialogKindColors returns the panel background color and icon color
 // for the given dialog kind.
-func dialogKindColors(kind platform.DialogKind, tokens theme.TokenSet) (panelBG, icon draw.Color) {
+func dialogKindColors(kind DialogKind, tokens theme.TokenSet) (panelBG, icon draw.Color) {
 	var base draw.Color
 	switch kind {
-	case platform.DialogWarning:
+	case DialogWarning:
 		base = tokens.Colors.Status.Warning
-	case platform.DialogError:
+	case DialogError:
 		base = tokens.Colors.Status.Error
 	default:
 		base = tokens.Colors.Status.Info

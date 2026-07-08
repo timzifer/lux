@@ -5,6 +5,7 @@ import (
 
 	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/ui"
 )
 
 // mockPlatform implements platform.Platform with NativeDialogProvider.
@@ -39,7 +40,7 @@ func TestShowMessageNativePath(t *testing.T) {
 	app.SetActivePlatformForTest(&mockPlatform{})
 	defer app.SetActivePlatformForTest(nil)
 
-	cmd := ShowMessage("Title", "Msg", platform.DialogInfo)
+	cmd := ShowMessage("Title", "Msg", ui.DialogInfo)
 	result := cmd()
 
 	if _, ok := result.(MessageResultMsg); !ok {
@@ -51,7 +52,7 @@ func TestShowMessageFallback(t *testing.T) {
 	app.SetActivePlatformForTest(&stubPlatform{})
 	defer app.SetActivePlatformForTest(nil)
 
-	cmd := ShowMessage("Title", "Msg", platform.DialogWarning)
+	cmd := ShowMessage("Title", "Msg", ui.DialogWarning)
 	result := cmd()
 
 	msg, ok := result.(ShowFallbackMessageMsg)
@@ -61,8 +62,8 @@ func TestShowMessageFallback(t *testing.T) {
 	if msg.Title != "Title" {
 		t.Errorf("Title = %q, want %q", msg.Title, "Title")
 	}
-	if msg.Kind != platform.DialogWarning {
-		t.Errorf("Kind = %d, want %d", msg.Kind, platform.DialogWarning)
+	if msg.Kind != ui.DialogWarning {
+		t.Errorf("Kind = %d, want %d", msg.Kind, ui.DialogWarning)
 	}
 }
 
@@ -132,7 +133,7 @@ func TestShowInputFallback(t *testing.T) {
 func TestShowMessageNilPlatform(t *testing.T) {
 	app.SetActivePlatformForTest(nil)
 
-	cmd := ShowMessage("Title", "Msg", platform.DialogInfo)
+	cmd := ShowMessage("Title", "Msg", ui.DialogInfo)
 	result := cmd()
 
 	if _, ok := result.(ShowFallbackMessageMsg); !ok {
