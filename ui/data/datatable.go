@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/timzifer/lux/a11y"
-	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/form"
@@ -597,7 +596,7 @@ func (n DataTable) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				if n.Dataset.Len() >= 0 && end >= n.Dataset.Len() {
 					end = n.Dataset.Len() - 1
 				}
-				app.Send(DatasetLoadRequestMsg{
+				ui.Send(DatasetLoadRequestMsg{
 					PageIndex:  pg,
 					StartIndex: start,
 					EndIndex:   end,
@@ -687,7 +686,7 @@ func (n DataTable) layoutFilterBar(ctx *ui.LayoutContext, x, y, w int) {
 		Value:       filterText,
 		Placeholder: "Filter…",
 		OnChange: func(text string) {
-			app.Send(DataTableFilterMsg{Text: text})
+			ui.Send(DataTableFilterMsg{Text: text})
 			if n.OnFilter != nil {
 				n.OnFilter(text)
 			}
@@ -754,7 +753,7 @@ func (n DataTable) layoutHeader(ctx *ui.LayoutContext, x, y int, colWidths []int
 				} else {
 					newDir = SortAsc
 				}
-				app.Send(DataTableSortMsg{Column: key, Direction: newDir})
+				ui.Send(DataTableSortMsg{Column: key, Direction: newDir})
 				if n.OnSort != nil {
 					n.OnSort(key, newDir)
 				}
@@ -836,7 +835,7 @@ func (n DataTable) layoutToolbar(ctx *ui.LayoutContext, x, y, w int) {
 			prevRect := draw.R(float32(prevX), float32(y+2), float32(btnSize), float32(dataTableToolbarH-4))
 			pg := page
 			hoverOp := ctx.IX.RegisterHit(prevRect, func() {
-				app.Send(DataTablePageMsg{Page: pg - 1})
+				ui.Send(DataTablePageMsg{Page: pg - 1})
 				if n.OnPage != nil {
 					n.OnPage(pg - 1)
 				}
@@ -854,7 +853,7 @@ func (n DataTable) layoutToolbar(ctx *ui.LayoutContext, x, y, w int) {
 			nextRect := draw.R(float32(nextX), float32(y+2), float32(btnSize), float32(dataTableToolbarH-4))
 			pg := page
 			hoverOp := ctx.IX.RegisterHit(nextRect, func() {
-				app.Send(DataTablePageMsg{Page: pg + 1})
+				ui.Send(DataTablePageMsg{Page: pg + 1})
 				if n.OnPage != nil {
 					n.OnPage(pg + 1)
 				}

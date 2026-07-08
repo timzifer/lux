@@ -49,6 +49,9 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 	anim.SendFunc = func(msg any) { Send(msg) }
 	defer func() { anim.SendFunc = nil }()
 
+	ui.SetSendFunc(Send)
+	defer ui.SetSendFunc(nil)
+
 	plat := cfg.platformFactory()
 	if err := plat.Init(platform.Config{
 		Title:  cfg.title,

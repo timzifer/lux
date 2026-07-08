@@ -95,6 +95,7 @@ func NewWithCmd[M any](model M, update func(M, any) (M, app.Cmd), view func(M) u
 
 	appLoop := loop.New()
 	app.SetGlobalLoopForTest(appLoop)
+	ui.SetSendFunc(app.Send)
 
 	fm := ui.NewFocusManager()
 	app.SetGlobalFocusForTest(fm)

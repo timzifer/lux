@@ -2,7 +2,6 @@ package data
 
 import (
 	"github.com/timzifer/lux/a11y"
-	"github.com/timzifer/lux/app"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/ui"
 )
@@ -186,7 +185,7 @@ func (n VirtualList) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 				if n.Dataset.Len() >= 0 && end >= n.Dataset.Len() {
 					end = n.Dataset.Len() - 1
 				}
-				app.Send(DatasetLoadRequestMsg{
+				ui.Send(DatasetLoadRequestMsg{
 					PageIndex:  pg,
 					StartIndex: start,
 					EndIndex:   end,

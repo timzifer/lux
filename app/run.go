@@ -72,6 +72,10 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	anim.SendFunc = func(msg any) { Send(msg) }
 	defer func() { anim.SendFunc = nil }()
 
+	// Wire ui.Send so widgets (e.g. ui/data) can emit msgs without importing app.
+	ui.SetSendFunc(Send)
+	defer ui.SetSendFunc(nil)
+
 	plat := cfg.platformFactory()
 	if err := plat.Init(platform.Config{
 		Title:  cfg.title,
