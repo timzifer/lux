@@ -28,6 +28,9 @@ jobs:
       - name: Vet
         run: go vet -tags nogui ./...
 
+      - name: Boundary lint (repo-split DAG)
+        run: ./scripts/check_boundaries.sh
+
   unit-tests:
     name: Unit Tests
     needs: build
