@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"github.com/timzifer/lux/internal/vellum"
+	"github.com/timzifer/lux/vellum"
 )
 
 // Panel identifies an active debug panel.

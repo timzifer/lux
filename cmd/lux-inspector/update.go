@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/timzifer/lux/app"
-	"github.com/timzifer/lux/internal/vellum"
+	"github.com/timzifer/lux/vellum"
 )
 
 // Messages for the Inspector update loop.

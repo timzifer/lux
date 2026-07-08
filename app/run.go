@@ -13,7 +13,6 @@ import (
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/loop"
-	"github.com/timzifer/lux/internal/vellum"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/render"
 	"github.com/timzifer/lux/text"
@@ -21,6 +20,7 @@ import (
 	"github.com/timzifer/lux/ui"
 	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/ui/osk"
+	"github.com/timzifer/lux/vellum"
 )
 
 // msdfReadyMsg is an internal message sent when background MSDF rasterization

@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/timzifer/lux/app"
-	"github.com/timzifer/lux/internal/vellum"
 	"github.com/timzifer/lux/theme"
+	"github.com/timzifer/lux/vellum"
 )
 
 func main() {
