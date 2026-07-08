@@ -12,10 +12,10 @@ package app
 import (
 	"time"
 
+	"github.com/timzifer/lux/gpu"
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/interaction"
-	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"

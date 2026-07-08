@@ -8,8 +8,8 @@ import (
 	"unsafe"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/gpu"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/internal/wgpu"
 	"github.com/timzifer/lux/ui"
 )
@@ -312,8 +312,8 @@ func (p *PyramidSurface) initWGPU() {
 			Targets:    []wgpu.ColorTargetState{{Format: wgpu.TextureFormatBGRA8Unorm}},
 		},
 		Primitive: wgpu.PrimitiveState{
-			Topology: wgpu.PrimitiveTopologyTriangleList,
-			CullMode: wgpu.CullModeBack,
+			Topology:  wgpu.PrimitiveTopologyTriangleList,
+			CullMode:  wgpu.CullModeBack,
 			FrontFace: wgpu.FrontFaceCCW,
 		},
 		DepthStencil: &wgpu.DepthStencilState{

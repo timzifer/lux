@@ -3,7 +3,7 @@
 package app
 
 import (
-	"github.com/timzifer/lux/internal/gpu"
+	"github.com/timzifer/lux/gpu"
 	"github.com/timzifer/lux/platform"
 	glfwplatform "github.com/timzifer/lux/platform/glfw"
 )

@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/timzifer/lux/internal/gpu"
+import "github.com/timzifer/lux/gpu"
 
 // pyramidRendererFactory returns nil on non-WGPU builds (use default renderer).
 func pyramidRendererFactory(_ *PyramidSurface) func() gpu.Renderer {

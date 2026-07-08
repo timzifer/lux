@@ -3,7 +3,7 @@
 package app
 
 import (
-	"github.com/timzifer/lux/internal/gpu"
+	"github.com/timzifer/lux/gpu"
 	"github.com/timzifer/lux/platform"
 	waylandplatform "github.com/timzifer/lux/platform/wayland"
 )

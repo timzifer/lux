@@ -1,9 +1,9 @@
 package app
 
 import (
+	"github.com/timzifer/lux/gpu"
 	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/gpu"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/ui"
 )

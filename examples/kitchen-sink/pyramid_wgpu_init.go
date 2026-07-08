@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/timzifer/lux/internal/gpu"
+import "github.com/timzifer/lux/gpu"
 
 // pyramidRendererFactory returns a renderer factory that also connects
 // the PyramidSurface to the WGPU renderer for device/queue access.
