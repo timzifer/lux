@@ -46,17 +46,20 @@ github.com/timzifer/lux/
 ├── validation/        Form validation helpers
 ├── dialog/            Native dialog utilities
 ├── fonts/             Bundled fonts (Noto Sans, Phosphor icons)
+├── textseg/           Grapheme clusters (UAX #29), word boundaries,
+│                      multiline cursor navigation
+├── hit/               Hit-testing & pointer target identification
 │
-└── internal/          Framework internals (not public API)
-    ├── gpu/           GPU device initialization, Renderer interface
-    ├── render/        Rendering pipeline: scene graph, command recording,
-    │                  layer batching, SceneCanvas
-    ├── text/          Text shaping (go-text/typesetting), MSDF SDF rendering,
-    │                  font atlas, BiDi (UAX #9), line breaking (UAX #14),
-    │                  grapheme clusters, multi-line layout
-    ├── hit/           Hit-testing & pointer target identification
-    ├── loop/          Main app loop: message channel, frame scheduling
-    └── wgpu/          wgpu/gogpu FFI bridge
+├── gpu/               GPU device initialization, Renderer interface
+├── render/            Rendering pipeline: scene graph, command recording,
+│                      layer batching, SceneCanvas
+├── text/              Text shaping (go-text/typesetting), MSDF SDF rendering,
+│                      font atlas, BiDi (UAX #9), line breaking (UAX #14)
+├── wgpu/              wgpu/gogpu FFI bridge
+├── vellum/            Vellum remote-rendering protocol (RFC-011/012)
+│
+└── internal/
+    └── loop/          Main app loop: message channel, frame scheduling
 ```
 
 ## Rendering Pipeline
@@ -149,7 +152,7 @@ lux uses **wgpu** (via `gogpu/wgpu`) as the primary GPU backend. It targets:
 
 A GLFW + OpenGL 3.3 path serves as a fallback for systems without Vulkan/Metal/D3D12.
 
-The wgpu integration lives in `internal/gpu` and `vendor_gogpu_wgpu` (vendored binding).
+The wgpu integration lives in `gpu` and `vendor_gogpu_wgpu` (vendored binding).
 
 ## Text Rendering
 
@@ -162,20 +165,25 @@ Text is rendered via two paths:
 
 Text shaping uses `go-text/typesetting` (GSUB, GPOS, OpenType layout). Unicode support:
 
-- **BiDi** — UAX #9 via `internal/text/bidi.go`
+- **BiDi** — UAX #9 via `text/bidi.go`
 - **Line breaking** — UAX #14 via `rivo/uniseg`
 - **Grapheme clusters** — cursor-aware navigation via `rivo/uniseg`
 
 ## Dependency Graph (simplified)
 
 ```
-app → ui → draw, anim, theme, input, a11y, image
-      ui → internal/render, internal/hit
+app → ui → draw, anim, theme, input, a11y, hit, textseg
 app → platform
-app → internal/loop, internal/gpu
-internal/render → internal/gpu, internal/text, draw
-internal/text → go-text/typesetting, pierrec/msdf, rivo/uniseg
+app → internal/loop, gpu, render, text
+render → text, draw, fonts
+text → go-text/typesetting, pierrec/msdf, rivo/uniseg
+gpu → render, text, wgpu, draw
 ```
 
 `anim`, `draw`, `input`, and `theme` depend only on stdlib (or each other with no cycles).
-`internal/` packages are not part of the public API.
+
+The package groups correspond to the planned multi-repo split — core
+(draw/input/anim/a11y/theme/…), render (text/render/gpu/wgpu), platform,
+widgets (ui/richtext/web/uitest), app, tools — and
+`scripts/check_boundaries.sh` enforces that DAG in CI.
+See [repo-split.md](repo-split.md) for the migration plan.

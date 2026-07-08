@@ -150,8 +150,8 @@ go run ./examples/fenster/       # window management
 └──────────────┬──────────────────────────────┘
                │ draw.Canvas commands
 ┌──────────────▼──────────────────────────────┐
-│           internal/render                  │  ← Scene graph, batching,
-│           internal/gpu (wgpu)              │     GPU upload, wgpu backend
+│           render package                   │  ← Scene graph, batching,
+│           gpu package (wgpu)               │     GPU upload, wgpu backend
 └──────────────┬──────────────────────────────┘
                │ native window / surface
 ┌──────────────▼──────────────────────────────┐
