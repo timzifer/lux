@@ -10,8 +10,8 @@ import (
 	"unsafe"
 
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/internal/wgpu"
+	"github.com/timzifer/lux/text"
 )
 
 // metalBufferSlotOffset reserves Metal buffer slots 0..1 for bind-group
@@ -28,16 +28,16 @@ const metalBufferSlotOffset = 2
 //   - Atlas-based textured glyph rendering (instanced)
 //   - MSDF text rendering for large text sizes (instanced)
 type WGPURenderer struct {
-	width     int
-	height    int
-	bgColor   draw.Color
-	atlas     *text.GlyphAtlas
+	width   int
+	height  int
+	bgColor draw.Color
+	atlas   *text.GlyphAtlas
 
 	// wgpu resources
-	instance       wgpu.Instance
-	surface        wgpu.Surface
-	device         wgpu.Device
-	queue          wgpu.Queue
+	instance wgpu.Instance
+	surface  wgpu.Surface
+	device   wgpu.Device
+	queue    wgpu.Queue
 
 	// Rendering pipelines
 	rectPipeline      wgpu.RenderPipeline
@@ -48,25 +48,25 @@ type WGPURenderer struct {
 	gradPipeline      wgpu.RenderPipeline // gradient rectangle pipeline
 
 	// Shared resources
-	projBuffer     wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 params (grain, reserved)
-	grain          float32       // current grain intensity from scene (RFC-008 §10.5)
-	msdfUniBuffer  wgpu.Buffer   // 80 bytes: mat4x4 projection + vec4 atlas_size
-	rectVertBuffer wgpu.Buffer   // unit quad shared by rect + text + MSDF
-	rectInstBuffer wgpu.Buffer
-	glyphInstBuffer wgpu.Buffer  // unified GPU instance buffer for text + MSDF
-	atlasTexture   wgpu.Texture
-	atlasView      wgpu.TextureView
-	atlasSampler   wgpu.Sampler
-	msdfTexture    wgpu.Texture
-	msdfView       wgpu.TextureView
-	emojiTexture   wgpu.Texture
-	emojiView      wgpu.TextureView
+	projBuffer      wgpu.Buffer // 80 bytes: mat4x4 projection + vec4 params (grain, reserved)
+	grain           float32     // current grain intensity from scene (RFC-008 §10.5)
+	msdfUniBuffer   wgpu.Buffer // 80 bytes: mat4x4 projection + vec4 atlas_size
+	rectVertBuffer  wgpu.Buffer // unit quad shared by rect + text + MSDF
+	rectInstBuffer  wgpu.Buffer
+	glyphInstBuffer wgpu.Buffer // unified GPU instance buffer for text + MSDF
+	atlasTexture    wgpu.Texture
+	atlasView       wgpu.TextureView
+	atlasSampler    wgpu.Sampler
+	msdfTexture     wgpu.Texture
+	msdfView        wgpu.TextureView
+	emojiTexture    wgpu.Texture
+	emojiView       wgpu.TextureView
 
 	// Bind group layouts (kept for recreating bind groups on atlas resize / per-window)
-	projLayout     wgpu.BindGroupLayout // projection bind group layout (group 0) — kept for per-window bind groups
-	textLayout     wgpu.BindGroupLayout
-	surfTexLayout  wgpu.BindGroupLayout // surface texture bind group layout (group 1)
-	gradLayout     wgpu.BindGroupLayout // gradient params bind group layout (group 1)
+	projLayout    wgpu.BindGroupLayout // projection bind group layout (group 0) — kept for per-window bind groups
+	textLayout    wgpu.BindGroupLayout
+	surfTexLayout wgpu.BindGroupLayout // surface texture bind group layout (group 1)
+	gradLayout    wgpu.BindGroupLayout // gradient params bind group layout (group 1)
 
 	// Multi-window surfaces
 	windows map[uint32]*windowSurface
@@ -83,53 +83,53 @@ type WGPURenderer struct {
 	surfInstBuffer  wgpu.Buffer // per-surface instance (rect x,y,w,h = 16 bytes)
 
 	// Gradient resources
-	gradUniBuffer    wgpu.Buffer // gradient params uniform buffer (resizable)
-	gradUniBufCap    uint64      // current capacity in bytes
-	gradBindGroups   []wgpu.BindGroup // per-gradient bind groups (rebuilt each frame)
+	gradUniBuffer  wgpu.Buffer      // gradient params uniform buffer (resizable)
+	gradUniBufCap  uint64           // current capacity in bytes
+	gradBindGroups []wgpu.BindGroup // per-gradient bind groups (rebuilt each frame)
 
 	// Image texture resources
-	imagePipeline    wgpu.RenderPipeline
-	imageTexLayout   wgpu.BindGroupLayout // group 1: texture + sampler
-	imageSampler     wgpu.Sampler
-	imageInstBuffer  wgpu.Buffer
-	imageInstBufCap  uint64
-	imageBuf         []float32
-	imageTextures    map[draw.ImageID]imageTextureEntry
+	imagePipeline   wgpu.RenderPipeline
+	imageTexLayout  wgpu.BindGroupLayout // group 1: texture + sampler
+	imageSampler    wgpu.Sampler
+	imageInstBuffer wgpu.Buffer
+	imageInstBufCap uint64
+	imageBuf        []float32
+	imageTextures   map[draw.ImageID]imageTextureEntry
 
 	// Shadow resources
-	shadowPipeline    wgpu.RenderPipeline
-	shadowInstBuffer  wgpu.Buffer
-	shadowInstBufCap  uint64
-	shadowBuf         []float32
+	shadowPipeline   wgpu.RenderPipeline
+	shadowInstBuffer wgpu.Buffer
+	shadowInstBufCap uint64
+	shadowBuf        []float32
 
 	// Blur resources (fragment-shader-based, 2-pass ping-pong)
-	blurPipeline        wgpu.RenderPipeline  // fullscreen-triangle blur pass
-	blurBlitPipeline    wgpu.RenderPipeline  // blit blurred result back to surface
-	blurUniformBuffer   wgpu.Buffer
-	blurBindGroupLayout wgpu.BindGroupLayout // group 0: blur uniforms
-	blurTexBindGroupLayout wgpu.BindGroupLayout // group 1: texture + sampler (blur pass)
+	blurPipeline            wgpu.RenderPipeline // fullscreen-triangle blur pass
+	blurBlitPipeline        wgpu.RenderPipeline // blit blurred result back to surface
+	blurUniformBuffer       wgpu.Buffer
+	blurBindGroupLayout     wgpu.BindGroupLayout // group 0: blur uniforms
+	blurTexBindGroupLayout  wgpu.BindGroupLayout // group 1: texture + sampler (blur pass)
 	blurBlitBindGroupLayout wgpu.BindGroupLayout // group 1: texture + sampler (blit pass)
-	blurSampler         wgpu.Sampler
-	blurSrcTexture      wgpu.Texture  // original unblurred scene (read-only after scene render)
-	blurSrcView         wgpu.TextureView
-	blurTmpTexture      wgpu.Texture  // H-pass output
-	blurTmpView         wgpu.TextureView
-	blurDstTexture      wgpu.Texture  // V-pass output (final blurred result)
-	blurDstView         wgpu.TextureView
-	blurW, blurH        int // current blur texture dimensions
+	blurSampler             wgpu.Sampler
+	blurSrcTexture          wgpu.Texture // original unblurred scene (read-only after scene render)
+	blurSrcView             wgpu.TextureView
+	blurTmpTexture          wgpu.Texture // H-pass output
+	blurTmpView             wgpu.TextureView
+	blurDstTexture          wgpu.Texture // V-pass output (final blurred result)
+	blurDstView             wgpu.TextureView
+	blurW, blurH            int // current blur texture dimensions
 
 	// MSAA resources (4x multisampling)
-	msaaTexture          wgpu.Texture     // 4x MSAA render target
-	msaaView             wgpu.TextureView // view into msaaTexture
-	msaaW, msaaH         int              // tracked MSAA texture size
-	overlayResolveTexture wgpu.Texture    // non-MSAA resolve target for overlay pass (blur case)
+	msaaTexture           wgpu.Texture     // 4x MSAA render target
+	msaaView              wgpu.TextureView // view into msaaTexture
+	msaaW, msaaH          int              // tracked MSAA texture size
+	overlayResolveTexture wgpu.Texture     // non-MSAA resolve target for overlay pass (blur case)
 	overlayResolveView    wgpu.TextureView
 
 	// Path triangle resources
-	pathPipeline      wgpu.RenderPipeline
-	pathVertBuffer    wgpu.Buffer
-	pathVertBufCap    uint64
-	pathBuf           []float32 // CPU-side retained vertex data
+	pathPipeline   wgpu.RenderPipeline
+	pathVertBuffer wgpu.Buffer
+	pathVertBufCap uint64
+	pathBuf        []float32 // CPU-side retained vertex data
 
 	// CPU-side retained buffers — grow-only, reset to [:0] each frame.
 	rectBuf  []float32
@@ -168,11 +168,11 @@ type imageTextureEntry struct {
 
 // windowSurface holds per-window GPU resources for multi-window rendering.
 type windowSurface struct {
-	surface       wgpu.Surface
-	width, height int
-	surfaceOK     bool
-	bgColor       draw.Color
-	projBuffer    wgpu.Buffer
+	surface        wgpu.Surface
+	width, height  int
+	surfaceOK      bool
+	bgColor        draw.Color
+	projBuffer     wgpu.Buffer
 	projBindGroup  wgpu.BindGroup
 	textBindGroup  wgpu.BindGroup // text pipeline uses projBuffer at binding 0
 	msdfUniBuffer  wgpu.Buffer
@@ -723,8 +723,8 @@ func (r *WGPURenderer) Init(cfg Config) error {
 		ArrayStride: 24, // 6 floats × 4 bytes (pos + color)
 		StepMode:    wgpu.VertexStepModeVertex,
 		Attributes: []wgpu.VertexAttribute{
-			{Format: wgpu.VertexFormatFloat32x2, Offset: 0, ShaderLocation: 0},  // pos
-			{Format: wgpu.VertexFormatFloat32x4, Offset: 8, ShaderLocation: 1},  // color
+			{Format: wgpu.VertexFormatFloat32x2, Offset: 0, ShaderLocation: 0}, // pos
+			{Format: wgpu.VertexFormatFloat32x4, Offset: 8, ShaderLocation: 1}, // color
 		},
 	}
 
@@ -1128,7 +1128,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 
 	// Gradients: pre-upload all gradient uniform data and create per-gradient bind groups.
 	// Each gradient occupies 512 bytes (304 data + 208 padding for 256-byte alignment).
-	const gradStride = 512 // bytes
+	const gradStride = 512             // bytes
 	const gradStrideF = gradStride / 4 // 128 floats
 	allGrads := append(scene.GradientRects, scene.OverlayGradientRects...)
 	// Destroy previous frame's bind groups.
@@ -1264,9 +1264,9 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		})
 		copyPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 			ColorAttachments: []wgpu.RenderPassColorAttachment{{
-				View:    textureView,
-				LoadOp:  wgpu.LoadOpClear,
-				StoreOp: wgpu.StoreOpStore,
+				View:       textureView,
+				LoadOp:     wgpu.LoadOpClear,
+				StoreOp:    wgpu.StoreOpStore,
 				ClearValue: wgpu.Color{R: 0, G: 0, B: 0, A: 1},
 			}},
 		})
@@ -1306,7 +1306,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 
 		// --- Step 3: Pre-upload all blur uniforms into a single buffer ---
 		// Each region needs 2 slots (H-pass, V-pass). 256-byte alignment per slot.
-		const blurUniStride = 256 // bytes (WebGPU minUniformBufferOffsetAlignment)
+		const blurUniStride = 256                // bytes (WebGPU minUniformBufferOffsetAlignment)
 		const blurUniStrideF = blurUniStride / 4 // 64 floats
 		numSlots := len(scene.BlurRegions) * 2
 		needed := uint64(numSlots) * blurUniStride
@@ -1399,8 +1399,12 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 			// Scissor-blit: blurDst → surface (exact region bounds)
 			sx, sy := uint32(br.X), uint32(br.Y)
 			sw, sh := uint32(br.W), uint32(br.H)
-			if sx+sw > vpW { sw = vpW - sx }
-			if sy+sh > vpH { sh = vpH - sy }
+			if sx+sw > vpW {
+				sw = vpW - sx
+			}
+			if sy+sh > vpH {
+				sh = vpH - sy
+			}
 
 			blitPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 				ColorAttachments: []wgpu.RenderPassColorAttachment{{
@@ -2322,7 +2326,7 @@ func appendGlyphInstance(buf []float32, g draw.TexturedGlyph, atlasW, atlasH flo
 	v1 := float32(g.SrcY+g.SrcH) / atlasH
 	return append(buf,
 		g.DstX, g.DstY, g.DstW, g.DstH, // glyph_rect
-		u0, v0, u1, v1,                   // glyph_uv
+		u0, v0, u1, v1, // glyph_uv
 		g.Color.R, g.Color.G, g.Color.B, g.Color.A, // color
 	)
 }

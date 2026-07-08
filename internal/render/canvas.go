@@ -9,7 +9,7 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/text"
 )
 
 // SceneCanvas implements draw.Canvas by accumulating draw commands
@@ -279,7 +279,7 @@ func (c *SceneCanvas) appendImageFill(r draw.Rect, paint draw.Paint) {
 		X: int(r.X), Y: int(r.Y), W: int(r.W), H: int(r.H),
 		ImageID: paint.Image.Image,
 		Opacity: opacity,
-		U0: 0, V0: 0, U1: 1, V1: 1,
+		U0:      0, V0: 0, U1: 1, V1: 1,
 	}
 	if c.overlayMode {
 		c.scene.OverlayImageRects = append(c.scene.OverlayImageRects, ir)
@@ -810,9 +810,9 @@ func (c *SceneCanvas) DrawImageScaled(img draw.ImageID, dst draw.Rect, mode draw
 
 	ir := draw.DrawImageRect{
 		X: int(dst.X), Y: int(dst.Y), W: int(dst.W), H: int(dst.H),
-		ImageID:   img,
-		Opacity:   opacity,
-		U0: 0, V0: 0, U1: 1, V1: 1,
+		ImageID: img,
+		Opacity: opacity,
+		U0:      0, V0: 0, U1: 1, V1: 1,
 		ScaleMode: mode,
 	}
 
@@ -874,8 +874,8 @@ func (c *SceneCanvas) DrawImageSlice(slice draw.ImageSlice, dst draw.Rect, opts 
 	vB := 1.0 - bottom/dst.H
 
 	type region struct {
-		x, y, w, h         float32
-		u0, v0, u1, v1     float32
+		x, y, w, h     float32
+		u0, v0, u1, v1 float32
 	}
 
 	regions := [9]region{
@@ -1039,6 +1039,7 @@ func (c *SceneCanvas) isClipped(x, y, w, h float32) bool {
 	return x+w <= clip.X || x >= clip.X+clip.W ||
 		y+h <= clip.Y || y >= clip.Y+clip.H
 }
+
 // PushClipRoundRect pushes a rounded-rect clip (bounding-box approximation).
 func (c *SceneCanvas) PushClipRoundRect(r draw.Rect, _ float32) {
 	c.PushClip(r) // approximate as axis-aligned rect

@@ -10,7 +10,7 @@ import (
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/render"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/text"
 )
 
 // OpenGLRenderer implements Renderer using OpenGL 3.3 Core.

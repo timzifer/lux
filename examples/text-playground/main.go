@@ -27,7 +27,7 @@ import (
 	"github.com/timzifer/lux/ui/layout"
 	"github.com/timzifer/lux/ui/nav"
 
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/text"
 	"github.com/timzifer/lux/textseg"
 )
 

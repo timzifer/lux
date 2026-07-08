@@ -9,7 +9,7 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/internal/render"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/text"
 )
 
 var (

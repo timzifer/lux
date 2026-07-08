@@ -37,8 +37,8 @@ import (
 	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/validation"
 
-	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/richtext"
+	"github.com/timzifer/lux/text"
 )
 
 // ── Section Registry ──────────────────────────────────────────────
@@ -343,23 +343,23 @@ type Model struct {
 	ImgChecker3  draw.ImageID // pink/green checkerboard (for opacity demo)
 	ImageOpacity float32
 	// SVG Rendering demo
-	SvgStarID     draw.ImageID // rasterized SVG star
-	SvgCirclesID  draw.ImageID // rasterized SVG circles
+	SvgStarID    draw.ImageID // rasterized SVG star
+	SvgCirclesID draw.ImageID // rasterized SVG circles
 	// Accessibility demos
-	A11yTreeText     string
-	A11yTrapOpen     bool
-	A11yTrapResult   string
-	A11yTrapCheckA   bool
-	A11yTrapCheckB   bool
-	A11yTrapText     string
+	A11yTreeText   string
+	A11yTrapOpen   bool
+	A11yTrapResult string
+	A11yTrapCheckA bool
+	A11yTrapCheckB bool
+	A11yTrapText   string
 	// Validation demo
-	ValEmail       string
-	ValPassword    string
-	ValConfirm     string
-	ValRole        string
-	ValRoleState   *form.SelectState
-	ValResults     validation.FormResult
-	ValPwRevealed  bool
+	ValEmail      string
+	ValPassword   string
+	ValConfirm    string
+	ValRole       string
+	ValRoleState  *form.SelectState
+	ValResults    validation.FormResult
+	ValPwRevealed bool
 	// TextArea
 	TextAreaValue  string
 	TextAreaScroll *ui.ScrollState
@@ -367,14 +367,14 @@ type Model struct {
 	ToolbarDoc       richtext.AttributedString
 	ToolbarDocScroll *ui.ScrollState
 	// Pickers & Numeric
-	DateVal      time.Time
-	DateState    *form.DatePickerState
-	ColorVal     draw.Color
-	ColorState   *form.ColorPickerState
-	TimeHour     int
-	TimeMinute   int
-	TimeState    *form.TimePickerState
-	NumericVal   float64
+	DateVal    time.Time
+	DateState  *form.DatePickerState
+	ColorVal   draw.Color
+	ColorState *form.ColorPickerState
+	TimeHour   int
+	TimeMinute int
+	TimeState  *form.TimePickerState
+	NumericVal float64
 	// FilePicker
 	FilePickerVal      string
 	FilePickerState    *form.FilePickerState
@@ -468,7 +468,6 @@ type SetImageOpacityMsg struct{ Value float32 }
 // Validation messages
 type SetTextAreaMsg struct{ Value string }
 
-
 // Toolbar messages
 type SetToolbarDocMsg struct{ Doc richtext.AttributedString }
 
@@ -504,6 +503,7 @@ type PagedPageLoadedMsg struct {
 	Total int
 }
 type StreamAddItemMsg struct{}
+
 // DataTable messages
 type DTPageLoadMsg struct{ Page int }
 type DTPageLoadedMsg struct {
@@ -2671,6 +2671,7 @@ func scopedThemesSection() ui.Element {
 		),
 	)
 }
+
 // ── Commands Section ──────────────────────────────────────────────
 
 func commandsSection(m Model) ui.Element {
@@ -3582,14 +3583,14 @@ func effectsSection() ui.Element {
 	)
 
 	type shadowLevel struct {
-		label string
+		label  string
 		shadow draw.Shadow
 		bg     draw.Color // card background — distinct per level, visible in both themes
 	}
 	levels := []shadowLevel{
-		{"None", draw.Shadow{}, draw.Hex("#6366f1")},       // indigo
-		{"Low", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.14}, BlurRadius: 12, OffsetY: 3, Radius: 8}, draw.Hex("#3b82f6")},  // blue
-		{"Med", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.20}, BlurRadius: 24, OffsetY: 6, Radius: 8}, draw.Hex("#0ea5e9")}, // sky
+		{"None", draw.Shadow{}, draw.Hex("#6366f1")}, // indigo
+		{"Low", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.14}, BlurRadius: 12, OffsetY: 3, Radius: 8}, draw.Hex("#3b82f6")},   // blue
+		{"Med", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.20}, BlurRadius: 24, OffsetY: 6, Radius: 8}, draw.Hex("#0ea5e9")},   // sky
 		{"High", draw.Shadow{Color: draw.Color{R: 0, G: 0, B: 0, A: 0.28}, BlurRadius: 40, OffsetY: 10, Radius: 8}, draw.Hex("#14b8a6")}, // teal
 	}
 	shadowCards := make([]ui.Element, len(levels))
@@ -4334,30 +4335,30 @@ func a11yBridgeSection() ui.Element {
 
 func main() {
 	initial := Model{
-		Dark:               true,
-		RadioChoice:        "alpha",
-		SliderVal:          0.5,
-		Progress:           0.0,
-		SelectVal:          "Option 1",
-		SelectState:        &form.SelectState{},
-		ValRoleState:       &form.SelectState{},
-		Scroll:             &ui.ScrollState{},
-		ToggleAnim:         form.NewToggleState(),
-		NavTree:            ui.NewTreeState(),
-		ActiveSection:      "typography",
-		VListScroll:        &ui.ScrollState{},
-		DemoTree:           ui.NewTreeState(),
-		PagedContacts:      data.NewPagedDataset[int](20),
-		PagedScroll:        &ui.ScrollState{},
-		StreamLog:          data.NewStreamDataset[int](data.StreamAppend),
-		StreamScroll:       &ui.ScrollState{},
+		Dark:          true,
+		RadioChoice:   "alpha",
+		SliderVal:     0.5,
+		Progress:      0.0,
+		SelectVal:     "Option 1",
+		SelectState:   &form.SelectState{},
+		ValRoleState:  &form.SelectState{},
+		Scroll:        &ui.ScrollState{},
+		ToggleAnim:    form.NewToggleState(),
+		NavTree:       ui.NewTreeState(),
+		ActiveSection: "typography",
+		VListScroll:   &ui.ScrollState{},
+		DemoTree:      ui.NewTreeState(),
+		PagedContacts: data.NewPagedDataset[int](20),
+		PagedScroll:   &ui.ScrollState{},
+		StreamLog:     data.NewStreamDataset[int](data.StreamAppend),
+		StreamScroll:  &ui.ScrollState{},
 		// DataTable demos
-		DTSliceState:  data.NewDataTableState(),
-		DTPagedState:  data.NewDataTableState(),
-		DTPaged:       data.NewPagedDataset[int](20),
-		DTStreamState: data.NewDataTableState(),
-		DTStream:      data.NewStreamDataset[int](data.StreamAppend),
-		DTSelectedRow: -1,
+		DTSliceState:       data.NewDataTableState(),
+		DTPagedState:       data.NewDataTableState(),
+		DTPaged:            data.NewPagedDataset[int](20),
+		DTStreamState:      data.NewDataTableState(),
+		DTStream:           data.NewStreamDataset[int](data.StreamAppend),
+		DTSelectedRow:      -1,
 		AccordionState:     nav.NewAccordionState(),
 		MenuBarState:       menu.NewMenuBarState(),
 		KineticScroll:      ui.NewKineticScroll(theme.Default.Tokens().Scroll),
@@ -4374,9 +4375,9 @@ func main() {
 		LayoutGap:          30,
 		CurrentLocale:      "en",
 		Pyramid:            NewPyramidSurface(),
-		ImageStore:          luximage.NewStore(),
-		ImageOpacity:        1.0,
-		TextAreaScroll:      &ui.ScrollState{},
+		ImageStore:         luximage.NewStore(),
+		ImageOpacity:       1.0,
+		TextAreaScroll:     &ui.ScrollState{},
 		// Toolbar demo defaults
 		ToolbarDoc: richtext.Build(
 			richtext.S("Format this text using the toolbar above.\n"),
@@ -4388,13 +4389,13 @@ func main() {
 		),
 		ToolbarDocScroll: &ui.ScrollState{},
 		// Pickers & Numeric defaults
-		DateVal:    time.Now(),
-		DateState:  &form.DatePickerState{},
-		ColorVal:   draw.Color{R: 0.25, G: 0.32, B: 0.71, A: 1}, // Indigo
-		ColorState: &form.ColorPickerState{},
-		TimeHour:   14,
-		TimeMinute: 30,
-		TimeState:  &form.TimePickerState{},
+		DateVal:            time.Now(),
+		DateState:          &form.DatePickerState{},
+		ColorVal:           draw.Color{R: 0.25, G: 0.32, B: 0.71, A: 1}, // Indigo
+		ColorState:         &form.ColorPickerState{},
+		TimeHour:           14,
+		TimeMinute:         30,
+		TimeState:          &form.TimePickerState{},
 		NumericVal:         42,
 		FilePickerState:    form.NewFilePickerState(""),
 		FilePickerDirState: form.NewFilePickerState(""),
@@ -4402,7 +4403,7 @@ func main() {
 	// Generate procedural demo images — each with distinct colors for easy identification.
 	initial.ImgChecker1 = generateColorChecker(initial.ImageStore, 64, 64, 8,
 		220, 220, 240, // light blue-gray
-		59, 130, 246,  // blue
+		59, 130, 246, // blue
 	)
 	initial.ImgChecker2 = generateColorChecker(initial.ImageStore, 128, 64, 12,
 		255, 160, 50, // orange
@@ -4410,7 +4411,7 @@ func main() {
 	)
 	initial.ImgChecker3 = generateColorChecker(initial.ImageStore, 120, 60, 10,
 		230, 80, 160, // pink
-		80, 200, 80,  // green
+		80, 200, 80, // green
 	)
 
 	// SVG demo images — rasterized at load time.

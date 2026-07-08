@@ -8,7 +8,7 @@ import (
 	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/render"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/text"
 	"github.com/timzifer/lux/theme"
 )
 
