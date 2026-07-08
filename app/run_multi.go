@@ -1,25 +1,25 @@
 package app
 
 import (
+	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
 	"github.com/timzifer/lux/internal/gpu"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/ui"
 )
 
 // windowContext holds per-window rendering and input state for multi-window mode.
 type windowContext struct {
-	id          WindowID
-	config      WindowConfig
-	reconciler  *ui.Reconciler
-	hitMap      hit.Map
-	hoverState  ui.HoverState
-	dispatcher  *ui.EventDispatcher
-	mouseX      float32
-	mouseY      float32
-	dragCB      func(x, y float32)
-	dragRelease func(x, y float32)
+	id               WindowID
+	config           WindowConfig
+	reconciler       *ui.Reconciler
+	hitMap           hit.Map
+	hoverState       ui.HoverState
+	dispatcher       *ui.EventDispatcher
+	mouseX           float32
+	mouseY           float32
+	dragCB           func(x, y float32)
+	dragRelease      func(x, y float32)
 	cursor           input.CursorKind
 	interactionDirty bool // set when hit.Map callbacks mutate state
 	currentTree      ui.Element

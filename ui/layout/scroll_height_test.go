@@ -5,7 +5,7 @@ package layout_test
 import (
 	"testing"
 
-	"github.com/timzifer/lux/internal/hit"
+	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"

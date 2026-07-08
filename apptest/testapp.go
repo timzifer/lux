@@ -9,8 +9,8 @@ import (
 
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/app"
+	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/theme"
@@ -45,9 +45,9 @@ func WithTheme(th theme.Theme) TestOption {
 // It mirrors the frame loop from app/run.go without a platform or GPU,
 // providing semantic querying and programmatic interaction.
 type TestApp[M any] struct {
-	model      M
-	update     func(M, any) (M, app.Cmd)
-	view       func(M) ui.Element
+	model  M
+	update func(M, any) (M, app.Cmd)
+	view   func(M) ui.Element
 
 	reconciler *ui.Reconciler
 	fm         *ui.FocusManager
@@ -58,9 +58,9 @@ type TestApp[M any] struct {
 	currentTree ui.Element
 	accessTree  a11y.AccessTree
 
-	appLoop    *loop.Loop
-	clipboard  memClipboard
-	theme      theme.Theme
+	appLoop   *loop.Loop
+	clipboard memClipboard
+	theme     theme.Theme
 
 	width, height int
 	frameCount    uint64

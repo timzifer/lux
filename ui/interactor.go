@@ -2,8 +2,8 @@ package ui
 
 import (
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/hit"
 )
 
 // Interactor couples hit-target registration with hover animation tracking.

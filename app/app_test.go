@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/draw"
+	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
@@ -395,7 +395,7 @@ func TestM4HoverChangesButtonColor(t *testing.T) {
 	// Build a scene with hover on button 0 at full opacity.
 	var hover ui.HoverState
 	hover.SetHovered(0, 0) // instant hover
-	hover.Tick(0)           // snap to target
+	hover.Tick(0)          // snap to target
 
 	canvas := render.NewSceneCanvas(800, 600)
 	ix := ui.NewInteractor(nil, &hover)
@@ -562,7 +562,6 @@ func TestScrollViewReactsToScrollWheel(t *testing.T) {
 		t.Errorf("ScrollState.Offset = %f, want > 0 after scroll-down event", scroll.Offset)
 	}
 }
-
 
 // ── Widget Reconciliation Tests ─────────────────────────────────
 

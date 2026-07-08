@@ -8,11 +8,10 @@ import (
 	"github.com/timzifer/lux/anim"
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
+	"github.com/timzifer/lux/hit"
 	luximage "github.com/timzifer/lux/image"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/internal/gpu"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/loop"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/internal/text"
@@ -20,6 +19,7 @@ import (
 	"github.com/timzifer/lux/platform"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
+	"github.com/timzifer/lux/ui/nav"
 	"github.com/timzifer/lux/ui/osk"
 )
 
@@ -205,7 +205,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 
 	reconciler := ui.NewReconciler()
 	currentModel := model
-	currentLocale := cfg.locale // BCP 47 tag, propagated to RenderCtx (RFC-003 §3.8)
+	currentLocale := cfg.locale  // BCP 47 tag, propagated to RenderCtx (RFC-003 §3.8)
 	activeProfile := cfg.profile // interaction profile, propagated to RenderCtx (RFC-004 §2.4)
 	if activeProfile != nil {
 		dispatcher.SetGestureConfig(ui.GestureConfigFromProfile(activeProfile))
@@ -304,8 +304,8 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	var dragCallback func(x, y float32) // active drag callback (non-nil while dragging)
 	var dragRelease func(x, y float32)  // called once when drag ends
 	var currentCursor input.CursorKind
-	var interactionDirty bool  // set when hit.Map callbacks mutate state (scroll, drag, click)
-	var widgetNeedsFrame bool  // set by widgets via ix.SetNeedsFrame(); persists across frames
+	var interactionDirty bool // set when hit.Map callbacks mutate state (scroll, drag, click)
+	var widgetNeedsFrame bool // set by widgets via ix.SetNeedsFrame(); persists across frames
 	var dynamicHandlers []globalHandlerEntry
 
 	// On-Screen Keyboard state (RFC-004 §5).
@@ -972,4 +972,3 @@ func syncImages(store *luximage.Store, renderer gpu.Renderer) {
 
 // Ensure ViewFunc constraint is satisfied at compile time.
 var _ ViewFunc[struct{}] = func(_ struct{}) ui.Element { return ui.Empty() }
-

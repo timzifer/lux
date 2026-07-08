@@ -5,8 +5,8 @@ import (
 
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/fonts"
+	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/theme"
@@ -248,7 +248,7 @@ func TestScrollStateClamp(t *testing.T) {
 		t.Errorf("Offset = %f, want 100", s.Offset)
 	}
 	s.ScrollBy(-500, 500, 200) // try to scroll past max
-	if s.Offset != 300 {        // max = 500 - 200 = 300
+	if s.Offset != 300 {       // max = 500 - 200 = 300
 		t.Errorf("Offset = %f, want 300 (clamped)", s.Offset)
 	}
 	s.ScrollBy(1000, 500, 200) // scroll back up past 0

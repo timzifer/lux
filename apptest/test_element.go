@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/timzifer/lux/a11y"
+	"github.com/timzifer/lux/hit"
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/hit"
 	"github.com/timzifer/lux/ui"
 )
 
