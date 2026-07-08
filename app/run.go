@@ -84,6 +84,7 @@ func runInternal[M any](model M, update func(M, Msg) (M, Cmd), view ViewFunc[M],
 	}); err != nil {
 		return fmt.Errorf("platform init: %w", err)
 	}
+	wirePlatformCanvas(plat)
 
 	// Wake the platform event loop when a message is enqueued from a
 	// background goroutine so that idle-blocking platforms (Win32

@@ -60,6 +60,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 	}); err != nil {
 		return fmt.Errorf("platform init: %w", err)
 	}
+	wirePlatformCanvas(plat)
 	defer plat.Destroy()
 
 	// Wake the platform event loop when a message is enqueued from a

@@ -12,7 +12,6 @@ import (
 	"syscall/js"
 
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/wgpu"
 	"github.com/timzifer/lux/platform"
 )
 
@@ -106,9 +105,13 @@ func (p *Platform) Init(cfg platform.Config) error {
 	}
 
 	log.Printf("web/wasm: Init OK: size=%dx%d fb=%dx%d dpr=%.1f", p.width, p.height, p.fbWidth, p.fbHeight, p.dpr)
-	wgpu.SetWASMCanvas(p.canvas)
 	return nil
 }
+
+// WASMCanvas returns the HTML canvas element the platform renders into.
+// The app layer probes for this method and hands the canvas to the GPU
+// backend, keeping the platform layer free of renderer dependencies.
+func (p *Platform) WASMCanvas() js.Value { return p.canvas }
 
 func (p *Platform) Run(cb platform.Callbacks) error {
 	log.Println("web/wasm: Run start")
