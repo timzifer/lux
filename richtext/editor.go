@@ -7,7 +7,7 @@ import (
 
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/textseg"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -78,7 +78,7 @@ func WithScroll(s *ui.ScrollState) Option {
 	return func(e *RichTextEditor) { e.Scroll = s }
 }
 
-// WithPlaceholder sets the placeholder text.
+// WithPlaceholder sets the placeholder textseg.
 func WithPlaceholder(p string) Option {
 	return func(e *RichTextEditor) { e.Placeholder = p }
 }
@@ -146,7 +146,7 @@ func (n RichTextEditor) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Plain text and lines for layout (direct from AttributedString).
 	plainText := n.Value.Text
-	lines := text.Lines(plainText)
+	lines := textseg.Lines(plainText)
 
 	// Custom theme DrawFunc dispatch.
 	if df := th.DrawFunc(theme.WidgetKindRichTextEditor); df != nil {
@@ -220,7 +220,7 @@ func (n RichTextEditor) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		lineBoundsArr := make([]lineBounds, len(ls))
 		for i, span := range ls {
 			lineText := val[span.Start:span.End]
-			clusters := text.GraphemeClusters(lineText)
+			clusters := textseg.GraphemeClusters(lineText)
 			xs := make([]float32, len(clusters))
 			offs := make([]int, len(clusters))
 			lineX := cX + lineListIndent(n.Value, span)
@@ -273,7 +273,7 @@ func (n RichTextEditor) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 					} else if clickCount == 2 {
 						// Double-click: select word.
 						multiClickHandled = true
-						wStart, wEnd := text.WordAt(val, off)
+						wStart, wEnd := textseg.WordAt(val, off)
 						dragAnchor = wStart
 						if fm.Input != nil {
 							fm.Input.SelectionStart = wStart
@@ -307,7 +307,7 @@ func (n RichTextEditor) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 // drawDefault renders the editor with the default theme appearance.
 func (n RichTextEditor) drawDefault(ctx *ui.LayoutContext, area ui.Bounds, w, h int,
-	focused bool, scrollOff float32, plainText string, lines []text.LineSpan,
+	focused bool, scrollOff float32, plainText string, lines []textseg.LineSpan,
 	lineH float32, bodyStyle draw.TextStyle) {
 
 	canvas := ctx.Canvas
@@ -422,7 +422,7 @@ func (n RichTextEditor) drawDefault(ctx *ui.LayoutContext, area ui.Bounds, w, h 
 
 // drawSelection renders the selection highlight across lines.
 func (n RichTextEditor) drawSelection(canvas draw.Canvas, tokens *theme.TokenSet,
-	plainText string, lines []text.LineSpan, lineH float32, bodyStyle draw.TextStyle,
+	plainText string, lines []textseg.LineSpan, lineH float32, bodyStyle draw.TextStyle,
 	contentX, contentY, contentH, scrollOff float32, input *ui.InputState) {
 
 	selA, selB := input.SelectionRange()
@@ -477,7 +477,7 @@ func (n RichTextEditor) drawSelection(canvas draw.Canvas, tokens *theme.TokenSet
 // drawRichContent renders text with per-run styling using resolved
 // style runs from the AttributedString's tagged-range attributes.
 func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
-	plainText string, lines []text.LineSpan, lineH float32,
+	plainText string, lines []textseg.LineSpan, lineH float32,
 	bodyStyle draw.TextStyle, defaultColor draw.Color,
 	contentX, contentY, contentW, contentH, scrollOff float32) {
 
@@ -691,7 +691,7 @@ func (n RichTextEditor) drawRichContent(canvas draw.Canvas,
 
 // isFirstLineOfParagraph returns true if lines[i] is the first line
 // of a paragraph (i.e., preceded by \n or at the start of text).
-func isFirstLineOfParagraph(i int, lines []text.LineSpan, plainText string) bool {
+func isFirstLineOfParagraph(i int, lines []textseg.LineSpan, plainText string) bool {
 	if i == 0 {
 		return true
 	}
@@ -705,7 +705,7 @@ const editorListIndentStep = 24 // dp per nesting level
 
 // lineListIndent returns the horizontal indent (in dp) for a line
 // based on the paragraph-level list attributes at span.Start.
-func lineListIndent(doc AttributedString, span text.LineSpan) float32 {
+func lineListIndent(doc AttributedString, span textseg.LineSpan) float32 {
 	s := doc.ResolveAt(span.Start)
 	if s.ListType == draw.ListTypeNone {
 		return 0

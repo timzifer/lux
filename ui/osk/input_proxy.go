@@ -7,7 +7,7 @@ package osk
 import (
 	"github.com/timzifer/lux/draw"
 	"github.com/timzifer/lux/interaction"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/textseg"
 	"github.com/timzifer/lux/ui"
 )
 
@@ -99,7 +99,7 @@ func (el InputProxyElement) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	// Hit target for touch-based cursor repositioning.
 	if ix != nil {
 		is := el.Input
-		boundaries := text.GraphemeClusters(value)
+		boundaries := textseg.GraphemeClusters(value)
 		boundaryXs := make([]float32, len(boundaries))
 		for i, boff := range boundaries {
 			if boff == 0 {

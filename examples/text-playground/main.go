@@ -28,6 +28,7 @@ import (
 	"github.com/timzifer/lux/ui/nav"
 
 	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/textseg"
 )
 
 // ── Section Registry ──────────────────────────────────────────────
@@ -106,12 +107,12 @@ type Model struct {
 	ListEditorDoc    richtext.AttributedString
 	ListEditorScroll *ui.ScrollState
 	// HTML Viewer section state
-	HTMLViewerDoc    richtext.AttributedString
-	HTMLViewerScroll *ui.ScrollState
-	HTMLViewerURL    string
-	HTMLViewerFile   string
-	HTMLViewerPicker *form.FilePickerState
-	HTMLViewerError  string
+	HTMLViewerDoc     richtext.AttributedString
+	HTMLViewerScroll  *ui.ScrollState
+	HTMLViewerURL     string
+	HTMLViewerFile    string
+	HTMLViewerPicker  *form.FilePickerState
+	HTMLViewerError   string
 	HTMLViewerLoading bool
 	// Images
 	ImageStore  *luximage.Store
@@ -291,7 +292,6 @@ func editorPanel(m Model) ui.Element {
 		),
 	)
 }
-
 
 // ── Section Content Switch ────────────────────────────────────────
 
@@ -1394,7 +1394,7 @@ func graphemeNavSection() ui.Element {
 	}
 
 	for _, s := range samples {
-		clusters := text.GraphemeClusters(s.text)
+		clusters := textseg.GraphemeClusters(s.text)
 		nClusters := len(clusters) - 1
 		if len(s.text) == 0 {
 			nClusters = 0
@@ -1523,12 +1523,12 @@ func main() {
 		NavSplitRatio: 0.22,
 		EditorScroll:  &ui.ScrollState{},
 		// RichTextEditor defaults
-		RichEditorDoc: mustHTML(`<p><b>Hello </b>Rich World!</p><p>This is a <i>fully editable</i> rich text editor.</p><p>Try typing, selecting, and using undo/redo.</p>`),
-		RichEditorScroll: &ui.ScrollState{},
-		RichEditorDoc2: mustHTML(`Read-only content with <b><span style="color:#3b82f6">styled spans</span></b>.`),
+		RichEditorDoc:     mustHTML(`<p><b>Hello </b>Rich World!</p><p>This is a <i>fully editable</i> rich text editor.</p><p>Try typing, selecting, and using undo/redo.</p>`),
+		RichEditorScroll:  &ui.ScrollState{},
+		RichEditorDoc2:    mustHTML(`Read-only content with <b><span style="color:#3b82f6">styled spans</span></b>.`),
 		RichEditorScroll2: &ui.ScrollState{},
 		// Lists demo defaults
-		ListEditorDoc: mustHTML(`<ul><li>First item</li><li>Second item</li><li>Third item</li><ul><li>Sub-item A</li><li>Sub-item B</li></ul></ul>`),
+		ListEditorDoc:    mustHTML(`<ul><li>First item</li><li>Second item</li><li>Third item</li><ul><li>Sub-item A</li><li>Sub-item B</li></ul></ul>`),
 		ListEditorScroll: &ui.ScrollState{},
 		// HTML Viewer defaults
 		HTMLViewerScroll: &ui.ScrollState{},
@@ -1561,4 +1561,4 @@ func main() {
 }
 
 // Ensure text package is used (grapheme-nav and line-breaking sections).
-var _ = text.GraphemeClusters
+var _ = textseg.GraphemeClusters

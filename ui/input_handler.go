@@ -5,7 +5,7 @@ package ui
 
 import (
 	"github.com/timzifer/lux/input"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/textseg"
 )
 
 // ClipboardProvider abstracts clipboard access for testability.
@@ -113,7 +113,7 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			is.OnChange(is.Value)
 			dirty = true
 		} else if is.CursorOffset > 0 {
-			v, newOff := text.DeleteBackward(is.Value, is.CursorOffset)
+			v, newOff := textseg.DeleteBackward(is.Value, is.CursorOffset)
 			is.Value = v
 			is.CursorOffset = newOff
 			is.OnChange(v)
@@ -125,7 +125,7 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			is.OnChange(is.Value)
 			dirty = true
 		} else if is.CursorOffset < len(is.Value) {
-			v, newOff := text.DeleteForward(is.Value, is.CursorOffset)
+			v, newOff := textseg.DeleteForward(is.Value, is.CursorOffset)
 			is.Value = v
 			is.CursorOffset = newOff
 			is.OnChange(v)
@@ -145,9 +145,9 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			is.ClearSelection()
 		}
 		if ctrl {
-			is.CursorOffset = text.PrevWordBoundary(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.PrevWordBoundary(is.Value, is.CursorOffset)
 		} else {
-			is.CursorOffset = text.PrevGraphemeCluster(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.PrevGraphemeCluster(is.Value, is.CursorOffset)
 		}
 		dirty = true
 	case input.KeyRight:
@@ -164,9 +164,9 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			is.ClearSelection()
 		}
 		if ctrl {
-			is.CursorOffset = text.NextWordBoundary(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.NextWordBoundary(is.Value, is.CursorOffset)
 		} else {
-			is.CursorOffset = text.NextGraphemeCluster(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.NextGraphemeCluster(is.Value, is.CursorOffset)
 		}
 		dirty = true
 	case input.KeyUp:
@@ -178,7 +178,7 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			} else {
 				is.ClearSelection()
 			}
-			is.CursorOffset = text.CursorUp(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.CursorUp(is.Value, is.CursorOffset)
 			dirty = true
 		}
 	case input.KeyDown:
@@ -190,7 +190,7 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			} else {
 				is.ClearSelection()
 			}
-			is.CursorOffset = text.CursorDown(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.CursorDown(is.Value, is.CursorOffset)
 			dirty = true
 		}
 	case input.KeyHome:
@@ -202,7 +202,7 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			is.ClearSelection()
 		}
 		if is.Multiline && !ctrl {
-			is.CursorOffset = text.LineStart(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.LineStart(is.Value, is.CursorOffset)
 		} else {
 			is.CursorOffset = 0
 		}
@@ -216,7 +216,7 @@ func HandleTextFieldKeyMsg(fm *FocusManager, msg input.KeyMsg, dispatcher *Event
 			is.ClearSelection()
 		}
 		if is.Multiline && !ctrl {
-			is.CursorOffset = text.LineEnd(is.Value, is.CursorOffset)
+			is.CursorOffset = textseg.LineEnd(is.Value, is.CursorOffset)
 		} else {
 			is.CursorOffset = len(is.Value)
 		}

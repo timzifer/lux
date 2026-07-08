@@ -1,4 +1,4 @@
-package text
+package textseg
 
 import (
 	"testing"

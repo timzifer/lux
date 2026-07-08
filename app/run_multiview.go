@@ -13,6 +13,7 @@ import (
 	"github.com/timzifer/lux/internal/render"
 	"github.com/timzifer/lux/internal/text"
 	"github.com/timzifer/lux/platform"
+	"github.com/timzifer/lux/textseg"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -391,7 +392,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									is.OnChange(is.Value)
 									modelDirty = true
 								} else if is.CursorOffset > 0 {
-									v, newOff := text.DeleteBackward(is.Value, is.CursorOffset)
+									v, newOff := textseg.DeleteBackward(is.Value, is.CursorOffset)
 									is.Value = v
 									is.CursorOffset = newOff
 									is.OnChange(v)
@@ -403,7 +404,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									is.OnChange(is.Value)
 									modelDirty = true
 								} else if is.CursorOffset < len(is.Value) {
-									v, newOff := text.DeleteForward(is.Value, is.CursorOffset)
+									v, newOff := textseg.DeleteForward(is.Value, is.CursorOffset)
 									is.Value = v
 									is.CursorOffset = newOff
 									is.OnChange(v)
@@ -424,9 +425,9 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									is.ClearSelection()
 								}
 								if ctrl {
-									is.CursorOffset = text.PrevWordBoundary(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.PrevWordBoundary(is.Value, is.CursorOffset)
 								} else {
-									is.CursorOffset = text.PrevGraphemeCluster(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.PrevGraphemeCluster(is.Value, is.CursorOffset)
 								}
 								modelDirty = true
 							case input.KeyRight:
@@ -444,9 +445,9 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									is.ClearSelection()
 								}
 								if ctrl {
-									is.CursorOffset = text.NextWordBoundary(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.NextWordBoundary(is.Value, is.CursorOffset)
 								} else {
-									is.CursorOffset = text.NextGraphemeCluster(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.NextGraphemeCluster(is.Value, is.CursorOffset)
 								}
 								modelDirty = true
 							case input.KeyUp:
@@ -458,7 +459,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									} else {
 										is.ClearSelection()
 									}
-									is.CursorOffset = text.CursorUp(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.CursorUp(is.Value, is.CursorOffset)
 									modelDirty = true
 								}
 							case input.KeyDown:
@@ -470,7 +471,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									} else {
 										is.ClearSelection()
 									}
-									is.CursorOffset = text.CursorDown(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.CursorDown(is.Value, is.CursorOffset)
 									modelDirty = true
 								}
 							case input.KeyHome:
@@ -482,7 +483,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									is.ClearSelection()
 								}
 								if is.Multiline && !ctrl {
-									is.CursorOffset = text.LineStart(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.LineStart(is.Value, is.CursorOffset)
 								} else {
 									is.CursorOffset = 0
 								}
@@ -496,7 +497,7 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 									is.ClearSelection()
 								}
 								if is.Multiline && !ctrl {
-									is.CursorOffset = text.LineEnd(is.Value, is.CursorOffset)
+									is.CursorOffset = textseg.LineEnd(is.Value, is.CursorOffset)
 								} else {
 									is.CursorOffset = len(is.Value)
 								}
@@ -949,4 +950,3 @@ func runMultiViewInternal[M any](model M, update func(M, Msg) (M, Cmd), multiVie
 		},
 	})
 }
-

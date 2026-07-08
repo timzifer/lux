@@ -3,7 +3,7 @@
 // All cursor operations work on grapheme cluster boundaries (UAX #29),
 // not byte or rune indices. This correctly handles emoji sequences,
 // combining characters, and regional indicators.
-package text
+package textseg
 
 import (
 	"github.com/rivo/uniseg"

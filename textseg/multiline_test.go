@@ -1,4 +1,4 @@
-package text
+package textseg
 
 import (
 	"testing"
@@ -199,9 +199,9 @@ func TestCursorUpDownTableDriven(t *testing.T) {
 		{"down from Hello[0]", CursorDown, 0, 6},
 		{"down from Hello[4]", CursorDown, 4, 10},
 		{"down from World[0]", CursorDown, 6, 12},
-		{"down from ![0]", CursorDown, 12, 13},  // last line → len
-		{"up from Hello[0]", CursorUp, 0, 0},    // first line → 0
-		{"down clamp", CursorDown, 4, 10},        // Hello col 4 → World col 4 = 'l' at offset 10
+		{"down from ![0]", CursorDown, 12, 13}, // last line → len
+		{"up from Hello[0]", CursorUp, 0, 0},   // first line → 0
+		{"down clamp", CursorDown, 4, 10},      // Hello col 4 → World col 4 = 'l' at offset 10
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

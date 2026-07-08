@@ -3,7 +3,7 @@ package form
 import (
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/textseg"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -206,7 +206,7 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 	}
 
 	// Pre-compute grapheme boundary X positions for click-to-cursor.
-	boundaries := text.GraphemeClusters(n.Value)
+	boundaries := textseg.GraphemeClusters(n.Value)
 	boundaryXs := make([]float32, len(boundaries))
 	for i, boff := range boundaries {
 		if boff == 0 {
@@ -244,7 +244,7 @@ func (n TextField) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 					} else if clickCount == 2 {
 						// Double-click: select word.
 						multiClickHandled = true
-						wStart, wEnd := text.WordAt(val, off)
+						wStart, wEnd := textseg.WordAt(val, off)
 						dragAnchor = wStart
 						if fm.Input != nil {
 							fm.Input.SelectionStart = wStart

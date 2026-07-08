@@ -3,7 +3,7 @@ package form
 import (
 	"github.com/timzifer/lux/a11y"
 	"github.com/timzifer/lux/draw"
-	"github.com/timzifer/lux/internal/text"
+	"github.com/timzifer/lux/textseg"
 	"github.com/timzifer/lux/theme"
 	"github.com/timzifer/lux/ui"
 )
@@ -156,7 +156,7 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		contentH := float32(h - textAreaPadY*2)
 
 		// Compute lines and find cursor position.
-		lines := text.Lines(n.Value)
+		lines := textseg.Lines(n.Value)
 		totalContentH := lineH * float32(len(lines))
 
 		// Determine which line the cursor is on and the cursor X position.
@@ -323,7 +323,7 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 
 	// Register scroll for mouse wheel.
 	if n.Scroll != nil {
-		lines := text.Lines(n.Value)
+		lines := textseg.Lines(n.Value)
 		lineH2 := lineH
 		totalH := lineH2 * float32(len(lines))
 		vpH := float32(h - textAreaPadY*2)
@@ -344,7 +344,7 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		lH := lineH
 		sOff := scrollOff
 		val := n.Value
-		ls := text.Lines(val)
+		ls := textseg.Lines(val)
 		sty := style
 
 		// Pre-compute per-line grapheme boundary positions for click-to-cursor.
@@ -355,7 +355,7 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 		lineBoundsArr := make([]lineBounds, len(ls))
 		for i, span := range ls {
 			lineText := val[span.Start:span.End]
-			clusters := text.GraphemeClusters(lineText)
+			clusters := textseg.GraphemeClusters(lineText)
 			xs := make([]float32, len(clusters))
 			offs := make([]int, len(clusters))
 			for j, boff := range clusters {
@@ -408,7 +408,7 @@ func (n TextArea) LayoutSelf(ctx *ui.LayoutContext) ui.Bounds {
 					} else if clickCount == 2 {
 						// Double-click: select word.
 						multiClickHandled = true
-						wStart, wEnd := text.WordAt(val, off)
+						wStart, wEnd := textseg.WordAt(val, off)
 						dragAnchor = wStart
 						if fm.Input != nil {
 							fm.Input.SelectionStart = wStart
