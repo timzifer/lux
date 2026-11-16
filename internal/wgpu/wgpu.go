@@ -661,3 +661,15 @@ type BindGroupLayout interface {
 type Sampler interface {
 	Destroy()
 }
+
+// TextureReader is an optional Device capability: read a 4-byte-per-pixel
+// texture back to host memory and wait for the GPU. Used for offscreen
+// rendering (tests, benchmarks). Implemented by the gogpu backend.
+type TextureReader interface {
+	// ReadTexture copies width×height pixels of tex (created with
+	// TextureUsageCopySrc) into dst, tightly packed (4*width bytes per row),
+	// after all submitted work has finished.
+	ReadTexture(tex Texture, width, height int, dst []byte) error
+	// WaitIdle blocks until all submitted GPU work has finished.
+	WaitIdle() error
+}

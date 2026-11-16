@@ -71,7 +71,19 @@ type ShaderDesc struct {
 	Effect ShaderEffect // built-in effect (used when Source is empty)
 	Params [8]float32   // user-defined uniforms passed to the shader
 	Image  ImageID      // optional texture input (for PaintShaderImage)
+
+	// CPU optionally implements a custom Source on the CPU renderer, which
+	// cannot run WGSL. Without it the CPU renderer leaves the rect empty.
+	// Built-in effects need no CPU function.
+	CPU ShaderFunc
 }
+
+// ShaderFunc is the CPU form of a fragment shader. It returns the
+// straight-alpha color at (u, v) ∈ [0,1]² of the shaded rect — the WGSL
+// in.uv — for the frame time t (custom.time) and the user params
+// (custom.user0 … = params[0] …). It is called once per pixel and must be
+// safe to call concurrently.
+type ShaderFunc func(u, v, t float32, params *[8]float32) Color
 
 // Paint describes how a surface is filled (RFC §6.2.3).
 // Tagged union — exactly one variant is active, determined by Kind.

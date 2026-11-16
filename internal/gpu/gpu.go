@@ -32,6 +32,11 @@ type Config struct {
 	NativeDisplay uintptr // Platform-specific display handle (X11 Display*, wl_display*, 0 on macOS/Windows).
 	DRMfd         int     // DRM file descriptor for VK_KHR_display surface creation (-1 if unused).
 	DRMConnectorID uint32 // DRM connector ID for display selection (0 if unused).
+
+	// Offscreen asks GPU renderers without a window (no NativeHandle/DRMfd)
+	// to render into an owned texture that can be read back (tests,
+	// benchmarks). CPU renderers ignore it: they are always offscreen.
+	Offscreen bool
 }
 
 // ImageUploader is an optional interface for renderers that support image textures.
