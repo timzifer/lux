@@ -87,6 +87,36 @@ ui/button/
 
 ---
 
+## Pixel Tests (CPU Renderer)
+
+Golden scenes check the draw list; `uitest.RenderImage` checks pixels. It lays out the tree,
+shapes text with the bundled fonts and rasterizes the scene on the CPU with the
+[stilus](https://github.com/timzifer/stilus) backend — no GPU, no cgo:
+
+```go
+func TestSaveButton(t *testing.T) {
+    img := uitest.RenderImage(button.Text("Save", nil), 200, 60) // *image.RGBA, premultiplied
+    if img.RGBAAt(10, 10) == img.RGBAAt(199, 59) {
+        t.Fatal("button not drawn")
+    }
+}
+```
+
+Run with `-args -render-out=DIR` to write the PNGs of `uitest/render_test.go` for inspection.
+Prefer property checks (ink in a region, colour of a rect) over byte-exact PNG goldens:
+floating-point fusion differs between architectures.
+
+A whole app can render real pixels headlessly too:
+
+```go
+app.Run(model, update, view,
+    app.WithHeadlessFrames(3),
+    app.WithSoftwareRenderer(func(img *image.RGBA) { /* inspect frame */ }),
+)
+```
+
+---
+
 ## Testing Animations
 
 Because animations accept `dt` directly, animation behaviour can be tested without a running

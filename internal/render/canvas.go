@@ -316,6 +316,7 @@ func (c *SceneCanvas) appendShaderFill(r draw.Rect, radius float32, paint draw.P
 		ShaderKey: key,
 		Params:    paint.Shader.Params,
 		ImageID:   paint.Shader.Image,
+		CPU:       paint.Shader.CPU,
 	}
 	if c.overlayMode {
 		c.scene.OverlayShaderRects = append(c.scene.OverlayShaderRects, sr)
@@ -916,14 +917,24 @@ func (c *SceneCanvas) DrawImageSlice(slice draw.ImageSlice, dst draw.Rect, opts 
 	}
 }
 func (c *SceneCanvas) DrawTexture(tex draw.TextureID, dst draw.Rect) {
+	c.drawSurface(draw.DrawSurface{TextureID: tex}, dst)
+}
+
+// DrawRasterSurface records a CPU-rasterized external surface
+// (implements draw.RasterSurfaceCanvas).
+func (c *SceneCanvas) DrawRasterSurface(id draw.SurfaceID, src draw.SurfaceRasterizer, dst draw.Rect) {
+	if src == nil {
+		return
+	}
+	c.drawSurface(draw.DrawSurface{SurfaceID: id, Raster: src}, dst)
+}
+
+func (c *SceneCanvas) drawSurface(ds draw.DrawSurface, dst draw.Rect) {
 	if c.isClipped(dst.X, dst.Y, dst.W, dst.H) {
 		return
 	}
 	c.emitClipIfChanged()
-	ds := draw.DrawSurface{
-		X: int(dst.X), Y: int(dst.Y), W: int(dst.W), H: int(dst.H),
-		TextureID: tex,
-	}
+	ds.X, ds.Y, ds.W, ds.H = int(dst.X), int(dst.Y), int(dst.W), int(dst.H)
 	// Store current clip rect so the renderer can scissor-clip the surface.
 	if len(c.clips) > 0 {
 		clip := c.clips[len(c.clips)-1]

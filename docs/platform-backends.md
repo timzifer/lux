@@ -110,6 +110,53 @@ app.Run(model, update, view,
 
 ---
 
+## Software Renderer
+
+`app.WithSoftwareRenderer(present)` replaces the GPU renderer with the pure-Go CPU
+rasterizer [stilus](https://github.com/timzifer/stilus) (`internal/gpu/stilus_renderer.go`).
+It draws rects, rounded rects, shadows, gradients, paths, bitmap/MSDF/emoji text, images,
+blur regions, shader effects, CPU surfaces and overlays in the same order as the wgpu
+renderer. The frame is drawn in horizontal bands on all cores; the result is byte for
+byte the same as with one worker.
+
+Frames go to `present` (premultiplied `*image.RGBA`); with `present == nil` they are shown
+in the window on Windows (GDI) and only rendered elsewhere — the mode for headless CI.
+
+| Feature | CPU (stilus) | GPU (wgpu) |
+|---|---|---|
+| Built-in shader effects (noise, plasma, voronoi) | Go ports | not drawn yet (`ShaderCache` unused) |
+| Custom WGSL (`ShaderDesc.Source`) | via `ShaderDesc.CPU`, else skipped | not drawn yet |
+| `SurfaceProvider` with GPU texture | skipped | blitted |
+| `SurfaceProvider` + `draw.SurfaceRasterizer` | drawn in place, no copy | rasterized to scratch, uploaded |
+
+---
+
+## CPU Surfaces
+
+A `ui.SurfaceProvider` that also implements `draw.SurfaceRasterizer` is drawn by the
+renderer itself:
+
+```go
+func (p *MyView) RasterizeSurface(dst *image.RGBA, rect, clip image.Rectangle) {
+    // composite source-over into dst (premultiplied); write only inside clip
+}
+```
+
+The CPU renderer passes its framebuffer, so the provider draws straight into the frame.
+The GPU renderer passes a transparent scratch image at the same device coordinates and
+uploads it — one provider works on both backends.
+
+`contrib/cerasurface` (separate module, Go 1.27) shows PDF pages rendered by
+[cera](https://github.com/timzifer/cera) this way:
+
+```go
+doc, _ := cera.Open(pdf)
+page, _ := doc.Page(0)
+ui.Surface(1, &cerasurface.Page{Page: page}, 600, 800)
+```
+
+---
+
 ## GPU Surface
 
 Each backend implements `CreateWGPUSurface(instance uintptr) uintptr`, which creates a

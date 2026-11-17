@@ -116,6 +116,10 @@ type FrameToken uint64
 // SurfaceProvider provides GPU textures for external surface rendering (RFC §8).
 // External renderers (browser engines, video decoders, 3D engines) implement
 // this interface to embed their content in the widget tree.
+//
+// A provider that also implements draw.SurfaceRasterizer is drawn on the CPU
+// instead: every renderer calls RasterizeSurface, and AcquireFrame/ReleaseFrame
+// are not called for drawing (return 0 there).
 type SurfaceProvider interface {
 	// AcquireFrame returns the current GPU texture for the given bounds.
 	AcquireFrame(bounds draw.Rect) (draw.TextureID, FrameToken)
@@ -1060,9 +1064,17 @@ func layoutSurface(node SurfaceElement, area Bounds, canvas draw.Canvas, tokens 
 	r := draw.R(float32(area.X), float32(area.Y), float32(w), float32(h))
 
 	if node.Provider != nil {
-		texID, token := node.Provider.AcquireFrame(r)
-		canvas.DrawTexture(texID, r)
-		node.Provider.ReleaseFrame(token)
+		// CPU-rasterizable providers are drawn in place by the renderer
+		// (draw.SurfaceRasterizer); others hand over a GPU texture.
+		rs, isRaster := node.Provider.(draw.SurfaceRasterizer)
+		rc, canRaster := canvas.(draw.RasterSurfaceCanvas)
+		if isRaster && canRaster {
+			rc.DrawRasterSurface(node.ID, rs, r)
+		} else {
+			texID, token := node.Provider.AcquireFrame(r)
+			canvas.DrawTexture(texID, r)
+			node.Provider.ReleaseFrame(token)
+		}
 	} else {
 		// Fallback: render placeholder rectangle for surface slot.
 		canvas.FillRect(r, draw.SolidPaint(tokens.Colors.Surface.Base))

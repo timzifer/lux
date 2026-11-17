@@ -254,6 +254,18 @@ func (e *CanvasEncoder) DrawTexture(tex draw.TextureID, dst draw.Rect) {
 	})
 }
 
+// DrawRasterSurface forwards a CPU surface to the inner canvas; the wire
+// stream records it as a texture blit of ID 0 (implements draw.RasterSurfaceCanvas).
+func (e *CanvasEncoder) DrawRasterSurface(id draw.SurfaceID, src draw.SurfaceRasterizer, dst draw.Rect) {
+	if rc, ok := e.inner.(draw.RasterSurfaceCanvas); ok {
+		rc.DrawRasterSurface(id, src, dst)
+	}
+	e.buf.WriteOp(OpDrawTexture, func(w *WireWriter) {
+		w.WriteUint64(0)
+		w.WriteRect(dst)
+	})
+}
+
 // ── Shadows ─────────────────────────────────────────────────────────────────
 
 func (e *CanvasEncoder) DrawShadow(r draw.Rect, shadow draw.Shadow) {

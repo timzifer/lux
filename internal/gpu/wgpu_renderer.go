@@ -81,6 +81,11 @@ type WGPURenderer struct {
 	surfaceTextures map[draw.TextureID]wgpu.TextureView
 	surfSampler     wgpu.Sampler
 	surfInstBuffer  wgpu.Buffer // per-surface instance (rect x,y,w,h = 16 bytes)
+	surfDrawBuffer  wgpu.Buffer // all surface rects of a frame, 16 bytes each
+	surfDrawBufCap  uint64
+	surfInst        []float32
+	surfFrame       []draw.DrawSurface
+	rasterSlots     []*rasterSurfaceSlot
 
 	// Gradient resources
 	gradUniBuffer    wgpu.Buffer // gradient params uniform buffer (resizable)
@@ -142,6 +147,9 @@ type WGPURenderer struct {
 	// State tracking
 	inited         bool
 	surfaceOK      bool
+	offscreen      bool              // render into offTex instead of a window surface
+	offTex         wgpu.Texture
+	offView        wgpu.TextureView
 	atlasW, atlasH int // last known atlas texture size
 	msdfW, msdfH   int // last known MSDF atlas texture size
 	emojiW, emojiH int // last known color emoji atlas texture size
@@ -236,6 +244,11 @@ func (r *WGPURenderer) Init(cfg Config) error {
 	r.queue = device.GetQueue()
 
 	// Configure surface.
+	r.offscreen = cfg.Offscreen && !r.surfaceOK
+	if r.offscreen {
+		r.createOffscreenTarget()
+	}
+
 	if r.surfaceOK {
 		r.surface.Configure(device, &wgpu.SurfaceConfiguration{
 			Format:      wgpu.TextureFormatBGRA8Unorm,
@@ -937,6 +950,9 @@ func (r *WGPURenderer) Resize(width, height int) {
 			PresentMode: wgpu.PresentModeFifo,
 		})
 	}
+	if r.offscreen {
+		r.createOffscreenTarget()
+	}
 	r.updateProjection()
 	r.resizeBlurTextures()
 	r.resizeMSAATextures()
@@ -954,7 +970,7 @@ func (r *WGPURenderer) BeginFrame() {
 // before beginning the render pass, then use firstInstance offsets to
 // separate main and overlay draws within the same buffer.
 func (r *WGPURenderer) Draw(scene draw.Scene) {
-	if !r.inited || !r.surfaceOK {
+	if !r.inited || !(r.surfaceOK || r.offscreen) {
 		return
 	}
 	// Update grain intensity from scene (RFC-008 §10.5).
@@ -965,10 +981,16 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 	drawStart := time.Now()
 
 	// Acquire current surface texture.
-	textureView, err := r.surface.GetCurrentTexture()
-	if err != nil {
-		log.Printf("wgpu: GetCurrentTexture failed: %v", err)
-		return
+	var textureView wgpu.TextureView
+	if r.offscreen {
+		textureView = r.offView
+	} else {
+		var err error
+		textureView, err = r.surface.GetCurrentTexture()
+		if err != nil {
+			log.Printf("wgpu: GetCurrentTexture failed: %v", err)
+			return
+		}
 	}
 
 	// --- Phase 1: Upload all buffer data before recording draw commands ---
@@ -1162,6 +1184,9 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 	}
 	mainGradCount := len(scene.GradientRects)
 
+	// External surfaces: rasterize CPU surfaces and upload instance rects.
+	frameSurfaces := r.prepareSurfaces(scene.Surfaces)
+
 	// --- Phase 2: Record render pass commands ---
 
 	hasBlur := len(scene.BlurRegions) > 0 && r.blurPipeline != nil
@@ -1220,7 +1245,7 @@ func (r *WGPURenderer) Draw(scene draw.Scene) {
 		vpW, vpH)
 
 	// Draw surfaces (between main and overlay).
-	r.drawSurfaces(renderPass, scene.Surfaces, vpW, vpH)
+	r.drawSurfaces(renderPass, frameSurfaces, vpW, vpH)
 
 	// Draw images (between main and overlay).
 	r.drawImages(renderPass, scene.ImageRects, vpW, vpH)
@@ -1552,6 +1577,13 @@ func (r *WGPURenderer) Destroy() {
 	if !r.inited {
 		return
 	}
+	r.destroyRasterSurfaces()
+	if r.offView != nil {
+		r.offView.Destroy()
+	}
+	if r.offTex != nil {
+		r.offTex.Destroy()
+	}
 	r.projBindGroup.Destroy()
 	r.textBindGroup.Destroy()
 	r.msdfBindGroup.Destroy()
@@ -1834,7 +1866,9 @@ func (r *WGPURenderer) ensureGPUBuffer(buf *wgpu.Buffer, cap *uint64, needed uin
 		return
 	}
 	newCap := needed * 2
-	(*buf).Destroy()
+	if *buf != nil {
+		(*buf).Destroy()
+	}
 	*buf = r.device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: label, Size: newCap, Usage: usage,
 	})
@@ -2117,15 +2151,13 @@ func (r *WGPURenderer) drawGradientRect(renderPass wgpu.RenderPass, bindGroupIdx
 
 // drawSurfaces blits registered surface textures into the render pass.
 func (r *WGPURenderer) drawSurfaces(renderPass wgpu.RenderPass, surfaces []draw.DrawSurface, vpW, vpH uint32) {
-	for _, s := range surfaces {
-		view, ok := r.surfaceTextures[s.TextureID]
-		if !ok || s.TextureID == 0 || view == nil {
+	// surfaces come from prepareSurfaces: every entry has a registered
+	// texture and its rect at index i of surfDrawBuffer.
+	for i, s := range surfaces {
+		view := r.surfaceTextures[s.TextureID]
+		if view == nil {
 			continue
 		}
-
-		// Upload per-surface instance data (rect).
-		instData := []float32{float32(s.X), float32(s.Y), float32(s.W), float32(s.H)}
-		r.surfInstBuffer.Write(r.queue, float32SliceToBytes(instData))
 
 		// Create per-surface bind group for texture.
 		surfBindGroup := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
@@ -2153,7 +2185,7 @@ func (r *WGPURenderer) drawSurfaces(renderPass wgpu.RenderPass, surfaces []draw.
 		renderPass.SetBindGroup(0, r.projBindGroup)
 		renderPass.SetBindGroup(1, surfBindGroup)
 		renderPass.SetVertexBuffer(0+metalBufferSlotOffset, r.rectVertBuffer, 0, 48)
-		renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfInstBuffer, 0, 16)
+		renderPass.SetVertexBuffer(1+metalBufferSlotOffset, r.surfDrawBuffer, uint64(i)*16, 16)
 		renderPass.Draw(6, 1, 0, 0)
 
 		surfBindGroup.Destroy()

@@ -1,5 +1,7 @@
 package draw
 
+import "image"
+
 // Canvas is the 2D rendering interface (RFC §6.2).
 //
 // Coordinates are relative to the current transform stack.
@@ -128,11 +130,34 @@ type TextureID uint64
 // SurfaceID identifies a surface slot in the widget tree (RFC §8).
 type SurfaceID uint64
 
+// SurfaceRasterizer draws an external surface on the CPU (RFC §8).
+//
+// Providers that can rasterize (PDF pages, software video, charts drawn with
+// stilus …) implement it next to ui.SurfaceProvider; renderers then call it
+// instead of blitting a GPU texture. The CPU renderer passes its framebuffer,
+// so the surface is drawn in place without a copy; GPU renderers pass a
+// transparent scratch image and upload it.
+type SurfaceRasterizer interface {
+	// RasterizeSurface composites the surface's current frame source-over
+	// into dst (premultiplied RGBA), filling the device rectangle rect.
+	// Only pixels inside clip (within rect and dst.Rect) may be written.
+	// It is called on the render goroutine, once per frame.
+	RasterizeSurface(dst *image.RGBA, rect, clip image.Rectangle)
+}
+
+// RasterSurfaceCanvas is implemented by canvases that can record a CPU
+// surface (SurfaceRasterizer) in the draw list.
+type RasterSurfaceCanvas interface {
+	DrawRasterSurface(id SurfaceID, src SurfaceRasterizer, dst Rect)
+}
+
 // DrawSurface is a GPU texture blit for an external surface (RFC §8).
+// With Raster set, the renderer rasterizes the surface instead (TextureID 0).
 type DrawSurface struct {
 	X, Y, W, H  int
 	TextureID    TextureID
 	SurfaceID    SurfaceID
+	Raster       SurfaceRasterizer
 	ClipX, ClipY int // scissor clip origin (from scene clip stack)
 	ClipW, ClipH int // scissor clip size; 0 = full viewport
 }
@@ -224,6 +249,7 @@ type DrawShaderRect struct {
 	Params      [8]float32 // user-defined uniforms
 	Time        float32    // frame time for animation (seconds since app start)
 	ImageID     ImageID    // optional texture input (0 = none)
+	CPU         ShaderFunc // CPU implementation of a custom shader (may be nil)
 }
 
 // PathVertex is a single vertex in a tessellated path triangle mesh.
